@@ -139,29 +139,32 @@ class _Uniqueness:
     filenames: set[str] = field(default_factory=set)
     checksums: dict[str, str] = field(default_factory=dict)
 
+    # Documents the survey could not validate, one line each. Reported as
+    # diagnostics rather than dropped: a corpus served nine tenths of in
+    # silence is worse than one that says what is wrong.
+    problems: list[str] = field(default_factory=list)
+
     @classmethod
     def of(cls, collection: Collection) -> _Uniqueness:
+        """Built from the survey rather than from validated documents.
+
+        A document kennis cannot validate still holds an identifier and a
+        checksum that are plain YAML keys, and both have to stay reserved:
+        skipping it would let `mint_id` reissue its identifier, and would make
+        a re-add of its source write a second copy instead of reporting a
+        duplicate. Its filename is reserved even when its YAML will not parse
+        at all and there is nothing else to read.
+        """
         record = cls()
-        for document in collection.documents():
-            record.identifiers.add(document.id)
-            record.filenames.add(_reserved_filename(document.md_path, document))
-            checksum = document.frontmatter.source.sha256
-            if checksum:
-                record.checksums[checksum] = document.id
+        for facts in collection.survey():
+            record.filenames.add(facts.reserved_filename)
+            if facts.identifier:
+                record.identifiers.add(facts.identifier)
+                if facts.checksum:
+                    record.checksums[facts.checksum] = facts.identifier
+            if facts.problem:
+                record.problems.append(facts.problem)
         return record
-
-
-def _reserved_filename(md_path: Path, document: object) -> str:
-    """The name a document occupies in its parent directory.
-
-    A wrapped document's own file is always `content.md`, so what a new
-    document's candidate filename would collide with is the wrapper
-    directory's name, not the file inside it.
-    """
-    wrapper = getattr(document, "wrapper_dir", None)
-    if isinstance(wrapper, Path):
-        return f"{wrapper.name}.md"
-    return md_path.name
 
 
 @dataclass
@@ -198,6 +201,14 @@ def add_notes(
 
     resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
     record = _Uniqueness.of(collection)
+    for problem in record.problems:
+        sink.emit(
+            Diagnostic(
+                severity=Severity.WARNING,
+                message=f"{problem} - it was left alone",
+                resolution="kennis corpus status",
+            )
+        )
     outcomes: list[AddOutcome] = _skipped(resolved, sink)
     plan = _plan_binaries(
         (item.identifier for item in resolved.items),

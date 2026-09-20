@@ -519,3 +519,84 @@ def test_adding_nothing_is_not_an_error(notes: Collection):
 
     assert report.outcomes == []
     assert report.counts == {}
+
+
+# ---------------------------------------------------------------------------
+# A collection holding a document kennis cannot read
+# ---------------------------------------------------------------------------
+
+
+def break_one_document(collection: Collection) -> Path:
+    """Add a key that `extra="forbid"` refuses - which is what anybody editing
+    YAML frontmatter by hand would try."""
+    document = collection.documents()[0]
+    text = document.md_path.read_text(encoding="utf-8")
+    document.md_path.write_text(
+        text.replace("title:", "tags: [physics]\ntitle:"), encoding="utf-8"
+    )
+    return document.md_path
+
+
+def test_one_unreadable_document_does_not_stop_an_unrelated_add(
+    notes: Collection, tmp_path: Path
+):
+    """The error used to name a document the user was not touching, and its
+    own resolution named a command that would hit the same wall."""
+    add_notes(notes, [str(a_note_file(tmp_path / "old.md", "# Old\n"))])
+    break_one_document(notes)
+
+    report = add_notes(notes, [str(a_note_file(tmp_path / "new.md", "# New\n"))])
+
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+
+
+def test_an_unreadable_document_is_reported_rather_than_passed_over(
+    notes: Collection, tmp_path: Path
+):
+    """A corpus served nine tenths of in silence is worse than one that says
+    what is wrong."""
+    add_notes(notes, [str(a_note_file(tmp_path / "old.md", "# Old\n"))])
+    broken = break_one_document(notes)
+    recorder = Recorder()
+
+    add_notes(
+        notes, [str(a_note_file(tmp_path / "new.md", "# New\n"))], events=recorder
+    )
+
+    diagnostics = recorder.events_of_type(Diagnostic)
+    assert len(diagnostics) == 1
+    assert broken.name in diagnostics[0].message
+
+
+def test_an_unreadable_document_still_reserves_its_identifier(
+    notes: Collection, tmp_path: Path
+):
+    """Skipping it outright would let `mint_id` reissue its identifier, and
+    two documents sharing one is a corruption worse than the first."""
+    add_notes(notes, [str(a_note_file(tmp_path / "old.md", "# Old\n"))])
+    broken = break_one_document(notes)
+    taken = next(
+        line.split(": ", 1)[1].strip()
+        for line in broken.read_text(encoding="utf-8").splitlines()
+        if line.startswith("id: ")
+    )
+
+    add_notes(notes, [str(a_note_file(tmp_path / "new.md", "# New\n"))])
+
+    minted = [facts.identifier for facts in notes.survey()]
+    assert minted.count(taken) == 1
+
+
+def test_an_unreadable_document_still_answers_for_its_content(
+    notes: Collection, tmp_path: Path
+):
+    """Its checksum is a plain YAML key, so re-adding its source is still
+    recognised as a duplicate rather than writing a second copy."""
+    source = a_note_file(tmp_path / "old.md", "# Old\n")
+    add_notes(notes, [str(source)])
+    break_one_document(notes)
+
+    report = add_notes(notes, [str(source)])
+
+    assert report.outcomes[0].outcome is Outcome.UNCHANGED
+    assert len(notes.survey()) == 1

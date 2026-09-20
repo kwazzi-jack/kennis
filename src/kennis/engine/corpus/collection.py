@@ -19,7 +19,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kennis.engine.corpus.document import Document, read_document, remove_document
+from kennis.engine.corpus.document import (
+    Document,
+    DocumentFacts,
+    inspect_document,
+    read_document,
+    remove_document,
+)
 from kennis.engine.corpus.layout import collection_root, iter_documents
 from kennis.engine.corpus.schema import (
     DocsFrontmatter,
@@ -64,6 +70,23 @@ class Collection:
         """
         return [
             read_document(location.md_path, collection=self.name)
+            for location in iter_documents(self._path)
+        ]
+
+    def survey(self) -> list[DocumentFacts]:
+        """Every document, read as far as it can be read.
+
+        The lenient counterpart to `documents()`. It never raises, so one
+        hand-edited note cannot cost every other operation on the collection;
+        a document it could not validate comes back carrying a `problem` for
+        the caller to report rather than swallow.
+
+        Used where a batch needs the identifiers and checksums already in use
+        - those are plain YAML keys, and reserving them does not require the
+        documents around them to be valid.
+        """
+        return [
+            inspect_document(location.md_path, collection=self.name)
             for location in iter_documents(self._path)
         ]
 
