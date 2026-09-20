@@ -6,7 +6,12 @@ readme = "README.md"
 authors = [
     { name = "Brian Welman", email = "brianallisterwelman@gmail.com" }
 ]
-requires-python = ">=3.12"
+# The upper bound is mineru's, not kennis's own: it declares
+# `requires-python <3.15,>=3.10`, and without a cap here `uv sync --extra
+# mineru` on 3.15 fails as an unresolvable dependency graph rather than as a
+# sentence anybody can act on. Nothing else kennis depends on caps below 3.15,
+# so lift this the day mineru supports it.
+requires-python = ">=3.12,<3.15"
 # "or later" rather than "only", which is the FSF's own recommendation; change
 # it to GPL-3.0-only if a downstream should not be able to move to GPLv4.
 license = "GPL-3.0-or-later"

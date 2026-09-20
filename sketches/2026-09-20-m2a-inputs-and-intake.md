@@ -273,6 +273,13 @@ which 4.x extra corresponds to what `pipeline` used to provide. The lockfile
 grew from 3,138 to 4,494 lines (136 to 201 packages), and `uv sync --extra
 mineru` dry-runs clean on 3.12.
 
+`requires-python` is now `>=3.12,<3.15`, and the cap is mineru's rather than
+kennis's own: nothing else kennis depends on stops below 3.15, and without the
+cap `uv sync --extra mineru` on 3.15 fails as an unresolvable dependency graph
+rather than as a sentence anybody can act on. It cost nothing and paid for
+itself in the lockfile, which *shrank* by 428 lines once uv stopped carrying
+the 3.15-only wheel variants of every package.
+
 **`require_available` wanted to be a free function, not a method.** My first
 pass put it on `MineruConverter` and had intake's single-document path reach
 for it with `hasattr`, which is the shape of a Protocol that is not carrying
