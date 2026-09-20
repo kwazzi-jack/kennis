@@ -87,6 +87,9 @@ dependencies = [
 # kennis will have to port that code against. 4.x is out; revisit the pin when
 # there is an MCP server here to test against it, not before.
 mcp = ["fastmcp==3.4.7"]
+mineru = [
+    "mineru>=3",
+]
 
 [project.scripts]
 kennis = "kennis.cli.__main__:main"
