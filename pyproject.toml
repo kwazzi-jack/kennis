@@ -1,0 +1,17 @@
+[project]
+name = "kennis"
+version = "0.0.0"
+description = "Local knowledge and memory management system for users and AI"
+readme = "README.md"
+authors = [
+    { name = "Brian Welman", email = "brianallisterwelman@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+kennis = "kennis:main"
+
+[build-system]
+requires = ["uv_build>=0.12.16,<0.13.0"]
+build-backend = "uv_build"
