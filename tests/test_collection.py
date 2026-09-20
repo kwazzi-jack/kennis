@@ -90,7 +90,7 @@ def test_an_absent_collection_holds_no_documents(tmp_path: Path):
     """A fresh machine with nothing fetched is a normal state, not an error."""
     collection = Collection(root=tmp_path, name="notes")
 
-    assert collection.documents() == []
+    assert collection.contents().documents == []
 
 
 def test_every_document_in_the_collection_is_found(tmp_path: Path):
@@ -100,7 +100,7 @@ def test_every_document_in_the_collection_is_found(tmp_path: Path):
 
     collection = Collection(root=tmp_path, name="literature")
 
-    assert {document.id for document in collection.documents()} == {
+    assert {document.id for document in collection.contents().documents} == {
         "aaaaaaaaaa",
         "bbbbbbbbbb",
     }
@@ -114,7 +114,9 @@ def test_a_directory_is_a_group_and_the_walk_descends_into_it(tmp_path: Path):
 
     collection = Collection(root=tmp_path, name="docs")
 
-    assert [document.id for document in collection.documents()] == ["aaaaaaaaaa"]
+    assert [document.id for document in collection.contents().documents] == [
+        "aaaaaaaaaa"
+    ]
 
 
 def test_a_directory_holding_content_md_is_one_document_not_a_group(tmp_path: Path):
@@ -135,7 +137,7 @@ def test_a_directory_holding_content_md_is_one_document_not_a_group(tmp_path: Pa
         assets={"figure.png": b"x"},
     )
 
-    documents = Collection(root=tmp_path, name="literature").documents()
+    documents = Collection(root=tmp_path, name="literature").contents().documents
 
     assert len(documents) == 1
     assert documents[0].md_path.name == WRAPPED_DOCUMENT_FILENAME
@@ -147,7 +149,7 @@ def test_bookkeeping_files_are_not_documents(tmp_path: Path):
     (root / "user-papers.json").write_text("{}", encoding="utf-8")
     (root / ".hidden").mkdir()
 
-    assert len(Collection(root=tmp_path, name="notes").documents()) == 1
+    assert len(Collection(root=tmp_path, name="notes").contents().documents) == 1
 
 
 def test_an_unknown_collection_is_refused(tmp_path: Path):
@@ -278,6 +280,6 @@ def test_a_removed_document_stops_being_found(tmp_path: Path):
 
     collection.remove(collection.resolve("aaaaaaaaaa"))
 
-    assert collection.documents() == []
+    assert collection.contents().documents == []
     with pytest.raises(DocumentNotFound):
         collection.resolve("aaaaaaaaaa")

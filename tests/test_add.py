@@ -102,7 +102,7 @@ def test_a_note_is_written_and_then_found(notes: Collection, tmp_path: Path):
 def test_a_note_is_owned_by_the_user(notes: Collection, tmp_path: Path):
     add_notes(notes, [str(a_note_file(tmp_path / "A note.md"))])
 
-    assert notes.documents()[0].frontmatter.owner == "user"
+    assert notes.contents().documents[0].frontmatter.owner == "user"
 
 
 def test_a_note_records_where_it_came_from(notes: Collection, tmp_path: Path):
@@ -110,7 +110,7 @@ def test_a_note_records_where_it_came_from(notes: Collection, tmp_path: Path):
 
     add_notes(notes, [str(path)])
 
-    source = notes.documents()[0].frontmatter.source
+    source = notes.contents().documents[0].frontmatter.source
     assert source.origin == str(path)
     assert source.via == "verbatim"
     assert source.format == "markdown"
@@ -123,7 +123,7 @@ def test_a_notes_identifier_is_minted_not_derived(notes: Collection, tmp_path: P
     apart."""
     add_notes(notes, [str(a_note_file(tmp_path / "A note.md"))])
 
-    assert notes.documents()[0].frontmatter.id_from is None
+    assert notes.contents().documents[0].frontmatter.id_from is None
 
 
 def test_two_notes_in_one_batch_get_different_identifiers(
@@ -148,7 +148,7 @@ def test_two_notes_of_the_same_title_do_not_overwrite_each_other(
 
     add_notes(notes, [str(first), str(second)])
 
-    assert len(notes.documents()) == 2
+    assert len(notes.contents().documents) == 2
 
 
 def test_a_title_may_be_given_rather_than_taken_from_the_source(
@@ -158,7 +158,7 @@ def test_a_title_may_be_given_rather_than_taken_from_the_source(
 
     add_notes(notes, [str(path)], AddOptions(title="A better title"))
 
-    assert notes.documents()[0].frontmatter.title == "A better title"
+    assert notes.contents().documents[0].frontmatter.title == "A better title"
 
 
 def test_a_source_with_no_heading_is_titled_after_its_file(
@@ -168,7 +168,7 @@ def test_a_source_with_no_heading_is_titled_after_its_file(
 
     add_notes(notes, [str(path)])
 
-    assert notes.documents()[0].frontmatter.title == "no-heading"
+    assert notes.contents().documents[0].frontmatter.title == "no-heading"
 
 
 def test_kept_originals_become_assets_of_the_document(
@@ -178,7 +178,7 @@ def test_kept_originals_become_assets_of_the_document(
 
     add_notes(notes, [str(path)], AddOptions(keep_original=True))
 
-    document = notes.documents()[0]
+    document = notes.contents().documents[0]
     assert document.wrapper_dir is not None
     assert (document.wrapper_dir / "A note.md").read_bytes() == path.read_bytes()
     assert document.frontmatter.source.original == "A note.md"
@@ -197,7 +197,7 @@ def test_adding_the_same_file_twice_produces_one_document(
     add_notes(notes, [str(path)])
     second = add_notes(notes, [str(path)])
 
-    assert len(notes.documents()) == 1
+    assert len(notes.contents().documents) == 1
     assert second.outcomes[0].outcome is Outcome.UNCHANGED
 
 
@@ -213,7 +213,7 @@ def test_the_second_add_reports_a_duplicate_rather_than_failing(
 
     outcome = report.outcomes[0]
     assert outcome.outcome is Outcome.UNCHANGED
-    assert outcome.document_id == notes.documents()[0].id
+    assert outcome.document_id == notes.contents().documents[0].id
     assert outcome.reason
 
 
@@ -254,7 +254,7 @@ def test_two_files_of_identical_content_in_one_batch_produce_one_document(
 
     report = add_notes(notes, [str(first), str(second)])
 
-    assert len(notes.documents()) == 1
+    assert len(notes.contents().documents) == 1
     assert [outcome.outcome for outcome in report.outcomes] == [
         Outcome.ADDED,
         Outcome.UNCHANGED,
@@ -279,7 +279,7 @@ def test_a_converter_failure_fails_only_its_own_document(
     assert by_identifier[str(good)].outcome is Outcome.ADDED
     assert by_identifier[str(bad)].outcome is Outcome.FAILED
     assert by_identifier[str(bad)].reason
-    assert len(notes.documents()) == 1
+    assert len(notes.contents().documents) == 1
 
 
 def test_an_unresolvable_identifier_fails_only_itself(
@@ -292,7 +292,7 @@ def test_an_unresolvable_identifier_fails_only_itself(
     outcomes = {outcome.identifier: outcome.outcome for outcome in report.outcomes}
     assert outcomes[str(good)] is Outcome.ADDED
     assert outcomes["welman2024"] is Outcome.FAILED
-    assert len(notes.documents()) == 1
+    assert len(notes.contents().documents) == 1
 
 
 def test_an_argument_naming_nothing_stops_the_command_before_it_starts(
@@ -320,7 +320,7 @@ def test_a_walk_mirrors_its_subdirectories_onto_groups(
 
     written = {
         document.frontmatter.title: document.md_path.relative_to(notes.path).parent
-        for document in notes.documents()
+        for document in notes.contents().documents
     }
     assert written == {"Top": Path("."), "X": Path("gains")}
 
@@ -336,7 +336,7 @@ def test_a_group_is_a_prefix_over_a_walk_not_an_override(
 
     add_notes(notes, [str(source)], AddOptions(group="reading"))
 
-    assert notes.documents()[0].md_path.relative_to(notes.path).parent == Path(
+    assert notes.contents().documents[0].md_path.relative_to(notes.path).parent == Path(
         "reading/gains"
     )
 
@@ -348,7 +348,7 @@ def test_a_group_places_a_named_file(notes: Collection, tmp_path: Path):
         AddOptions(group="reading"),
     )
 
-    assert notes.documents()[0].md_path.parent == notes.path / "reading"
+    assert notes.contents().documents[0].md_path.parent == notes.path / "reading"
 
 
 def test_files_the_walk_declined_reach_the_report(notes: Collection, tmp_path: Path):
@@ -529,7 +529,7 @@ def test_adding_nothing_is_not_an_error(notes: Collection):
 def break_one_document(collection: Collection) -> Path:
     """Add a key that `extra="forbid"` refuses - which is what anybody editing
     YAML frontmatter by hand would try."""
-    document = collection.documents()[0]
+    document = collection.contents().documents[0]
     text = document.md_path.read_text(encoding="utf-8")
     document.md_path.write_text(
         text.replace("title:", "tags: [physics]\ntitle:"), encoding="utf-8"
