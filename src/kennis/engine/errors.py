@@ -134,3 +134,52 @@ class DocumentInvalid(KennisError):
 
     default_message = "a document could not be read"
     default_resolution = "kennis corpus status"
+
+
+class InputError(KennisError):
+    """An argument names nothing kennis can act on.
+
+    Raised rather than collected as a failed outcome: it means the command as
+    typed cannot be carried out, and running the rest of the batch would leave
+    the user to notice the gap in a summary. A pattern that matched nothing is
+    the clearest case - quietly adding nothing is the one outcome that looks
+    like success and is not.
+    """
+
+    default_message = "nothing to act on"
+    default_resolution = "kennis corpus add --help"
+
+
+class SourceUnreadable(KennisError):
+    """A source exists but its bytes could not be obtained.
+
+    An unreadable file, an unreachable URL, an encoding no ladder could
+    decode. Distinct from a conversion failure: nothing was wrong with the
+    converter, there was simply nothing to hand it.
+    """
+
+    default_message = "a source could not be read"
+    default_resolution = "kennis corpus add --help"
+
+
+class ConverterUnavailable(KennisError):
+    """A format needs a converter that is not installed.
+
+    Checked once per batch rather than once per document: a folder of fifty
+    PDFs would otherwise produce fifty copies of the same install
+    instructions, one at a time, over a run that cannot succeed.
+    """
+
+    default_message = "no converter is available for this format"
+    default_resolution = "uv sync --extra mineru"
+
+
+class ConversionFailed(KennisError):
+    """A converter ran and produced nothing usable for a document.
+
+    Per document, not per run. A converter converts the documents it can and
+    records the rest, so one document's failure must not cost the others.
+    """
+
+    default_message = "a document could not be converted"
+    default_resolution = "kennis corpus add --help"
