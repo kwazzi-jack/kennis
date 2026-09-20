@@ -24,58 +24,77 @@ classifiers = [
 ]
 # Carried over from boepie's own list, less the radio-astronomy stack
 # (stimela, cult-cargo, scabha, python-casacore), which kennis is domain-
-# agnostic precisely in order not to need. Floors rather than boepie's exact
-# pins on click and pydantic: those pins existed to hold that stack together,
-# and there is no stack here to hold. The comment after each group says which
-# milestone first uses it, so an unused dependency is visible as such rather
-# than mysterious.
+# agnostic precisely in order not to need. The comment on each group says
+# which milestone first uses it, so an unused dependency is visible as such
+# rather than mysterious.
+#
+# **The floors are the oldest release whose interface kennis relies on, not
+# the version that happened to be current.** kennis is an application, so what
+# is actually installed is decided by `uv.lock` and reproduced exactly by
+# `uv sync`; the floors only choose what a future re-resolution may pick. A
+# floor set to today's version therefore buys no reproducibility - the lock
+# already gives that - and costs a conflict the first time something else in
+# the environment needs a slightly older release. Raise one when kennis starts
+# using something that release introduced, and say so in a comment.
 dependencies = [
     # Interfaces. Small and pure Python, which is why they stay in the base
     # distribution rather than behind an extra.
-    "click>=8.4.2",
-    "rich>=13.0.0",
-    "rich-click>=1.9.8",
+    "click>=8.1",
+    "rich>=13.0",
+    "rich-click>=1.8",
     # Prompting. A runtime dependency rather than a development one, because
     # terminal interaction is a module every command resolves inputs through.
-    "prompt-toolkit>=3.0.52",
+    "prompt-toolkit>=3.0",
     # Store layout, settings and schemas. Milestone 1.
-    "platformdirs>=4.10.0",
-    "pydantic>=2.13.4",
-    "pydantic-settings>=2.15.0",
+    "platformdirs>=4.0",
+    # pydantic 2 only: `extra="forbid"` on every model, and the v1 interface
+    # is a different library wearing the same name.
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
     # pydantic-settings only reads. Writes stay on tomlkit so that `config set`
     # round-trips the comments in config.toml.
-    "tomlkit>=0.15.1",
-    "pyyaml>=6.0.3",
+    "tomlkit>=0.13",
+    "pyyaml>=6.0",
     # Concurrency. One lock per corpus, taken with timeout=0 so a second
     # caller is told the corpus is busy rather than left blocking.
-    "filelock>=3.16",
+    "filelock>=3.12",
     # Ingestion. Milestone 2.
-    "httpx>=0.28.1",
-    "beautifulsoup4>=4.15.0",
-    "markdownify>=1.2.3",
-    "markdown-it-py>=4.2.0",
-    "mdit-py-plugins>=0.6.1",
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.13",
+    "markdown-it-py>=3.0",
+    "mdit-py-plugins>=0.4",
     # Retrieval. Milestone 3, and the weight of the install: fastembed brings
     # onnxruntime and bm25s brings numpy. Splitting them into their own
     # distribution was considered and rejected - see plan.md, "Should the
     # engine and the interfaces be separate packages?".
-    "bm25s>=0.3.9",
-    "numpy>=2.4.6",
-    "fastembed>=0.8.0",
+    "bm25s>=0.2",
+    # numpy 2 only: kennis stores embeddings as arrays and reads them back, and
+    # the 1.x/2.x promotion rules differ in ways a stored dtype would notice.
+    "numpy>=2.0",
+    "fastembed>=0.5",
     # The two hosted embedding backends the settings offer beside fastembed.
-    "ollama>=0.6.2",
-    "openai>=2.41.1",
+    "ollama>=0.4",
+    "openai>=1.60",
 ]
 
 [project.optional-dependencies]
 # fastmcp is a real dependency that someone using kennis as a library, or only
 # from the terminal, has no use for.
+#
+# The one exact pin, and the exception to the floor rule above, because it is
+# the version boepie's MCP server is known to work against and the only thing
+# kennis will have to port that code against. 4.x is out; revisit the pin when
+# there is an MCP server here to test against it, not before.
 mcp = ["fastmcp==3.4.7"]
 
 [project.scripts]
 kennis = "kennis.cli.__main__:main"
 
 [dependency-groups]
+# commitizen's floor is the one that matters: `cz bump` reads the commit log
+# to decide the version, so an older release deciding differently is a silent
+# wrong answer rather than an error.
 dev = [
     "commitizen>=4.18",
     "mypy>=1.11",

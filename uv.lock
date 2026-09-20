@@ -3,12 +3,9 @@ revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32'",
-    "python_full_version < '3.13' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*'",
+    "python_full_version == '3.13.*'",
+    "python_full_version < '3.13'",
 ]
 
 [[package]]
@@ -1256,27 +1253,27 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.15.0" },
-    { name = "bm25s", specifier = ">=0.3.9" },
-    { name = "click", specifier = ">=8.4.2" },
-    { name = "fastembed", specifier = ">=0.8.0" },
+    { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "bm25s", specifier = ">=0.2" },
+    { name = "click", specifier = ">=8.1" },
+    { name = "fastembed", specifier = ">=0.5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = "==3.4.7" },
-    { name = "filelock", specifier = ">=3.16" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "markdown-it-py", specifier = ">=4.2.0" },
-    { name = "markdownify", specifier = ">=1.2.3" },
-    { name = "mdit-py-plugins", specifier = ">=0.6.1" },
-    { name = "numpy", specifier = ">=2.4.6" },
-    { name = "ollama", specifier = ">=0.6.2" },
-    { name = "openai", specifier = ">=2.41.1" },
-    { name = "platformdirs", specifier = ">=4.10.0" },
-    { name = "prompt-toolkit", specifier = ">=3.0.52" },
-    { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rich", specifier = ">=13.0.0" },
-    { name = "rich-click", specifier = ">=1.9.8" },
-    { name = "tomlkit", specifier = ">=0.15.1" },
+    { name = "filelock", specifier = ">=3.12" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "markdown-it-py", specifier = ">=3.0" },
+    { name = "markdownify", specifier = ">=0.13" },
+    { name = "mdit-py-plugins", specifier = ">=0.4" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "ollama", specifier = ">=0.4" },
+    { name = "openai", specifier = ">=1.60" },
+    { name = "platformdirs", specifier = ">=4.0" },
+    { name = "prompt-toolkit", specifier = ">=3.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "pydantic-settings", specifier = ">=2.6" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rich", specifier = ">=13.0" },
+    { name = "rich-click", specifier = ">=1.8" },
+    { name = "tomlkit", specifier = ">=0.13" },
 ]
 provides-extras = ["mcp"]
 
