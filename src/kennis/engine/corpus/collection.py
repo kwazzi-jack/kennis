@@ -16,6 +16,7 @@ Two rules make resolution safe rather than merely convenient:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,7 +33,21 @@ from kennis.engine.corpus.schema import (
     DocumentFrontmatter,
     LiteratureFrontmatter,
 )
-from kennis.engine.errors import DocumentNotFound
+from kennis.engine.errors import DocumentInvalid, DocumentNotFound
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionContents:
+    """What one walk of a collection found.
+
+    Two lists rather than one, because the second is not an error condition
+    but a fact about the corpus: these documents are there, kennis cannot read
+    them, and every caller has to decide what that means for it. A reader
+    skips them; `corpus status` reports them; a repair verb would act on them.
+    """
+
+    documents: list[Document]
+    unreadable: list[DocumentFacts]
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,17 +76,30 @@ class Collection:
         """The directory this collection's documents live under."""
         return self._path
 
-    def documents(self) -> list[Document]:
-        """Every document in the collection, walked and validated.
+    def contents(self) -> CollectionContents:
+        """Every document, in two parts: the ones that read and the ones that
+        did not.
 
-        Raises `DocumentInvalid` on the first document that fails validation,
-        naming it. A corpus with one broken document is a thing to be told
-        about, not to be silently served nine tenths of.
+        Named so a caller cannot take the documents without seeing that there
+        is another half. A corpus with one broken document is a thing to be
+        told about, not to be silently served nine tenths of - but being told
+        must not cost the operation, which is what raising on the first
+        failure did.
+
+        One walk. A document that validates is parsed once; one that does not
+        is inspected a second time to recover what can be known about it,
+        which is the cheap case because there are few of them.
         """
-        return [
-            read_document(location.md_path, collection=self.name)
-            for location in iter_documents(self._path)
-        ]
+        documents: list[Document] = []
+        unreadable: list[DocumentFacts] = []
+        for location in iter_documents(self._path):
+            try:
+                documents.append(read_document(location.md_path, collection=self.name))
+            except DocumentInvalid:
+                unreadable.append(
+                    inspect_document(location.md_path, collection=self.name)
+                )
+        return CollectionContents(documents=documents, unreadable=unreadable)
 
     def survey(self) -> list[DocumentFacts]:
         """Every document, read as far as it can be read.
@@ -97,6 +125,12 @@ class Collection:
         casing need not be remembered exactly. A key that would map to two
         different documents is absent entirely.
         """
+        return self._aliases_of(self.contents().documents)
+
+    @staticmethod
+    def _aliases_of(documents: Sequence[Document]) -> dict[str, str]:
+        """The alias map over documents already read, so `resolve` can build
+        it from the walk it has already done."""
         candidates: dict[str, set[str]] = {}
 
         def record(key: object, document_id: str) -> None:
@@ -105,7 +139,7 @@ class Collection:
             for variant in (key, key.lower()):
                 candidates.setdefault(variant, set()).add(document_id)
 
-        for document in self.documents():
+        for document in documents:
             for key in _alias_keys(document.frontmatter):
                 record(key, document.id)
 
@@ -121,16 +155,25 @@ class Collection:
         Raises `DocumentNotFound` when nothing matches, and equally when the
         handle is ambiguous - two documents sharing a key make that key
         useless, and the answer is that it addresses nothing.
+
+        Raises `DocumentInvalid` when the handle names a document that is
+        there but cannot be read. Its identifier is a plain YAML key and so is
+        still known, and answering `DocumentNotFound` would send the reader
+        looking for a document that exists.
         """
-        documents = self.documents()
-        for document in documents:
+        contents = self.contents()
+        for document in contents.documents:
             if document.id == handle:
                 return document
 
-        aliases = self.aliases()
+        for facts in contents.unreadable:
+            if facts.identifier == handle and facts.problem:
+                raise DocumentInvalid(facts.problem)
+
+        aliases = self._aliases_of(contents.documents)
         resolved = aliases.get(handle) or aliases.get(handle.lower())
         if resolved is not None:
-            for document in documents:
+            for document in contents.documents:
                 if document.id == resolved:
                     return document
 

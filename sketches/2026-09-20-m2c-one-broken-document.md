@@ -126,7 +126,9 @@ one place. The duplication I was braced for did not materialise because the
 difference between the two is what happens to a `ValidationError`, not how the
 file is read.
 
-**The hole is not fully closed, and I am leaving it open deliberately.**
+**I deferred the third fix on a cost I had constructed rather than found, and
+then closed it.** What follows is the reasoning as it stood and as it should
+have stood, because the mistake is more instructive than the fix.
 Re-running the original probe after the fix:
 
 ```
@@ -135,16 +137,53 @@ list the collection      -> DocumentInvalid: .../Good note.md: tags: ...
 resolve a handle         -> DocumentInvalid: .../Good note.md: tags: ...
 ```
 
-`documents()` is strict by design and should stay so. But `resolve()` is built
-on it, which means reading *any* document by handle still fails when an
-unrelated one is broken - the same defect, in the command a user would reach
-for most. Closing it means building the alias map from raw mappings, and the
-alias keys are `bib.citekey`, `bib.arxiv_id`, `docs.project` and `docs.page` -
-so that means reintroducing dotted-string field access into a module milestone
-1 deliberately built on typed models. That trade is worth making deliberately,
-with the read commands in hand, rather than as a fourth thing in this
-correction. Milestone 5 is where it lands, alongside `corpus status`, whose
-whole job is to survive exactly this.
+`resolve()` was built on `documents()`, so reading *any* document by handle
+still failed when an unrelated one was broken - the same defect, in the
+command a user reaches for most. I priced closing it at "building the alias
+map from raw mappings", which would mean reintroducing dotted-string field
+access for `bib.citekey`, `bib.arxiv_id`, `docs.project` and `docs.page` into
+a module milestone 1 deliberately built on typed models, and deferred it to
+milestone 5 on that.
+
+**That was the cost of one implementation, not of the change.** Having just
+solved the uniqueness problem with `survey()`, I reached for `survey()` again
+and then priced the deferral against it without looking for a second way. The
+second way is simpler, and it turns on an observation the first one misses:
+**a document kennis cannot validate cannot be returned by `resolve` anyway**,
+because `resolve` hands back a `Document` with a validated frontmatter and a
+body. The broken document contributes nothing to the answer either way. All
+`resolve` needs is to walk past it.
+
+So `contents()` replaces `documents()`: one walk, `read_document` per
+location, and a `DocumentInvalid` sends that one file to `inspect_document`
+instead of ending the walk. The alias map is still built from typed models,
+from the documents that parsed. No dotted-string access anywhere, about thirty
+lines.
+
+Two things fall out of the survey work already done. The unreadable documents
+are in the return value, so nothing is silently skipped. And a broken
+document's *identifier* is still known, so `resolve` on that identifier raises
+`DocumentInvalid` naming it and saying why, rather than the misleading
+`DocumentNotFound` - asking for the broken document tells you it is broken,
+asking for anything else works.
+
+`documents()` is gone rather than kept alongside. A method named `documents`
+that quietly returns nine tenths of them is the exact failure this correction
+is about; `contents().documents` makes the existence of the other half visible
+at every call site, which is twenty-four of them and all in tests.
+
+The probe that opened this sketch, before and after:
+
+```
+before                                     after
+add an unrelated note -> DocumentInvalid   add an unrelated note -> ok
+list the collection   -> DocumentInvalid   list the collection   -> ok
+resolve a handle      -> DocumentInvalid   resolve a handle      -> ok
+```
+
+`corpus status` still has to be written against `contents()` rather than
+against a strict reader, and `DocumentInvalid.default_resolution` still names
+it, so that much of the circularity waits for milestone 5.
 
 **`survey()` and `documents()` do not share a walk, and no caller wants both.**
 The waste I predicted has not appeared, because the two callers are disjoint:

@@ -163,15 +163,19 @@ def test_a_survey_sees_every_document_valid_or_not(tmp_path: Path):
     assert sum(1 for facts in survey if facts.problem is not None) == 2
 
 
-def test_the_strict_reader_still_refuses_the_collection(tmp_path: Path):
-    """`documents()` promises validated documents and keeps that promise; a
-    caller wanting them wants to know one is missing."""
+def test_reading_a_collection_never_raises_over_one_document(tmp_path: Path):
+    """The failure is in the return value rather than in an exception: these
+    documents are there, kennis cannot read them, and every caller has to
+    decide what that means for it."""
     collection = Collection(root=tmp_path, name="notes")
     write(collection.path / "good.md", VALID)
     write(collection.path / "unknown-key.md", UNKNOWN_KEY)
 
-    with pytest.raises(DocumentInvalid):
-        collection.documents()
+    contents = collection.contents()
+
+    assert len(contents.documents) == 1
+    assert len(contents.unreadable) == 1
+    assert contents.unreadable[0].problem is not None
 
 
 def test_a_survey_of_an_absent_collection_is_empty(tmp_path: Path):
@@ -216,3 +220,73 @@ def test_a_document_that_cannot_be_read_is_not_overwritten(tmp_path: Path):
         write_document(path, frontmatter=frontmatter, body="new")
 
     assert path.read_text(encoding="utf-8") == BROKEN_YAML
+
+
+# ---------------------------------------------------------------------------
+# Reading past a document that cannot be read
+# ---------------------------------------------------------------------------
+
+
+def test_contents_separates_what_could_be_read_from_what_could_not(tmp_path: Path):
+    collection = Collection(root=tmp_path, name="notes")
+    write(collection.path / "good.md", VALID)
+    write(collection.path / "unknown-key.md", UNKNOWN_KEY)
+    write(collection.path / "broken.md", BROKEN_YAML)
+
+    contents = collection.contents()
+
+    assert [document.md_path.name for document in contents.documents] == ["good.md"]
+    assert {facts.md_path.name for facts in contents.unreadable} == {
+        "unknown-key.md",
+        "broken.md",
+    }
+
+
+def test_resolving_works_past_an_unrelated_broken_document(tmp_path: Path):
+    """A document kennis cannot validate cannot be returned by `resolve`
+    anyway, so it contributes nothing to the answer - and must not cost it."""
+    collection = Collection(root=tmp_path, name="notes")
+    write(collection.path / "good.md", VALID)
+    write(collection.path / "broken.md", BROKEN_YAML)
+
+    assert collection.resolve("abcdefghij").md_path.name == "good.md"
+
+
+def test_an_alias_resolves_past_a_broken_document(tmp_path: Path):
+    collection = Collection(root=tmp_path, name="notes")
+    write(collection.path / "good.md", VALID)
+    write(collection.path / "broken.md", BROKEN_YAML)
+
+    assert collection.resolve("A note").md_path.name == "good.md"
+
+
+def test_asking_for_the_broken_document_itself_says_why(tmp_path: Path):
+    """Its identifier is a plain YAML key, so it is still known. Answering
+    `DocumentNotFound` would send the reader looking for a document that is
+    there."""
+    collection = Collection(root=tmp_path, name="notes")
+    write(collection.path / "broken-but-identified.md", UNKNOWN_KEY)
+
+    with pytest.raises(DocumentInvalid) as raised:
+        collection.resolve("abcdefghij")
+
+    assert "broken-but-identified.md" in str(raised.value)
+    assert "tags" in str(raised.value)
+
+
+def test_a_broken_document_contributes_no_aliases(tmp_path: Path):
+    """Nothing can be addressed by a key kennis could not read."""
+    collection = Collection(root=tmp_path, name="notes")
+    write(collection.path / "broken.md", BROKEN_YAML)
+
+    assert collection.aliases() == {}
+
+
+def test_a_broken_document_does_not_make_a_good_ones_alias_ambiguous(
+    tmp_path: Path,
+):
+    collection = Collection(root=tmp_path, name="notes")
+    write(collection.path / "good.md", VALID)
+    write(collection.path / "also-titled-a-note.md", UNKNOWN_KEY)
+
+    assert collection.aliases()["a note"] == "abcdefghij"
