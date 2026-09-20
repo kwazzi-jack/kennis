@@ -92,10 +92,20 @@ class Source(BaseModel):
     lost" a per-document question rather than a per-collection one.
     """
 
+    # `populate_by_name` so the field name works as well as the alias: a
+    # caller constructing a Source in Python writes `origin=`, and only what
+    # is read from or written to disk uses `from`.
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     origin: str = Field(
-        alias="from",
+        # `validation_alias` and `serialization_alias` rather than one
+        # `alias`. A plain `alias` renames the field in the `__init__` that
+        # pydantic's `dataclass_transform` advertises, so a type checker
+        # demands a keyword argument named `from` - which is a Python keyword
+        # and therefore unwritable. Splitting the two keeps the on-disk
+        # spelling `from` and leaves the constructor taking `origin`.
+        validation_alias="from",
+        serialization_alias="from",
         description="url:, path:, arxiv: or doi:, with its value.",
     )
     via: ConversionVia
