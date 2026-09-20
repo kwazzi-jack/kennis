@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import ValidationError
 
 from kennis.engine._atomic import replace_file
@@ -49,33 +50,137 @@ class Document:
     body: str
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentFacts:
+    """What can be known about a document without requiring it to be valid.
+
+    The two facts a batch needs - the surrogate identifier and the content
+    checksum - are plain YAML keys, so they survive a document that fails
+    validation. That is what lets an unreadable document keep its identifier
+    reserved and keep answering for its content, instead of being skipped and
+    then having its identifier reissued to something else.
+    """
+
+    md_path: Path
+    wrapper_dir: Path | None
+    identifier: str | None
+    checksum: str | None
+    # One line saying why the document is not valid, or None when it is.
+    problem: str | None
+
+    @property
+    def reserved_filename(self) -> str:
+        """The name this document occupies in its parent directory.
+
+        A wrapped document's own file is always `content.md`, so what a new
+        document's candidate filename would collide with is the wrapper
+        directory's name, not the file inside it.
+        """
+        if self.wrapper_dir is not None:
+            return f"{self.wrapper_dir.name}.md"
+        return self.md_path.name
+
+
+def _load(md_path: Path) -> tuple[dict[str, Any], str]:
+    """Bytes to mapping and body, with every failure a domain exception.
+
+    The one place a read can go wrong, so the one place the translation
+    happens. `frontmatter.split_frontmatter` raises `yaml.YAMLError` and is
+    right to - it is a codec at the level of `json.loads`, and naming the
+    document is the job of the module that owns the concept.
+    """
+    try:
+        text = md_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise DocumentInvalid(f"{md_path}: could not be read: {error}") from error
+    try:
+        mapping, body = split_frontmatter(text)
+    except yaml.YAMLError as error:
+        raise DocumentInvalid(
+            f"{md_path}: frontmatter is not valid YAML: {_one_line(error)}"
+        ) from error
+    if not mapping:
+        raise DocumentInvalid(f"{md_path}: no frontmatter")
+    return mapping, body
+
+
+def _one_line(error: Exception) -> str:
+    """A multi-line library message reduced to something a `error:` line can
+    carry. The whole of it is still on the exception this is chained from."""
+    return " ".join(str(error).split())
+
+
+def _wrapper_of(md_path: Path) -> Path | None:
+    return md_path.parent if md_path.name == WRAPPED_DOCUMENT_FILENAME else None
+
+
 def read_document(md_path: Path, *, collection: str) -> Document:
     """Parse and validate one on-disk document.
 
-    Raises `DocumentInvalid`, naming the path, when the file has no
-    frontmatter, is missing a required field, or carries a value kennis does
-    not recognise - an `owner` from an older vocabulary, for instance. The
-    caller sees a domain exception rather than pydantic's, because the engine
-    raises domain exceptions and a front end is what renders them.
+    Raises `DocumentInvalid`, naming the path, when the file cannot be read or
+    decoded, its frontmatter is not valid YAML, it has no frontmatter, it is
+    missing a required field, or it carries a value kennis does not recognise
+    - an `owner` from an older vocabulary, for instance. The caller sees a
+    domain exception rather than a library's, because the engine raises domain
+    exceptions and a front end is what renders them.
+
+    Use `inspect_document` where failing is not an option.
     """
-    text = md_path.read_text(encoding="utf-8")
-    mapping, body = split_frontmatter(text)
-    if not mapping:
-        raise DocumentInvalid(f"{md_path}: no frontmatter")
+    mapping, body = _load(md_path)
     try:
         frontmatter = parse_frontmatter(collection, mapping)
     except ValidationError as error:
         raise DocumentInvalid(f"{md_path}: {_first_problem(error)}") from error
 
-    wrapper_dir = md_path.parent if md_path.name == WRAPPED_DOCUMENT_FILENAME else None
     return Document(
         id=frontmatter.id,
         collection=collection,
         md_path=md_path,
-        wrapper_dir=wrapper_dir,
+        wrapper_dir=_wrapper_of(md_path),
         frontmatter=frontmatter,
         body=body,
     )
+
+
+def inspect_document(md_path: Path, *, collection: str) -> DocumentFacts:
+    """What is knowable about one document, without requiring it to be valid.
+
+    Never raises. A caller uses this precisely because it cannot afford to
+    fail on a document it was not asked about: one hand-edited note must not
+    cost every other operation on the collection. What it could not read comes
+    back as `problem`, for the caller to report rather than swallow.
+    """
+    wrapper_dir = _wrapper_of(md_path)
+    try:
+        mapping, _ = _load(md_path)
+    except DocumentInvalid as error:
+        return DocumentFacts(
+            md_path=md_path,
+            wrapper_dir=wrapper_dir,
+            identifier=None,
+            checksum=None,
+            problem=str(error),
+        )
+
+    source = mapping.get("source")
+    problem: str | None = None
+    try:
+        parse_frontmatter(collection, mapping)
+    except ValidationError as error:
+        problem = f"{md_path}: {_first_problem(error)}"
+
+    return DocumentFacts(
+        md_path=md_path,
+        wrapper_dir=wrapper_dir,
+        identifier=_text(mapping.get("id")),
+        checksum=_text(source.get("sha256")) if isinstance(source, dict) else None,
+        problem=problem,
+    )
+
+
+def _text(value: object) -> str | None:
+    """A frontmatter value as a string, when it is one worth having."""
+    return value if isinstance(value, str) and value else None
 
 
 def _first_problem(error: ValidationError) -> str:
@@ -221,7 +326,16 @@ def _refuse_overwriting_another_document(md_path: Path, document_id: str) -> Non
     """
     if not md_path.is_file():
         return
-    mapping, _ = split_frontmatter(md_path.read_text(encoding="utf-8"))
+    try:
+        mapping, _ = _load(md_path)
+    except DocumentInvalid as error:
+        # If kennis cannot tell whether the file in the way is the same
+        # document, clobbering it is precisely the data loss this guard
+        # exists to prevent.
+        raise ValueError(
+            f"refusing to overwrite {md_path}, which kennis cannot read: "
+            f"{_one_line(error)}"
+        ) from error
     existing_id = mapping.get("id")
     if existing_id and existing_id != document_id:
         raise ValueError(
