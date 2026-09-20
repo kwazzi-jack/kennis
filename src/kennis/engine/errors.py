@@ -96,3 +96,41 @@ class SettingsError(KennisError):
 
     default_message = "a setting could not be read"
     default_resolution = "kennis config show"
+
+
+class UnknownCollection(KennisError):
+    """A collection name kennis does not have.
+
+    There are three, fixed: `notes`, `literature` and `docs`. A fourth is not
+    a configuration option - each of the three is a different processing layer
+    over one ingestion pipeline, not a folder someone may add to.
+    """
+
+    default_message = "no such collection"
+    default_resolution = "kennis corpus status"
+
+
+class DocumentNotFound(KennisError):
+    """No document answers to the handle given.
+
+    Also raised for an *ambiguous* handle. Two documents sharing a citekey or
+    a title make that key useless, and the honest answer is that it addresses
+    nothing; resolving it to whichever was walked first would silently hand
+    back the wrong paper.
+    """
+
+    default_message = "no such document"
+    default_resolution = "kennis corpus list"
+
+
+class DocumentInvalid(KennisError):
+    """A document on disk does not validate against its collection's schema.
+
+    A missing field, a key kennis does not understand, or an `owner` from a
+    vocabulary it does not recognise. Refused with the document named rather
+    than guessed at: kennis ships no migration, because the corpora are
+    rebuildable and there is no compatibility obligation.
+    """
+
+    default_message = "a document could not be read"
+    default_resolution = "kennis corpus status"
