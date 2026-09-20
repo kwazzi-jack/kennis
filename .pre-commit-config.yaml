@@ -1,0 +1,53 @@
+# Run `pre-commit install --install-hooks --hook-type commit-msg` once to
+# activate these. Everything runs through `uv run` against the project's own
+# environment rather than through pre-commit's isolated ones, so a hook and a
+# terminal see the same ruff and the same mypy.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: mypy
+        name: mypy
+        entry: uv run mypy src
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
+
+      # The ASCII rule cannot be expressed as a ruff rule - RUF001 catches
+      # ambiguous unicode, not all of it - so it stays the grep.
+      - id: ascii-only
+        name: ascii only
+        entry: sh scripts/check_ascii.sh
+        language: system
+        types: [text]
+
+      - id: one-line-commit-message
+        name: one-line commit message
+        entry: uv run scripts/check_commit_message.py
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+        always_run: true
+
+  # Commitizen validates the subject's shape. It permits a body, which the
+  # one-line hook above is what refuses, so both are needed: a malformed
+  # message is not merely untidy, it is a version decision silently omitted.
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.1
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]

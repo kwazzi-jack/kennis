@@ -23,4 +23,4 @@ supplying domain content follow after that.
 
 ## Licence
 
-Not yet chosen.
+GPL-3.0-or-later. See `LICENSE`.
