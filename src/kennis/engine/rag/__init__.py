@@ -20,6 +20,7 @@ from kennis.engine.rag.embedding import (
     resolve_host,
     validate_binding,
 )
+from kennis.engine.rag.loaders import CollectionLoader, Loader
 from kennis.engine.rag.models import (
     Chunk,
     ChunkPredicate,
@@ -37,10 +38,12 @@ __all__ = [
     "Chunk",
     "ChunkParameters",
     "ChunkPredicate",
+    "CollectionLoader",
     "Document",
     "Embedder",
     "Filter",
     "FilterOp",
+    "Loader",
     "Metadata",
     "ModelBinding",
     "SearchResult",
