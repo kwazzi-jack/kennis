@@ -111,7 +111,9 @@ def test_a_note_records_where_it_came_from(notes: Collection, tmp_path: Path):
     add_notes(notes, [str(path)])
 
     source = notes.contents().documents[0].frontmatter.source
-    assert source.origin == str(path)
+    # `path:` and not a bare path: the scheme is what the recoverability
+    # table in design section 4 reads.
+    assert source.origin == f"path:{path}"
     assert source.via == "verbatim"
     assert source.format == "markdown"
     assert source.sha256

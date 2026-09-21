@@ -199,7 +199,7 @@ def test_markdown_is_read_verbatim(tmp_path: Path):
     assert converted.markdown == "# A note\n\nBody.\n"
     assert converted.via == "verbatim"
     assert converted.format == "markdown"
-    assert converted.origin == str(path)
+    assert converted.origin == f"path:{path}"
     assert converted.suggested_title == "A note"
 
 
@@ -387,7 +387,7 @@ def test_a_page_is_fetched_and_converted():
     assert "Install it." in converted.markdown
     assert converted.via == "html"
     assert converted.format == "html"
-    assert converted.origin == "https://numpy.org/quickstart"
+    assert converted.origin == "url:https://numpy.org/quickstart"
 
 
 def test_a_page_with_no_heading_falls_back_to_its_title_tag():
@@ -428,3 +428,35 @@ def test_a_converted_result_is_a_frozen_record(tmp_path: Path):
     path.write_text("# A note\n", encoding="utf-8")
 
     assert isinstance(convert_local_file(path), Converted)
+
+
+# ---------------------------------------------------------------------------
+# Where a document came from
+# ---------------------------------------------------------------------------
+
+
+def test_a_local_file_records_a_path_scheme(tmp_path: Path):
+    """Design section 4 makes `source.from` one of `url:`, `arxiv:`, `doi:`
+    or `path:`, and the recoverability table keys on that prefix: it is how
+    `corpus status` counts the documents that could not be refetched. A bare
+    path has no scheme to read."""
+    source = tmp_path / "note.md"
+    source.write_text("# A note\n\nBody.\n", encoding="utf-8")
+
+    assert convert_local_file(source).origin == f"path:{source}"
+
+
+def test_a_fetched_page_records_a_url_scheme():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text="<html><body><h1>A page</h1></body></html>",
+            headers={"content-type": "text/html"},
+        )
+
+    converted = convert_url(
+        "https://example.org/a",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert converted.origin == "url:https://example.org/a"

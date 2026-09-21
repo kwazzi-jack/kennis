@@ -310,7 +310,12 @@ def convert_local_file(
         markdown=markdown,
         via=via,
         format=source_format,
-        origin=str(path),
+        # `path:` and not a bare path. Design section 4 makes `source.from` a
+        # scheme plus a value, and the recoverability table keys on the
+        # scheme: it is how `corpus status` counts the documents that cannot
+        # be refetched, which is the number a user wants before trusting a
+        # backup. A bare path has no scheme to read.
+        origin=f"path:{path}",
         sha256=sha256_of(raw),
         original_bytes=raw if keep_original else None,
         original_name=path.name if keep_original else None,
@@ -375,7 +380,7 @@ def convert_url(
         markdown=markdown,
         via="html",
         format="html",
-        origin=url,
+        origin=f"url:{url}",
         sha256=sha256_of(response.content),
         original_bytes=response.content if keep_original else None,
         original_name="original.html" if keep_original else None,
