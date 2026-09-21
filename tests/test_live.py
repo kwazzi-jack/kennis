@@ -158,3 +158,56 @@ def test_a_publisher_pdf_is_refused_rather_than_written(tmp_path: Path):
     body = written[0].body.lower()
     for phrase in ("just a moment", "checking your browser", "enable javascript"):
         assert phrase not in body
+
+
+# ---------------------------------------------------------------------------
+# The embedding backend
+# ---------------------------------------------------------------------------
+
+
+def test_the_default_backend_really_embeds(tmp_path: Path):
+    """Nothing offline can test this: every other embedding test supplies its
+    own embedder, so the one thing never exercised is whether the fastembed
+    binding resolves to a model that runs. The first run on a machine
+    downloads it, which design section 15 measured at about 33 seconds."""
+    import numpy as np
+
+    from kennis.engine.rag.binding import Binding, document_digest
+    from kennis.engine.rag.cache import VectorCache
+    from kennis.engine.rag.chunking import ChunkParameters
+    from kennis.engine.rag.embedding import ModelBinding, embed_texts
+
+    binding = ModelBinding(
+        kind="fastembed", model="BAAI/bge-small-en-v1.5", dim=384, normalise=True
+    )
+    texts = [
+        "Calibration solves for antenna gains against a sky model.",
+        "A recipe for baking sourdough bread at home.",
+        "Gain solutions are derived per antenna and per time interval.",
+    ]
+
+    matrix = embed_texts(binding, texts)
+
+    assert matrix.shape == (3, 384)
+    assert matrix.dtype == np.float32
+    for row in matrix:
+        assert float(np.linalg.norm(row)) == pytest.approx(1.0, abs=1e-5)
+
+    # The two calibration sentences must sit closer to each other than either
+    # does to the bread. If this fails the vectors are arriving, but they are
+    # not carrying meaning, which no shape assertion would catch.
+    related = float(matrix[0] @ matrix[2])
+    unrelated = float(matrix[0] @ matrix[1])
+    assert related > unrelated
+
+    # And the cache round-trips a real matrix, not just a synthetic one.
+    cache = VectorCache(
+        root=tmp_path / "vectors",
+        binding=Binding(chunking=ChunkParameters(), model=binding),
+    )
+    digest = document_digest(texts[0])
+    cache.put("doc1", digest, matrix)
+    restored = cache.get("doc1", digest)
+
+    assert restored is not None
+    assert np.array_equal(restored, matrix)
