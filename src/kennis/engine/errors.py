@@ -183,3 +183,22 @@ class ConversionFailed(KennisError):
 
     default_message = "a document could not be converted"
     default_resolution = "kennis corpus add --help"
+
+
+class NothingToIndex(KennisError):
+    """There is no text to build an index over.
+
+    Raised before the index is built rather than translated afterwards,
+    because the failure it replaces is `ValueError: max() iterable argument
+    is empty` raised from inside bm25s's vocabulary build - and, under
+    `filterwarnings = ["error"]`, three `RuntimeWarning`s that fire before
+    that and surface instead of it. Neither names anything a user can act on.
+
+    The condition is "no tokens survived tokenisation", not "no documents":
+    stopwords are removed before the vocabulary is built, so a collection of
+    documents that are all stopwords fails in exactly the same place as an
+    empty one.
+    """
+
+    default_message = "there is nothing to index"
+    default_resolution = "kennis corpus add"

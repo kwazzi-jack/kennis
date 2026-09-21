@@ -138,6 +138,16 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 strict = true
 warn_unreachable = true
 
+# Third-party packages that ship no `py.typed` marker. Named one by one
+# rather than with a blanket `ignore_missing_imports`, so the list is a
+# visible statement of what kennis cannot type-check, and so a package that
+# starts shipping types is noticed when its entry stops being needed. This is
+# the sanctioned way to say it: the project rule forbids `# type: ignore`,
+# which would silence a line rather than name a dependency.
+[[tool.mypy.overrides]]
+module = ["bm25s.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # `-m "not network"` keeps the default run offline and deterministic. The
