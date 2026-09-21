@@ -45,7 +45,10 @@ class Binding:
     """Everything about how a vector is derived, apart from the text itself."""
 
     chunking: ChunkParameters
-    model: ModelBinding
+    # None is a lexical-only index: BM25 and no dense leg. A machine with no
+    # model must still be able to search, and nothing about chunking depends
+    # on there being an embedding backend.
+    model: ModelBinding | None
 
     @property
     def digest(self) -> str:
@@ -81,10 +84,10 @@ class Binding:
             "chunk_size": self.chunking.size,
             "chunk_overlap": self.chunking.overlap,
             "chunker_version": self.chunking.version,
-            "embedding_backend": self.model.kind,
-            "embedding_model": self.model.model,
-            "embedding_dim": self.model.dim,
-            "normalise": self.model.normalise,
+            "embedding_backend": self.model.kind if self.model else None,
+            "embedding_model": self.model.model if self.model else None,
+            "embedding_dim": self.model.dim if self.model else None,
+            "normalise": self.model.normalise if self.model else None,
         }
         payload["digest"] = hashlib.blake2b(
             json.dumps(payload, sort_keys=True).encode("utf-8"),
@@ -101,10 +104,14 @@ class Binding:
                 overlap=int(recorded["chunk_overlap"]),
                 version=int(recorded["chunker_version"]),
             ),
-            model=ModelBinding(
-                kind=str(recorded["embedding_backend"]),
-                model=str(recorded["embedding_model"]),
-                dim=int(recorded["embedding_dim"]),
-                normalise=bool(recorded["normalise"]),
+            model=(
+                ModelBinding(
+                    kind=str(recorded["embedding_backend"]),
+                    model=str(recorded["embedding_model"]),
+                    dim=int(recorded["embedding_dim"]),
+                    normalise=bool(recorded["normalise"]),
+                )
+                if recorded.get("embedding_backend")
+                else None
             ),
         )

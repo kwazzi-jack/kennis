@@ -20,6 +20,13 @@ from kennis.engine.rag.embedding import (
     resolve_host,
     validate_binding,
 )
+from kennis.engine.rag.index import (
+    BuildReport,
+    LoadedIndex,
+    build_index,
+    index_id_for,
+    load_index,
+)
 from kennis.engine.rag.loaders import CollectionLoader, Loader
 from kennis.engine.rag.models import (
     Chunk,
@@ -35,6 +42,7 @@ from kennis.engine.rag.models import (
 __all__ = [
     "Binding",
     "Bm25Index",
+    "BuildReport",
     "Chunk",
     "ChunkParameters",
     "ChunkPredicate",
@@ -43,16 +51,20 @@ __all__ = [
     "Embedder",
     "Filter",
     "FilterOp",
+    "LoadedIndex",
     "Loader",
     "Metadata",
     "ModelBinding",
     "SearchResult",
     "VectorCache",
+    "build_index",
     "chunk_document",
     "combine_filters",
     "document_digest",
     "embed_texts",
     "embedder_for",
+    "index_id_for",
+    "load_index",
     "resolve_host",
     "validate_binding",
 ]
