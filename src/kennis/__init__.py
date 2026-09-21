@@ -7,7 +7,14 @@ privileged.
 
 from __future__ import annotations
 
+import logging
 from importlib.metadata import PackageNotFoundError, version
+
+# The library logs; the application configures. Without this, a caller who
+# never installed a handler gets Python's "no handlers could be found"
+# complaint on stderr - which under `kennis serve` is noise in someone else's
+# stream. The entry points install the real handlers.
+logging.getLogger("kennis").addHandler(logging.NullHandler())
 
 try:
     # One version, read from the installed distribution rather than written in
