@@ -108,6 +108,79 @@ class Repository:
             )
         return self.head()
 
+    def has_commit(self, commit: str) -> bool:
+        """Whether this repository holds `commit`.
+
+        An index built on another machine names a commit that is not here,
+        and the honest answer to a freshness question about it is that it
+        cannot be answered - never that the answer is yes.
+        """
+        self._require_repository()
+        return git(["cat-file", "-e", f"{commit}^{{commit}}"], cwd=self.root).ok
+
+    def diff_names(self, commit: str, *, scope: str) -> list[tuple[str, str]]:
+        """`(status, path)` for everything that changed since `commit`.
+
+        Scoped to one directory, because the index lives in this same
+        repository and is rewritten wholesale by every build - an unscoped
+        query would call every index stale the moment it was written.
+
+        A rename arrives as `R100 old new` and is read in the safe direction:
+        the old path is gone and the new one is added. Whether git detects a
+        rename at all depends on a similarity heuristic, and a document that
+        moved is one the index no longer points at correctly either way.
+        """
+        self._require_repository()
+        result = git(
+            ["diff", "--name-status", commit, "HEAD", "--", scope], cwd=self.root
+        )
+        changes: list[tuple[str, str]] = []
+        for line in result.lines():
+            fields = line.split("\t")
+            if len(fields) < 2:
+                continue
+            status = fields[0]
+            if status.startswith(("R", "C")) and len(fields) >= 3:
+                changes.append(("D", fields[1]))
+                changes.append(("A", fields[2]))
+                continue
+            changes.append((status[0], fields[1]))
+        return changes
+
+    def status_names(self, *, scope: str) -> list[tuple[str, str]]:
+        """`(status, path)` for everything not yet committed.
+
+        The diff between two commits cannot see uncommitted work, and a
+        document someone edited by hand is a change the index does not know
+        about just as surely as a committed one.
+        """
+        self._require_repository()
+        result = git(["status", "--porcelain", "--", scope], cwd=self.root)
+        changes: list[tuple[str, str]] = []
+        for line in result.lines():
+            # Porcelain v1 is two status characters then a space then the
+            # path, and either character may itself be a space - so this is
+            # a fixed-width read, not a split. ` M notes/a.md` has an empty
+            # index status and a modified work tree.
+            if len(line) < 4:
+                continue
+            code, path = line[:2], line[3:].strip().strip('"')
+            if not path:
+                continue
+            # A rename is `R  old -> new`; the arrow separates them.
+            if " -> " in path:
+                previous, _, path = path.partition(" -> ")
+                changes.append(("D", previous.strip().strip('"')))
+            # `??` is untracked, which in a corpus means a file that is there
+            # and was never recorded: an addition.
+            if code == "??" or "A" in code:
+                changes.append(("A", path))
+            elif "D" in code:
+                changes.append(("D", path))
+            else:
+                changes.append(("M", path))
+        return changes
+
     def _require_repository(self) -> None:
         if not (self.root / ".git").is_dir():
             raise CorpusNotFound(

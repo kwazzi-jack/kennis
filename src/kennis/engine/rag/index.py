@@ -48,6 +48,7 @@ from kennis.engine.events import (
     Outcome,
     Progress,
 )
+from kennis.engine.history.repository import Repository
 from kennis.engine.rag.binding import Binding, document_digest
 from kennis.engine.rag.bm25 import Bm25Index
 from kennis.engine.rag.cache import VectorCache
@@ -124,12 +125,18 @@ def build_index(
     embedder: Embedder | None = None,
     events: EventSink | None = None,
     embed_batch_size: int = 64,
+    repository: Repository | None = None,
 ) -> BuildReport:
     """Build and publish the index for one collection.
 
     `embedder` is supplied by the caller so a test hands over something that
     never downloads a model; left out, one is resolved from the binding, and
     for a lexical-only binding none is needed at all.
+
+    `repository` is the corpus's git repository, whose current commit is
+    recorded as what this index was built from. Left out - by a test, or by
+    a caller indexing something that is not a corpus - the manifest records
+    no commit and freshness reads as unverifiable rather than as fresh.
     """
     started_at = time.monotonic()
     collection_root = index_root / loader.name
@@ -168,6 +175,10 @@ def build_index(
                     "collection": loader.name,
                     "index_id": index_id,
                     "chunk_count": len(chunks),
+                    # The commit this index was built from. Freshness is a
+                    # diff between it and HEAD, which is O(changed files)
+                    # rather than O(corpus).
+                    "built_from": repository.head() if repository else None,
                     "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     # The digests a later staleness check compares against the
                     # corpus, and the same ones the cache keys on: there is one

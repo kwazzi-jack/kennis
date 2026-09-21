@@ -510,3 +510,50 @@ def test_a_collection_can_be_indexed_with_no_embedding_backend(
 
     assert loaded.chunks
     assert loaded.matrix is None
+
+
+# ---------------------------------------------------------------------------
+# What the index was built from
+# ---------------------------------------------------------------------------
+
+
+def test_the_manifest_records_the_commit_it_was_built_from(tmp_path: Path):
+    """Design section 19's sharpest consequence: freshness becomes a diff
+    between that commit and HEAD, rather than a walk of the whole corpus."""
+    from kennis.engine.history.repository import Repository, initialise_corpus
+
+    root = tmp_path / "corpus"
+    initialise_corpus(root)
+    collection = Collection(root=root, name="notes")
+    (root / "notes" / "one.md").write_text("# One\n\nBody.\n", encoding="utf-8")
+    add_notes(collection, [str(root / "notes" / "one.md")])
+    head = Repository(root).commit("add", scope="notes", summary="1 added")
+
+    report = build_index(
+        CollectionLoader(collection),
+        index_root=tmp_path / "index",
+        binding=a_binding(),
+        embedder=RecordingEmbedder(),
+        repository=Repository(root),
+    )
+    manifest = json.loads(
+        (Path(report.index_dir) / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["built_from"] == head
+
+
+def test_an_index_built_without_a_repository_records_no_commit(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    """Not every caller has one - a test, or an index over something that is
+    not a corpus - and the freshness answer for that is 'unverifiable'
+    rather than a crash."""
+    a_note(notes, tmp_path, "one.md", "# One\n\nBody.\n")
+
+    report = build(notes, index_root)
+    manifest = json.loads(
+        (Path(report.index_dir) / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["built_from"] is None
