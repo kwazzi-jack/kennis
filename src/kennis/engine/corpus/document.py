@@ -25,6 +25,7 @@ import yaml
 from pydantic import ValidationError
 
 from kennis.engine._atomic import replace_file
+from kennis.engine.corpus.ids import natural_key_for_docs
 from kennis.engine.corpus.layout import WRAPPED_DOCUMENT_FILENAME
 from kennis.engine.corpus.schema import (
     DocumentFrontmatter,
@@ -185,22 +186,40 @@ def inspect_document(md_path: Path, *, collection: str) -> DocumentFacts:
         identifier=_text(mapping.get("id")),
         checksum=_text(source.get("sha256")) if isinstance(source, dict) else None,
         citekey=_text(bib.get("citekey")) if isinstance(bib, dict) else None,
-        identities=_identities_of(bib),
+        identities=_identities_of(mapping),
         problem=problem,
     )
 
 
-def _identities_of(bib: object) -> tuple[str, ...]:
-    """Every bibliographic identifier a document answers to, lower-cased.
+def _identities_of(mapping: dict[str, object]) -> tuple[str, ...]:
+    """Every identity a document answers to, beyond its own identifier.
 
-    Lower-cased because a DOI is case-insensitive and a bibliography will
-    spell one either way; matching on the exact bytes would let the same paper
-    in twice over a capital letter.
+    For a paper these are its arXiv identifier, DOI and bibcode; for a docs
+    page it is its project and page key, which is the natural key its
+    identifier was derived from. Both are read from plain YAML rather than
+    from a validated model, for the same reason the identifier and the
+    checksum are: a document kennis cannot validate must still reserve what
+    it holds, or the same paper or the same page walks in again the moment
+    one document is hand-edited.
+
+    Bibliographic values are lower-cased, because a DOI is case-insensitive
+    and a bibliography will spell one either way; matching on the exact bytes
+    would let the same paper in twice over a capital letter.
     """
-    if not isinstance(bib, dict):
-        return ()
-    found = (bib.get(key) for key in ("arxiv_id", "doi", "bibcode"))
-    return tuple(value.lower() for value in found if isinstance(value, str) and value)
+    bib = mapping.get("bib")
+    if isinstance(bib, dict):
+        found = (bib.get(key) for key in ("arxiv_id", "doi", "bibcode"))
+        return tuple(
+            value.lower() for value in found if isinstance(value, str) and value
+        )
+
+    docs = mapping.get("docs")
+    if isinstance(docs, dict):
+        project = docs.get("project")
+        page = docs.get("page")
+        if isinstance(project, str) and isinstance(page, str) and project and page:
+            return (natural_key_for_docs(project=project, page=page),)
+    return ()
 
 
 def _text(value: object) -> str | None:

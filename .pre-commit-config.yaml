@@ -35,6 +35,16 @@ repos:
         language: system
         types: [text]
 
+      # CLAUDE.md forbids a silenced type error, and nothing was enforcing it:
+      # ruff has no rule for it and mypy runs against `src` only, so one sat
+      # in the test suite unnoticed. This is the check that would have caught
+      # it.
+      - id: no-type-ignore
+        name: no silenced type errors
+        entry: sh scripts/check_no_type_ignore.sh
+        language: system
+        types: [python]
+
       - id: one-line-commit-message
         name: one-line commit message
         entry: uv run scripts/check_commit_message.py

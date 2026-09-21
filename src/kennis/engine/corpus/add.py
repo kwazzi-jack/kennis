@@ -46,6 +46,7 @@ from kennis.engine.corpus.document import write_document
 from kennis.engine.corpus.ids import (
     derive_id,
     mint_id,
+    natural_key_for_docs,
     natural_key_for_literature,
 )
 from kennis.engine.corpus.inputs import ResolvedInputs, resolve_inputs
@@ -57,6 +58,7 @@ from kennis.engine.corpus.intake import (
     detect_format,
     looks_like_url,
     sha256_of,
+    title_from_markdown,
 )
 from kennis.engine.corpus.layout import (
     title_filename,
@@ -65,11 +67,21 @@ from kennis.engine.corpus.layout import (
 )
 from kennis.engine.corpus.schema import (
     Bibliography,
+    CrawlScope,
+    DocsFrontmatter,
+    DocsPage,
     LiteratureFrontmatter,
     NoteFrontmatter,
     Source,
 )
-from kennis.engine.errors import KennisError
+from kennis.engine.docs.discover import discover_pages
+from kennis.engine.docs.fetch import convert_page, fetch_page
+from kennis.engine.docs.sites import (
+    DocsSite,
+    project_name_from_url,
+    validate_project_name,
+)
+from kennis.engine.errors import InputError, KennisError
 from kennis.engine.events import (
     Diagnostic,
     Event,
@@ -82,6 +94,7 @@ from kennis.engine.events import (
     Severity,
 )
 from kennis.engine.literature.citekeys import derive_citekey, unique_citekey
+from kennis.engine.literature.fetch import PaperText, fetch_paper
 from kennis.engine.literature.identifiers import (
     BibEntry,
     PaperIdentifier,
@@ -95,6 +108,19 @@ from kennis.engine.literature.metadata import (
     resolve_doi_to_arxiv,
 )
 
+# Identifies kennis to a documentation host, so the traffic can be
+# attributed and, if a site wishes, blocked.
+_DOCS_USER_AGENT = "kennis-docs-fetch"
+
+# How long kennis waits between requests to one host. The two differ because
+# the hosts do: arXiv states a three-second interval for its API and answers a
+# burst with 406, while a documentation site is being asked for pages it
+# serves statically. Both are defaults a caller may override through
+# `AddOptions.request_delay_seconds`, because how patient to be with someone
+# else's server is a judgement kennis should not make on the user's behalf.
+_ARXIV_DELAY_SECONDS = 3.0
+_DOCS_DELAY_SECONDS = 0.2
+
 
 @dataclass(frozen=True, slots=True)
 class AddOptions:
@@ -107,6 +133,24 @@ class AddOptions:
     # does not state one on its own first page. Literature only.
     identifier: str | None = None
     citekey: str | None = None
+    # Whether a paper named only by an identifier has its text fetched. Off
+    # leaves the stub that the bibliography alone can carry.
+    fetch: bool = True
+    # The docs project a page belongs to: a frontmatter field and a directory
+    # name both. Derived from the site's host when it is not given, which a
+    # local file has none of. Docs only.
+    project: str | None = None
+    # How a docs site's pages are found, and how far the walk reaches.
+    # `discovery` left out is probed for; the answer is recorded per page.
+    discovery: str | None = None
+    path_prefix: str | None = None
+    exclude: tuple[str, ...] = ()
+    max_pages: int = 300
+    max_depth: int = 5
+    # Seconds between requests to one host. None takes the default for the
+    # collection being added to, which differs because the hosts do. Zero is
+    # how a caller whose transport never leaves the machine says so.
+    request_delay_seconds: float | None = None
     # Extra suffixes a directory walk accepts, beyond the ones kennis knows.
     extra_file_types: tuple[str, ...] = ()
     # How many documents one converter run takes. Zero means one run for the
@@ -218,6 +262,19 @@ class _Plan:
     # Page-one text per document, page furniture included. Unused by notes;
     # literature is what reads it.
     front_page: dict[Path, str] = field(default_factory=dict)
+
+
+def _delay_for(options: AddOptions, default: float) -> float:
+    """Seconds between requests to one host, for this invocation.
+
+    The caller's own figure when it gave one, including zero, and the
+    collection's default otherwise. Zero and None have to mean different
+    things here: zero is a caller saying it contacts nothing, None is a
+    caller with no opinion.
+    """
+    if options.request_delay_seconds is None:
+        return default
+    return max(0.0, options.request_delay_seconds)
 
 
 def add_notes(
@@ -590,9 +647,12 @@ def add_literature(
     twice.
 
     `arxiv` is the client the metadata lookups use, so a caller with no
-    network - a test, an offline run - supplies one that says so.
+    network - a test, an offline run - supplies one that says so, and sets
+    `AddOptions.request_delay_seconds` to zero so the batch is not paced for
+    a host it never contacts.
     """
     options = options or AddOptions()
+    delay = _delay_for(options, _ARXIV_DELAY_SECONDS)
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 
@@ -611,7 +671,9 @@ def add_literature(
         sink,
     )
 
-    for paper in papers:
+    for position, paper in enumerate(papers):
+        if position and delay:
+            time.sleep(delay)
         sink.emit(ItemStarted(operation="add", item=paper.identifier))
         outcome = _add_paper(collection, paper, record, options, plan, arxiv)
         outcomes.append(outcome)
@@ -763,7 +825,7 @@ def _add_paper(
             reason="this paper is already in this collection",
         )
 
-    converted = _converted_for(paper, identity, options, plan)
+    converted, unfetched = _converted_for(paper, identity, options, plan, arxiv)
     if isinstance(converted, AddOutcome):
         return converted
 
@@ -795,6 +857,10 @@ def _add_paper(
         document_id=document_id,
         title=title,
         path=path,
+        # A paper added without its text is still added, so this is not a
+        # failure - but the user has to be told, or a throttled batch looks
+        # exactly like a batch of papers nobody ever preprinted.
+        reason=unfetched,
     )
 
 
@@ -898,34 +964,78 @@ def _duplicate_identity(record: _Uniqueness, identity: _Identity) -> str | None:
 
 
 def _converted_for(
-    paper: _Paper, identity: _Identity, options: AddOptions, plan: _Plan
-) -> Converted | AddOutcome:
-    """The markdown for one paper, or the outcome that says there is none.
+    paper: _Paper,
+    identity: _Identity,
+    options: AddOptions,
+    plan: _Plan,
+    arxiv: httpx.Client | None,
+) -> tuple[Converted | AddOutcome, str | None]:
+    """The markdown for one paper, and why it is a stub when it is one.
 
-    A paper named only by its identifier has no local document yet - fetching
-    the preprint is a later milestone - so what is written is a stub carrying
-    the bibliography. That is what makes a citekey citeable before the text
-    arrives.
+    A paper named only by its identifier has no local document, so its text is
+    fetched from arXiv's LaTeXML rendering. What arXiv will not render falls
+    back to a stub carrying the bibliography, which is what makes a citekey
+    citeable before any text arrives - and for a paper known only by a DOI or
+    a bibcode, the stub is all there will be, because the publisher's own copy
+    needs a browser session kennis does not have.
     """
     if paper.path is None:
-        return Converted(
-            markdown=_stub(identity),
-            via="verbatim",
-            format="markdown",
-            origin=_origin_of(identity, paper),
-            sha256=None,
+        fetched = (
+            fetch_paper(identity.arxiv_id, client=arxiv)
+            if options.fetch and identity.arxiv_id
+            else None
+        )
+        if fetched is not None and fetched.markdown:
+            return (
+                Converted(
+                    markdown=fetched.markdown,
+                    via="html",
+                    format="html",
+                    origin=_origin_of(identity, paper),
+                    sha256=None,
+                ),
+                None,
+            )
+        return (
+            Converted(
+                markdown=_stub(identity),
+                via="verbatim",
+                format="markdown",
+                origin=_origin_of(identity, paper),
+                sha256=None,
+            ),
+            _unfetched_reason(fetched),
         )
     prepared = plan.converted.get(paper.path)
     try:
-        return convert_local_file(
-            paper.path,
-            keep_original=options.keep_original,
-            prepared_markdown=prepared.markdown if prepared is not None else None,
+        return (
+            convert_local_file(
+                paper.path,
+                keep_original=options.keep_original,
+                prepared_markdown=prepared.markdown if prepared is not None else None,
+            ),
+            None,
         )
     except KennisError as error:
-        return AddOutcome(
-            identifier=paper.identifier, outcome=Outcome.FAILED, reason=str(error)
+        return (
+            AddOutcome(
+                identifier=paper.identifier, outcome=Outcome.FAILED, reason=str(error)
+            ),
+            None,
         )
+
+
+def _unfetched_reason(fetched: PaperText | None) -> str | None:
+    """What to tell the user about a paper that landed without its text.
+
+    Nothing when the text was never going to be fetched - a DOI-only paper
+    has no arXiv rendering to ask for, and saying so on every such paper is
+    noise rather than news. Something whenever arXiv was asked and declined,
+    because the stub is identical either way and the remedy is not.
+    """
+    if fetched is None or fetched.reason is None:
+        return None
+    return f"added without its text: {fetched.reason}"
 
 
 def _origin_of(identity: _Identity, paper: _Paper) -> str:
@@ -1035,4 +1145,312 @@ def _write_paper(
     )
     if converted.sha256:
         record.checksums[converted.sha256] = document_id
+    return document_id, document.md_path
+
+
+# ---------------------------------------------------------------------------
+# Docs: notes plus site structure
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class _Page:
+    """One page a batch will try to add, before it is fetched."""
+
+    key: str
+    project: str
+    # The page's URL, for a page discovered on a site.
+    url: str | None = None
+    # A local file, for a page that was never on the site at all.
+    path: Path | None = None
+    # HTML the discovery walk already downloaded, so a crawl does not pay for
+    # every page twice.
+    html: str | None = None
+    base_url: str | None = None
+    version: str | None = None
+    crawl: CrawlScope | None = None
+
+    @property
+    def identifier(self) -> str:
+        """What this page is called in the event stream and the report."""
+        return self.url or (str(self.path) if self.path else self.key)
+
+
+def add_docs(
+    collection: Collection,
+    identifiers: Sequence[str],
+    options: AddOptions | None = None,
+    *,
+    events: EventSink | None = None,
+    client: httpx.Client | None = None,
+) -> AddReport:
+    """Add documentation pages to the docs collection.
+
+    Docs is notes plus site-structure processing: the same ingestion, then a
+    project to group by and a page key within it. **A page's identity is that
+    pair**, so its surrogate identifier is derived rather than minted, and
+    adding the same site twice reports every page unchanged instead of
+    writing a second copy of the site.
+
+    An argument is either a documentation site, whose pages are discovered and
+    fetched, or a local file filed into an existing project - source and
+    collection are independent, so a hand-written tutorial belongs in a docs
+    project as readily as a crawled page does.
+
+    `client` is supplied by the caller so a test hands over a transport that
+    never touches the network; left out, one is built and closed here.
+    """
+    options = options or AddOptions()
+    sink: EventSink = events or _DiscardingSink()
+    started_at = time.monotonic()
+
+    record = _Uniqueness.of(collection)
+    _report_problems(record, sink)
+
+    owned = client is None
+    active = client or httpx.Client(
+        headers={"User-Agent": _DOCS_USER_AGENT}, follow_redirects=True
+    )
+    delay = _delay_for(options, _DOCS_DELAY_SECONDS)
+    try:
+        pages, outcomes = _pages_of(identifiers, options, active, delay, sink)
+        for position, page in enumerate(pages):
+            # Pacing belongs here rather than in the crawl alone: the Sphinx
+            # and sitemap paths know every page up front and would otherwise
+            # request all of them back to back, which is the traffic pattern
+            # the delay exists to avoid. A page the crawl already downloaded
+            # costs no request, so it costs no wait either.
+            if position and delay and page.html is None:
+                time.sleep(delay)
+            sink.emit(ItemStarted(operation="add", item=page.identifier))
+            outcome = _add_page(collection, page, record, active)
+            outcomes.append(outcome)
+            sink.emit(
+                ItemFinished(
+                    operation="add",
+                    item=page.identifier,
+                    outcome=outcome.outcome,
+                    reason=outcome.reason,
+                )
+            )
+    finally:
+        if owned:
+            active.close()
+
+    report = AddReport(outcomes=outcomes, elapsed_seconds=time.monotonic() - started_at)
+    sink.emit(
+        OperationFinished(
+            operation="add",
+            elapsed_seconds=report.elapsed_seconds,
+            counts=report.counts,
+        )
+    )
+    return report
+
+
+def _pages_of(
+    identifiers: Sequence[str],
+    options: AddOptions,
+    client: httpx.Client,
+    delay: float,
+    sink: EventSink,
+) -> tuple[list[_Page], list[AddOutcome]]:
+    """Expand each argument into the pages it names.
+
+    A site expands into every page it publishes, which is the same shape as a
+    `.bib` file expanding into entries: one argument becoming many, after
+    input resolution rather than during it, because only docs knows what a
+    documentation site is.
+    """
+    pages: list[_Page] = []
+    outcomes: list[AddOutcome] = []
+
+    for identifier in identifiers:
+        if looks_like_url(identifier):
+            pages.extend(_pages_of_site(identifier, options, client, delay, sink))
+            continue
+
+        path = Path(identifier).expanduser()
+        if not path.is_file():
+            raise InputError(
+                f"'{identifier}' is neither a documentation site nor a file that exists"
+            )
+        if options.project is None:
+            raise InputError(
+                f"'{identifier}' is a local file, so there is no site to take a "
+                "project name from: name one with --project"
+            )
+        pages.append(
+            _Page(
+                key=path.stem,
+                project=validate_project_name(options.project),
+                path=path,
+            )
+        )
+    return pages, outcomes
+
+
+def _pages_of_site(
+    base_url: str,
+    options: AddOptions,
+    client: httpx.Client,
+    delay: float,
+    sink: EventSink,
+) -> list[_Page]:
+    """Every page one documentation site offers."""
+    project = (
+        validate_project_name(options.project)
+        if options.project is not None
+        else project_name_from_url(base_url)
+    )
+    site = DocsSite(
+        project=project,
+        base_url=base_url,
+        exclude=options.exclude,
+        discovery=options.discovery,
+        path_prefix=options.path_prefix,
+    )
+    found = discover_pages(
+        client,
+        site,
+        delay=delay,
+        max_pages=options.max_pages,
+        max_depth=options.max_depth,
+    )
+    # How many pages the site turned out to have, before any is written. The
+    # mode that found them is not said here: it is recorded on every page, so
+    # a re-crawl reads it rather than being told it.
+    sink.emit(Progress(operation="add", completed=0, total=len(found.pages)))
+    crawl = CrawlScope(
+        discovery=found.mode,
+        exclude=list(options.exclude),
+        path_prefix=found.path_prefix,
+    )
+    return [
+        _Page(
+            key=page.key,
+            project=project,
+            url=page.url,
+            html=found.html.get(page.url),
+            base_url=base_url,
+            version=found.version,
+            crawl=crawl,
+        )
+        for page in found.pages
+    ]
+
+
+def _add_page(
+    collection: Collection,
+    page: _Page,
+    record: _Uniqueness,
+    client: httpx.Client,
+) -> AddOutcome:
+    """Fetch, convert and write one page, or say why it was not written."""
+    natural_key = natural_key_for_docs(project=page.project, page=page.key)
+    existing = record.identities.get(natural_key)
+    if existing is not None:
+        return AddOutcome(
+            identifier=page.identifier,
+            outcome=Outcome.UNCHANGED,
+            document_id=existing,
+            reason=f"already held as {page.project}/{page.key}",
+        )
+
+    try:
+        converted = _converted_page(page, client)
+    except KennisError as error:
+        return AddOutcome(
+            identifier=page.identifier, outcome=Outcome.FAILED, reason=str(error)
+        )
+
+    title = converted.suggested_title or page.key
+    document_id, path = _write_page(
+        collection,
+        record,
+        page=page,
+        converted=converted,
+        title=title,
+        natural_key=natural_key,
+    )
+    return AddOutcome(
+        identifier=page.identifier,
+        outcome=Outcome.ADDED,
+        document_id=document_id,
+        title=title,
+        path=path,
+    )
+
+
+def _converted_page(page: _Page, client: httpx.Client) -> Converted:
+    """The markdown for one page, from the site or from a local file."""
+    if page.path is not None:
+        return convert_local_file(page.path)
+    if page.url is None:
+        raise InputError(f"'{page.key}' names neither a file nor a page")
+
+    markdown = (
+        convert_page(page.html, page.url)
+        if page.html is not None
+        else fetch_page(client, page.url)
+    )
+    return Converted(
+        markdown=markdown,
+        via="html",
+        format="html",
+        origin=f"url:{page.url}",
+        sha256=None,
+        suggested_title=title_from_markdown(markdown, page.key),
+    )
+
+
+def _write_page(
+    collection: Collection,
+    record: _Uniqueness,
+    *,
+    page: _Page,
+    converted: Converted,
+    title: str,
+    natural_key: str,
+) -> tuple[str, Path]:
+    """Write one page, keeping `record` current.
+
+    The identifier is derived from the project and the page key rather than
+    minted, so two machines that crawl the same site write byte-identical
+    frontmatter and git has nothing to resolve.
+    """
+    document_id = derive_id(natural_key)
+    record.identifiers.add(document_id)
+    record.identities[natural_key] = document_id
+
+    filename = unique_filename(title_filename(title), record.filenames)
+    record.filenames.add(filename)
+
+    frontmatter = DocsFrontmatter(
+        id=document_id,
+        title=title,
+        owner="user",
+        id_from=natural_key,
+        source=Source(
+            origin=converted.origin,
+            via=converted.via,
+            format=converted.format,
+            sha256=converted.sha256,
+            original=converted.original_name,
+        ),
+        docs=DocsPage(
+            project=page.project,
+            page=page.key,
+            base_url=page.base_url,
+            version=page.version,
+            crawl=page.crawl,
+        ),
+    )
+
+    target_dir = collection.path / page.project
+    document = write_document(
+        target_dir / filename,
+        frontmatter=frontmatter,
+        body=converted.markdown,
+    )
     return document_id, document.md_path

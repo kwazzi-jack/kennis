@@ -40,8 +40,20 @@ EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def arxiv_client(body: str = ATOM) -> httpx.Client:
+    """An arXiv that answers the metadata query and renders no HTML.
+
+    The rendering is a 404 rather than the same body, so this fixture answers
+    only the question it is asked. A stub that replies identically to every
+    request would hand an Atom feed to the HTML converter, which is a
+    different test from the one the caller wrote.
+    """
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=body)
+        if "/html/" in str(request.url):
+            return httpx.Response(404)
+        return httpx.Response(
+            200, text=body, headers={"content-type": "application/atom+xml"}
+        )
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -96,6 +108,15 @@ def a_pdf(path: Path, body: bytes = b"%PDF-1.7\nfake\n") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)
     return path
+
+
+def citekeys_of(papers: Collection) -> set[str]:
+    keys: set[str] = set()
+    for document in papers.contents().documents:
+        frontmatter = document.frontmatter
+        assert isinstance(frontmatter, LiteratureFrontmatter)
+        keys.add(frontmatter.bib.citekey)
+    return keys
 
 
 def only(papers: Collection) -> LiteratureFrontmatter:
@@ -156,7 +177,9 @@ def test_a_filename_containing_an_identifier_is_not_treated_as_one(
     """Answering a mistyped path by silently fetching an unrelated paper of
     that number is the worst failure this path can produce."""
     report = add_literature(
-        papers, [str(tmp_path / "my-paper-2409.19750.md")], arxiv=arxiv_client()
+        papers,
+        [str(tmp_path / "my-paper-2409.19750.md")],
+        arxiv=arxiv_client(),
     )
 
     assert report.outcomes[0].outcome is Outcome.FAILED
@@ -295,13 +318,14 @@ def test_two_papers_that_would_share_a_citekey_are_disambiguated(
         encoding="utf-8",
     )
 
-    add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+    add_literature(
+        papers,
+        [str(bib)],
+        AddOptions(request_delay_seconds=0),
+        arxiv=no_preprint_client(),
+    )
 
-    citekeys = {
-        document.frontmatter.bib.citekey  # type: ignore[union-attr]
-        for document in papers.contents().documents
-    }
-    assert citekeys == {"shared", "shareda"}
+    assert citekeys_of(papers) == {"shared", "shareda"}
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +342,10 @@ def test_a_local_paper_is_identified_from_its_own_first_page(
     converter = FrontPageConverter({"paper.pdf": "arXiv:2409.19750v2 [astro-ph.IM]"})
 
     report = add_literature(
-        papers, [str(path)], converter=converter, arxiv=arxiv_client()
+        papers,
+        [str(path)],
+        converter=converter,
+        arxiv=arxiv_client(),
     )
 
     assert report.outcomes[0].outcome is Outcome.ADDED
@@ -351,7 +378,10 @@ def test_two_candidates_of_one_kind_are_refused_rather_than_guessed_between(
     )
 
     report = add_literature(
-        papers, [str(path)], converter=converter, arxiv=arxiv_client()
+        papers,
+        [str(path)],
+        converter=converter,
+        arxiv=arxiv_client(),
     )
 
     assert report.outcomes[0].outcome is Outcome.FAILED
@@ -392,7 +422,10 @@ def test_a_paper_with_no_establishable_identity_is_refused(
     path = a_pdf(tmp_path / "paper.pdf")
 
     report = add_literature(
-        papers, [str(path)], converter=FrontPageConverter(), arxiv=arxiv_client()
+        papers,
+        [str(path)],
+        converter=FrontPageConverter(),
+        arxiv=arxiv_client(),
     )
 
     assert report.outcomes[0].outcome is Outcome.FAILED
@@ -406,7 +439,10 @@ def test_the_refusal_names_both_ways_forward(papers: Collection, tmp_path: Path)
     path = a_pdf(tmp_path / "paper.pdf")
 
     report = add_literature(
-        papers, [str(path)], converter=FrontPageConverter(), arxiv=arxiv_client()
+        papers,
+        [str(path)],
+        converter=FrontPageConverter(),
+        arxiv=arxiv_client(),
     )
     reason = report.outcomes[0].reason or ""
 
@@ -421,7 +457,11 @@ def test_a_refusal_costs_only_its_own_document(papers: Collection, tmp_path: Pat
     converter = FrontPageConverter({"good.pdf": "arXiv:2409.19750"})
 
     report = add_literature(
-        papers, [str(good), str(nameless)], converter=converter, arxiv=arxiv_client()
+        papers,
+        [str(good), str(nameless)],
+        AddOptions(request_delay_seconds=0),
+        converter=converter,
+        arxiv=arxiv_client(),
     )
 
     outcomes = {outcome.identifier: outcome.outcome for outcome in report.outcomes}
@@ -445,7 +485,12 @@ def test_a_bib_file_expands_into_one_outcome_per_entry(
         encoding="utf-8",
     )
 
-    report = add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+    report = add_literature(
+        papers,
+        [str(bib)],
+        AddOptions(request_delay_seconds=0),
+        arxiv=no_preprint_client(),
+    )
 
     assert len(report.outcomes) == 2
     assert report.counts == {Outcome.ADDED: 2}
@@ -463,3 +508,171 @@ def test_adding_no_papers_is_not_an_error(papers: Collection):
     report = add_literature(papers, [], arxiv=arxiv_client())
 
     assert report.outcomes == []
+
+
+# ---------------------------------------------------------------------------
+# Fetching the paper's text
+# ---------------------------------------------------------------------------
+
+LATEXML = """<html><body><article class="ltx_document">
+<h1>A Paper About Calibration</h1>
+<p>The full text of the paper.</p>
+</article></body></html>
+"""
+
+
+def fetching_client(body: str = ATOM, html: str = LATEXML) -> httpx.Client:
+    """An arXiv that answers both the Atom query and the HTML rendering."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/html/" in str(request.url):
+            return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+        return httpx.Response(
+            200, text=body, headers={"content-type": "application/atom+xml"}
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_paper_named_only_by_an_identifier_gets_its_text(papers: Collection):
+    """What closes the stub: the bibliography alone makes a citekey citeable,
+    but nothing can be searched until there is a body."""
+    add_literature(papers, ["2409.19750"], arxiv=fetching_client())
+
+    document = papers.contents().documents[0]
+    assert "The full text of the paper." in document.body
+    assert "has not been fetched" not in document.body
+
+
+def test_a_paper_arxiv_will_not_render_still_lands_as_a_stub(papers: Collection):
+    """The identifier and the bibliography are the parts that prevent a second
+    copy; refusing the whole add over a missing rendering loses more."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/html/" in str(request.url):
+            return httpx.Response(404)
+        return httpx.Response(200, text=ATOM)
+
+    add_literature(
+        papers,
+        ["2409.19750"],
+        arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    document = papers.contents().documents[0]
+    assert "The text of this paper has not been fetched." in document.body
+
+
+def test_fetching_can_be_turned_off(papers: Collection):
+    add_literature(
+        papers,
+        ["2409.19750"],
+        AddOptions(fetch=False),
+        arxiv=fetching_client(),
+    )
+
+    assert "has not been fetched" in papers.contents().documents[0].body
+
+
+def test_a_paper_with_only_a_doi_is_not_fetched_from_arxiv(papers: Collection):
+    """There is nothing to fetch: a DOI names a publisher's copy, which needs
+    a browser session kennis does not have."""
+    bib = Path(str(papers.root)).parent / "library.bib"
+    bib.parent.mkdir(parents=True, exist_ok=True)
+    bib.write_text(
+        "@article{smith2020,\n title={A Title Here},\n doi={10.1093/mnras/xyz}\n}\n",
+        encoding="utf-8",
+    )
+
+    add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+
+    assert "has not been fetched" in papers.contents().documents[0].body
+
+
+def test_the_papers_of_one_batch_are_spaced(
+    papers: Collection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """arXiv answers a burst with 406, and every call here degrades to None on
+    that, so without spacing a bibliography lands as a pile of stubs and says
+    nothing about why."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+    bib = tmp_path / "library.bib"
+    bib.write_text(
+        "@article{one,\n title={A},\n doi={10.1088/a}\n}\n"
+        "@article{two,\n title={B},\n doi={10.1088/b}\n}\n",
+        encoding="utf-8",
+    )
+
+    add_literature(
+        papers,
+        [str(bib)],
+        AddOptions(request_delay_seconds=2.5),
+        arxiv=no_preprint_client(),
+    )
+
+    assert slept == [2.5]
+
+
+def test_the_interval_between_papers_is_the_users_to_set(
+    papers: Collection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """How patient to be with someone else's server is a judgement kennis
+    should not make on the user's behalf, so the default is a default rather
+    than a constant."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+    bib = tmp_path / "library.bib"
+    bib.write_text(
+        "@article{one,\n title={A},\n doi={10.1088/a}\n}\n"
+        "@article{two,\n title={B},\n doi={10.1088/b}\n}\n",
+        encoding="utf-8",
+    )
+
+    add_literature(
+        papers,
+        [str(bib)],
+        AddOptions(request_delay_seconds=0),
+        arxiv=no_preprint_client(),
+    )
+
+    assert slept == []
+
+
+def test_a_paper_added_without_its_text_says_why(papers: Collection):
+    """A throttled batch and a batch of papers nobody preprinted write the
+    same stubs. The outcome is what tells them apart."""
+
+    def refusing(request: httpx.Request) -> httpx.Response:
+        if "/html/" in str(request.url):
+            return httpx.Response(406)
+        return httpx.Response(
+            200, text=ATOM, headers={"content-type": "application/atom+xml"}
+        )
+
+    report = add_literature(
+        papers,
+        ["2409.19750"],
+        AddOptions(request_delay_seconds=0),
+        arxiv=httpx.Client(transport=httpx.MockTransport(refusing)),
+    )
+
+    outcome = report.outcomes[0]
+    assert outcome.outcome is Outcome.ADDED
+    assert outcome.reason is not None
+    assert "406" in outcome.reason
+
+
+def test_a_paper_with_its_text_reports_no_complaint(papers: Collection):
+    report = add_literature(
+        papers,
+        ["2409.19750"],
+        AddOptions(request_delay_seconds=0),
+        arxiv=fetching_client(),
+    )
+
+    assert report.outcomes[0].reason is None
