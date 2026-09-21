@@ -216,3 +216,16 @@ class EmbeddingUnavailable(KennisError):
 
     default_message = "the embedding backend could not be reached"
     default_resolution = "kennis config get embedding"
+
+
+class SearchUnavailable(KennisError):
+    """The index cannot answer the question as asked.
+
+    Distinct from an absent index, which is `NothingToIndex`: this one is
+    built and readable, and the request does not fit it - a dense query
+    against a lexical-only index, or a document that is not in it. The
+    message names what would work instead.
+    """
+
+    default_message = "this index cannot answer that"
+    default_resolution = "kennis search --help"
