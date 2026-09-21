@@ -65,6 +65,13 @@ class DocumentFacts:
     wrapper_dir: Path | None
     identifier: str | None
     checksum: str | None
+    # The citekey, and every bibliographic identifier the document answers to.
+    # Carried for the same reason as the checksum: a paper reached by two
+    # routes shares no source bytes, so its bibliographic identity is the only
+    # thing that catches the duplicate - and a document kennis cannot validate
+    # must not stop reserving it. Empty for a collection that has no `bib`.
+    citekey: str | None
+    identities: tuple[str, ...]
     # One line saying why the document is not valid, or None when it is.
     problem: str | None
 
@@ -159,10 +166,13 @@ def inspect_document(md_path: Path, *, collection: str) -> DocumentFacts:
             wrapper_dir=wrapper_dir,
             identifier=None,
             checksum=None,
+            citekey=None,
+            identities=(),
             problem=str(error),
         )
 
     source = mapping.get("source")
+    bib = mapping.get("bib")
     problem: str | None = None
     try:
         parse_frontmatter(collection, mapping)
@@ -174,8 +184,23 @@ def inspect_document(md_path: Path, *, collection: str) -> DocumentFacts:
         wrapper_dir=wrapper_dir,
         identifier=_text(mapping.get("id")),
         checksum=_text(source.get("sha256")) if isinstance(source, dict) else None,
+        citekey=_text(bib.get("citekey")) if isinstance(bib, dict) else None,
+        identities=_identities_of(bib),
         problem=problem,
     )
+
+
+def _identities_of(bib: object) -> tuple[str, ...]:
+    """Every bibliographic identifier a document answers to, lower-cased.
+
+    Lower-cased because a DOI is case-insensitive and a bibliography will
+    spell one either way; matching on the exact bytes would let the same paper
+    in twice over a capital letter.
+    """
+    if not isinstance(bib, dict):
+        return ()
+    found = (bib.get(key) for key in ("arxiv_id", "doi", "bibcode"))
+    return tuple(value.lower() for value in found if isinstance(value, str) and value)
 
 
 def _text(value: object) -> str | None:
