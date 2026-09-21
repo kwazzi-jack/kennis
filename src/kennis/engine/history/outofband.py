@@ -33,7 +33,7 @@ from typing import Final, Literal
 
 import yaml
 
-from kennis.engine.corpus.schema import COLLECTION_NAMES, pack_id_of
+from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.repository import Repository
 
@@ -44,7 +44,15 @@ _PLACEHOLDER: Final = ".gitkeep"
 
 @dataclass(frozen=True, slots=True)
 class OutOfBandChange:
-    """One change kennis did not make, and what it did about it."""
+    """One change kennis did not make, and what it did about it.
+
+    **Facts only.** What to *say* about a change belongs to `kennis.render`,
+    which both front ends share. A sentence built here would be the thing a
+    front end reaches for, because it would be the easiest thing to reach
+    for, and then the command line could not put the path in its own theme
+    role, wrap it for a narrow terminal, or collapse three restorations into
+    one line - it would hold three finished sentences rather than nine facts.
+    """
 
     path: str
     kind: ChangeKind
@@ -52,8 +60,6 @@ class OutOfBandChange:
     # a document whose YAML will not parse. Unknown rather than assumed.
     owner: str | None
     document_id: str | None
-    message: str
-    resolution: str
     restored: bool = False
 
 
@@ -97,52 +103,17 @@ def _change_for(
     repository: Repository, head: str | None, status: str, path: str
 ) -> OutOfBandChange:
     if status == "A":
-        return OutOfBandChange(
-            path=path,
-            kind="created",
-            owner=None,
-            document_id=None,
-            message=(
-                f"'{path}' is in the corpus but is not a document: it has no "
-                "frontmatter kennis wrote, so nothing indexes or serves it"
-            ),
-            resolution=f"kennis corpus add '{path}'",
-        )
-
+        return OutOfBandChange(path=path, kind="created", owner=None, document_id=None)
     if status == "D":
+        # The file is gone, so the last commit is the only place its
+        # frontmatter still exists - and the rules key on `owner`.
         owner, identifier = _identity_in_history(repository, head, path)
         return OutOfBandChange(
-            path=path,
-            kind="deleted",
-            owner=owner,
-            document_id=identifier,
-            message=f"'{path}' was deleted outside kennis and has been restored",
-            resolution="kennis corpus remove",
+            path=path, kind="deleted", owner=owner, document_id=identifier
         )
-
     owner, identifier = _identity_on_disk(repository, path)
-    if owner is not None and pack_id_of(owner) is not None:
-        return OutOfBandChange(
-            path=path,
-            kind="edited",
-            owner=owner,
-            document_id=identifier,
-            message=(
-                f"'{path}' is owned by {owner} and was edited outside kennis; "
-                "the edit has been left alone"
-            ),
-            resolution=(
-                f"kennis corpus restore {identifier or path} to discard the edit, "
-                f"or kennis corpus claim {identifier or path} to keep it"
-            ),
-        )
     return OutOfBandChange(
-        path=path,
-        kind="edited",
-        owner=owner,
-        document_id=identifier,
-        message=(f"'{path}' was edited outside kennis, so the index is behind it"),
-        resolution="kennis index",
+        path=path, kind="edited", owner=owner, document_id=identifier
     )
 
 

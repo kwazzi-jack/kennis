@@ -10,14 +10,8 @@ from __future__ import annotations
 import pytest
 from rich.style import Style
 
-from kennis.cli.theme import (
-    ANSI_COLOURS,
-    ROLES,
-    SENTENCE_ROLES,
-    Role,
-    rich_style_name,
-    rich_theme,
-)
+from kennis.cli.theme import rich_style_name, rich_theme
+from kennis.render.theme import ANSI_COLOURS, ROLES, SENTENCE_ROLES, Role
 
 
 def test_the_eight_standard_colours_are_the_palette():

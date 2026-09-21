@@ -27,6 +27,21 @@ ENGINE_ROOT = SOURCE_ROOT / "kennis" / "engine"
 FORBIDDEN_BY_THE_ENGINE = (
     "kennis.cli",
     "kennis.mcp",
+    "kennis.render",
+    "click",
+    "rich",
+    "rich_click",
+    "prompt_toolkit",
+)
+
+# The renderer turns engine values into words. It may read the engine, and it
+# must not reach for an interface library: the MCP server needs the same
+# wording as the command line, and would otherwise have to import a
+# command-line package to get it - which would make the second front end
+# downstream of the first, the failure this separation exists to prevent.
+FORBIDDEN_BY_THE_RENDERER = (
+    "kennis.cli",
+    "kennis.mcp",
     "click",
     "rich",
     "rich_click",
@@ -47,6 +62,10 @@ ASCII_SUFFIXES = frozenset({".py", ".toml", ".md", ".yaml", ".yml", ".cfg"})
 
 def engine_modules() -> list[Path]:
     return sorted(ENGINE_ROOT.rglob("*.py"))
+
+
+def render_modules() -> list[Path]:
+    return sorted((SOURCE_ROOT / "kennis" / "render").rglob("*.py"))
 
 
 def module_name_of(path: Path) -> str:
@@ -108,6 +127,29 @@ def test_engine_module_imports_no_interface(path: Path):
         name
         for name in imported
         for forbidden in FORBIDDEN_BY_THE_ENGINE
+        if offends(name, forbidden)
+    )
+    assert not violations, f"{module_name_of(path)} imports {violations}"
+
+
+def test_the_renderer_has_modules_to_check():
+    """A walk over an empty tree passes for the wrong reason."""
+    assert render_modules()
+
+
+@pytest.mark.parametrize("path", render_modules(), ids=module_name_of)
+def test_render_module_imports_no_interface(path: Path):
+    """The words belong to no front end.
+
+    `render/` may import the engine - it renders engine values, so it must
+    know their types - but never a front end or an interface library. The
+    dependency runs cli -> render -> engine and never back.
+    """
+    imported = imported_modules(path)
+    violations = sorted(
+        name
+        for name in imported
+        for forbidden in FORBIDDEN_BY_THE_RENDERER
         if offends(name, forbidden)
     )
     assert not violations, f"{module_name_of(path)} imports {violations}"

@@ -25,6 +25,9 @@ from kennis.engine.history.repository import Repository
 
 type IndexState = Literal["in step", "stale", "unverifiable"]
 
+# Why a freshness question could not be answered.
+type Unverifiable = Literal["no commit recorded", "commit not in this corpus"]
+
 # Git keeps no empty directories, so each collection holds one of these to
 # survive a commit. It is not a document and must not be counted as one.
 _PLACEHOLDER: Final = ".gitkeep"
@@ -53,8 +56,10 @@ class Freshness:
     added: int = 0
     changed: int = 0
     gone: int = 0
-    # Why the question could not be answered, for `unverifiable` only.
-    reason: str | None = None
+    # Which reason applies, for `unverifiable` only. A value rather than a
+    # sentence, so the two cases can be worded differently by a front end
+    # without the engine knowing how they differ.
+    unverifiable: Unverifiable | None = None
 
 
 def index_freshness(
@@ -62,18 +67,9 @@ def index_freshness(
 ) -> Freshness:
     """Compare a collection against the commit its index was built from."""
     if built_from is None:
-        return Freshness(
-            state="unverifiable",
-            reason="this index does not record the commit it was built from",
-        )
+        return Freshness(state="unverifiable", unverifiable="no commit recorded")
     if not repository.has_commit(built_from):
-        return Freshness(
-            state="unverifiable",
-            reason=(
-                f"commit {built_from[:12]} is not in this corpus, so this index "
-                "was built somewhere else"
-            ),
-        )
+        return Freshness(state="unverifiable", unverifiable="commit not in this corpus")
 
     scope = f"{collection}/"
     added: set[str] = set()
