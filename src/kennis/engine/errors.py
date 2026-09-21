@@ -202,3 +202,17 @@ class NothingToIndex(KennisError):
 
     default_message = "there is nothing to index"
     default_resolution = "kennis corpus add"
+
+
+class EmbeddingUnavailable(KennisError):
+    """An embedding backend could not produce vectors.
+
+    Named separately from `SettingsError` because the configuration may be
+    perfectly correct and the daemon simply not running. The message carries
+    the backend and the model, since a failure from inside an HTTP client
+    says nothing about which of three configured backends was being asked,
+    or for what.
+    """
+
+    default_message = "the embedding backend could not be reached"
+    default_resolution = "kennis config get embedding"

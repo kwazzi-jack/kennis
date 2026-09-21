@@ -286,3 +286,45 @@ def test_a_smaller_chunk_size_produces_more_chunks():
     assert len(chunks_of(text, size=200, overlap=20)) > len(
         chunks_of(text, size=1500, overlap=200)
     )
+
+
+# ---------------------------------------------------------------------------
+# Determinism
+# ---------------------------------------------------------------------------
+
+
+def test_the_same_text_and_parameters_produce_the_same_chunks():
+    """The vector cache rests on this. Design section 15 makes it a
+    requirement with a test rather than an assumption about existing code:
+    if chunking is not deterministic, a cache hit serves vectors for spans
+    that no longer exist and nothing errors."""
+    text = (
+        "# Overview\n\nSome prose.\n\n"
+        "| a | b |\n| --- | --- |\n| 1 | 2 |\n\n"
+        "```python\n# a comment\ncall()\n```\n\n"
+        "## Details\n\n" + ("word " * 400)
+    )
+    document = a_document(text)
+
+    first = chunk_document(document, collection="notes", parameters=ChunkParameters())
+    second = chunk_document(document, collection="notes", parameters=ChunkParameters())
+
+    assert [(chunk.char_start, chunk.char_end, chunk.text) for chunk in first] == [
+        (chunk.char_start, chunk.char_end, chunk.text) for chunk in second
+    ]
+
+
+def test_determinism_does_not_depend_on_one_document_object():
+    """Two documents built separately from the same text must chunk alike,
+    or the cache key - which is a digest of the text - would be wrong."""
+    text = "# A\n\n" + ("word " * 300) + "\n\n## B\n\nMore.\n"
+
+    first = chunk_document(
+        a_document(text), collection="notes", parameters=ChunkParameters()
+    )
+    second = chunk_document(
+        a_document(text), collection="notes", parameters=ChunkParameters()
+    )
+
+    assert [chunk.text for chunk in first] == [chunk.text for chunk in second]
+    assert [chunk.section for chunk in first] == [chunk.section for chunk in second]
