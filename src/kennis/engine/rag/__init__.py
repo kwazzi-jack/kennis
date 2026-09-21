@@ -38,6 +38,7 @@ from kennis.engine.rag.models import (
     SearchResult,
     combine_filters,
 )
+from kennis.engine.rag.search import DocumentSpan, Mode, read_span, search
 
 __all__ = [
     "Binding",
@@ -48,12 +49,14 @@ __all__ = [
     "ChunkPredicate",
     "CollectionLoader",
     "Document",
+    "DocumentSpan",
     "Embedder",
     "Filter",
     "FilterOp",
     "LoadedIndex",
     "Loader",
     "Metadata",
+    "Mode",
     "ModelBinding",
     "SearchResult",
     "VectorCache",
@@ -65,6 +68,8 @@ __all__ = [
     "embedder_for",
     "index_id_for",
     "load_index",
+    "read_span",
     "resolve_host",
+    "search",
     "validate_binding",
 ]
