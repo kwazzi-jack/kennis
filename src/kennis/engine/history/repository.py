@@ -181,6 +181,27 @@ class Repository:
                 changes.append(("M", path))
         return changes
 
+    def show(self, commit: str, path: str) -> str | None:
+        """The contents of `path` as of `commit`, or None if it was not there.
+
+        The only way to read a document that has been deleted: the file is
+        gone from the working tree, and knowing what was lost is the whole
+        point of noticing.
+        """
+        self._require_repository()
+        result = git(["show", f"{commit}:{path}"], cwd=self.root)
+        return result.stdout if result.ok else None
+
+    def restore(self, path: str, *, commit: str = "HEAD") -> bool:
+        """Put `path` back as it was at `commit`.
+
+        **Per path, never a whole-tree reset.** A reset would also discard
+        edits elsewhere in the working tree, and an edit is something kennis
+        must never discard on its own initiative.
+        """
+        self._require_repository()
+        return git(["checkout", commit, "--", path], cwd=self.root).ok
+
     def _require_repository(self) -> None:
         if not (self.root / ".git").is_dir():
             raise CorpusNotFound(
