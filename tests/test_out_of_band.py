@@ -97,30 +97,35 @@ def test_an_edit_is_never_overwritten(corpus: Path):
 
 def test_an_edit_to_the_users_own_document_is_only_noted(corpus: Path):
     """Nothing to resolve - it is theirs. The only consequence is that the
-    index is now behind."""
+    index is now behind.
+
+    Asserted as facts. What is *said* about them is `kennis.render`'s, and
+    is tested there.
+    """
     note = a_document(corpus, "one.md", owner="user")
     recorded(corpus)
     note.write_text(note.read_text(encoding="utf-8") + "\nMine.\n", encoding="utf-8")
 
     change = changes(corpus)[0]
 
+    assert change.kind == "edited"
     assert change.owner == "user"
     assert change.restored is False
-    assert "index" in change.message.lower()
 
 
-def test_an_edit_to_a_pack_owned_document_names_both_ways_forward(corpus: Path):
+def test_an_edit_to_a_pack_owned_document_is_reported_with_its_owner(corpus: Path):
     """Reverting is the resolution the user may choose, not the action kennis
-    takes on noticing."""
+    takes on noticing - so what the engine records is who owns it, and the
+    ways forward are composed from that where the words live."""
     note = a_document(corpus, "one.md", owner="pack:boepie")
     recorded(corpus)
     note.write_text(note.read_text(encoding="utf-8") + "\nEdited.\n", encoding="utf-8")
 
     change = changes(corpus)[0]
 
+    assert change.kind == "edited"
     assert change.owner == "pack:boepie"
-    assert "restore" in change.resolution
-    assert "claim" in change.resolution
+    assert change.document_id == "aaaaaaaaaa"
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +178,7 @@ def test_restoring_reports_what_it_put_back(corpus: Path):
 
     assert [change.kind for change in restored] == ["deleted"]
     assert restored[0].restored is True
-    assert "corpus remove" in restored[0].resolution
+    assert restored[0].path == "notes/one.md"
 
 
 def test_a_deletion_is_restored_whoever_owned_it(corpus: Path):
@@ -249,9 +254,9 @@ def test_a_hand_created_file_is_not_adopted(corpus: Path):
 
     change = changes(corpus)[0]
 
+    assert change.kind == "created"
     assert change.document_id is None
     assert change.owner is None
-    assert "corpus add" in change.resolution
 
 
 def test_a_created_file_is_left_on_disk(corpus: Path):

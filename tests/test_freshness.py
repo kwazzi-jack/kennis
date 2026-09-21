@@ -228,7 +228,9 @@ def test_a_commit_this_repository_has_never_seen_is_unverifiable(corpus: Path):
     report = freshness(corpus, "0" * 40)
 
     assert report.state == "unverifiable"
-    assert report.reason is not None
+    # A value, not a sentence: the two unverifiable cases are worded
+    # differently by `kennis.render`, and the engine does not know how.
+    assert report.unverifiable == "commit not in this corpus"
 
 
 def test_unverifiable_is_never_read_as_in_step(corpus: Path):

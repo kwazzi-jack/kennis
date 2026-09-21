@@ -72,7 +72,8 @@ from rich.progress import (
 )
 from rich.text import Text
 
-from kennis.cli.theme import STYLE_PREFIX, rich_style_name, rich_theme
+from kennis.cli.theme import rich_style_name, rich_theme
+from kennis.render.theme import STYLE_PREFIX
 
 _THEME = rich_theme()
 
