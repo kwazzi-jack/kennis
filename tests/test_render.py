@@ -8,6 +8,11 @@ without having to parse English out of its own engine.
 
 from __future__ import annotations
 
+import shlex
+
+import click
+
+from kennis.cli.__main__ import main
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import ChangeKind, OutOfBandChange
 from kennis.engine.rag.models import Chunk, SearchResult
@@ -86,22 +91,75 @@ def test_a_created_file_is_described_as_not_a_document():
 
 
 def test_a_deletion_names_the_command_that_removes_properly():
-    assert remedies_for(a_change(kind="deleted")) == ("kennis corpus remove",)
-
-
-def test_a_pack_owned_edit_offers_both_ways_forward_as_commands():
-    """Two commands rather than one sentence containing two commands, so a
-    front end can list them, number them, or offer them as choices."""
-    remedies = remedies_for(a_change(kind="edited", owner="pack:boepie"))
-
-    assert remedies == (
-        "kennis corpus restore aaaaaaaaaa",
-        "kennis corpus claim aaaaaaaaaa",
+    """With the handle. `remove` takes one, so the bare command is an
+    instruction that fails (concern #124)."""
+    assert remedies_for(a_change(kind="deleted")) == (
+        "kennis corpus remove aaaaaaaaaa",
     )
 
 
+def test_a_pack_owned_edit_names_the_command_that_undoes_it():
+    """Commands rather than one sentence containing them, so a front end can
+    list them, number them, or offer them as choices.
+
+    Only `restore` for now: `kennis corpus claim` is designed and not built,
+    and rules.md 4.4 forbids printing an instruction that fails.
+    """
+    remedies = remedies_for(a_change(kind="edited", owner="pack:boepie"))
+
+    assert remedies == ("kennis corpus restore aaaaaaaaaa",)
+
+
+def command_accepts(invocation: str) -> str:
+    """Empty if the command line would accept `invocation`, else why not.
+
+    The command is *parsed*, not run: `make_context` resolves the arguments
+    and options against the command's parameters and raises if they do not
+    fit, without reaching the body that would touch a corpus.
+
+    Checking the name alone is not enough. `kennis corpus index notes` names
+    a real command and still fails, because `index` takes `--collection` and
+    no positional argument - which is how it was printed for half a day.
+    """
+    words = shlex.split(invocation)
+    if words[0] != "kennis":
+        return f"does not start with kennis: {invocation}"
+
+    node: click.Command = main
+    rest = words[1:]
+    while rest and isinstance(node, click.Group):
+        found = node.commands.get(rest[0])
+        if found is None:
+            return f"no command '{rest[0]}' in '{node.name}'"
+        node, rest = found, rest[1:]
+
+    try:
+        with node.make_context(node.name, list(rest), resilient_parsing=False):
+            return ""
+    except click.ClickException as refused:
+        return refused.format_message()
+
+
+def test_every_remedy_names_a_command_that_exists():
+    """rules.md 4.4. This is the check that was missing while `kennis index`
+    was printed by three call sites, none of which had a command by that
+    name to print."""
+    changes = [
+        a_change(kind="created", owner=None, document_id=None),
+        a_change(kind="deleted"),
+        a_change(kind="edited", owner="pack:boepie"),
+        a_change(kind="edited", owner="user"),
+    ]
+
+    for change in changes:
+        for remedy in remedies_for(change):
+            assert command_accepts(remedy) == "", remedy
+
+
 def test_a_users_own_edit_offers_reindexing():
-    assert remedies_for(a_change(kind="edited", owner="user")) == ("kennis index",)
+    assert remedies_for(a_change(kind="edited", owner="user")) == (
+        "kennis corpus index",
+    )
 
 
 def test_a_created_file_offers_adding_it():

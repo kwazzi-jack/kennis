@@ -142,7 +142,7 @@ def read_span(
     if not chunks:
         raise SearchUnavailable(
             f"'{document_id}' is not in the '{index.collection}' index",
-            resolution=f"kennis index {index.collection}",
+            resolution=f"kennis corpus index --collection {index.collection}",
         )
 
     positions = {chunk.chunk_index: position for position, chunk in enumerate(chunks)}

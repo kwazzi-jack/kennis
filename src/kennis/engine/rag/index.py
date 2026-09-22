@@ -286,7 +286,7 @@ def load_index(index_root: Path, collection: str) -> LoadedIndex:
     if not pointer_path.is_file():
         raise NothingToIndex(
             f"the '{collection}' collection has no index yet",
-            resolution=f"kennis index {collection}",
+            resolution=f"kennis corpus index --collection {collection}",
         )
     index_id = str(json.loads(pointer_path.read_text(encoding="utf-8"))["index_id"])
     index_dir = collection_root / index_id

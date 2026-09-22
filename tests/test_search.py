@@ -343,7 +343,15 @@ def test_searching_a_collection_with_no_index_says_how_to_build_one(
     with pytest.raises(NothingToIndex) as raised:
         load_index(index_root, "notes")
 
-    assert any("kennis index" in note for note in raised.value.__notes__)
+    # The whole command, not a prefix of it: `kennis index` is what this
+    # asserted while that was not a command at all (concern #124).
+    # The whole invocation, not a prefix: this asserted `kennis index`, which
+    # was never a command, and then `kennis corpus index notes`, which is one
+    # that refuses a positional argument (concern #124).
+    assert any(
+        "kennis corpus index --collection notes" in note
+        for note in raised.value.__notes__
+    )
 
 
 # ---------------------------------------------------------------------------
