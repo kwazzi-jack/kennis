@@ -14,6 +14,7 @@ probe: a test that silently skips reports nothing.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -211,3 +212,69 @@ def test_the_default_backend_really_embeds(tmp_path: Path):
 
     assert restored is not None
     assert np.array_equal(restored, matrix)
+
+
+@pytest.mark.network
+def test_the_whole_dense_path_runs_end_to_end(tmp_path: Path):
+    """`corpus index` then `search`, with a real model and no stub anywhere.
+
+    The one thing `test_the_default_backend_really_embeds` does not settle.
+    That test calls `embed_texts` directly, so the parts it leaves untouched
+    are the parts that only appear in a whole run: the binding built from
+    settings, the per-document cache write, the matrix reaching the index in
+    chunk order, and a query embedded with the index's own binding read back
+    from disk rather than with the caller's configuration.
+
+    A dense search that returned confident nonsense would pass every offline
+    test in the suite, because a stub embedder agrees with itself.
+    """
+    from click.testing import CliRunner
+
+    from kennis.cli.__main__ import main
+
+    corpus = tmp_path / "corpus"
+    runner = CliRunner()
+    environment = {
+        "KENNIS_CORPUS_ROOT": str(corpus),
+        "KENNIS_CONFIG_DIR": str(tmp_path / "config"),
+        "KENNIS_LOG_DIR": str(tmp_path / "state"),
+        "KENNIS_EMBEDDING_BACKEND": "fastembed",
+        "KENNIS_EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
+        "KENNIS_EMBEDDING_DIMENSIONS": "384",
+    }
+
+    def invoke(*arguments: str) -> object:
+        result = runner.invoke(main, list(arguments), env=environment)
+        assert result.exit_code == 0, result.output
+        return result
+
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    for name, body in {
+        "gains": "Calibration solves for antenna gains against a sky model.",
+        "bread": "A recipe for baking sourdough bread slowly at home.",
+    }.items():
+        (sources / f"{name}.md").write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
+
+    invoke("corpus", "init")
+    invoke("corpus", "add", "-n", *[str(path) for path in sorted(sources.iterdir())])
+    built = invoke("corpus", "index")
+    assert "fastembed" in getattr(built, "output", "")
+
+    # The vectors must have reached the index, not only the cache.
+    pointer = json.loads(
+        (corpus / "index" / "notes" / "latest.json").read_text(encoding="utf-8")
+    )
+    index_dir = corpus / "index" / "notes" / str(pointer["index_id"])
+    assert (index_dir / "embeddings.npy").is_file()
+
+    # A query sharing no words with the document it should find. BM25 cannot
+    # answer this at all, so the *ordering* here is the dense leg doing its
+    # job. Ordering and not exclusion: a dense search ranks every chunk it is
+    # given and returns the best `top_k`, so with two documents in the corpus
+    # both come back whatever the query, and asserting that one is absent
+    # would be asserting something retrieval never promised.
+    found = invoke("search", "antenna phase solutions", "--mode", "dense")
+    output = getattr(found, "output", "").lower()
+    assert "gains" in output and "bread" in output
+    assert output.index("gains") < output.index("bread")

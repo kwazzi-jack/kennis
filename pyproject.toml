@@ -154,9 +154,13 @@ testpaths = ["tests"]
 # opt-in live tests are run with `uv run pytest -m network`, and exist to
 # settle what a fixture cannot: a fixture agrees with its parser by
 # construction, a real host does not.
-addopts = "-ra --strict-markers --strict-config -m 'not network'"
+addopts = "-ra --strict-markers --strict-config -m 'not network and not slow'"
 markers = [
     "network: touches the real network; deselected unless asked for by name",
+    # Separate from `network` because the two ask different questions and
+    # cost differently: a live test needs a host to be up, a slow one needs
+    # only patience. Run with `uv run pytest -m slow`.
+    "slow: builds a corpus large enough to measure; deselected by default",
 ]
 xfail_strict = true
 # An upstream deprecation becomes a failing test at the moment it appears,
