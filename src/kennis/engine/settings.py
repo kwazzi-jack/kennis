@@ -147,8 +147,13 @@ class CorpusSettings(BaseModel):
 class ConversionSettings(BaseModel):
     """How binary documents become markdown."""
 
-    backend: Literal["mineru"] = Field(
-        default="mineru", description="Converter for PDF, DOCX, PPTX and XLSX."
+    backend: Literal["mineru", "datalab"] = Field(
+        default="mineru",
+        description=(
+            "Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and "
+            "needs `uv sync --extra mineru`; datalab is hosted, needs an API "
+            "key, and sends the document to a third party."
+        ),
     )
     batch_size: int = Field(
         default=8,
@@ -298,6 +303,36 @@ def config_path() -> Path:
 def credentials_path() -> Path:
     """Where API keys live. Nothing in this module reads it."""
     return config_dir() / _CREDENTIALS_FILE
+
+
+def credential(variable: str) -> str:
+    """One API key, from the environment or from `credentials.toml`.
+
+    **The environment wins.** A shell export, a CI secret and a one-off
+    override all arrive that way, and none of them should be shadowed by a
+    file written months earlier.
+
+    The variable name is the identity; the section it sits under in the file
+    is an implementation detail of whatever wrote it, so every section is
+    searched. A file that does not parse yields nothing rather than raising:
+    only the command that needs a key should fail for the want of one, not
+    every command that happens to load settings.
+    """
+    from_environment = os.environ.get(variable)
+    if from_environment:
+        return from_environment
+
+    path = credentials_path()
+    if not path.is_file():
+        return ""
+    try:
+        stored = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return ""
+    for values in stored.values():
+        if isinstance(values, dict) and isinstance(values.get(variable), str):
+            return str(values[variable])
+    return ""
 
 
 def load_settings() -> Settings:

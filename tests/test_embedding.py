@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -18,6 +19,7 @@ from kennis.engine.errors import EmbeddingUnavailable, SettingsError
 from kennis.engine.rag.embedding import (
     ModelBinding,
     embed_texts,
+    embedder_for,
     resolve_host,
     validate_binding,
 )
@@ -261,3 +263,37 @@ def test_only_the_daemon_backend_gets_a_default_host():
 
 def test_an_explicit_host_always_wins():
     assert resolve_host("ollama", "http://elsewhere:1234") == "http://elsewhere:1234"
+
+
+def test_the_openai_backend_uses_a_key_from_the_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`config init` writes the key to credentials.toml and told the user so.
+    Nothing read that file, so the key had no effect and the embedder failed
+    for the want of a credential the user had already given. Concern #131.
+    """
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / "credentials.toml").write_text(
+        '[embedding]\nOPENAI_API_KEY = "sk-stored"\n', encoding="utf-8"
+    )
+
+    seen: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **arguments: object) -> None:
+            seen.update(arguments)
+            self.embeddings = self
+
+        def create(self, **_: object) -> object:
+            raise AssertionError("not reached")
+
+    import openai
+
+    monkeypatch.setattr(openai, "OpenAI", FakeClient)
+
+    binding = ModelBinding(kind="openai", model="text-embedding-3-small", dim=1536)
+    with pytest.raises(AssertionError):
+        embedder_for(binding).embed(["a"])
+
+    assert seen["api_key"] == "sk-stored"
