@@ -1,16 +1,24 @@
 """Turning a binary document into markdown, behind one interface.
 
-v0.1 has exactly one implementation, MinerU. Hosted conversion is a second
-behind the same interface, added when credentials exist, and the interface is
-declared now so that the add path is written against the shape rather than
-against MinerU.
+Two implementations: MinerU locally, Datalab hosted. The hosted one is never
+a default, because choosing it sends the document to a third party - see
+`rules.md` 4.5.
 
 **A converter takes a batch, not a document.** That is the design rather than
-a convenience: MinerU spends around twenty seconds loading its model stack
-before it converts anything, so a process per document pays that toll every
-time - measured on a 19-page paper, 41 seconds for one document alone against
-88 for four in one call. Hosted conversion will want batching for a different
-reason, one request beating several.
+a convenience: MinerU loads its model stack before it converts anything, and
+a process per document pays that toll every time. Measured on a 19-page
+paper, warm cache, pipeline backend on a GPU (concern #137):
+
+    1 page  13.3s      5 pages  23.3s      19 pages  33.9s
+
+So about 13s buys a loaded model stack and nothing else, then roughly 1.1s
+per page - one page costs 40% of what nineteen cost. The same paper on the
+CPU takes 307.5s, which is 9.1x, so the device dominates everything else
+here.
+
+Datalab wants batching for no reason at all: there is no batch endpoint, so
+a batch is one request per document. `ConversionBatch` fits either way,
+because it reports per document rather than per run.
 
 **A batch reports per document.** A converter converts what it can and records
 the rest, so a path missing from `markdown` is that document's failure alone
@@ -116,13 +124,20 @@ _ENVIRONMENT_VARIABLES: Final[dict[str, str]] = {
 }
 
 # How long a run gets before kennis cancels it. Two terms, because the cost
-# has two: the model stack loads once per run (~20s measured, far worse on a
-# cold cache that has to download it), then each document is converted (~16s
-# for a full pass, ~1.2s for a two-page survey). Both measured on boepie's
-# hardware and multiplied generously - the point is to catch a converter that
-# has stopped making progress, not to police a slow machine. Without a
-# timeout, one wedged conversion hangs the whole command with no output and
-# nothing to interrupt but Ctrl-C.
+# has two: the model stack loads once per run, then each document is
+# converted. Without a timeout, one wedged conversion hangs the whole command
+# with no output and nothing to interrupt but Ctrl-C.
+#
+# The point is to catch a converter that has stopped making progress, not to
+# police a slow machine - and the margin here is much thinner than it looks,
+# because the device changes the second term by an order of magnitude. A
+# 19-page paper takes 34s on a GPU and 311s on a CPU (#137), so the
+# per-document term is **below** one real measurement rather than a generous
+# multiple of it. What saves a CPU-only machine today is the startup grace,
+# which a single document also gets: 900 + 300 is 1200s against that 311s.
+# A batch of long papers on a CPU is where this would first be too tight.
+# Raising the per-document term is open (#138) rather than done, because it
+# is a behaviour change and the measurements are one paper old.
 _STARTUP_GRACE_SECONDS: Final = 900
 _SECONDS_PER_DOCUMENT: Final = 300
 
