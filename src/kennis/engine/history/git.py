@@ -67,6 +67,17 @@ class GitResult:
         """
         return [line for line in self.stdout.splitlines() if line]
 
+    def records(self) -> list[str]:
+        """Standard output as NUL-separated records, without the empty tail.
+
+        What `-z` produces. Git quotes a path containing a non-ASCII byte, a
+        quote, a backslash or a newline - `"notes/M\303\274ller.md"` - and
+        under `-z` it does not, because NUL is the one byte a path cannot
+        contain. Every porcelain command whose output includes a path is read
+        this way rather than by line.
+        """
+        return [record for record in self.stdout.split("\0") if record]
+
 
 def git_binary() -> str:
     """The path to the git binary, or a refusal naming how to install it."""

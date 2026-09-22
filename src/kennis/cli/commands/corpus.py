@@ -43,13 +43,18 @@ from kennis.engine.history.history import (
     read_history,
     restore_document,
 )
-from kennis.engine.history.outofband import detect_changes
+from kennis.engine.history.outofband import detect_changes, restore_deletions
 from kennis.engine.history.repository import Repository, initialise_corpus
 from kennis.engine.locking import corpus_lock
 from kennis.engine.rag.binding import binding_from
 from kennis.engine.rag.index import build_index, read_manifest
 from kennis.engine.rag.loaders import CollectionLoader
-from kennis.render.words import count_of, describe_change, describe_freshness
+from kennis.render.words import (
+    count_of,
+    describe_change,
+    describe_freshness,
+    remedies_for,
+)
 
 # Each collection's shorthand flag, for naming it back in an error. The
 # options themselves are declared literally on the command.
@@ -131,6 +136,43 @@ def status_command() -> None:
 
     for change in detect_changes(repository):
         display.detail("~", describe_change(change))
+        # design.md: every out-of-band change is reported *alongside the
+        # command that would have done it properly*. The sentence without the
+        # command leaves a reader knowing something is wrong and not what to
+        # type. `remedies_for` produced them and nothing printed them (#128).
+        for remedy in remedies_for(change):
+            display.next_step(remedy)
+
+
+def _undo_hand_deletions(context: Context) -> None:
+    """Put back anything deleted outside kennis, before this command writes.
+
+    design.md, "Changes made outside kennis": **a deletion is restored rather
+    than honoured**. An out-of-band delete carries no record of intent, and
+    treating an accident as an instruction is the more expensive mistake -
+    restoring costs an annoying extra command, honouring costs a document.
+    `corpus remove` exists and says what it means.
+
+    Here rather than in `status`, which reports and never writes. So the
+    restore happens at the start of every command that already holds the lock
+    and is about to commit. Without it the deletion is not merely unnoticed:
+    the next `_commit` stages it, and the accident becomes history. Concern
+    #128.
+
+    Must be called **inside** the lock and **before** the operation, so that
+    the command's own commit carries a tree the deletion never touched.
+    """
+    repository = Repository(context.corpus_root)
+    restored = [
+        change
+        for change in restore_deletions(repository, detect_changes(repository))
+        if change.restored
+    ]
+    if not restored:
+        return
+    display.operation("Restored", count_of(len(restored), "document"))
+    for change in restored:
+        display.detail("+", describe_change(change))
 
 
 def _report_freshness(context: Context, repository: Repository, name: str) -> bool:
@@ -272,6 +314,7 @@ def add_command(
 
     target = Collection(root=context.corpus_root, name=destination)
     with corpus_lock(context.corpus_root), reporting() as events:
+        _undo_hand_deletions(context)
         report = _ADDERS[destination](target, identifiers, options, events=events)
         _commit(
             context, "add", scope=destination, summary=outcome_summary(report.counts)
@@ -396,6 +439,7 @@ def remove_command(handle: str, collection: str | None, yes: bool) -> None:
         )
 
     with corpus_lock(context.corpus_root):
+        _undo_hand_deletions(context)
         found.remove(document)
         _commit(
             context,
@@ -443,6 +487,7 @@ def move_command(
     target = _target_path(found, document, group=group, title=title)
 
     with corpus_lock(context.corpus_root):
+        _undo_hand_deletions(context)
         moved = move_document(
             document,
             target_md_path=target,
@@ -596,6 +641,7 @@ def index_command(collection: str | None) -> None:
     documents = 0
     chunks = 0
     with corpus_lock(context.corpus_root), reporting() as events:
+        _undo_hand_deletions(context)
         for name in [collection] if collection else list(COLLECTION_NAMES):
             target = Collection(root=context.corpus_root, name=name)
             # Skipped rather than attempted: `build_index` refuses an empty

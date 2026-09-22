@@ -137,26 +137,40 @@ class Repository:
         repository and is rewritten wholesale by every build - an unscoped
         query would call every index stale the moment it was written.
 
-        A rename arrives as `R100 old new` and is read in the safe direction:
-        the old path is gone and the new one is added. Whether git detects a
-        rename at all depends on a similarity heuristic, and a document that
-        moved is one the index no longer points at correctly either way.
+        A rename arrives as `R100`, then the old path, then the new one, and
+        is read in the safe direction: the old path is gone and the new one is
+        added. Whether git detects a rename at all depends on a similarity
+        heuristic, and a document that moved is one the index no longer points
+        at correctly either way.
+
+        `-z` because git quotes any path it considers unusual, which includes
+        every non-ASCII one, and a quoted path names no file. Under `-z` the
+        status and the path are separate records rather than tab-separated
+        fields, so this walks records rather than splitting lines.
         """
         self._require_repository()
         result = git(
-            ["diff", "--name-status", commit, "HEAD", "--", scope], cwd=self.root
+            ["diff", "--name-status", "-z", commit, "HEAD", "--", scope],
+            cwd=self.root,
         )
+        records = result.records()
         changes: list[tuple[str, str]] = []
-        for line in result.lines():
-            fields = line.split("\t")
-            if len(fields) < 2:
-                continue
-            status = fields[0]
-            if status.startswith(("R", "C")) and len(fields) >= 3:
-                changes.append(("D", fields[1]))
-                changes.append(("A", fields[2]))
-                continue
-            changes.append((status[0], fields[1]))
+        position = 0
+        while position < len(records):
+            status = records[position]
+            # A rename or copy carries two paths, in the order old, new. Every
+            # other status carries one. Reading the count from the status is
+            # what keeps the walk in step; guessing it loses the whole tail.
+            renamed = status.startswith(("R", "C"))
+            wanted = 2 if renamed else 1
+            if position + wanted > len(records) - 1:
+                break
+            if renamed:
+                changes.append(("D", records[position + 1]))
+                changes.append(("A", records[position + 2]))
+            else:
+                changes.append((status[0], records[position + 1]))
+            position += wanted + 1
         return changes
 
     def status_names(self, *, scope: str) -> list[tuple[str, str]]:
@@ -165,24 +179,36 @@ class Repository:
         The diff between two commits cannot see uncommitted work, and a
         document someone edited by hand is a change the index does not know
         about just as surely as a committed one.
+
+        `-z` for the same reason as `diff_names`: a quoted path names no
+        file. It also removes the ` -> ` parsing the joined format needed,
+        which a document called `a -> b.md` would have been misread by.
         """
         self._require_repository()
-        result = git(["status", "--porcelain", "--", scope], cwd=self.root)
+        result = git(["status", "--porcelain", "-z", "--", scope], cwd=self.root)
+        records = result.records()
         changes: list[tuple[str, str]] = []
-        for line in result.lines():
+        position = 0
+        while position < len(records):
+            record = records[position]
+            position += 1
             # Porcelain v1 is two status characters then a space then the
-            # path, and either character may itself be a space - so this is
-            # a fixed-width read, not a split. ` M notes/a.md` has an empty
+            # path, and either character may itself be a space - so this is a
+            # fixed-width read, not a split. ` M notes/a.md` has an empty
             # index status and a modified work tree.
-            if len(line) < 4:
+            if len(record) < 4:
                 continue
-            code, path = line[:2], line[3:].strip().strip('"')
+            code, path = record[:2], record[3:]
             if not path:
                 continue
-            # A rename is `R  old -> new`; the arrow separates them.
-            if " -> " in path:
-                previous, _, path = path.partition(" -> ")
-                changes.append(("D", previous.strip().strip('"')))
+            # A rename carries the old path in the *next* record, and puts the
+            # new one first - the opposite order to `diff --name-status -z`.
+            if "R" in code or "C" in code:
+                if position < len(records):
+                    changes.append(("D", records[position]))
+                    position += 1
+                changes.append(("A", path))
+                continue
             # `??` is untracked, which in a corpus means a file that is there
             # and was never recorded: an addition.
             if code == "??" or "A" in code:

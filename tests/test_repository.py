@@ -244,3 +244,85 @@ def test_the_head_commit_is_a_full_identifier(corpus: Path):
 
     assert head is not None
     assert len(head) == 40
+
+
+# ---------------------------------------------------------------------------
+# Paths git would rather quote
+# ---------------------------------------------------------------------------
+
+# Written as escapes because kennis's own sources are ASCII. The *corpus* is
+# not: a literature corpus is full of authors called Mueller and Goncalves
+# spelled correctly, and git quotes every one of those paths in its porcelain
+# output unless it is asked not to.
+UMLAUT_NAME = "notes/M" + chr(0x00FC) + "ller 2020.md"
+ARROW_NAME = "notes/a -> b.md"
+
+
+def a_corpus_with(corpus: Path, name: str, *, committed: bool) -> Repository:
+    repository = initialise_corpus(corpus)
+    (corpus / name).write_text("body\n", encoding="utf-8")
+    if committed:
+        repository.commit("add", scope="notes", summary="1 added")
+    return repository
+
+
+def test_an_uncommitted_path_that_is_not_ascii_is_reported_as_itself(corpus: Path):
+    """git quotes it as `"notes/M\\303\\274ller 2020.md"`. Reported that way,
+    it names no file, so nothing downstream can open, index or restore it."""
+    repository = a_corpus_with(corpus, UMLAUT_NAME, committed=False)
+
+    changes = repository.status_names(scope="notes")
+
+    assert changes == [("A", UMLAUT_NAME)]
+    assert (corpus / changes[0][1]).is_file()
+
+
+def test_a_committed_path_that_is_not_ascii_is_reported_as_itself(corpus: Path):
+    repository = a_corpus_with(corpus, UMLAUT_NAME, committed=False)
+    before = repository.head()
+    assert before is not None
+    repository.commit("add", scope="notes", summary="1 added")
+
+    changes = repository.diff_names(before, scope="notes")
+
+    assert changes == [("A", UMLAUT_NAME)]
+
+
+def test_a_path_containing_an_arrow_is_not_read_as_a_rename(corpus: Path):
+    """`R  old -> new` is how the non-NUL format joins a rename onto one
+    line, so a filename containing those characters was a misparse waiting."""
+    repository = a_corpus_with(corpus, ARROW_NAME, committed=False)
+
+    assert repository.status_names(scope="notes") == [("A", ARROW_NAME)]
+
+
+def test_an_uncommitted_rename_is_read_in_the_right_direction(corpus: Path):
+    """The `-z` status format puts the **new** path first and the old second,
+    which is the opposite of the `old -> new` it displays. Backwards, this
+    reports the surviving file as deleted and the deleted one as present."""
+    repository = a_corpus_with(corpus, UMLAUT_NAME, committed=True)
+    (corpus / UMLAUT_NAME).rename(corpus / "notes/renamed.md")
+
+    changes = dict(
+        (path, status) for status, path in repository.status_names(scope="notes")
+    )
+
+    assert changes[UMLAUT_NAME] == "D"
+    assert changes["notes/renamed.md"] == "A"
+
+
+def test_a_committed_rename_is_read_in_the_right_direction(corpus: Path):
+    """And `diff --name-status -z` puts them the other way round - status,
+    then old, then new - so the two parsers cannot share one order."""
+    repository = a_corpus_with(corpus, UMLAUT_NAME, committed=True)
+    before = repository.head()
+    assert before is not None
+    (corpus / UMLAUT_NAME).rename(corpus / "notes/renamed.md")
+    repository.commit("move", scope="notes", summary="1 moved")
+
+    changes = dict(
+        (path, status) for status, path in repository.diff_names(before, scope="notes")
+    )
+
+    assert changes[UMLAUT_NAME] == "D"
+    assert changes["notes/renamed.md"] == "A"
