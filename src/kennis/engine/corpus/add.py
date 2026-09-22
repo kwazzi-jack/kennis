@@ -103,10 +103,7 @@ from kennis.engine.literature.identifiers import (
     looks_like_bibtex,
     parse_bibtex_file,
 )
-from kennis.engine.literature.metadata import (
-    lookup_arxiv_metadata,
-    resolve_doi_to_arxiv,
-)
+from kennis.engine.literature.metadata import lookup_arxiv_metadata
 
 # Identifies kennis to a documentation host, so the traffic can be
 # attributed and, if a site wishes, blocked.
@@ -133,9 +130,6 @@ class AddOptions:
     # does not state one on its own first page. Literature only.
     identifier: str | None = None
     citekey: str | None = None
-    # Whether a paper named only by an identifier has its text fetched. Off
-    # leaves the stub that the bibliography alone can carry.
-    fetch: bool = True
     # The docs project a page belongs to: a frontmatter field and a directory
     # name both. Derived from the site's host when it is not given, which a
     # local file has none of. Docs only.
@@ -664,7 +658,13 @@ def add_literature(
     papers, refused = _papers_of(resolved)
     outcomes.extend(refused)
     plan = _plan_binaries(
-        [paper.path for paper in papers if paper.path is not None],
+        # Filtered to the formats that actually need converting, as the notes
+        # path does. Passing every local path sent a markdown paper - or one
+        # named by a `.bib` `file =` field - to MinerU, which then refused the
+        # whole add because it was not installed.
+        _binary_candidates(
+            str(paper.path) for paper in papers if paper.path is not None
+        ),
         record,
         options,
         converter or default_converter(),
@@ -710,7 +710,17 @@ def _papers_of(resolved: ResolvedInputs) -> tuple[list[_Paper], list[AddOutcome]
         path = Path(item.identifier).expanduser()
 
         if looks_like_bibtex(item.identifier) and path.is_file():
-            papers.extend(_papers_of_bibtex(path, item.group))
+            entries = _papers_of_bibtex(path, item.group)
+            textless = _entries_without_text(entries)
+            if textless:
+                # A bibliography is one artifact the user wrote, so it is
+                # accepted or refused whole. Writing the half that works
+                # leaves them reconciling what landed against what they
+                # asked for, and a `file =` field is exactly where the
+                # missing documents belong.
+                refused.extend(_refuse_bibliography(path, entries, textless))
+                continue
+            papers.extend(entries)
             continue
 
         stated = identifier_if_reference(item.identifier)
@@ -754,6 +764,47 @@ def _papers_of_bibtex(path: Path, group: str) -> list[_Paper]:
             )
         )
     return papers
+
+
+def _entries_without_text(entries: Sequence[_Paper]) -> list[str]:
+    """The citekeys of the entries that could not produce a document.
+
+    Decided **statically**, from the bibliography alone: an entry has a body
+    if it names a file that exists or carries an arXiv identifier, and both
+    are readable without a network. So the whole batch is refused before
+    anything is written, rather than discovered part way through.
+    """
+    return [
+        entry.entry.citekey if entry.entry else entry.identifier
+        for entry in entries
+        if entry.path is None
+        and not (entry.stated is not None and entry.stated.kind == "arxiv")
+    ]
+
+
+def _refuse_bibliography(
+    path: Path, entries: Sequence[_Paper], textless: Sequence[str]
+) -> list[AddOutcome]:
+    """One failed outcome per entry, all naming the same cause.
+
+    Every entry that cannot work is named, not the first: naming one would
+    have the user fix it and meet the next. The entries that *could* have
+    worked are reported too, so the count in the report matches the
+    bibliography rather than only its broken part.
+    """
+    named = ", ".join(textless)
+    # Counted here rather than through `render.count_of`: nothing under
+    # `engine/` may import `render/`, and an architecture test enforces it.
+    how_many = f"{len(textless)} {'entry' if len(textless) == 1 else 'entries'}"
+    reason = (
+        f"{how_many} of '{path.name}' name no document and no arXiv "
+        f"identifier ({named}), so nothing from it was added. Give each one "
+        f"a `file =` field, or remove it."
+    )
+    return [
+        AddOutcome(identifier=entry.identifier, outcome=Outcome.FAILED, reason=reason)
+        for entry in entries
+    ]
 
 
 def _stated_by(entry: BibEntry) -> PaperIdentifier | None:
@@ -825,7 +876,7 @@ def _add_paper(
             reason="this paper is already in this collection",
         )
 
-    converted, unfetched = _converted_for(paper, identity, options, plan, arxiv)
+    converted, _ = _converted_for(paper, identity, options, plan, arxiv)
     if isinstance(converted, AddOutcome):
         return converted
 
@@ -857,10 +908,6 @@ def _add_paper(
         document_id=document_id,
         title=title,
         path=path,
-        # A paper added without its text is still added, so this is not a
-        # failure - but the user has to be told, or a throttled batch looks
-        # exactly like a batch of papers nobody ever preprinted.
-        reason=unfetched,
     )
 
 
@@ -921,10 +968,14 @@ def _enrich(
 ) -> _Identity:
     """Turn one identifier into everything known about the paper.
 
-    A DOI is resolved only as far as an arXiv preprint and a bibcode not at
-    all - those need Crossref metadata or an ADS key, neither of which kennis
-    asks anyone for. All three are recorded regardless, because identity is
-    what duplicate detection runs on even when metadata is unavailable.
+    **Nothing is resolved into anything else.** An arXiv identifier is looked
+    up for its metadata, because a citekey needs authors and a year; a DOI
+    and a bibcode are recorded as given. What the user named is what the
+    document will be.
+
+    All the identifiers a paper carries are still recorded, because identity
+    is what duplicate detection runs on: a `.bib` entry naming both a DOI and
+    an eprint reaches the same document by either.
     """
     if chosen.kind == "bibcode":
         return _Identity(
@@ -936,8 +987,11 @@ def _enrich(
 
     doi = chosen.value if chosen.kind == "doi" else (entry.doi if entry else None)
     arxiv_id = chosen.value if chosen.kind == "arxiv" else None
-    if arxiv_id is None and doi is not None:
-        arxiv_id = resolve_doi_to_arxiv(doi, client=arxiv)
+    # **A DOI is not looked up on arXiv.** It used to be, and arXiv's `doi`
+    # field holds the *journal* DOI authors report - so a published paper was
+    # silently answered with its preprint, and the stored document differed
+    # from the thing asked for. Bringing it back as a stated choice is
+    # `future.md` (1).
 
     title = entry.title if entry else ""
     authors = entry.authors if entry else ""
@@ -970,20 +1024,23 @@ def _converted_for(
     plan: _Plan,
     arxiv: httpx.Client | None,
 ) -> tuple[Converted | AddOutcome, str | None]:
-    """The markdown for one paper, and why it is a stub when it is one.
+    """The markdown for one paper, or why there will not be any.
 
-    A paper named only by its identifier has no local document, so its text is
-    fetched from arXiv's LaTeXML rendering. What arXiv will not render falls
-    back to a stub carrying the bibliography, which is what makes a citekey
-    citeable before any text arrives - and for a paper known only by a DOI or
-    a bibcode, the stub is all there will be, because the publisher's own copy
-    needs a browser session kennis does not have.
+    **A literature document is a paper's text or it is not written.** There
+    are exactly two sources: a local document, converted; and an arXiv
+    identifier, fetched from arXiv's LaTeXML rendering. A DOI or a bibcode
+    alone is neither, because the publisher's own copy needs a browser
+    session kennis does not have.
+
+    This used to write a stub carrying the bibliography. A stub is *indexed*
+    like any other document, so it competed in search results with real
+    papers and could outrank one on a title match - and a corpus that answers
+    a search with a stub is worse than one that answers with nothing, because
+    the reader believes they have the paper.
     """
     if paper.path is None:
         fetched = (
-            fetch_paper(identity.arxiv_id, client=arxiv)
-            if options.fetch and identity.arxiv_id
-            else None
+            fetch_paper(identity.arxiv_id, client=arxiv) if identity.arxiv_id else None
         )
         if fetched is not None and fetched.markdown:
             return (
@@ -997,14 +1054,12 @@ def _converted_for(
                 None,
             )
         return (
-            Converted(
-                markdown=_stub(identity),
-                via="verbatim",
-                format="markdown",
-                origin=_origin_of(identity, paper),
-                sha256=None,
+            AddOutcome(
+                identifier=paper.identifier,
+                outcome=Outcome.FAILED,
+                reason=_no_text_reason(paper, identity, fetched),
             ),
-            _unfetched_reason(fetched),
+            None,
         )
     prepared = plan.converted.get(paper.path)
     try:
@@ -1025,17 +1080,31 @@ def _converted_for(
         )
 
 
-def _unfetched_reason(fetched: PaperText | None) -> str | None:
-    """What to tell the user about a paper that landed without its text.
+def _no_text_reason(
+    paper: _Paper, identity: _Identity, fetched: PaperText | None
+) -> str:
+    """Why this paper has no body, and what would give it one.
 
-    Nothing when the text was never going to be fetched - a DOI-only paper
-    has no arXiv rendering to ask for, and saying so on every such paper is
-    noise rather than news. Something whenever arXiv was asked and declined,
-    because the stub is identical either way and the remedy is not.
+    Deliberately not the wording of `_no_identity_reason`. That one means
+    kennis does not know *what* the paper is and notes is the honest home for
+    it; this one means the paper is identified perfectly well and its text is
+    elsewhere. Offering notes here would file a known paper in the wrong
+    collection.
     """
-    if fetched is None or fetched.reason is None:
-        return None
-    return f"added without its text: {fetched.reason}"
+    named = paper.path or paper.identifier
+    if identity.arxiv_id is None:
+        kind = "a DOI" if identity.doi else "an ADS bibcode"
+        return (
+            f"{kind} names a publisher's copy, which kennis cannot fetch. "
+            f"Supply the document: kennis corpus add -l <file> "
+            f"--identifier '{identity.doi or identity.bibcode}'"
+        )
+    declined = f" ({fetched.reason})" if fetched is not None and fetched.reason else ""
+    return (
+        f"arXiv has no rendering of '{named}' to fetch{declined}. Supply the "
+        f"document: kennis corpus add -l <file> --identifier "
+        f"'{identity.arxiv_id}'"
+    )
 
 
 def _origin_of(identity: _Identity, paper: _Paper) -> str:
@@ -1046,19 +1115,6 @@ def _origin_of(identity: _Identity, paper: _Paper) -> str:
     if identity.bibcode:
         return f"bibcode:{identity.bibcode}"
     return paper.identifier
-
-
-def _stub(identity: _Identity) -> str:
-    """The body of a paper whose text has not been fetched yet."""
-    lines = [f"# {identity.title}" if identity.title else "# Untitled", ""]
-    if identity.authors:
-        lines.append(f"{identity.authors}")
-    if identity.year:
-        lines.append(f"{identity.year}")
-    lines.append("")
-    lines.append("The text of this paper has not been fetched.")
-    lines.append("")
-    return "\n".join(lines)
 
 
 def _citekey_for(

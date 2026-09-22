@@ -159,10 +159,15 @@ def test_a_literature_document_exposes_its_bibliography(tmp_path: Path):
     from kennis.engine.corpus.add import add_literature
 
     papers = Collection(root=tmp_path / "corpus", name="literature")
+    # The entry names its document. A literature document is a paper's text
+    # or it is not written, so a bibliography with no `file =` field and no
+    # eprint is refused whole and this loader would have nothing to read.
+    document = tmp_path / "paper.md"
+    document.write_text("# A Title\n\nThe paper's text.\n", encoding="utf-8")
     bib = tmp_path / "library.bib"
     bib.write_text(
-        "@article{smirnov2011,\n title={A Title},\n year={2011},\n"
-        " doi={10.1051/0004-6361/201016082}\n}\n",
+        f"@article{{smirnov2011,\n title={{A Title}},\n year={{2011}},\n"
+        f" doi={{10.1051/0004-6361/201016082}},\n file={{{document}}}\n}}\n",
         encoding="utf-8",
     )
 
