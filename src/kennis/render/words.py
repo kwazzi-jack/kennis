@@ -16,9 +16,17 @@ here.
 
 from __future__ import annotations
 
+from typing import Final
+
 from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import OutOfBandChange
+from kennis.engine.rag.models import SearchResult
+from kennis.engine.rag.search import DocumentSpan
+
+# How much of a hit to show by default. Long enough to recognise the passage,
+# short enough that ten hits fit on a screen.
+_SNIPPET_CHARACTERS: Final = 240
 
 
 def count_of(number: int, noun: str, plural: str | None = None) -> str:
@@ -111,3 +119,50 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
             + " not yet indexed"
         )
     return f"the {collection} index is in step"
+
+
+def describe_hit(collection: str, result: SearchResult) -> str:
+    """One search hit, named well enough to go and read it.
+
+    The title rather than the path, because a person recognises what they
+    added by its name; the identifier because that is what `kennis read`
+    takes; and the section because a long document's hit is much easier to
+    place when it says which part matched.
+    """
+    chunk = result.chunk
+    title = str(chunk.metadata.get("title") or chunk.document_id)
+    # A short document's only heading is its title, and "Rivers - Rivers"
+    # reads as a stutter rather than as a location.
+    section = chunk.section if chunk.section != title else None
+    where = f" - {section}" if section else ""
+    return f"[{collection}] {title}{where}  ({chunk.document_id})"
+
+
+def describe_span(collection: str, span: DocumentSpan) -> str:
+    """Which document was read, and which part of it.
+
+    The chunk range is named because `read` takes `--chunk`, `--before` and
+    `--after`: a reader who wants more has to know where they are before
+    they can ask for the next part.
+    """
+    chunks = (
+        f"chunk {span.chunk_start}"
+        if span.chunk_start == span.chunk_end
+        else f"chunks {span.chunk_start} to {span.chunk_end}"
+    )
+    return f"[{collection}] {span.document_id}  {span.source_path}  ({chunks})"
+
+
+def snippet_of(text: str, *, full: bool, limit: int = _SNIPPET_CHARACTERS) -> str:
+    """As much of a hit's text as was asked for, cut at a word boundary.
+
+    Cutting mid-word makes a snippet look corrupted rather than shortened,
+    and the last partial word carries nothing: a reader scanning hits is
+    matching on the words that are whole.
+    """
+    collapsed = " ".join(text.split())
+    if full or len(collapsed) <= limit:
+        return collapsed
+    cut = collapsed[:limit]
+    spaced = cut.rsplit(" ", 1)[0] if " " in cut else cut
+    return f"{spaced} ..."
