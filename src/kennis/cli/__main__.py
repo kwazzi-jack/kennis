@@ -19,7 +19,12 @@ import click
 
 from kennis import __version__
 from kennis.cli import display
-from kennis.cli.commands import corpus_group, read_command, search_command
+from kennis.cli.commands import (
+    config_group,
+    corpus_group,
+    read_command,
+    search_command,
+)
 from kennis.cli.group import KennisGroup
 from kennis.logs import start_logging
 
@@ -46,6 +51,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
 
 
 main.add_command(corpus_group)
+main.add_command(config_group)
 main.add_command(search_command)
 main.add_command(read_command)
 

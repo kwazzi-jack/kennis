@@ -352,6 +352,18 @@ def note(text: str, *, stderr: bool = False) -> None:
     _diagnostic("warning", "warning", text, stderr=stderr)
 
 
+def guidance(text: str) -> None:
+    """How to answer what comes next - not a diagnostic.
+
+    Separate from `note` because `note` prints `warning:`, and telling
+    someone how a prompt behaves is not something going wrong. Separate from
+    `muted`, which is a style primitive with no `--quiet` guard.
+    """
+    if _quiet:
+        return
+    muted(text)
+
+
 def failure(text: str) -> None:
     """`error: ...` - printed even under --quiet, which suppresses reports
     rather than problems."""

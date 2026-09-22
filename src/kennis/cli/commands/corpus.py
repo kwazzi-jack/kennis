@@ -127,7 +127,7 @@ def status_command() -> None:
         # empty corpus, where the next step is to add documents, not to index
         # nothing.
         display.note("no index yet, so nothing is searchable")
-        display.hint("kennis corpus index")
+        display.next_step("kennis corpus index")
 
     for change in detect_changes(repository):
         display.detail("~", describe_change(change))
@@ -631,7 +631,7 @@ def index_command(collection: str | None) -> None:
 
     if documents == 0:
         display.note("nothing to index")
-        display.hint("kennis corpus add --help")
+        display.next_step("kennis corpus add --help", note="to see what it takes")
 
 
 # ---------------------------------------------------------------------------

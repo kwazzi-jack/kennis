@@ -128,7 +128,7 @@ def _report(
         display.note(
             f"not searched, no index yet: {', '.join(skipped)}",
         )
-        display.hint("kennis corpus index")
+        display.next_step("kennis corpus index")
 
     if not hits:
         display.operation("Searched", ", ".join(searched))

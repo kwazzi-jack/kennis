@@ -54,7 +54,15 @@ class EmbeddingSettings(BaseModel):
 
     backend: Literal["fastembed", "ollama", "openai", "none"] = Field(
         default="fastembed",
-        description="Backend used to embed chunks.",
+        # The download is named here because this is where it is chosen.
+        # Announcing it during `corpus index` is a warning, not consent, and
+        # the command whose purpose is to spend minutes is the worst place to
+        # interrupt someone. Concern #96. 65 MB is measured, not quoted: the
+        # default model's cache on this machine, twice.
+        description=(
+            "Backend used to embed chunks. fastembed downloads a 65 MB model "
+            "the first time you index; none means lexical search only."
+        ),
     )
     model: str = Field(
         default="BAAI/bge-small-en-v1.5",
@@ -317,7 +325,8 @@ def config_template() -> str:
         "# kennis configuration. Every key is shown at its default, commented",
         "# out, so improving a default still reaches you. Uncomment to change.",
         "#",
-        "# API keys do not belong here: see `kennis auth --help`.",
+        "# API keys do not belong here: `kennis config init` writes them to",
+        "# credentials.toml, readable only by you.",
     ]
     for section_name, section_field in Settings.model_fields.items():
         annotation = section_field.annotation

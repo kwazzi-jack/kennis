@@ -69,14 +69,16 @@ def remedies_for(change: OutOfBandChange) -> tuple[str, ...]:
     if change.kind == "created":
         return (f"kennis corpus add '{change.path}'",)
     if change.kind == "deleted":
-        return ("kennis corpus remove",)
+        # With the handle: `remove` takes one, so the bare command fails.
+        return (f"kennis corpus remove {change.document_id or change.path}",)
     if change.owner is not None and pack_id_of(change.owner) is not None:
         handle = change.document_id or change.path
-        return (
-            f"kennis corpus restore {handle}",
-            f"kennis corpus claim {handle}",
-        )
-    return ("kennis index",)
+        # `kennis corpus claim` is the second way forward and `design.md`
+        # describes it, but it is not built. Naming it here would print an
+        # instruction that fails - rules.md 4.4. It joins this tuple when the
+        # command lands.
+        return (f"kennis corpus restore {handle}",)
+    return ("kennis corpus index",)
 
 
 def describe_freshness(freshness: Freshness, collection: str) -> str:
@@ -166,3 +168,19 @@ def snippet_of(text: str, *, full: bool, limit: int = _SNIPPET_CHARACTERS) -> st
     cut = collapsed[:limit]
     spaced = cut.rsplit(" ", 1)[0] if " " in cut else cut
     return f"{spaced} ..."
+
+
+def describe_setting(key: str, value: object) -> str:
+    """One setting, as a line a person reads.
+
+    An empty string is shown as `(unset)` rather than as nothing: a blank
+    after the equals sign is indistinguishable from a rendering fault, and
+    "unset" is a real state that several settings are legitimately in.
+    """
+    if isinstance(value, bool):
+        shown = "true" if value else "false"
+    elif value == "":
+        shown = "(unset)"
+    else:
+        shown = str(value)
+    return f"{key} = {shown}"
