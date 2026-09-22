@@ -14,7 +14,6 @@ printed at someone who asked a question.
 from __future__ import annotations
 
 import logging
-import sys
 
 import click
 
@@ -49,25 +48,5 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
 main.add_command(corpus_group)
 
 
-def run() -> int:
-    """The console entry point.
-
-    Wraps `main` so a `KennisError` reaches the user as its own message and
-    its own resolution, with the log named - which is what makes the log
-    discoverable without a verb for it.
-    """
-    try:
-        main.main(standalone_mode=False)
-    except SystemExit as exiting:
-        return int(exiting.code or 0)
-    except click.ClickException as error:
-        error.show()
-        return error.exit_code
-    except click.Abort:
-        display.failure("cancelled")
-        return 130
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(run())
+    main()

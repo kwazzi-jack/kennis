@@ -222,6 +222,63 @@ def build_index(
     return report
 
 
+@dataclass(frozen=True, slots=True)
+class IndexManifest:
+    """What a published index records about how it was made.
+
+    `built_from` is the commit freshness diffs against. **None is not an
+    error**: an index built outside a repository records no commit, and the
+    honest answer about such an index is that it is unverifiable rather than
+    that it is fresh.
+    """
+
+    collection: str
+    index_id: str
+    chunk_count: int
+    built_from: str | None
+    built_at: str
+    documents: dict[str, str]
+
+
+def read_manifest(index_root: Path, collection: str) -> IndexManifest | None:
+    """The manifest of the published index for `collection`, or None.
+
+    None means there is no index, which is the state a fresh corpus is in and
+    is not a fault. A caller that needs the index itself uses `load_index`,
+    which refuses; this exists for the callers that need to ask whether there
+    is one - `corpus status` above all, which must be answerable on a corpus
+    that has never been indexed.
+
+    A pointer that names a directory which is not there returns None too: the
+    pointer is written after the swap, so the only way to see that pairing is
+    a corpus somebody deleted a directory out of, and the truthful answer is
+    still that there is no index to report on.
+    """
+    collection_root = index_root / collection
+    pointer_path = collection_root / _POINTER_FILE
+    if not pointer_path.is_file():
+        return None
+
+    index_id = str(json.loads(pointer_path.read_text(encoding="utf-8"))["index_id"])
+    manifest_path = collection_root / index_id / _MANIFEST_FILE
+    if not manifest_path.is_file():
+        return None
+
+    recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
+    built_from = recorded.get("built_from")
+    return IndexManifest(
+        collection=str(recorded["collection"]),
+        index_id=str(recorded["index_id"]),
+        chunk_count=int(recorded["chunk_count"]),
+        built_from=str(built_from) if built_from else None,
+        built_at=str(recorded["built_at"]),
+        documents={
+            str(key): str(value)
+            for key, value in dict(recorded.get("documents", {})).items()
+        },
+    )
+
+
 def load_index(index_root: Path, collection: str) -> LoadedIndex:
     """Read back the published index for `collection`."""
     collection_root = index_root / collection

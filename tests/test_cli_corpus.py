@@ -170,15 +170,32 @@ def test_status_on_a_corpus_that_does_not_exist_says_how_to_make_one(
     assert "Traceback" not in result.output
 
 
-def test_status_says_there_is_no_index_yet_rather_than_failing(run: CliRunner):
-    """A fresh corpus has no index. That is not an error and must not read
-    like one."""
+def test_status_says_there_is_no_index_yet_rather_than_failing(
+    run: CliRunner, isolated: Path
+):
+    """A corpus holding documents and no index. That is not an error and must
+    not read like one - it is the state every corpus is in between its first
+    `corpus add` and its first `corpus index`, and the answer is the command
+    that changes it."""
+    initialised(run)
+    a_note(isolated, "trees.md")
+
+    result = run.invoke(main, ["corpus", "status"])
+
+    assert result.exit_code == 0
+    assert "no index yet" in result.output
+    assert "kennis corpus index" in result.output
+
+
+def test_status_on_an_empty_corpus_does_not_mention_the_index(run: CliRunner):
+    """The next step there is to add documents, not to index nothing. Saying
+    both would make the one that matters harder to see."""
     initialised(run)
 
     result = run.invoke(main, ["corpus", "status"])
 
     assert result.exit_code == 0
-    assert "not been indexed" in result.output or "no index" in result.output
+    assert "no index" not in result.output
 
 
 # ---------------------------------------------------------------------------
