@@ -45,12 +45,17 @@ def describe_change(change: OutOfBandChange) -> str:
     if change.kind == "created":
         return (
             f"{change.path} is in the corpus but is not a document: it has no "
-            "frontmatter kennis wrote, so nothing indexes or serves it"
+            "frontmatter kennis wrote, so nothing indexes or serves it. Move "
+            "it outside the corpus and add it from there"
         )
     if change.kind == "deleted":
         if change.restored:
             return f"{change.path} was deleted outside kennis and has been restored"
-        return f"{change.path} was deleted outside kennis and could not be restored"
+        # Not "could not be restored". A reporting command does not attempt
+        # one, and describing an untried thing as failed is a false claim
+        # about what kennis did. The commands that write put it back; this
+        # sentence is for the one that only looks. Concern #128.
+        return f"{change.path} was deleted outside kennis and is still in history"
     if change.owner is not None and pack_id_of(change.owner) is not None:
         return (
             f"{change.path} is owned by {change.owner} and was edited outside "
@@ -67,10 +72,20 @@ def remedies_for(change: OutOfBandChange) -> tuple[str, ...]:
     choice - which is what the decision channel will want.
     """
     if change.kind == "created":
-        return (f"kennis corpus add '{change.path}'",)
+        # No command. `corpus add` on a path inside the corpus *copies* it:
+        # the inert file stays where it is and a second document appears
+        # beside it as `dropped (2).md`. Adopting a hand-created file in
+        # place is not something v0.1 can do, so naming a command that
+        # duplicates it would be worse than naming none - rules.md 4.4.
+        # `describe_change` says in words what to do instead. Concern #129.
+        return ()
     if change.kind == "deleted":
-        # With the handle: `remove` takes one, so the bare command fails.
-        return (f"kennis corpus remove {change.document_id or change.path}",)
+        # `restore` rather than `remove`: the file is already gone, so the
+        # action a reader needs named is the one that puts it back. Any
+        # command that writes does it for them anyway (#128); this is for
+        # someone who has only run `status`. With the handle, because both
+        # commands take one.
+        return (f"kennis corpus restore {change.document_id or change.path}",)
     if change.owner is not None and pack_id_of(change.owner) is not None:
         handle = change.document_id or change.path
         # `kennis corpus claim` is the second way forward and `design.md`

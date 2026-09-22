@@ -655,3 +655,119 @@ def test_the_index_itself_is_committed(corpus: Path, run: CliRunner, tmp_path: P
     added(run, a_source(tmp_path, "trees.md"))
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
     assert any(path.startswith("index/notes/") for path in tracked(corpus))
+
+
+# ---------------------------------------------------------------------------
+# A document deleted outside kennis
+# ---------------------------------------------------------------------------
+#
+# design.md, "Changes made outside kennis": a deletion is restored rather than
+# honoured, because an out-of-band delete carries no record of intent and
+# treating an accident as an instruction is the more expensive mistake.
+# `restore_deletions` implemented that and nothing called it (concern #128).
+# Brian's decision: the reporting command reports, and the commands that
+# already take the lock and write are the ones that put the file back.
+
+
+def test_status_reports_a_hand_deletion_without_restoring_it(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """`status` is a diagnostic. It must not write to the corpus, and it must
+    not claim a restore it did not attempt."""
+    added(run, a_source(tmp_path, "Trees.md"))
+    document = only_document(corpus)
+    document.unlink()
+
+    result = run.invoke(main, ["corpus", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert not document.exists()
+    assert "deleted outside kennis" in result.output
+    assert "could not be restored" not in result.output
+
+
+def test_indexing_restores_a_document_deleted_outside_kennis(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    added(run, a_source(tmp_path, "Trees.md"))
+    document = only_document(corpus)
+    body = document.read_text(encoding="utf-8")
+    document.unlink()
+
+    result = run.invoke(main, ["corpus", "index"])
+
+    assert result.exit_code == 0, result.output
+    assert document.exists(), result.output
+    assert document.read_text(encoding="utf-8") == body
+    assert "restored" in result.output.lower()
+
+
+def test_adding_restores_a_document_deleted_outside_kennis(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """The addition must not be what buries the loss: a document deleted by
+    hand is put back before the new one is written."""
+    added(run, a_source(tmp_path, "Trees.md"))
+    document = only_document(corpus)
+    document.unlink()
+
+    added(run, a_source(tmp_path, "Rivers.md"))
+
+    assert document.exists()
+    # `a_source` writes `# <name>` as the heading, so a source called
+    # `Trees.md` is titled `Trees.md` and lands as `Trees.md.md`.
+    assert sorted(path.name for path in (corpus / "notes").rglob("*.md")) == [
+        "Rivers.md.md",
+        "Trees.md.md",
+    ]
+
+
+def test_a_restored_document_leaves_the_tree_clean(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """`git checkout <commit> -- <path>` writes the index as well as the work
+    tree, so the restore needs no commit of its own. If it did, the tree
+    would be dirty and the next command would commit someone else's change."""
+    added(run, a_source(tmp_path, "Trees.md"))
+    only_document(corpus).unlink()
+
+    run.invoke(main, ["corpus", "index"])
+
+    assert Repository(corpus).is_clean()
+
+
+def test_an_edit_made_by_hand_is_never_reverted_by_a_write(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """Only deletions are undone. Reverting an edit is a resolution the user
+    chooses, not something a later command does to them."""
+    added(run, a_source(tmp_path, "Trees.md"))
+    document = only_document(corpus)
+    edited = document.read_text(encoding="utf-8") + "\nA line added by hand.\n"
+    document.write_text(edited, encoding="utf-8")
+
+    run.invoke(main, ["corpus", "index"])
+
+    assert document.read_text(encoding="utf-8") == edited
+
+
+def test_status_names_the_command_for_every_change_it_reports(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """design.md: every out-of-band change is reported *alongside the command
+    that would have done it properly*. `remedies_for` produced those commands
+    and no command printed them, so the sentence arrived without the way out.
+    """
+    added(run, a_source(tmp_path, "Trees.md"))
+    only_document(corpus).unlink()
+    (corpus / "notes" / "dropped-in.md").write_text(
+        "no frontmatter\n", encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["corpus", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "kennis corpus restore" in result.output, result.output
+    # The hand-created file gets words rather than a command, because no
+    # command adopts it in place (#129).
+    assert "Move it outside the corpus" in result.output, result.output

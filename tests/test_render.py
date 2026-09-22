@@ -90,11 +90,12 @@ def test_a_created_file_is_described_as_not_a_document():
 # ---------------------------------------------------------------------------
 
 
-def test_a_deletion_names_the_command_that_removes_properly():
-    """With the handle. `remove` takes one, so the bare command is an
-    instruction that fails (concern #124)."""
+def test_a_deletion_names_the_command_that_puts_it_back():
+    """`restore`, not `remove`: the file is already gone, so what a reader
+    needs named is the way back (#128). With the handle, because the command
+    takes one and the bare form fails (#124)."""
     assert remedies_for(a_change(kind="deleted")) == (
-        "kennis corpus remove aaaaaaaaaa",
+        "kennis corpus restore aaaaaaaaaa",
     )
 
 
@@ -162,10 +163,15 @@ def test_a_users_own_edit_offers_reindexing():
     )
 
 
-def test_a_created_file_offers_adding_it():
-    remedies = remedies_for(a_change(kind="created", owner=None, document_id=None))
+def test_a_created_file_offers_no_command_because_none_works():
+    """`corpus add` on a path inside the corpus copies it: the inert file
+    stays and a second document appears beside it. Naming it would be naming
+    an instruction that makes things worse (#129). The sentence carries the
+    guidance instead."""
+    change = a_change(kind="created", owner=None, document_id=None)
 
-    assert remedies == ("kennis corpus add 'notes/A note.md'",)
+    assert remedies_for(change) == ()
+    assert "Move it outside the corpus" in describe_change(change)
 
 
 def test_every_remedy_is_a_command_rather_than_a_sentence():
