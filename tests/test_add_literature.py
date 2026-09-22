@@ -34,19 +34,44 @@ ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+LATEXML = """<html><body><article class="ltx_document">
+<h1>A Paper About Calibration</h1>
+<p>The full text of the paper.</p>
+</article></body></html>
+"""
+
+
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom"></feed>
 """
 
 
-def arxiv_client(body: str = ATOM) -> httpx.Client:
-    """An arXiv that answers the metadata query and renders no HTML.
+def arxiv_client(body: str = ATOM, html: str = LATEXML) -> httpx.Client:
+    """An arXiv that answers the metadata query and renders the paper.
 
-    The rendering is a 404 rather than the same body, so this fixture answers
-    only the question it is asked. A stub that replies identically to every
-    request would hand an Atom feed to the HTML converter, which is a
-    different test from the one the caller wrote.
+    It serves both because a literature document is now its text or it is not
+    written: a client that answered the Atom query and refused the rendering
+    would refuse every add, and every test of citekeys, frontmatter and
+    duplicates would be testing the refusal instead of what it was written
+    for.
+
+    The two responses differ, so this still answers only the question it is
+    asked - one body for every request would hand an Atom feed to the HTML
+    converter, which is a different test from the one the caller wrote.
     """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/html/" in str(request.url):
+            return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+        return httpx.Response(
+            200, text=body, headers={"content-type": "application/atom+xml"}
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def unrenderable_client(body: str = ATOM) -> httpx.Client:
+    """An arXiv that knows the paper and will not render it."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "/html/" in str(request.url):
@@ -127,8 +152,31 @@ def only(papers: Collection) -> LiteratureFrontmatter:
     return frontmatter
 
 
+def bib_with_documents(tmp_path: Path, **entries: str) -> Path:
+    """A bibliography whose every entry names a document that exists.
+
+    The shape a bibliography now has to have: an entry with no `file =` field
+    and no eprint has no text, and a bibliography containing one is refused
+    whole.
+    """
+    lines: list[str] = []
+    for citekey, doi in entries.items():
+        document = tmp_path / f"{citekey}-document.md"
+        document.write_text(
+            f"# {citekey}\n\nThe text of {citekey}.\n", encoding="utf-8"
+        )
+        lines.append(
+            f"@article{{{citekey},\n title={{{citekey}}},\n doi={{{doi}}},\n"
+            f" file={{{document}}}\n}}\n"
+        )
+    path = tmp_path / "library.bib"
+    path.write_text("".join(lines), encoding="utf-8")
+    return path
+
+
 # ---------------------------------------------------------------------------
 # A paper named by its identifier
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
 
@@ -153,10 +201,12 @@ def test_the_metadata_lookup_supplies_the_title_and_the_citekey(
     assert frontmatter.bib.year == "2024"
 
 
-def test_a_paper_is_still_added_when_arxiv_cannot_be_reached(papers: Collection):
-    """The identifier is what prevents the same paper landing twice, and it is
-    already in hand; refusing over an unreachable arXiv trades a small loss for
-    a total one."""
+def test_a_paper_is_refused_when_arxiv_cannot_be_reached(papers: Collection):
+    """An arXiv identifier's only source of text is arXiv, so an unreachable
+    arXiv means no document. This used to land a stub, on the argument that
+    holding the identifier prevents a second copy later - but a corpus of
+    literature that holds no literature is not a smaller loss than an empty
+    one, it is a misleading one."""
 
     def unreachable(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route to host")
@@ -167,8 +217,8 @@ def test_a_paper_is_still_added_when_arxiv_cannot_be_reached(papers: Collection)
         arxiv=httpx.Client(transport=httpx.MockTransport(unreachable)),
     )
 
-    assert report.outcomes[0].outcome is Outcome.ADDED
-    assert only(papers).bib.arxiv_id == "2409.19750"
+    assert report.outcomes[0].outcome is Outcome.FAILED
+    assert papers.contents().documents == []
 
 
 def test_a_filename_containing_an_identifier_is_not_treated_as_one(
@@ -243,14 +293,22 @@ def test_the_same_paper_by_two_routes_produces_one_document(
 
 
 def test_the_duplicate_is_found_by_doi_too(papers: Collection, tmp_path: Path):
+    document = tmp_path / "paper.md"
+    document.write_text("# A Paper\n\nOne paper's text.\n", encoding="utf-8")
     first = tmp_path / "a.bib"
     first.write_text(
-        "@article{a,\n title={A Paper},\n doi={10.1088/0004-637X/1}\n}\n",
+        f"@article{{a,\n title={{A Paper}},\n doi={{10.1088/0004-637X/1}},\n"
+        f" file={{{document}}}\n}}\n",
         encoding="utf-8",
     )
+    # A different document, so the duplicate is caught by identity rather
+    # than by the checksum - which is the whole point of this test.
+    other = tmp_path / "other.md"
+    other.write_text("# Same Paper\n\nA different scan of it.\n", encoding="utf-8")
     second = tmp_path / "b.bib"
     second.write_text(
-        "@article{b,\n title={Same Paper},\n doi={10.1088/0004-637X/1}\n}\n",
+        f"@article{{b,\n title={{Same Paper}},\n doi={{10.1088/0004-637X/1}},\n"
+        f" file={{{other}}}\n}}\n",
         encoding="utf-8",
     )
 
@@ -262,13 +320,19 @@ def test_the_duplicate_is_found_by_doi_too(papers: Collection, tmp_path: Path):
 
 
 def test_identity_matching_ignores_case(papers: Collection, tmp_path: Path):
+    one = tmp_path / "one.md"
+    one.write_text("# A\n\nThe paper.\n", encoding="utf-8")
+    other = tmp_path / "other.md"
+    other.write_text("# B\n\nA different scan of it.\n", encoding="utf-8")
     first = tmp_path / "a.bib"
     first.write_text(
-        "@article{a,\n title={A},\n doi={10.1088/ABC}\n}\n", encoding="utf-8"
+        f"@article{{a,\n title={{A}},\n doi={{10.1088/ABC}},\n file={{{one}}}\n}}\n",
+        encoding="utf-8",
     )
     second = tmp_path / "b.bib"
     second.write_text(
-        "@article{b,\n title={B},\n doi={10.1088/abc}\n}\n", encoding="utf-8"
+        f"@article{{b,\n title={{B}},\n doi={{10.1088/abc}},\n file={{{other}}}\n}}\n",
+        encoding="utf-8",
     )
 
     add_literature(papers, [str(first)], arxiv=no_preprint_client())
@@ -311,10 +375,11 @@ def test_a_citekey_is_derived_only_when_the_paper_arrived_without_one(
 def test_two_papers_that_would_share_a_citekey_are_disambiguated(
     papers: Collection, tmp_path: Path
 ):
-    bib = tmp_path / "library.bib"
+    bib = bib_with_documents(tmp_path, shared="10.1088/a", shared_again="10.1088/b")
+    # Two entries with the *same* citekey, which the helper cannot express
+    # because it keys on it. Written out so both are literally `shared`.
     bib.write_text(
-        "@article{shared,\n title={A},\n doi={10.1088/a}\n}\n"
-        "@article{shared,\n title={B},\n doi={10.1088/b}\n}\n",
+        bib.read_text(encoding="utf-8").replace("shared_again,", "shared,"),
         encoding="utf-8",
     )
 
@@ -478,12 +543,7 @@ def test_a_refusal_costs_only_its_own_document(papers: Collection, tmp_path: Pat
 def test_a_bib_file_expands_into_one_outcome_per_entry(
     papers: Collection, tmp_path: Path
 ):
-    bib = tmp_path / "library.bib"
-    bib.write_text(
-        "@article{a,\n title={A},\n doi={10.1088/a}\n}\n"
-        "@article{b,\n title={B},\n doi={10.1088/b}\n}\n",
-        encoding="utf-8",
-    )
+    bib = bib_with_documents(tmp_path, a="10.1088/a", b="10.1088/b")
 
     report = add_literature(
         papers,
@@ -514,97 +574,139 @@ def test_adding_no_papers_is_not_an_error(papers: Collection):
 # Fetching the paper's text
 # ---------------------------------------------------------------------------
 
-LATEXML = """<html><body><article class="ltx_document">
-<h1>A Paper About Calibration</h1>
-<p>The full text of the paper.</p>
-</article></body></html>
-"""
-
-
-def fetching_client(body: str = ATOM, html: str = LATEXML) -> httpx.Client:
-    """An arXiv that answers both the Atom query and the HTML rendering."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "/html/" in str(request.url):
-            return httpx.Response(200, text=html, headers={"content-type": "text/html"})
-        return httpx.Response(
-            200, text=body, headers={"content-type": "application/atom+xml"}
-        )
-
-    return httpx.Client(transport=httpx.MockTransport(handler))
-
 
 def test_a_paper_named_only_by_an_identifier_gets_its_text(papers: Collection):
     """What closes the stub: the bibliography alone makes a citekey citeable,
     but nothing can be searched until there is a body."""
-    add_literature(papers, ["2409.19750"], arxiv=fetching_client())
+    add_literature(papers, ["2409.19750"], arxiv=arxiv_client())
 
     document = papers.contents().documents[0]
     assert "The full text of the paper." in document.body
     assert "has not been fetched" not in document.body
 
 
-def test_a_paper_arxiv_will_not_render_still_lands_as_a_stub(papers: Collection):
-    """The identifier and the bibliography are the parts that prevent a second
-    copy; refusing the whole add over a missing rendering loses more."""
+def test_a_paper_arxiv_will_not_render_is_refused_not_stubbed(papers: Collection):
+    """A literature document is a paper's text or it is not written.
+
+    The stub this replaces was indexed like any other document, so its
+    bibliography competed in search results with real papers and could
+    outrank one on a title match - and the reader then believes they have the
+    paper.
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "/html/" in str(request.url):
             return httpx.Response(404)
         return httpx.Response(200, text=ATOM)
 
-    add_literature(
+    report = add_literature(
         papers,
         ["2409.19750"],
         arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    document = papers.contents().documents[0]
-    assert "The text of this paper has not been fetched." in document.body
+    assert papers.contents().documents == []
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
+    assert "rendering" in str(report.outcomes[0].reason)
+    assert "supply the document" in str(report.outcomes[0].reason).lower()
 
 
-def test_fetching_can_be_turned_off(papers: Collection):
-    add_literature(
+def test_a_doi_is_not_answered_with_a_preprint(papers: Collection):
+    """kennis used to query arXiv's `doi` field, which holds the *journal*
+    DOI authors report - so a published paper was silently answered with its
+    preprint, and the stored document differed from the thing asked for.
+
+    The client here would answer with a preprint if it were asked. It must
+    not be asked.
+    """
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if "/html/" in str(request.url):
+            return httpx.Response(404)
+        return httpx.Response(
+            200, text=ATOM, headers={"content-type": "application/atom+xml"}
+        )
+
+    report = add_literature(
         papers,
-        ["2409.19750"],
-        AddOptions(fetch=False),
-        arxiv=fetching_client(),
+        ["10.1093/mnras/stab1234"],
+        arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    assert "has not been fetched" in papers.contents().documents[0].body
+    assert not any("doi" in url for url in asked)
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
+    assert papers.contents().documents == []
 
 
-def test_a_paper_with_only_a_doi_is_not_fetched_from_arxiv(papers: Collection):
-    """There is nothing to fetch: a DOI names a publisher's copy, which needs
-    a browser session kennis does not have."""
-    bib = Path(str(papers.root)).parent / "library.bib"
-    bib.parent.mkdir(parents=True, exist_ok=True)
-    bib.write_text(
-        "@article{smith2020,\n title={A Title Here},\n doi={10.1093/mnras/xyz}\n}\n",
+def test_a_doi_refused_for_no_text_names_the_pdf_and_not_notes(papers: Collection):
+    """Two different refusals with two different remedies. No identity means
+    `add it as a note`; no text means `supply the document`, because the
+    paper's identity was established perfectly well."""
+    report = add_literature(
+        papers, ["10.1093/mnras/stab1234"], arxiv=no_preprint_client()
+    )
+
+    reason = str(report.outcomes[0].reason)
+    assert "-n" not in reason
+    assert "--identifier" in reason or "supply" in reason.lower()
+
+
+def test_a_markdown_paper_does_not_need_the_pdf_converter(
+    papers: Collection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`add_literature` used to hand every local path to the converter, so a
+    paper already in markdown demanded MinerU and the whole add was refused
+    when it was not installed. The notes path had always filtered."""
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing-here"))
+    document = tmp_path / "paper.md"
+    document.write_text("# A Paper\n\nAlready markdown.\n", encoding="utf-8")
+
+    report = add_literature(
+        papers,
+        [str(document)],
+        AddOptions(identifier="10.1093/mnras/stab1234"),
+        arxiv=no_preprint_client(),
+    )
+
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+    assert "Already markdown." in papers.contents().documents[0].body
+
+
+def test_a_doi_with_the_document_supplied_is_added(papers: Collection, tmp_path: Path):
+    """The second user type: their own PDF, identified by its DOI. This is
+    the case that has to keep working once auto-resolution is gone."""
+    document = tmp_path / "paper.md"
+    document.write_text(
+        "# A Published Paper\n\nThe real text of the published version.\n",
         encoding="utf-8",
     )
 
-    add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+    report = add_literature(
+        papers,
+        [str(document)],
+        AddOptions(identifier="10.1093/mnras/stab1234"),
+        arxiv=no_preprint_client(),
+    )
 
-    assert "has not been fetched" in papers.contents().documents[0].body
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+    held = papers.contents().documents[0]
+    assert "The real text of the published version." in held.body
+    assert held.frontmatter.bib.doi == "10.1093/mnras/stab1234"
 
 
 def test_the_papers_of_one_batch_are_spaced(
     papers: Collection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """arXiv answers a burst with 406, and every call here degrades to None on
-    that, so without spacing a bibliography lands as a pile of stubs and says
-    nothing about why."""
+    """arXiv answers a burst with 406, and every call here degrades to None
+    on that, so without spacing a bibliography of preprints would be refused
+    wholesale for a reason that is nothing to do with the bibliography."""
     slept: list[float] = []
     monkeypatch.setattr(
         "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
     )
-    bib = tmp_path / "library.bib"
-    bib.write_text(
-        "@article{one,\n title={A},\n doi={10.1088/a}\n}\n"
-        "@article{two,\n title={B},\n doi={10.1088/b}\n}\n",
-        encoding="utf-8",
-    )
+    bib = bib_with_documents(tmp_path, one="10.1088/a", two="10.1088/b")
 
     add_literature(
         papers,
@@ -644,8 +746,8 @@ def test_the_interval_between_papers_is_the_users_to_set(
 
 
 def test_a_paper_added_without_its_text_says_why(papers: Collection):
-    """A throttled batch and a batch of papers nobody preprinted write the
-    same stubs. The outcome is what tells them apart."""
+    """A throttled batch and a batch of papers nobody preprinted fail
+    identically. The reason is what tells them apart."""
 
     def refusing(request: httpx.Request) -> httpx.Response:
         if "/html/" in str(request.url):
@@ -662,8 +764,11 @@ def test_a_paper_added_without_its_text_says_why(papers: Collection):
     )
 
     outcome = report.outcomes[0]
-    assert outcome.outcome is Outcome.ADDED
+    assert outcome.outcome is Outcome.FAILED
     assert outcome.reason is not None
+    # Still the distinction the old stub could not make: a throttled batch
+    # and a batch of papers nobody preprinted now fail identically unless the
+    # reason says which.
     assert "406" in outcome.reason
 
 
@@ -672,7 +777,131 @@ def test_a_paper_with_its_text_reports_no_complaint(papers: Collection):
         papers,
         ["2409.19750"],
         AddOptions(request_delay_seconds=0),
-        arxiv=fetching_client(),
+        arxiv=arxiv_client(),
     )
 
     assert report.outcomes[0].reason is None
+
+
+# ---------------------------------------------------------------------------
+# A bibliography is a unit
+# ---------------------------------------------------------------------------
+
+
+def a_bibliography(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "library.bib"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_a_bibliography_whose_entries_all_have_documents_is_added(
+    papers: Collection, tmp_path: Path
+):
+    first = tmp_path / "first.md"
+    first.write_text("# First\n\nThe first paper.\n", encoding="utf-8")
+    second = tmp_path / "second.md"
+    second.write_text("# Second\n\nThe second paper.\n", encoding="utf-8")
+
+    bib = a_bibliography(
+        tmp_path,
+        f"@article{{one,\n title={{First}},\n doi={{10.1088/aaa}},\n"
+        f" file={{{first}}}\n}}\n"
+        f"@article{{two,\n title={{Second}},\n doi={{10.1088/bbb}},\n"
+        f" file={{{second}}}\n}}\n",
+    )
+
+    report = add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+
+    assert [outcome.outcome for outcome in report.outcomes] == [
+        Outcome.ADDED,
+        Outcome.ADDED,
+    ]
+    assert len(papers.contents().documents) == 2
+
+
+def test_one_entry_without_a_document_refuses_the_whole_bibliography(
+    papers: Collection, tmp_path: Path
+):
+    """The bibliography is one artifact the user wrote, and a `file =` field
+    is where its documents are named. Writing half of it would leave them
+    reconciling what landed against what they asked for."""
+    present = tmp_path / "present.md"
+    present.write_text("# Present\n\nThis one has its text.\n", encoding="utf-8")
+
+    bib = a_bibliography(
+        tmp_path,
+        f"@article{{one,\n title={{Present}},\n doi={{10.1088/aaa}},\n"
+        f" file={{{present}}}\n}}\n"
+        f"@article{{two,\n title={{Absent}},\n doi={{10.1088/bbb}}\n}}\n",
+    )
+
+    report = add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+
+    assert papers.contents().documents == []
+    assert all(outcome.outcome is Outcome.FAILED for outcome in report.outcomes), (
+        report.outcomes
+    )
+
+
+def test_the_refusal_names_every_entry_that_cannot_work(
+    papers: Collection, tmp_path: Path
+):
+    """Naming one of them would have the user fix it and meet the next."""
+    bib = a_bibliography(
+        tmp_path,
+        "@article{one,\n title={A},\n doi={10.1088/aaa}\n}\n"
+        "@article{two,\n title={B},\n doi={10.1088/bbb}\n}\n",
+    )
+
+    report = add_literature(papers, [str(bib)], arxiv=no_preprint_client())
+
+    reported = " ".join(str(outcome.reason) for outcome in report.outcomes)
+    assert "one" in reported and "two" in reported
+
+
+def test_an_entry_with_an_arxiv_identifier_needs_no_file(
+    papers: Collection, tmp_path: Path
+):
+    """An arXiv identifier is a source of text, so a bibliography of
+    preprints works with no `file =` field anywhere in it."""
+    bib = a_bibliography(
+        tmp_path,
+        "@article{one,\n title={A Paper About Calibration},\n eprint={2409.19750}\n}\n",
+    )
+
+    report = add_literature(papers, [str(bib)], arxiv=arxiv_client())
+
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+    assert "The full text of the paper." in papers.contents().documents[0].body
+
+
+def test_a_fetch_that_fails_at_runtime_does_not_retract_the_batch(
+    papers: Collection, tmp_path: Path
+):
+    """The static check refuses a bibliography that *cannot* work. arXiv
+    throttling is not a property of the bibliography, and rolling back
+    written documents to honour it would be a transaction the corpus has no
+    other use for."""
+    supplied = tmp_path / "supplied.md"
+    supplied.write_text("# Supplied\n\nIts own text.\n", encoding="utf-8")
+
+    bib = a_bibliography(
+        tmp_path,
+        f"@article{{one,\n title={{Supplied}},\n doi={{10.1088/aaa}},\n"
+        f" file={{{supplied}}}\n}}\n"
+        f"@article{{two,\n title={{Throttled}},\n eprint={{2409.19750}}\n}}\n",
+    )
+
+    # Every arXiv request refused, which is what a 406 burst looks like.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(406)
+
+    report = add_literature(
+        papers,
+        [str(bib)],
+        arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    outcomes = {outcome.outcome for outcome in report.outcomes}
+    assert Outcome.ADDED in outcomes and Outcome.FAILED in outcomes
+    assert len(papers.contents().documents) == 1

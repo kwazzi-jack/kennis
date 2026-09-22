@@ -226,11 +226,6 @@ def tree_command(collection: str | None) -> None:
 @click.option("--identifier", help="arXiv id, DOI or bibcode. Literature only.")
 @click.option("--citekey", help="Citekey to use instead of a derived one.")
 @click.option("--project", help="The docs project a page belongs to. Docs only.")
-@click.option(
-    "--fetch/--no-fetch",
-    default=True,
-    help="Fetch a paper's text, or leave the bibliographic stub.",
-)
 @click.option("--max-pages", type=int, default=300, show_default=True)
 @click.option("--max-depth", type=int, default=5, show_default=True)
 def add_command(
@@ -245,7 +240,6 @@ def add_command(
     identifier: str | None,
     citekey: str | None,
     project: str | None,
-    fetch: bool,
     max_pages: int,
     max_depth: int,
 ) -> None:
@@ -269,7 +263,6 @@ def add_command(
         identifier=identifier,
         citekey=citekey,
         project=project,
-        fetch=fetch,
         max_pages=max_pages,
         max_depth=max_depth,
         batch_size=context.settings.conversion.batch_size,
