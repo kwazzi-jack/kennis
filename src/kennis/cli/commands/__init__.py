@@ -1,7 +1,8 @@
-"""The command groups, attached to the `kennis` group by `__main__`."""
+"""The commands attached to the `kennis` group by `__main__`."""
 
 from __future__ import annotations
 
 from kennis.cli.commands.corpus import corpus_group
+from kennis.cli.commands.search import read_command, search_command
 
-__all__ = ["corpus_group"]
+__all__ = ["corpus_group", "read_command", "search_command"]
