@@ -93,7 +93,7 @@ dependencies = [
 # there is an MCP server here to test against it, not before.
 mcp = ["fastmcp==3.4.7"]
 mineru = [
-    "mineru>=3",
+    "mineru[pipeline]>=3.4,<4",
 ]
 
 [project.scripts]

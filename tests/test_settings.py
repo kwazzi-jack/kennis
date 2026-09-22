@@ -17,6 +17,7 @@ from kennis.engine.settings import (
     config_dir,
     config_path,
     config_template,
+    credential,
     load_settings,
 )
 
@@ -221,3 +222,70 @@ def test_the_options_come_from_the_model_rather_than_from_prose():
     backends = get_args(EmbeddingSettings.model_fields["backend"].annotation)
     for backend in backends:
         assert backend in config_template()
+
+
+# ---------------------------------------------------------------------------
+# Reading a stored credential
+# ---------------------------------------------------------------------------
+#
+# `config init` wrote credentials.toml from the first day it existed and
+# nothing ever read it back, so a key someone typed into the setup had no
+# effect on anything. Concern #131.
+
+
+def test_a_stored_credential_is_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / "credentials.toml").write_text(
+        '[embedding]\nOPENAI_API_KEY = "sk-stored"\n', encoding="utf-8"
+    )
+
+    assert credential("OPENAI_API_KEY") == "sk-stored"
+
+
+def test_the_environment_wins_over_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A shell export, a CI secret and a `KENNIS_` override all arrive this
+    way, and none of them should be shadowed by a file written months ago."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-the-shell")
+    (tmp_path / "credentials.toml").write_text(
+        '[embedding]\nOPENAI_API_KEY = "sk-stored"\n', encoding="utf-8"
+    )
+
+    assert credential("OPENAI_API_KEY") == "sk-from-the-shell"
+
+
+def test_a_credential_that_was_never_set_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+
+    assert credential("DATALAB_API_KEY") == ""
+
+
+def test_a_credentials_file_that_does_not_parse_is_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Every command would otherwise die on a file only one of them needs."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / "credentials.toml").write_text("not = = toml\n", encoding="utf-8")
+
+    assert credential("OPENAI_API_KEY") == ""
+
+
+def test_the_section_a_credential_sits_in_does_not_matter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The variable name is the identity. Which section the setup happened to
+    file it under is an implementation detail of the writer."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / "credentials.toml").write_text(
+        '[conversion]\nDATALAB_API_KEY = "dl-stored"\n', encoding="utf-8"
+    )
+
+    assert credential("DATALAB_API_KEY") == "dl-stored"

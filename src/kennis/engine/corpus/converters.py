@@ -26,13 +26,17 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Protocol, runtime_checkable
 
+import httpx
+
 from kennis.engine.corpus.schema import SourceFormat
 from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from kennis.engine.settings import credential, load_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +259,171 @@ class MineruConverter:
         return environment
 
 
+# ---------------------------------------------------------------------------
+# Datalab
+# ---------------------------------------------------------------------------
+#
+# The hosted alternative, for a machine that will not carry the local model
+# stack. It converts a document by **sending it to a third party**, which is
+# why it is never a default: the backend is a setting and the key is a
+# credential, so choosing it is two deliberate acts.
+#
+# Unlike MinerU, there is no batch endpoint. A batch is one request per
+# document, and `ConversionBatch` fits that unchanged because it already
+# reports per document. The module docstring's guess that hosted conversion
+# would want batching because "one request beats several" was wrong.
+
+_DATALAB_URL: Final = "https://www.datalab.to/api/v1/convert"
+_DATALAB_KEY_VARIABLE: Final = "DATALAB_API_KEY"
+
+# What the API accepts. Narrower than its marketing copy, which says "PDFs,
+# Word documents, spreadsheets and images" without naming extensions, so this
+# lists only what kennis has a `SourceFormat` for anyway.
+DATALAB_FORMATS: Final[frozenset[SourceFormat]] = frozenset(
+    {"pdf", "docx", "pptx", "xlsx"}
+)
+
+# A submitted document is not converted when the response returns. The server
+# hands back a URL to poll, and these bound the wait: 2s is the interval the
+# API's own example uses, and 300 polls is its example ceiling, so a document
+# gets ten minutes before kennis gives up. Unbounded polling is the one way
+# an HTTP call becomes a hang, which is what the timeout rule forbids.
+_POLL_SECONDS: Final = 2.0
+_MAX_POLLS: Final = 300
+_REQUEST_TIMEOUT: Final = 120.0
+
+
+class DatalabConverter:
+    """The hosted binary-document converter.
+
+    `front_page` is always empty and that is a capability difference, not an
+    oversight. MinerU returns a content list that classifies page furniture,
+    which is exactly where a paper stamps its arXiv id or DOI; this API
+    returns markdown. A caller must not read the empty mapping as "this paper
+    states no identity" - it means "this converter cannot tell".
+    """
+
+    name = "datalab"
+    formats = DATALAB_FORMATS
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        client: httpx.Client | None = None,
+        poll_seconds: float = _POLL_SECONDS,
+        max_polls: int = _MAX_POLLS,
+    ) -> None:
+        self.api_key = credential(_DATALAB_KEY_VARIABLE) if api_key is None else api_key
+        self._client = client
+        self._poll_seconds = poll_seconds
+        self._max_polls = max_polls
+
+    def is_available(self) -> bool:
+        """A key is the whole requirement. There is nothing to install."""
+        return bool(self.api_key)
+
+    def install_hint(self) -> str:
+        return "kennis config init"
+
+    def convert(
+        self, paths: Sequence[Path], *, page_limit: int | None = None
+    ) -> ConversionBatch:
+        """Convert each path, one request each, and report per document.
+
+        `page_limit` is accepted and ignored: the API takes no page range, so
+        a survey costs a whole conversion. The caller's survey is a smaller
+        saving than the round trip either way.
+        """
+        if not paths:
+            return ConversionBatch(markdown={})
+        require_converter(self, paths)
+
+        markdown: dict[Path, str] = {}
+        reasons: list[str] = []
+        client = self._client or httpx.Client(timeout=_REQUEST_TIMEOUT)
+        try:
+            for path in paths:
+                try:
+                    markdown[path] = self._convert_one(client, path)
+                except ConversionFailed as failed:
+                    reasons.append(f"{path.name}: {failed}")
+        finally:
+            if self._client is None:
+                client.close()
+
+        reason = "; ".join(reasons) if reasons else None
+        if not markdown and reason is not None:
+            raise ConversionFailed(f"datalab failed: {reason}")
+        return ConversionBatch(markdown=markdown, failure_reason=reason)
+
+    def _convert_one(self, client: httpx.Client, path: Path) -> str:
+        check_url = self._submit(client, path)
+        return self._await_markdown(client, check_url, path)
+
+    def _headers(self) -> dict[str, str]:
+        return {"X-API-Key": self.api_key}
+
+    def _submit(self, client: httpx.Client, path: Path) -> str:
+        try:
+            response = client.post(
+                _DATALAB_URL,
+                headers=self._headers(),
+                files={"file": (path.name, path.read_bytes())},
+                data={"output_format": "markdown", "mode": "balanced"},
+                timeout=_REQUEST_TIMEOUT,
+            )
+        except httpx.HTTPError as error:
+            raise ConversionFailed(f"could not reach datalab: {error}") from error
+        if response.status_code >= 400:
+            raise ConversionFailed(
+                f"datalab refused the document ({response.status_code})"
+            )
+        check_url = _as_text(response.json().get("request_check_url"))
+        if not check_url:
+            raise ConversionFailed("datalab returned no url to poll")
+        return check_url
+
+    def _await_markdown(self, client: httpx.Client, url: str, path: Path) -> str:
+        """Poll until the status settles, bounded.
+
+        The key goes on this request too. It is a second, separate call and
+        the service rejects an unauthenticated one, so a key sent only on
+        submit converts nothing.
+        """
+        for _ in range(self._max_polls):
+            try:
+                result = client.get(
+                    url, headers=self._headers(), timeout=_REQUEST_TIMEOUT
+                ).json()
+            except httpx.HTTPError as error:
+                raise ConversionFailed(f"could not reach datalab: {error}") from error
+            if result.get("success") is False or result.get("status") == "failed":
+                raise ConversionFailed(
+                    _as_text(result.get("error")) or "datalab could not convert it"
+                )
+            if result.get("status") == "complete":
+                converted = _as_text(result.get("markdown"))
+                if not converted:
+                    raise ConversionFailed("datalab returned no markdown")
+                return converted
+            time.sleep(self._poll_seconds)
+        raise ConversionFailed(
+            f"datalab did not finish converting {path.name} within "
+            f"{int(self._max_polls * self._poll_seconds)}s and was given up on"
+        )
+
+
+def _as_text(value: object) -> str:
+    """A JSON field as a string, or empty when it is anything else.
+
+    The response is other people's data: a field may be absent, null, or a
+    number, and none of those should become the string "None" halfway down a
+    document.
+    """
+    return value if isinstance(value, str) else ""
+
+
 def require_converter(converter: Converter, paths: Sequence[Path]) -> None:
     """Fail now if `converter` is needed and missing, rather than once per file.
 
@@ -277,9 +446,13 @@ def require_converter(converter: Converter, paths: Sequence[Path]) -> None:
 def default_converter() -> Converter:
     """The converter kennis uses when a caller names none.
 
-    One indirection, so that adding the hosted implementation is a change here
-    rather than at every call site.
+    One indirection, so choosing between them is a change here rather than at
+    every call site. The choice is `conversion.backend`, which defaults to
+    the local one: sending a document to a third party is something a user
+    opts into, never something a default does for them.
     """
+    if load_settings().conversion.backend == "datalab":
+        return DatalabConverter()
     return MineruConverter()
 
 

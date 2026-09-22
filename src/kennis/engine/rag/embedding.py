@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol
 import numpy as np
 
 from kennis.engine.errors import EmbeddingUnavailable, SettingsError
+from kennis.engine.settings import credential, load_settings
 
 if TYPE_CHECKING:
     # Imported for the type only. The runtime import stays inside the
@@ -294,8 +295,17 @@ class _OpenAiEmbedder:
         from openai import OpenAI
 
         # base_url=None is the real service; a URL is any OpenAI-compatible
-        # server. The key comes from OPENAI_API_KEY, which local servers
-        # usually accept any value for.
-        client = OpenAI(base_url=self._binding.host)
+        # server, which usually accepts any key at all.
+        #
+        # The key is read through `credential`, so a key typed into
+        # `config init` works. The environment still wins, and passing an
+        # empty one through would override the library's own lookup with
+        # nothing, so it is passed only when there is one. Concern #131.
+        key = credential(load_settings().embedding.api_key_env)
+        client = (
+            OpenAI(base_url=self._binding.host, api_key=key)
+            if key
+            else OpenAI(base_url=self._binding.host)
+        )
         response = client.embeddings.create(model=self._binding.model, input=texts)
         return np.array([item.embedding for item in response.data], dtype=np.float32)

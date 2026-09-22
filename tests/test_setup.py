@@ -262,3 +262,56 @@ def test_rerunning_keeps_what_was_not_asked_about(isolated: Path):
     assert settings.chunking.size == 900
     # Not reset to the default by a second run that did not mention it.
     assert settings.embedding.backend == "ollama"
+
+
+# ---------------------------------------------------------------------------
+# The conversion backend
+# ---------------------------------------------------------------------------
+
+
+def test_choosing_hosted_conversion_asks_for_its_key():
+    """Same shape as the embedding backend: the knowledge that datalab needs
+    a credential and mineru does not is a property of the backend."""
+    hosted = [
+        question.key for question in questions_for({"conversion.backend": "datalab"})
+    ]
+    local = [
+        question.key for question in questions_for({"conversion.backend": "mineru"})
+    ]
+
+    assert "conversion.api_key" in hosted, hosted
+    assert "conversion.api_key" not in local, local
+
+
+def test_the_datalab_key_is_written_under_its_own_variable(tmp_path: Path):
+    """`credential("DATALAB_API_KEY")` is what reads it back, so the name the
+    setup files it under is the name the converter looks for."""
+    import os
+
+    os.environ["KENNIS_CONFIG_DIR"] = str(tmp_path)
+    try:
+        apply_answers(
+            {"conversion.backend": "datalab", "conversion.api_key": "dl-notarealkey"}
+        )
+        written = (tmp_path / "credentials.toml").read_text(encoding="utf-8")
+    finally:
+        del os.environ["KENNIS_CONFIG_DIR"]
+
+    assert "DATALAB_API_KEY" in written
+    assert "dl-notarealkey" in written
+
+
+def test_the_conversion_key_never_reaches_the_config_file(tmp_path: Path):
+    import os
+
+    os.environ["KENNIS_CONFIG_DIR"] = str(tmp_path)
+    try:
+        apply_answers(
+            {"conversion.backend": "datalab", "conversion.api_key": "dl-notarealkey"}
+        )
+        written = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    finally:
+        del os.environ["KENNIS_CONFIG_DIR"]
+
+    assert "dl-notarealkey" not in written
+    assert 'backend = "datalab"' in written

@@ -1,13 +1,18 @@
 """The converter interface, and MinerU behind it.
 
-No test runs the real MinerU. A fake `mineru` on `PATH` is enough to pin the
+Almost no test runs the real MinerU. A fake `mineru` on `PATH` pins the
 contract that matters: one process per batch, per-document reporting, a
 timeout, and an install hint when the tool is absent.
+
+**One test does run it**, marked `slow` and skipped when the binary is
+absent. For five milestones there was none, so the flags were tested and the
+conversion was not, on the heaviest dependency kennis has (concern #109).
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -274,3 +279,74 @@ def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_writt
         MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
 
     assert "Nothing was written" in str(raised.value)
+
+
+# ---------------------------------------------------------------------------
+# Against the real MinerU
+# ---------------------------------------------------------------------------
+
+
+def a_real_pdf(path: Path) -> Path:
+    """A two-page paper, built rather than committed.
+
+    Built so the expected text is visible in the test that asserts it, and
+    so no binary fixture has to be carried in the repository.
+    """
+    reportlab = pytest.importorskip("reportlab")
+    del reportlab
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    pdf = canvas.Canvas(str(path), pagesize=A4)
+    _, height = A4
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(72, height - 90, "Wideband Calibration of Aperture Arrays")
+    pdf.setFont("Helvetica", 8)
+    # Where a preprint stamps its identity: the furniture MinerU classifies
+    # and the markdown throws away, which is the whole reason `front_page`
+    # exists beside it.
+    pdf.drawString(72, 60, "arXiv:2501.01234v1 [astro-ph.IM]")
+    pdf.setFont("Helvetica", 11)
+    body = pdf.beginText(72, height - 140)
+    for line in [
+        "Abstract",
+        "",
+        "We present a method for wideband gain calibration of aperture array",
+        "interferometers, solving for a per-antenna residual jointly with a",
+        "smooth spectral component.",
+    ]:
+        body.textLine(line)
+    pdf.drawText(body)
+    pdf.showPage()
+    pdf.setFont("Helvetica", 11)
+    second = pdf.beginText(72, height - 90)
+    second.textLine("2. The measurement equation")
+    pdf.drawText(second)
+    pdf.showPage()
+    pdf.save()
+    return path
+
+
+@pytest.mark.slow
+def test_mineru_converts_a_real_pdf(tmp_path: Path):
+    """The one test that proves the conversion rather than the command line.
+
+    `slow` rather than `network`: the models are cached after the first run,
+    and what this costs afterwards is patience rather than a host being up.
+    """
+    if shutil.which("mineru") is None:
+        pytest.skip("mineru is not installed; uv sync --extra mineru")
+
+    path = a_real_pdf(tmp_path / "paper.pdf")
+
+    batch = MineruConverter().convert([path])
+
+    markdown = batch.markdown[path]
+    assert "Wideband Calibration of Aperture Arrays" in markdown
+    assert "per-antenna residual" in markdown
+    assert "measurement equation" in markdown
+    # The arXiv stamp is page furniture, so it belongs in the front page and
+    # not in the body. Both halves matter: an identity read out of the body
+    # would be one the chunker also indexes as prose.
+    assert "arXiv:2501.01234" in batch.front_page[path]
+    assert "arXiv:2501.01234" not in markdown

@@ -44,6 +44,7 @@ type QuestionKind = Literal["choice", "text", "integer", "boolean", "secret"]
 # about kennis's internals.
 _KEY_VARIABLES: Final[dict[str, str]] = {
     "openai": "OPENAI_API_KEY",
+    "datalab": "DATALAB_API_KEY",
 }
 
 
@@ -90,6 +91,8 @@ _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]]
     ("embedding.model", "text", (("embedding.backend", "ollama"),)),
     ("embedding.model", "text", (("embedding.backend", "openai"),)),
     ("embedding.api_key", "secret", (("embedding.backend", "openai"),)),
+    ("conversion.backend", "choice", ()),
+    ("conversion.api_key", "secret", (("conversion.backend", "datalab"),)),
     ("retrieval.corpus_method", "choice", ()),
     ("retrieval.default_top_k", "integer", ()),
     ("chunking.size", "integer", ()),
