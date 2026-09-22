@@ -26,6 +26,7 @@ from typing import Any, Final
 
 from kennis.engine.rag.chunking import ChunkParameters
 from kennis.engine.rag.embedding import ModelBinding
+from kennis.engine.settings import ChunkingSettings, EmbeddingSettings
 
 _DIGEST_BYTES: Final = 16
 
@@ -115,3 +116,30 @@ class Binding:
                 else None
             ),
         )
+
+
+def binding_from(chunking: ChunkingSettings, embedding: EmbeddingSettings) -> Binding:
+    """The binding a run's configuration describes.
+
+    Settings arrive as values rather than being read here, which is concern
+    #87's rule: an engine that consults a global is an engine two callers
+    cannot use differently in one process.
+
+    `backend = "none"` is a lexical-only index rather than a misconfiguration.
+    A machine with no model must still be able to search, and nothing about
+    chunking depends on there being an embedding backend.
+    """
+    return Binding(
+        chunking=ChunkParameters(size=chunking.size, overlap=chunking.overlap),
+        model=(
+            None
+            if embedding.backend == "none"
+            else ModelBinding(
+                kind=embedding.backend,
+                model=embedding.model,
+                dim=embedding.dimensions,
+                host=embedding.base_url or None,
+                normalise=embedding.normalise,
+            )
+        ),
+    )

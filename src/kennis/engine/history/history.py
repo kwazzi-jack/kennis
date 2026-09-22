@@ -8,6 +8,7 @@ where that pays.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
@@ -15,6 +16,7 @@ from typing import Final
 import yaml
 
 from kennis.engine.errors import DocumentNotFound
+from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.git import git
 from kennis.engine.history.repository import Repository
@@ -61,6 +63,37 @@ class RestoredDocument:
     document_id: str
     path: str
     commit: str
+
+
+def commit_summary(counts: Mapping[str, int]) -> str:
+    """The summary half of a commit subject: `2 added, 1 unchanged`.
+
+    **This is composed in the engine and that is deliberate**, against the
+    general rule that the engine names and `render/` phrases. `_SUBJECT`
+    above parses these strings back, so the writer and the reader are two
+    halves of one storage format rather than one of them being wording. Two
+    front ends that phrased it differently would give a corpus a history that
+    parses differently depending on which one touched it.
+
+    Counts of zero are left out, and the rest keep the order they were given
+    in. An empty tally yields "nothing", which `Repository.commit` will in
+    practice never write: a run that did nothing leaves a clean tree and
+    records no commit at all.
+    """
+    parts = [f"{count} {name}" for name, count in counts.items() if count]
+    return ", ".join(parts) if parts else "nothing"
+
+
+def outcome_summary(counts: Mapping[Outcome, int]) -> str:
+    """`commit_summary` over an operation's outcome tally.
+
+    Walked in the order the enum declares rather than the order the tally was
+    built in, so the same result always yields the same subject however the
+    identifiers happened to be ordered on the command line.
+    """
+    return commit_summary(
+        {outcome.value: counts.get(outcome, 0) for outcome in Outcome}
+    )
 
 
 def read_history(

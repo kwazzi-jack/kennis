@@ -1,25 +1,78 @@
-"""`kennis corpus`: the commands that read a corpus, and the one that makes one.
+"""`kennis corpus`: everything that reads a corpus, and everything that writes one.
 
 A command chooses **what** to say; `kennis.render` says it. A command that
 builds its own sentence is the thing concern #81 was spent removing.
+
+Every command that changes a file does the same three things in the same
+order: take the lock, call the engine, commit. The lock is `timeout=0`, so a
+second writer is told the corpus is busy rather than left with a terminal
+that has stopped. The readers - `status`, `list`, `tree`, `history` - do not
+take it, because the command you most want when something is stuck must not
+be the one that waits for whatever is stuck.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Final
 
 import click
 
 from kennis.cli import display
 from kennis.cli.context import Context, resolve_context
 from kennis.cli.group import KennisGroup
+from kennis.cli.sink import marker_for, reporting
+from kennis.engine.corpus.add import (
+    AddOptions,
+    AddReport,
+    add_docs,
+    add_literature,
+    add_notes,
+)
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.document import Document, move_document
+from kennis.engine.corpus.layout import index_root, title_filename, unique_filename
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusNotFound, KennisError
+from kennis.engine.errors import CorpusNotFound, DocumentNotFound, KennisError
+from kennis.engine.events import Outcome
+from kennis.engine.history.freshness import index_freshness
+from kennis.engine.history.history import (
+    commit_summary,
+    outcome_summary,
+    read_history,
+    restore_document,
+)
 from kennis.engine.history.outofband import detect_changes
 from kennis.engine.history.repository import Repository, initialise_corpus
 from kennis.engine.locking import corpus_lock
-from kennis.render.words import count_of, describe_change
+from kennis.engine.rag.binding import binding_from
+from kennis.engine.rag.index import build_index, read_manifest
+from kennis.engine.rag.loaders import CollectionLoader
+from kennis.render.words import count_of, describe_change, describe_freshness
+
+# Each collection's shorthand flag, for naming it back in an error. The
+# options themselves are declared literally on the command.
+_SHORTHANDS: Final[dict[str, str]] = {
+    "notes": "-n",
+    "literature": "-l",
+    "docs": "-d",
+}
+
+# Which options mean anything for which destination. `--project` is a docs
+# natural key and the other two establish a paper's identity, so each is a
+# usage error elsewhere rather than a flag that is quietly ignored.
+_COLLECTION_ONLY: Final[dict[str, str]] = {
+    "--project": "docs",
+    "--citekey": "literature",
+    "--identifier": "literature",
+}
+
+_ADDERS: Final[dict[str, Callable[..., AddReport]]] = {
+    "notes": add_notes,
+    "literature": add_literature,
+    "docs": add_docs,
+}
 
 
 @click.group(name="corpus", cls=KennisGroup)
@@ -27,10 +80,20 @@ def corpus_group() -> None:
     """The machine-global document corpus."""
 
 
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+
+
 @corpus_group.command(name="init")
 def init_command() -> None:
     """Create the corpus and start its history."""
     context = resolve_context()
+    # No lock. There is nothing yet to guard, `initialise_corpus` refuses a
+    # root that is already a corpus, and taking one would create the
+    # directory and the lock file inside it before git has been located -
+    # which is exactly the partially initialised state the plan's first
+    # milestone 4 test forbids.
     initialise_corpus(context.corpus_root)
     display.operation("Created", f"corpus at {context.corpus_root}")
 
@@ -39,29 +102,59 @@ def init_command() -> None:
 def status_command() -> None:
     """What the corpus holds, and what has changed since kennis last looked."""
     context = _existing_corpus()
+    repository = Repository(context.corpus_root)
 
     total = 0
+    indexed = False
     for name in COLLECTION_NAMES:
         facts = Collection(root=context.corpus_root, name=name).survey()
         total += len(facts)
-        unreadable = [fact for fact in facts if fact.problem]
         display.operation(name.capitalize(), count_of(len(facts), "document"))
-        for fact in unreadable:
+        for fact in facts:
             # Read through `survey`, the lenient reader, on purpose:
             # `DocumentInvalid` names this command as its resolution, so a
             # status that used the strict reader would die on exactly the
             # corpus it exists to diagnose. Concern #21.
-            display.detail("!", f"{fact.md_path.name}: {fact.problem}")
+            if fact.problem:
+                display.detail("!", f"{fact.md_path.name}: {fact.problem}")
+        indexed |= _report_freshness(context, repository, name)
 
     if total == 0:
         display.note("the corpus has no documents yet")
+    elif not indexed:
+        # Once for the corpus rather than once per collection: three lines of
+        # the same non-news would bury the one thing left to do. Silent on an
+        # empty corpus, where the next step is to add documents, not to index
+        # nothing.
+        display.note("no index yet, so nothing is searchable")
+        display.hint("kennis corpus index")
 
-    # No index yet is not an error and must not read like one.
-    display.note("the corpus has not been indexed yet")
-
-    repository = Repository(context.corpus_root)
     for change in detect_changes(repository):
         display.detail("~", describe_change(change))
+
+
+def _report_freshness(context: Context, repository: Repository, name: str) -> bool:
+    """How far this collection's index has fallen behind it, if it has one.
+
+    Returns whether there was an index to report on, so the caller can say
+    once - rather than three times - that the corpus has never been indexed.
+    """
+    manifest = read_manifest(index_root(context.corpus_root), name)
+    if manifest is None:
+        return False
+    freshness = index_freshness(
+        repository, collection=name, built_from=manifest.built_from
+    )
+    described = describe_freshness(freshness, name)
+    if freshness.state == "in step":
+        # `=` is the marker that carries no colour, which is right: an index
+        # that is current is the absence of news.
+        display.detail("=", described)
+    else:
+        # Stale and unverifiable are both things to act on, and a detail line
+        # in the same dim column as the good news would not read as one.
+        display.note(described)
+    return True
 
 
 @corpus_group.command(name="list")
@@ -106,6 +199,524 @@ def tree_command(collection: str | None) -> None:
             display.detail(" ", f"{'  ' * depth}{path.name}{marker}")
 
 
+# ---------------------------------------------------------------------------
+# Adding
+# ---------------------------------------------------------------------------
+
+
+@corpus_group.command(name="add")
+@click.argument("identifiers", nargs=-1, required=True)
+@click.option(
+    "--collection",
+    type=click.Choice(COLLECTION_NAMES),
+    help="Where the documents are written. One collection, never all.",
+)
+@click.option("-n", "--notes", "notes", is_flag=True, help="Shorthand for notes.")
+@click.option(
+    "-l", "--literature", "literature", is_flag=True, help="Shorthand for literature."
+)
+@click.option("-d", "--docs", "docs", is_flag=True, help="Shorthand for docs.")
+@click.option("--title", help="Title for a single document, overriding what is found.")
+@click.option("--group", help="Subdirectory within the collection.")
+@click.option(
+    "--keep-original/--no-keep-original",
+    default=None,
+    help="Retain the source bytes beside the markdown.",
+)
+@click.option("--identifier", help="arXiv id, DOI or bibcode. Literature only.")
+@click.option("--citekey", help="Citekey to use instead of a derived one.")
+@click.option("--project", help="The docs project a page belongs to. Docs only.")
+@click.option(
+    "--fetch/--no-fetch",
+    default=True,
+    help="Fetch a paper's text, or leave the bibliographic stub.",
+)
+@click.option("--max-pages", type=int, default=300, show_default=True)
+@click.option("--max-depth", type=int, default=5, show_default=True)
+def add_command(
+    identifiers: tuple[str, ...],
+    collection: str | None,
+    notes: bool,
+    literature: bool,
+    docs: bool,
+    title: str | None,
+    group: str | None,
+    keep_original: bool | None,
+    identifier: str | None,
+    citekey: str | None,
+    project: str | None,
+    fetch: bool,
+    max_pages: int,
+    max_depth: int,
+) -> None:
+    """Add files, directories or URLs to one collection."""
+    context = _existing_corpus()
+    destination = _destination(
+        collection, notes=notes, literature=literature, docs=docs
+    )
+    _refuse_foreign_options(
+        destination, identifier=identifier, citekey=citekey, project=project
+    )
+
+    options = AddOptions(
+        title=title,
+        group=group or context.settings.corpus.default_group or None,
+        keep_original=(
+            context.settings.corpus.keep_original
+            if keep_original is None
+            else keep_original
+        ),
+        identifier=identifier,
+        citekey=citekey,
+        project=project,
+        fetch=fetch,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        batch_size=context.settings.conversion.batch_size,
+        request_delay_seconds=context.settings.literature.request_delay,
+        extra_file_types=(),
+    )
+
+    target = Collection(root=context.corpus_root, name=destination)
+    with corpus_lock(context.corpus_root), reporting() as events:
+        report = _ADDERS[destination](target, identifiers, options, events=events)
+        _commit(
+            context, "add", scope=destination, summary=outcome_summary(report.counts)
+        )
+
+    _report_add(report)
+
+
+def _destination(
+    collection: str | None, *, notes: bool, literature: bool, docs: bool
+) -> str:
+    """The one collection this add writes to.
+
+    `--collection` here names a destination rather than a selection, so it is
+    a single choice and never `all`: a document is written to exactly one
+    collection. Naming one twice and differently is an error rather than a
+    precedence puzzle, because someone who typed both meant one of them and
+    kennis cannot tell which.
+    """
+    chosen = [
+        name
+        for name, given in (
+            ("notes", notes),
+            ("literature", literature),
+            ("docs", docs),
+        )
+        if given
+    ]
+    if len(chosen) > 1:
+        flags = ", ".join(_SHORTHANDS[name] for name in chosen)
+        raise display.CliError(f"{flags} name different collections. Pass one of them.")
+    shorthand = chosen[0] if chosen else None
+
+    if collection is not None and shorthand is not None and collection != shorthand:
+        raise display.CliError(
+            f"--collection {collection} and {_SHORTHANDS[shorthand]} name "
+            f"different collections. Pass one of them."
+        )
+    destination = collection or shorthand
+    if destination is None:
+        raise display.CliError(
+            "name a collection: --collection "
+            f"{'|'.join(COLLECTION_NAMES)}, or -n/-l/-d."
+        )
+    return destination
+
+
+def _refuse_foreign_options(
+    destination: str,
+    *,
+    identifier: str | None,
+    citekey: str | None,
+    project: str | None,
+) -> None:
+    """Refuse an option that means nothing for the collection being written.
+
+    Louder than ignoring it: `--citekey` on a notes add is someone expecting
+    a citekey to come out the other end, and silence would let them find that
+    out from the corpus instead.
+    """
+    supplied = {
+        "--identifier": identifier is not None,
+        "--citekey": citekey is not None,
+        "--project": project is not None,
+    }
+    for flag, given in supplied.items():
+        owner = _COLLECTION_ONLY[flag]
+        if given and owner != destination:
+            raise display.CliError(
+                f"{flag} applies to {owner} only, not to {destination}."
+            )
+
+
+def _report_add(report: AddReport) -> None:
+    """What the add did: one operation line, then the items beneath it.
+
+    Printed from the report rather than streamed from the event stream. A
+    docs add of three hundred pages would otherwise put three hundred lines
+    above the summary that was the answer; `display.details` caps them, and
+    the log has all of them either way.
+    """
+    counts = report.counts
+    display.operation(
+        "Added",
+        count_of(counts.get(Outcome.ADDED, 0), "document"),
+        elapsed=report.elapsed_seconds,
+    )
+    for outcome in Outcome:
+        named = [
+            item.title or item.identifier
+            for item in report.outcomes
+            if item.outcome is outcome
+        ]
+        if named:
+            display.details(marker_for(outcome), named)
+
+
+# ---------------------------------------------------------------------------
+# Removing and moving
+# ---------------------------------------------------------------------------
+
+
+@corpus_group.command(name="remove")
+@click.argument("handle")
+@click.option(
+    "--collection",
+    type=click.Choice(COLLECTION_NAMES),
+    help="Look only here. All three by default.",
+)
+@click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
+def remove_command(handle: str, collection: str | None, yes: bool) -> None:
+    """Delete a document, and its assets when it has any."""
+    context = _existing_corpus()
+    found, document = _resolve(context, handle, collection)
+
+    if not yes:
+        # Recoverable through `corpus restore`, so this is a courtesy rather
+        # than the last line of defence - but a wrapped document takes its
+        # assets with it, and that is worth one keystroke.
+        click.confirm(
+            f"Remove '{document.frontmatter.title}' from {found.name}?", abort=True
+        )
+
+    with corpus_lock(context.corpus_root):
+        found.remove(document)
+        _commit(
+            context,
+            "remove",
+            scope=found.name,
+            summary=outcome_summary({Outcome.REMOVED: 1}),
+        )
+
+    display.operation("Removed", f"{document.id}  {document.frontmatter.title}")
+
+
+@corpus_group.command(name="move")
+@click.argument("handle")
+@click.option("--group", help="The subdirectory to move it into. Empty for the root.")
+@click.option("--title", help="A new title, which renames the file with it.")
+@click.option(
+    "--collection",
+    type=click.Choice(COLLECTION_NAMES),
+    help="Look only here. All three by default.",
+)
+@click.option("--to-collection", type=click.Choice(COLLECTION_NAMES), hidden=True)
+def move_command(
+    handle: str,
+    group: str | None,
+    title: str | None,
+    collection: str | None,
+    to_collection: str | None,
+) -> None:
+    """Relocate or rename a document, keeping its identifier."""
+    context = _existing_corpus()
+    if to_collection is not None:
+        # The design allows a document to move between collections - to notes
+        # drops the extra metadata, out of notes requires it to be
+        # establishable - but `move_document` keeps the collection fixed, so
+        # v0.1 says so rather than half-doing it. Concern #93.
+        raise display.CliError(
+            "moving between collections is not supported yet; "
+            "remove the document and add it to the other collection."
+        )
+    if group is None and title is None:
+        raise display.CliError("nothing to change: pass --group, --title, or both.")
+
+    found, document = _resolve(context, handle, collection)
+    _refuse_regrouping_docs(found, group)
+    target = _target_path(found, document, group=group, title=title)
+
+    with corpus_lock(context.corpus_root):
+        moved = move_document(
+            document,
+            target_md_path=target,
+            updates={"title": title} if title else None,
+        )
+        _commit(
+            context,
+            "move",
+            scope=found.name,
+            summary=outcome_summary({Outcome.CHANGED: 1}),
+        )
+
+    display.operation("Moved", f"{moved.id}  {moved.md_path.relative_to(found.path)}")
+
+
+def _refuse_regrouping_docs(found: Collection, group: str | None) -> None:
+    """A docs page's directory is its project, so `--group` cannot set it.
+
+    Notes and literature are filed into whatever group the user names, and
+    their identifiers are minted independently of it. A docs page is not:
+    `add_docs` writes it to `docs/<project>/` and derives its identifier from
+    `(project, page)`, so moving the file alone would leave the directory,
+    the `docs.project` field and the identifier disagreeing about which
+    project the page belongs to.
+
+    Changing the project properly would change the derived identifier, which
+    is the one thing `move_document` refuses - every handle pointing at the
+    document addresses it by that identifier. Concern #101.
+    """
+    if found.name == "docs" and group is not None:
+        raise display.CliError(
+            "a docs page's directory is its project, which is part of its "
+            "identity; --group cannot change it."
+        )
+
+
+def _target_path(
+    found: Collection, document: Document, *, group: str | None, title: str | None
+) -> Path:
+    """Where the moved document lands, as a bare-file path.
+
+    Always the bare form, even for a wrapped document: `move_document` turns
+    `<dir>/<name>.md` into `<dir>/<name>/content.md` itself, because the unit
+    that moves is the wrapper directory and its assets travel with it.
+
+    Each half defaults to what the document already has, so `--group` alone
+    keeps the title and `--title` alone keeps the directory. Recomputing the
+    filename uses the two functions `add` uses - `title_filename` and
+    `unique_filename` - so a moved document lands where an added one would,
+    rather than the corpus having a second naming rule reachable only by
+    moving.
+    """
+    directory = found.path / group if group is not None else _holding(document)
+    if title is None:
+        return directory / f"{_stem(document)}.md"
+
+    taken = {
+        _stem(other) + ".md"
+        for other in found.contents().documents
+        if other.id != document.id
+    }
+    return directory / unique_filename(title_filename(title), taken)
+
+
+def _holding(document: Document) -> Path:
+    """The directory the document sits in, as a move would name it.
+
+    A wrapped document's own `md_path.parent` is its wrapper, which is part
+    of the document rather than where it is filed.
+    """
+    return (document.wrapper_dir or document.md_path).parent
+
+
+def _stem(document: Document) -> str:
+    """The document's name without the suffix, in bare-file terms.
+
+    A wrapped document's markdown is always `content.md`, so its own filename
+    says nothing about which document it is; the wrapper's name does.
+    """
+    if document.wrapper_dir is not None:
+        return document.wrapper_dir.name
+    return document.md_path.stem
+
+
+def _resolve(
+    context: Context, handle: str, collection: str | None
+) -> tuple[Collection, Document]:
+    """The collection holding `handle`, and the document it addresses.
+
+    Without `--collection` all three are tried, and a handle that resolves in
+    more than one is refused. That is the same rule one collection applies to
+    its own aliases - a key two documents share addresses nothing - applied
+    once more at the level above.
+    """
+    searched = [collection] if collection else list(COLLECTION_NAMES)
+    found: list[tuple[Collection, Document]] = []
+    for name in searched:
+        candidate = Collection(root=context.corpus_root, name=name)
+        try:
+            found.append((candidate, candidate.resolve(handle)))
+        except DocumentNotFound:
+            continue
+
+    if not found:
+        raise DocumentNotFound(
+            f"no document '{handle}' in {_named(searched)}",
+            resolution="kennis corpus list",
+        )
+    if len(found) > 1:
+        raise DocumentNotFound(
+            f"'{handle}' addresses a document in "
+            f"{_named([name.name for name, _ in found])}",
+            resolution="kennis corpus list",
+        )
+    return found[0]
+
+
+def _named(collections: Sequence[str]) -> str:
+    if len(collections) == 1:
+        return f"the {collections[0]} collection"
+    return f"{', '.join(collections[:-1])} or {collections[-1]}"
+
+
+# ---------------------------------------------------------------------------
+# Indexing
+# ---------------------------------------------------------------------------
+
+
+@corpus_group.command(name="index")
+@click.option(
+    "--collection",
+    type=click.Choice(COLLECTION_NAMES),
+    help="Only this collection. All three by default.",
+)
+def index_command(collection: str | None) -> None:
+    """Build the search index for one collection or all of them."""
+    context = _existing_corpus()
+    binding = binding_from(context.settings.chunking, context.settings.embedding)
+
+    # Named before the work starts, because a dense build downloads a model on
+    # a machine that has never run one and a long pause needs its explanation
+    # already on screen rather than afterwards.
+    display.using(
+        f"{binding.model.kind} {binding.model.model}"
+        if binding.model
+        else "lexical search only, with no embedding backend"
+    )
+
+    repository = Repository(context.corpus_root)
+    root = index_root(context.corpus_root)
+    documents = 0
+    chunks = 0
+    with corpus_lock(context.corpus_root), reporting() as events:
+        for name in [collection] if collection else list(COLLECTION_NAMES):
+            target = Collection(root=context.corpus_root, name=name)
+            # Skipped rather than attempted: `build_index` refuses an empty
+            # collection by design, and two of the three are empty on most
+            # corpora. Asking for all of them must not fail on that account.
+            if not target.contents().documents:
+                continue
+            report = build_index(
+                CollectionLoader(target),
+                index_root=root,
+                binding=binding,
+                events=events,
+                embed_batch_size=context.settings.embedding.batch_size,
+                repository=repository,
+            )
+            documents += report.document_count
+            chunks += report.chunk_count
+            display.operation(
+                "Indexed",
+                f"{count_of(report.document_count, 'document')} as "
+                f"{count_of(report.chunk_count, 'chunk')} in {name}",
+                elapsed=report.elapsed_seconds,
+            )
+        # One commit for one user action, with what it actually built in the
+        # subject: `index(corpus): 2 documents, 2 chunks` rather than a tally
+        # of outcomes, which an index has none of.
+        _commit(
+            context,
+            "index",
+            scope=collection or "corpus",
+            summary=commit_summary({"documents": documents, "chunks": chunks}),
+        )
+
+    if documents == 0:
+        display.note("nothing to index")
+        display.hint("kennis corpus add --help")
+
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
+
+
+@corpus_group.command(name="history")
+@click.option(
+    "--collection",
+    type=click.Choice(COLLECTION_NAMES),
+    help="Only commits touching this collection.",
+)
+@click.option("--limit", type=int, default=20, show_default=True)
+def history_command(collection: str | None, limit: int) -> None:
+    """What kennis did to this corpus, newest first."""
+    context = _existing_corpus()
+    entries = read_history(
+        Repository(context.corpus_root), collection=collection, limit=limit
+    )
+    if not entries:
+        display.note("nothing recorded yet")
+        return
+    for entry in entries:
+        display.detail(
+            " ",
+            f"{entry.commit[:8]}  {entry.when:%Y-%m-%d %H:%M}  "
+            f"{entry.operation or '-'}({entry.scope or '-'}): {entry.summary}",
+        )
+
+
+@corpus_group.command(name="restore")
+@click.argument("document_id")
+@click.option(
+    "--commit", "commit", default="HEAD", show_default=True, help="Restore from here."
+)
+def restore_command(document_id: str, commit: str) -> None:
+    """Put a document back as it was at a commit."""
+    context = _existing_corpus()
+    repository = Repository(context.corpus_root)
+    with corpus_lock(context.corpus_root):
+        restored = restore_document(repository, document_id, commit=commit)
+        _commit(
+            context,
+            "restore",
+            scope=_collection_of(restored.path),
+            summary=outcome_summary({Outcome.ADDED: 1}),
+        )
+    display.operation("Restored", f"{restored.document_id} from {restored.commit[:8]}")
+
+
+def _collection_of(path: str) -> str:
+    """Which collection a corpus-relative path belongs to.
+
+    The scope of the commit that records the restore, so `corpus history
+    --collection` finds it by the same route it finds the add that first put
+    the document there.
+    """
+    head = path.split("/", 1)[0]
+    return head if head in COLLECTION_NAMES else "corpus"
+
+
+# ---------------------------------------------------------------------------
+# Shared
+# ---------------------------------------------------------------------------
+
+
+def _commit(context: Context, operation: str, *, scope: str, summary: str) -> None:
+    """Record what the command just did.
+
+    `commit` returns None when the tree was already clean, which is what
+    re-adding a document kennis already holds looks like. That is not a
+    failure and is not reported as one: an empty commit would fill history
+    with noise, and raising would fail a command that succeeded.
+    """
+    Repository(context.corpus_root).commit(operation, scope=scope, summary=summary)
+
+
 def _existing_corpus() -> Context:
     """The context, refusing early if there is no corpus to act on.
 
@@ -122,4 +733,4 @@ def _existing_corpus() -> Context:
     return context
 
 
-__all__ = ["KennisError", "Path", "corpus_group", "corpus_lock"]
+__all__ = ["KennisError", "corpus_group"]

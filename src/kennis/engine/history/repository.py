@@ -29,6 +29,18 @@ _GITATTRIBUTES: Final = """\
 index/** -diff
 """
 
+_GITIGNORE: Final = """\
+# The lock one kennis process holds while it writes. It lives inside the
+# corpus because that is what it guards, and it is not part of it.
+.kennis.lock
+
+# The per-document vector cache. A sibling of the index it accelerates, and
+# deliberately not tracked with it: the published index already holds every
+# vector once, so committing the cache would store them twice for a saving
+# that only helps the machine that built them.
+index/*/vectors/
+"""
+
 _README: Final = """\
 # kennis corpus
 
@@ -236,6 +248,7 @@ def initialise_corpus(root: Path) -> Repository:
         )
 
     (root / ".gitattributes").write_text(_GITATTRIBUTES, encoding="utf-8")
+    (root / ".gitignore").write_text(_GITIGNORE, encoding="utf-8")
     (root / "README.md").write_text(_README, encoding="utf-8")
     # An empty collection directory is invisible to git, so the corpus would
     # commit with no collections in it and `corpus status` on a fresh clone

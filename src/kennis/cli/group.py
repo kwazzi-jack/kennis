@@ -52,6 +52,14 @@ class KennisGroup(click.Group):
     def invoke(self, ctx: click.Context) -> object:
         try:
             return super().invoke(ctx)
+        except click.Abort as aborted:
+            # Here rather than in the entry point, for the same reason the
+            # handler below is: a command cancelled at a confirmation prompt
+            # is cancelled whoever invoked it. click's own standalone mode
+            # would print "Aborted!" and exit 1; `Cancelled` says it in
+            # kennis's wording and exits 130, which is what a caller
+            # checking `$?` in a loop expects of an interrupted command.
+            raise display.Cancelled("nothing was changed") from aborted
         except KennisError as error:
             display.failure(str(error))
             for note in getattr(error, "__notes__", []):

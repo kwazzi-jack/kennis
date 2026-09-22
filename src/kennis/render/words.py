@@ -85,11 +85,17 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
         )
 
     if freshness.state == "stale":
+        # Additions are named here as well as in the `in step` branch below.
+        # A moved document is read as one gone and one added - git's rename
+        # detection is a similarity heuristic, so the safe reading is the
+        # only one available - and a sentence that mentioned only the
+        # departure would report a move as a loss.
         counts = [
             count_of(freshness.changed, "document") + " changed"
             if freshness.changed
             else "",
             count_of(freshness.gone, "document") + " gone" if freshness.gone else "",
+            count_of(freshness.added, "document") + " added" if freshness.added else "",
         ]
         return f"the {collection} index is stale: " + ", ".join(
             part for part in counts if part

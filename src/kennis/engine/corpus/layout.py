@@ -58,6 +58,17 @@ def default_corpus_root() -> Path:
     return Path(user_data_dir("kennis"))
 
 
+def index_root(corpus_root: Path) -> Path:
+    """Where the built indexes live: one directory per collection beneath it.
+
+    Inside the corpus rather than beside it, because `corpus.track_index`
+    decides whether it is committed and a path outside the repository could
+    not be. It is derived and never downloaded: a corpus copied to a machine
+    with no model still has a lexical index it can rebuild from.
+    """
+    return corpus_root / "index"
+
+
 def collection_root(corpus_root: Path, collection: str) -> Path:
     """The directory holding one collection's documents."""
     if collection not in COLLECTION_NAMES:

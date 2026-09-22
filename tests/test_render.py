@@ -147,6 +147,17 @@ def test_a_stale_index_names_the_counts_that_made_it_stale():
     assert "stale" in sentence
 
 
+def test_a_stale_index_names_what_was_added_as_well_as_what_left():
+    """A moved document is read as one gone and one added, because git's
+    rename detection is a similarity heuristic and the safe reading is the
+    only one available. A sentence naming only the departure reports a move
+    as a loss."""
+    sentence = describe_freshness(Freshness(state="stale", gone=1, added=1), "notes")
+
+    assert "1 document gone" in sentence
+    assert "1 document added" in sentence
+
+
 def test_an_unverifiable_index_says_which_reason_applies():
     """The engine reports the reason as a value, so the words can differ
     without the engine knowing how they differ."""
