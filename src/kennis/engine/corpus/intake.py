@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 from urllib.parse import urlparse
@@ -352,10 +353,43 @@ def _nothing_produced(path: Path, reason: str | None) -> str:
     )
 
 
+# What a server's content type means for conversion. Keyed on the bare type,
+# with parameters like `; charset=utf-8` stripped before the lookup.
+_URL_BINARY_TYPES: Final[dict[str, str]] = {
+    "application/pdf": ".pdf",
+    "application/x-pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (
+        ".docx"
+    ),
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": (
+        ".pptx"
+    ),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+}
+_URL_HTML_TYPES: Final[frozenset[str]] = frozenset(
+    {"text/html", "application/xhtml+xml"}
+)
+_URL_TEXT_TYPES: Final[frozenset[str]] = frozenset(
+    {"text/markdown", "text/x-markdown", "text/plain"}
+)
+# What a server says when it does not know or will not commit.
+_URL_UNCOMMITTED_TYPES: Final[frozenset[str]] = frozenset(
+    {"application/octet-stream", "binary/octet-stream", ""}
+)
+
+
 def convert_url(
     url: str, *, keep_original: bool = False, client: httpx.Client | None = None
 ) -> Converted:
-    """Fetch one web page and convert it to markdown.
+    """Fetch one URL and convert whatever came back.
+
+    **The content type decides, not the suffix.** A local path is a name the
+    user typed and vouched for; a URL is a request whose answer only the
+    server knows, and a link ending `.pdf` that returns an HTML paywall page
+    is the common case rather than the exotic one. This used to run
+    `convert_html` over `response.text` whatever arrived, so a URL serving a
+    PDF stored `%PDF-1.4 ...` as the document body, labelled `via: html`, and
+    indexed it.
 
     `client` is supplied by the caller so a test can hand over a transport
     that never touches the network; left out, one is built and closed here.
@@ -373,6 +407,86 @@ def convert_url(
         if owned:
             active.close()
 
+    declared = response.headers.get("content-type", "").split(";")[0].strip().lower()
+    suffix = _binary_suffix_for(declared, response.content)
+    if suffix is not None:
+        return _converted_download(url, response.content, suffix, keep_original)
+    if declared in _URL_TEXT_TYPES:
+        return _converted_text(url, response, keep_original)
+    if declared in _URL_HTML_TYPES or declared in _URL_UNCOMMITTED_TYPES:
+        return _converted_html(url, response, keep_original)
+    raise SourceUnreadable(
+        f"'{url}' answered with '{declared}', which kennis has no converter "
+        f"for. Download it yourself and add the file instead."
+    )
+
+
+def _binary_suffix_for(declared: str, content: bytes) -> str | None:
+    """The file suffix a downloaded body should be converted as, if any.
+
+    Falls back to sniffing the first bytes when the server declined to
+    commit: `application/octet-stream` for a PDF is common enough that
+    trusting the header alone would send real PDFs to the HTML converter.
+    """
+    if declared in _URL_BINARY_TYPES:
+        return _URL_BINARY_TYPES[declared]
+    if declared in _URL_UNCOMMITTED_TYPES and content.startswith(b"%PDF"):
+        return ".pdf"
+    return None
+
+
+def _converted_download(
+    url: str, content: bytes, suffix: str, keep_original: bool
+) -> Converted:
+    """A fetched binary, converted by the same path a local one takes.
+
+    Written to a temporary file because `convert_local_file` and the
+    converter behind it both work on paths - MinerU is a subprocess and
+    cannot be handed bytes. The file is removed even when conversion raises,
+    so a failed fetch leaves nothing behind.
+    """
+    with tempfile.TemporaryDirectory(prefix="kennis-fetch-") as scratch:
+        downloaded = Path(scratch) / f"download{suffix}"
+        downloaded.write_bytes(content)
+        converted = convert_local_file(downloaded, keep_original=keep_original)
+
+    return replace(
+        converted,
+        # The URL, not the temporary path that no longer exists: `source.from`
+        # is what says whether a document could be fetched again.
+        origin=f"url:{url}",
+        original_name=Path(urlparse(url).path).name or f"download{suffix}"
+        if keep_original
+        else None,
+        suggested_title=converted.suggested_title
+        or title_from_markdown(converted.markdown, urlparse(url).netloc or url),
+    )
+
+
+def _converted_text(
+    url: str, response: httpx.Response, keep_original: bool
+) -> Converted:
+    """Markdown or plain text, taken as it is.
+
+    Running an HTML converter over markdown strips nothing and mangles what
+    it does not understand, so the only correct thing to do is nothing.
+    """
+    markdown = response.text
+    return Converted(
+        markdown=markdown,
+        via="verbatim",
+        format="markdown",
+        origin=f"url:{url}",
+        sha256=sha256_of(response.content),
+        original_bytes=response.content if keep_original else None,
+        original_name="original.md" if keep_original else None,
+        suggested_title=title_from_markdown(markdown, urlparse(url).netloc or url),
+    )
+
+
+def _converted_html(
+    url: str, response: httpx.Response, keep_original: bool
+) -> Converted:
     html = response.text
     markdown = convert_html(html)
     fallback = html_title(html) or urlparse(url).netloc or url

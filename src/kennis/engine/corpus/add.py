@@ -278,6 +278,7 @@ def add_notes(
     *,
     converter: Converter | None = None,
     events: EventSink | None = None,
+    client: httpx.Client | None = None,
 ) -> AddReport:
     """Add local files or URLs to the notes collection.
 
@@ -304,7 +305,14 @@ def add_notes(
     for item in resolved.items:
         sink.emit(ItemStarted(operation="add", item=item.identifier))
         outcome = _add_one(
-            collection, item.identifier, item.group, record, options, plan, sink
+            collection,
+            item.identifier,
+            item.group,
+            record,
+            options,
+            plan,
+            sink,
+            client,
         )
         outcomes.append(outcome)
         sink.emit(
@@ -335,6 +343,7 @@ def _add_one(
     options: AddOptions,
     plan: _Plan,
     sink: EventSink,
+    client: httpx.Client | None = None,
 ) -> AddOutcome:
     """One identifier, from settled-or-converted to written-or-refused."""
     settled = plan.settled.get(Path(identifier).expanduser())
@@ -342,7 +351,7 @@ def _add_one(
         return replace(settled, identifier=identifier)
 
     try:
-        converted = _convert(identifier, options, plan)
+        converted = _convert(identifier, options, plan, client)
     except KennisError as error:
         return AddOutcome(
             identifier=identifier, outcome=Outcome.FAILED, reason=str(error)
@@ -482,10 +491,17 @@ def _skipped(resolved: ResolvedInputs, sink: EventSink) -> list[AddOutcome]:
     return outcomes
 
 
-def _convert(identifier: str, options: AddOptions, plan: _Plan) -> Converted:
+def _convert(
+    identifier: str,
+    options: AddOptions,
+    plan: _Plan,
+    client: httpx.Client | None = None,
+) -> Converted:
     """A local path or an http(s) URL becomes markdown."""
     if looks_like_url(identifier):
-        return convert_url(identifier, keep_original=options.keep_original)
+        return convert_url(
+            identifier, keep_original=options.keep_original, client=client
+        )
 
     path = Path(identifier).expanduser()
     if path.is_file():
@@ -616,6 +632,11 @@ class _Paper:
     # A local document to convert, when there is one. A `.bib` entry may name
     # one through its `file =` field.
     path: Path | None = None
+    # A document to fetch and convert. The same role `path` plays, reached
+    # over the network, so what the server sends decides the conversion
+    # exactly as it does for a note. `_Page` below has carried this pair
+    # since milestone 2; literature simply never grew it.
+    url: str | None = None
     # The entry this came from, when the argument was a `.bib`.
     entry: BibEntry | None = None
     # An identity the argument itself stated, rather than one read off a page.
@@ -630,6 +651,7 @@ def add_literature(
     converter: Converter | None = None,
     events: EventSink | None = None,
     arxiv: httpx.Client | None = None,
+    client: httpx.Client | None = None,
 ) -> AddReport:
     """Add papers to the literature collection.
 
@@ -675,7 +697,7 @@ def add_literature(
         if position and delay:
             time.sleep(delay)
         sink.emit(ItemStarted(operation="add", item=paper.identifier))
-        outcome = _add_paper(collection, paper, record, options, plan, arxiv)
+        outcome = _add_paper(collection, paper, record, options, plan, arxiv, client)
         outcomes.append(outcome)
         sink.emit(
             ItemFinished(
@@ -730,6 +752,19 @@ def _papers_of(resolved: ResolvedInputs) -> tuple[list[_Paper], list[AddOutcome]
             )
             continue
 
+        if looks_like_url(item.identifier):
+            # A URL is a *document*, exactly as a local file is - not an
+            # identity. It still needs `--identifier` or a front page that
+            # states one, which is the rule a local PDF already follows, and
+            # it is refused for being unidentified rather than for being a
+            # URL.
+            papers.append(
+                _Paper(
+                    identifier=item.identifier, group=item.group, url=item.identifier
+                )
+            )
+            continue
+
         if path.is_file():
             papers.append(
                 _Paper(identifier=item.identifier, group=item.group, path=path)
@@ -741,8 +776,8 @@ def _papers_of(resolved: ResolvedInputs) -> tuple[list[_Paper], list[AddOutcome]
                 identifier=item.identifier,
                 outcome=Outcome.FAILED,
                 reason=(
-                    f"'{item.identifier}' is not an existing file, an arXiv "
-                    f"identifier, a DOI or an ADS bibcode"
+                    f"'{item.identifier}' is not an existing file, a URL, an "
+                    f"arXiv identifier, a DOI or an ADS bibcode"
                 ),
             )
         )
@@ -846,6 +881,7 @@ def _add_paper(
     options: AddOptions,
     plan: _Plan,
     arxiv: httpx.Client | None,
+    client: httpx.Client | None = None,
 ) -> AddOutcome:
     """One paper, from identity to written-or-refused."""
     settled = plan.settled.get(paper.path) if paper.path is not None else None
@@ -876,7 +912,7 @@ def _add_paper(
             reason="this paper is already in this collection",
         )
 
-    converted, _ = _converted_for(paper, identity, options, plan, arxiv)
+    converted, _ = _converted_for(paper, identity, options, plan, arxiv, client)
     if isinstance(converted, AddOutcome):
         return converted
 
@@ -1023,6 +1059,7 @@ def _converted_for(
     options: AddOptions,
     plan: _Plan,
     arxiv: httpx.Client | None,
+    client: httpx.Client | None = None,
 ) -> tuple[Converted | AddOutcome, str | None]:
     """The markdown for one paper, or why there will not be any.
 
@@ -1038,6 +1075,27 @@ def _converted_for(
     a search with a stub is worse than one that answers with nothing, because
     the reader believes they have the paper.
     """
+    if paper.url is not None:
+        # The same call a note makes, so a URL answering with a PDF is
+        # converted and one answering with HTML is converted as HTML - one
+        # rule for both collections.
+        try:
+            return (
+                convert_url(
+                    paper.url, keep_original=options.keep_original, client=client
+                ),
+                None,
+            )
+        except KennisError as error:
+            return (
+                AddOutcome(
+                    identifier=paper.identifier,
+                    outcome=Outcome.FAILED,
+                    reason=str(error),
+                ),
+                None,
+            )
+
     if paper.path is None:
         fetched = (
             fetch_paper(identity.arxiv_id, client=arxiv) if identity.arxiv_id else None
