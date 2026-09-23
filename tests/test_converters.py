@@ -14,10 +14,13 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from kennis.engine.corpus import converters
 from kennis.engine.corpus.converters import (
     ConversionBatch,
     MineruConverter,
@@ -432,3 +435,148 @@ def test_the_repair_can_be_switched_off(tmp_path: Path):
     counts = on._repair(repaired)
     assert counts == {pdf: 1}
     assert repaired[pdf] == "the effects differ"
+
+
+# ---------------------------------------------------------------------------
+# Finding mineru where kennis's own installation put it
+# ---------------------------------------------------------------------------
+
+
+def an_interpreter_with(directory: Path, *names: str) -> Path:
+    """A directory standing in for the `bin/` of the venv kennis runs from."""
+    directory.mkdir(parents=True, exist_ok=True)
+    interpreter = directory / "python"
+    interpreter.write_text("", encoding="utf-8")
+    for name in names:
+        beside = directory / name
+        beside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        beside.chmod(0o755)
+    return interpreter
+
+
+def test_mineru_is_found_beside_the_interpreter_when_it_is_not_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_mineru: None
+):
+    """**Reported from a real install.**
+
+    `uv tool install "kennis[mineru]"` installs mineru into the tool's own
+    virtual environment and links only *kennis's* entry point into
+    `~/.local/bin` - it says so itself: `Installed 1 executable: kennis`. So
+    `~/.local/share/uv/tools/kennis/bin/mineru` exists, is never on PATH, and
+    a PATH-only check reports mineru as missing on a machine that has just
+    installed it.
+
+    The interpreter running kennis is inside that same environment, so its
+    directory is where to look first.
+    """
+    interpreter = an_interpreter_with(tmp_path / "toolvenv" / "bin", "mineru")
+    monkeypatch.setattr(sys, "executable", str(interpreter))
+
+    assert MineruConverter().is_available()
+
+
+def test_mineru_on_path_is_still_found(tmp_path: Path, fake_mineru: Path):
+    """The control. A mineru installed separately, reached the ordinary way,
+    must keep working - the interpreter's own directory is a first place to
+    look, not a replacement."""
+    assert MineruConverter().is_available()
+
+
+def test_mineru_that_is_nowhere_is_still_reported_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_mineru: None
+):
+    """The second control, so the first two are not passing for free."""
+    interpreter = an_interpreter_with(tmp_path / "bare" / "bin")
+    monkeypatch.setattr(sys, "executable", str(interpreter))
+
+    assert not MineruConverter().is_available()
+
+
+def test_the_run_invokes_the_mineru_it_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_mineru: None
+):
+    """Finding it is not enough: the subprocess must be given the path, or it
+    resolves the bare name against PATH again and fails there."""
+    beside = tmp_path / "toolvenv" / "bin"
+    interpreter = an_interpreter_with(beside, "mineru")
+    monkeypatch.setattr(sys, "executable", str(interpreter))
+
+    invoked: list[list[str]] = []
+
+    def record(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        invoked.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", record)
+    MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+
+    assert invoked, "mineru was never run"
+    assert invoked[0][0] == str(beside / "mineru")
+
+
+def test_the_install_hint_matches_how_kennis_was_installed(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Brian, on the hint he was given: "It should say to install
+    kennis[mineru]".
+
+    `uv sync --extra mineru` is right in a source checkout and meaningless to
+    somebody who installed the tool - there is no project to sync. An error
+    names the command that resolves it, so which command that is depends on
+    which of the two they are.
+    """
+    monkeypatch.setattr(converters, "_from_source_checkout", lambda: True)
+    assert MineruConverter().install_hint() == "uv sync --extra mineru"
+
+    monkeypatch.setattr(converters, "_from_source_checkout", lambda: False)
+    assert MineruConverter().install_hint() == 'uv tool install "kennis[mineru]"'
+
+
+def test_this_checkout_is_recognised_as_one():
+    """The detection itself, against the tree the tests are running in."""
+    assert converters._from_source_checkout()
+
+
+def test_a_mineru_on_path_wins_over_the_one_beside_the_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_mineru: Path
+):
+    """Found by making the mistake. Looking beside the interpreter *first*
+    made every test that substitutes a fake mineru run the real one instead,
+    for thirty-two seconds.
+
+    Prepending to PATH is how a person chooses one build of a tool over
+    another. The interpreter's own directory is a fallback for when PATH has
+    no answer, which is the tool-install case and nothing wider.
+    """
+    beside = tmp_path / "toolvenv" / "bin"
+    interpreter = an_interpreter_with(beside, "mineru")
+    monkeypatch.setattr(sys, "executable", str(interpreter))
+
+    assert converters._executable("mineru") != str(beside / "mineru")
+    assert converters._executable("mineru") == shutil.which("mineru")
+
+
+def test_an_installed_copy_is_not_taken_for_a_checkout(tmp_path: Path):
+    """The branch an injection found untested.
+
+    `test_the_install_hint_matches_how_kennis_was_installed` patches the
+    predicate to exercise both hints, and `test_this_checkout_is_recognised_
+    as_one` covers the true case - so a predicate that returned True for
+    everything passed the whole suite, and every installed user would be told
+    to sync a project they do not have. Concern #179 is the same lesson from
+    the other side.
+    """
+    venv = tmp_path / "lib" / "python3.12"
+    (venv / "site-packages" / "kennis").mkdir(parents=True)
+
+    assert not converters._is_source_checkout(venv)
+
+
+def test_a_checkout_is_recognised_by_its_layout(tmp_path: Path):
+    """A pyproject alone is not enough: any project has one, and kennis could
+    be installed into a venv that happens to sit inside another project."""
+    (tmp_path / "pyproject.toml").write_text('name = "kennis"\n', encoding="utf-8")
+    assert not converters._is_source_checkout(tmp_path)
+
+    (tmp_path / "src" / "kennis").mkdir(parents=True)
+    assert converters._is_source_checkout(tmp_path)

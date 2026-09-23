@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,17 @@ def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def no_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """An environment with no `mineru` anywhere on PATH."""
+    """An environment with no `mineru` anywhere kennis looks.
+
+    Both places, not just PATH. kennis falls back to the directory of the
+    interpreter it is running on, because `uv tool install "kennis[mineru]"`
+    puts mineru there and never on PATH - and this checkout's own `.venv/bin`
+    holds a real mineru, so emptying PATH alone left four tests asserting
+    absence while the real converter ran.
+    """
     empty = tmp_path / "empty-bin"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
+    interpreter = empty / "python"
+    interpreter.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(interpreter))
