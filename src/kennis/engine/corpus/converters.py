@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Sequence
@@ -121,7 +122,61 @@ _MINERU_FORMATS: Final[dict[str, SourceFormat]] = {
 
 MINERU_FORMATS: Final[frozenset[SourceFormat]] = frozenset(_MINERU_FORMATS.values())
 
-_INSTALL_HINT: Final = "uv sync --extra mineru"
+# Which command installs the extra depends on how kennis itself was
+# installed, and the two are not interchangeable: there is no project to sync
+# for somebody who installed the tool, and `uv tool install` is not what a
+# contributor with a checkout wants. Rule: an error names the command that
+# resolves it, so it has to name the right one.
+_SOURCE_INSTALL_HINT: Final = "uv sync --extra mineru"
+_TOOL_INSTALL_HINT: Final = 'uv tool install "kennis[mineru]"'
+
+
+def _is_source_checkout(root: Path) -> bool:
+    """Whether `root` is kennis's own source tree rather than a venv.
+
+    Split from the caller so both answers are testable. The false case is the
+    one that matters and the one a test cannot reach through `__file__`:
+    a hint is only wrong when kennis is installed, and the tests run from a
+    checkout.
+    """
+    return (root / "pyproject.toml").is_file() and (root / "src" / "kennis").is_dir()
+
+
+def _from_source_checkout() -> bool:
+    """Whether this kennis is running from its own source tree.
+
+    True for a checkout, whether or not it is installed editable, because the
+    module then sits at `<root>/src/kennis/engine/corpus/` with the project's
+    own `pyproject.toml` above it. False for an installed copy, where the
+    same walk lands inside `lib/python3.x/` and finds nothing.
+    """
+    return _is_source_checkout(Path(__file__).resolve().parents[4])
+
+
+def _executable(name: str) -> str | None:
+    """`name` on PATH, or failing that beside the interpreter kennis runs on.
+
+    **`uv tool install "kennis[mineru]"` never puts mineru on PATH.** It
+    installs it into the tool's own virtual environment and links only
+    kennis's entry point, saying so as it goes: `Installed 1 executable:
+    kennis`. So a PATH-only check reports mineru missing on a machine that
+    has just installed it, and then tells the user to install what they
+    already have. The interpreter running kennis is inside that same
+    environment, so its directory is the place to look next.
+
+    **PATH is tried first, and the order is not arbitrary.** Prepending a
+    directory to PATH is how a person substitutes one build of a tool for
+    another, and how this suite substitutes a fake mineru for the real one;
+    looking beside the interpreter first silently ignored both. The fallback
+    is for when PATH has no answer at all, which is exactly the tool-install
+    case.
+
+    `shutil.which` with an explicit path rather than a manual join, so
+    Windows still applies PATHEXT.
+    """
+    found = shutil.which(name)
+    return found or shutil.which(name, path=str(Path(sys.executable).parent))
+
 
 # Settings whose value is "auto" mean "let MinerU decide", which MinerU
 # expects to be expressed by the variable being *absent*. Passing the literal
@@ -200,10 +255,10 @@ class MineruConverter:
         self.repair_ligatures = repair_ligatures
 
     def is_available(self) -> bool:
-        return shutil.which(self.name) is not None
+        return _executable(self.name) is not None
 
     def install_hint(self) -> str:
-        return _INSTALL_HINT
+        return _SOURCE_INSTALL_HINT if _from_source_checkout() else _TOOL_INSTALL_HINT
 
     def convert(
         self, paths: Sequence[Path], *, page_limit: int | None = None
@@ -288,8 +343,10 @@ class MineruConverter:
         document_count: int,
         page_limit: int | None,
     ) -> subprocess.CompletedProcess[str]:
+        # The resolved path, not the bare name: a subprocess given the name
+        # resolves it against PATH again, which is exactly where it is not.
         command = [
-            self.name,
+            _executable(self.name) or self.name,
             "-p",
             str(staged_dir),
             "-o",
