@@ -164,6 +164,16 @@ class ConversionSettings(BaseModel):
             "key, and sends the document to a third party."
         ),
     )
+    mode: Literal["fast", "balanced", "accurate"] = Field(
+        default="balanced",
+        description=(
+            "How hard the datalab backend works, and what it charges. "
+            "Measured per page: fast 0.4c, balanced 0.4c, accurate 1.0c. "
+            "The server only reuses a conversion when the mode matches, so "
+            "changing this and re-adding a document pays for it again. "
+            "mineru ignores this - it runs locally and costs nothing."
+        ),
+    )
     batch_size: int = Field(
         default=8,
         ge=0,

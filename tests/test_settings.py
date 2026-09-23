@@ -18,6 +18,7 @@ from typing import Final
 import pytest
 
 from kennis.engine.settings import (
+    ConversionSettings,
     Settings,
     config_dir,
     config_path,
@@ -480,3 +481,21 @@ def test_reading_an_env_file_does_not_alter_the_environment(
     assert credential("DATALAB_API_KEY") == "dl-from-env-keys"
     assert "DATALAB_API_KEY" not in os.environ
     assert "OTHER" not in os.environ
+
+
+def test_the_mode_setting_warns_that_changing_it_is_not_free():
+    """A document already converted is cached by the server, but the mode is
+    part of the cache key: re-adding the same paper at a different mode is
+    charged in full. Measured - 7.6c for a 19-page paper already converted
+    at `balanced`. Someone reading the setting is deciding whether to change
+    it, and that is the moment the cost has to be stated. Concern #147."""
+    description = ConversionSettings.model_fields["mode"].description or ""
+
+    assert "again" in description.lower() or "re-convert" in description.lower()
+
+
+def test_the_mode_setting_says_it_does_not_apply_to_the_default_backend():
+    """A setting that silently does nothing is a promise. mineru ignores it."""
+    description = ConversionSettings.model_fields["mode"].description or ""
+
+    assert "mineru" in description.lower()

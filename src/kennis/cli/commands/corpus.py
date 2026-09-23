@@ -50,6 +50,7 @@ from kennis.engine.rag.binding import binding_from
 from kennis.engine.rag.index import build_index, read_manifest
 from kennis.engine.rag.loaders import CollectionLoader
 from kennis.render.words import (
+    conversion_cost,
     count_of,
     describe_change,
     describe_freshness,
@@ -397,9 +398,14 @@ def _report_add(report: AddReport) -> None:
     the log has all of them either way.
     """
     counts = report.counts
+    # The cost rides on the operation line rather than a line of its own: it
+    # is a property of what just happened, and a separate line would give a
+    # free local conversion a blank where a number used to be.
+    priced = conversion_cost(report.cost_cents)
     display.operation(
         "Added",
-        count_of(counts.get(Outcome.ADDED, 0), "document"),
+        count_of(counts.get(Outcome.ADDED, 0), "document")
+        + (f", {priced}" if priced else ""),
         elapsed=report.elapsed_seconds,
     )
     for outcome in Outcome:

@@ -92,6 +92,9 @@ _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]]
     ("embedding.model", "text", (("embedding.backend", "openai"),)),
     ("embedding.api_key", "secret", (("embedding.backend", "openai"),)),
     ("conversion.backend", "choice", ()),
+    # Before the key: the mode is a price, and nobody wants to retype a key
+    # because a cheap question came after it.
+    ("conversion.mode", "choice", (("conversion.backend", "datalab"),)),
     ("conversion.api_key", "secret", (("conversion.backend", "datalab"),)),
     ("retrieval.corpus_method", "choice", ()),
     ("retrieval.default_top_k", "integer", ()),

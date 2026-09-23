@@ -315,3 +315,32 @@ def test_the_conversion_key_never_reaches_the_config_file(tmp_path: Path):
 
     assert "dl-notarealkey" not in written
     assert 'backend = "datalab"' in written
+
+
+def test_a_datalab_user_is_asked_which_mode_to_pay_for():
+    """The mode is a price, and `config init` is where a datalab user is
+    making price decisions. Asked only of them: a mineru user choosing a
+    setting mineru ignores would be answering a question about nothing.
+    Concern #147."""
+    from kennis.engine.setup import questions_for
+
+    for_datalab = [
+        question.key for question in questions_for({"conversion.backend": "datalab"})
+    ]
+    for_mineru = [
+        question.key for question in questions_for({"conversion.backend": "mineru"})
+    ]
+
+    assert "conversion.mode" in for_datalab
+    assert "conversion.mode" not in for_mineru
+
+
+def test_the_mode_question_is_asked_before_the_key_is_typed():
+    """Both are consequences of choosing datalab, and the order a person
+    reads them in is the order they are asked. The key is the last thing
+    anybody wants to retype, so it comes after the cheap choice."""
+    from kennis.engine.setup import questions_for
+
+    keys = [q.key for q in questions_for({"conversion.backend": "datalab"})]
+
+    assert keys.index("conversion.mode") < keys.index("conversion.api_key")

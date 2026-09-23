@@ -176,6 +176,9 @@ class AddReport:
 
     outcomes: list[AddOutcome]
     elapsed_seconds: float
+    # What the hosted converter charged for this invocation, in cents.
+    # `None` when nothing reported a cost, which is every local conversion.
+    cost_cents: float | None = None
 
     @property
     def counts(self) -> dict[Outcome, int]:
@@ -256,6 +259,10 @@ class _Plan:
     # Page-one text per document, page furniture included. Unused by notes;
     # literature is what reads it.
     front_page: dict[Path, str] = field(default_factory=dict)
+    # What the conversions cost in cents, summed across the runs, when the
+    # converter reported anything. `None` means no run reported a cost -
+    # which is every local conversion. Concern #146.
+    cost_cents: float | None = None
 
 
 def _delay_for(options: AddOptions, default: float) -> float:
@@ -324,7 +331,11 @@ def add_notes(
             )
         )
 
-    report = AddReport(outcomes=outcomes, elapsed_seconds=time.monotonic() - started_at)
+    report = AddReport(
+        outcomes=outcomes,
+        elapsed_seconds=time.monotonic() - started_at,
+        cost_cents=plan.cost_cents,
+    )
     sink.emit(
         OperationFinished(
             operation="add",
@@ -577,6 +588,8 @@ def _plan_binaries(
                 prepared_markdown=markdown,
             )
             plan.front_page[path] = batch.front_page.get(path, "")
+        if batch.cost_cents is not None:
+            plan.cost_cents = (plan.cost_cents or 0.0) + batch.cost_cents
     return plan
 
 
@@ -708,7 +721,11 @@ def add_literature(
             )
         )
 
-    report = AddReport(outcomes=outcomes, elapsed_seconds=time.monotonic() - started_at)
+    report = AddReport(
+        outcomes=outcomes,
+        elapsed_seconds=time.monotonic() - started_at,
+        cost_cents=plan.cost_cents,
+    )
     sink.emit(
         OperationFinished(
             operation="add",

@@ -350,3 +350,11 @@ def test_mineru_converts_a_real_pdf(tmp_path: Path):
     # would be one the chunker also indexes as prose.
     assert "arXiv:2501.01234" in batch.front_page[path]
     assert "arXiv:2501.01234" not in markdown
+
+
+def test_a_local_conversion_claims_no_cost():
+    """MinerU is told nothing about money and must say nothing about it.
+    `None` rather than `0.0`, which would be a claim. Concern #146."""
+    from kennis.engine.corpus.converters import ConversionBatch
+
+    assert ConversionBatch(markdown={}).cost_cents is None
