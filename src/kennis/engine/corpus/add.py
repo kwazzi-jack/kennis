@@ -179,6 +179,8 @@ class AddReport:
     # What the hosted converter charged for this invocation, in cents.
     # `None` when nothing reported a cost, which is every local conversion.
     cost_cents: float | None = None
+    # Ligature repairs made while converting. Zero is the ordinary case.
+    repairs: int = 0
 
     @property
     def counts(self) -> dict[Outcome, int]:
@@ -263,6 +265,8 @@ class _Plan:
     # converter reported anything. `None` means no run reported a cost -
     # which is every local conversion. Concern #146.
     cost_cents: float | None = None
+    # Ligature repairs made across the batch. Concern #151.
+    repairs: int = 0
 
 
 def _delay_for(options: AddOptions, default: float) -> float:
@@ -335,6 +339,7 @@ def add_notes(
         outcomes=outcomes,
         elapsed_seconds=time.monotonic() - started_at,
         cost_cents=plan.cost_cents,
+        repairs=plan.repairs,
     )
     sink.emit(
         OperationFinished(
@@ -590,6 +595,7 @@ def _plan_binaries(
             plan.front_page[path] = batch.front_page.get(path, "")
         if batch.cost_cents is not None:
             plan.cost_cents = (plan.cost_cents or 0.0) + batch.cost_cents
+        plan.repairs += sum(batch.repairs.values())
     return plan
 
 
@@ -725,6 +731,7 @@ def add_literature(
         outcomes=outcomes,
         elapsed_seconds=time.monotonic() - started_at,
         cost_cents=plan.cost_cents,
+        repairs=plan.repairs,
     )
     sink.emit(
         OperationFinished(

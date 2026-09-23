@@ -51,6 +51,7 @@ from kennis.engine.rag.index import build_index, read_manifest
 from kennis.engine.rag.loaders import CollectionLoader
 from kennis.render.words import (
     conversion_cost,
+    conversion_repairs,
     count_of,
     describe_change,
     describe_freshness,
@@ -402,10 +403,12 @@ def _report_add(report: AddReport) -> None:
     # is a property of what just happened, and a separate line would give a
     # free local conversion a blank where a number used to be.
     priced = conversion_cost(report.cost_cents)
+    repaired = conversion_repairs(report.repairs)
     display.operation(
         "Added",
         count_of(counts.get(Outcome.ADDED, 0), "document")
-        + (f", {priced}" if priced else ""),
+        + (f", {priced}" if priced else "")
+        + (f", {repaired}" if repaired else ""),
         elapsed=report.elapsed_seconds,
     )
     for outcome in Outcome:

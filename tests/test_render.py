@@ -367,3 +367,20 @@ def test_a_half_cent_rounds_to_even_rather_than_up():
 
     assert conversion_cost(812.5) == "$8.12"
     assert conversion_cost(837.5) == "$8.38"
+
+
+def test_no_repairs_says_nothing():
+    """The ordinary case: a document the converter handled correctly. A
+    `0 repaired` on every add would be noise."""
+    from kennis.render.words import conversion_repairs
+
+    assert conversion_repairs(0) == ""
+
+
+def test_repairs_are_reported_with_their_count():
+    """A direct per-document measure of how badly a converter handled a
+    document - the number that would have shown concern #135 on day one."""
+    from kennis.render.words import conversion_repairs
+
+    assert conversion_repairs(1) == "1 ligature repaired"
+    assert conversion_repairs(77) == "77 ligatures repaired"

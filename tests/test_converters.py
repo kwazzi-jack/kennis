@@ -358,3 +358,77 @@ def test_a_local_conversion_claims_no_cost():
     from kennis.engine.corpus.converters import ConversionBatch
 
     assert ConversionBatch(markdown={}).cost_cents is None
+
+
+# ---------------------------------------------------------------------------
+# Normalisation and ligature repair in the conversion path
+# ---------------------------------------------------------------------------
+#
+# Concerns #151-#154. What a converter hands back is stored, indexed and
+# chunked as-is, so HTML left in it is a retrieval defect and so is a word
+# with a letter missing.
+
+
+def a_hyphenated_pdf(path: Path) -> Path:
+    """A PDF whose text layer breaks a word across two drawn runs.
+
+    pypdfium2 marks the boundary between text runs with U+FFFE, which is
+    also where a hyphenation across a line lands. Without joining across it,
+    `numerical` enters the vocabulary as `numer` and `ical`, and every
+    correctly converted word whose only appearance is broken looks absent.
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pdf = canvas.Canvas(str(path), pagesize=A4)
+    pdf.drawString(72, 700, "The calculation is numer-")
+    pdf.drawString(72, 680, "ical and the effects differ.")
+    pdf.save()
+    return path
+
+
+def test_the_vocabulary_joins_words_broken_across_a_line(tmp_path: Path):
+    from kennis.engine.corpus.ligatures import text_layer_vocabulary
+
+    vocabulary = text_layer_vocabulary(a_hyphenated_pdf(tmp_path / "broken.pdf"))
+
+    assert "numerical" in vocabulary
+    # The halves are kept too: a half is often a real word elsewhere.
+    assert "numer" in vocabulary
+
+
+def test_mineru_output_is_normalised_markdown(tmp_path: Path):
+    """MinerU writes tables as raw HTML - 15% of one paper's stored
+    characters. What reaches the corpus must be markdown, so this goes
+    through the converter's own post-processing rather than calling the
+    normaliser directly."""
+    from kennis.engine.corpus.converters import MineruConverter
+
+    source = a_hyphenated_pdf(tmp_path / "paper.pdf")
+    raw = "<table><tr><td>Cores</td><td>Time</td></tr></table> and x<sup>2</sup>"
+
+    finished, _ = MineruConverter()._finish({source: raw})
+
+    assert "<table>" not in finished[source]
+    assert "<sup>" not in finished[source]
+    assert "| Cores | Time |" in finished[source]
+    assert "x^2" in finished[source]
+
+
+def test_the_repair_can_be_switched_off(tmp_path: Path):
+    """`conversion.repair_ligatures`. Off means the converter reports no
+    repairs at all, not zero repairs it tried to make."""
+    from kennis.engine.corpus.converters import MineruConverter
+
+    off = MineruConverter(repair_ligatures=False)
+    on = MineruConverter(repair_ligatures=True)
+    pdf = a_hyphenated_pdf(tmp_path / "paper.pdf")
+    damaged = {pdf: "the efects differ"}
+
+    assert off._repair(dict(damaged)) == {}
+
+    repaired = dict(damaged)
+    counts = on._repair(repaired)
+    assert counts == {pdf: 1}
+    assert repaired[pdf] == "the effects differ"

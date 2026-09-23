@@ -42,6 +42,11 @@ from typing import Any, Final, Literal, Protocol, runtime_checkable
 
 import httpx
 
+from kennis.engine.corpus.ligatures import (
+    repair_ligatures,
+    text_layer_vocabulary,
+)
+from kennis.engine.corpus.markdown import normalise_markdown
 from kennis.engine.corpus.schema import SourceFormat
 from kennis.engine.errors import ConversionFailed, ConverterUnavailable
 from kennis.engine.settings import credential, load_settings
@@ -64,6 +69,10 @@ class ConversionBatch:
     # not `0.0`, which is a claim about money. A hosted conversion of a
     # document the server has already seen genuinely does return `0.0`.
     cost_cents: float | None = None
+    # Ligature repairs made per document. A count rather than a flag, because
+    # it is a direct measure of how badly a converter handled this document -
+    # the number that would have shown concern #135 the day it appeared.
+    repairs: dict[Path, int] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -181,8 +190,14 @@ class MineruConverter:
     name = "mineru"
     formats = MINERU_FORMATS
 
-    def __init__(self, options: MineruOptions | None = None) -> None:
+    def __init__(
+        self,
+        options: MineruOptions | None = None,
+        *,
+        repair_ligatures: bool = True,
+    ) -> None:
         self.options = options or MineruOptions()
+        self.repair_ligatures = repair_ligatures
 
     def is_available(self) -> bool:
         return shutil.which(self.name) is not None
@@ -223,9 +238,48 @@ class MineruConverter:
         if not markdown and reason is not None:
             raise ConversionFailed(f"mineru failed: {reason}")
 
+        markdown, repairs = self._finish(markdown)
         return ConversionBatch(
-            markdown=markdown, front_page=front_page, failure_reason=reason
+            markdown=markdown,
+            front_page=front_page,
+            failure_reason=reason,
+            repairs=repairs,
         )
+
+    def _finish(
+        self, markdown: dict[Path, str]
+    ) -> tuple[dict[Path, str], dict[Path, int]]:
+        """Everything done to MinerU's markdown before it is stored.
+
+        Normalisation first, because the repair must not walk into an HTML
+        attribute, and because a table cell's words should be repaired too.
+        """
+        normalised = {path: normalise_markdown(text) for path, text in markdown.items()}
+        return normalised, self._repair(normalised)
+
+    def _repair(self, markdown: dict[Path, str]) -> dict[Path, int]:
+        """Repair ligature damage in place, and report how much there was.
+
+        Only PDFs: the reference is the document's own text layer, and there
+        is no text layer to read in a DOCX or a spreadsheet. A document whose
+        text layer cannot be read at all yields no vocabulary and so no
+        repairs, which is the right answer rather than an error - a scanned
+        paper has no reference and must not be rewritten from an empty one.
+        """
+        if not self.repair_ligatures:
+            return {}
+        counts: dict[Path, int] = {}
+        for path, text in markdown.items():
+            if path.suffix.lower() != ".pdf":
+                continue
+            try:
+                vocabulary = text_layer_vocabulary(path)
+            except Exception:
+                continue
+            if not vocabulary:
+                continue
+            markdown[path], counts[path] = repair_ligatures(text, vocabulary)
+        return counts
 
     def _run(
         self,
@@ -393,7 +447,9 @@ class DatalabConverter:
         if not markdown and reason is not None:
             raise ConversionFailed(f"datalab failed: {reason}")
         return ConversionBatch(
-            markdown=markdown,
+            markdown={
+                path: normalise_markdown(text) for path, text in markdown.items()
+            },
             failure_reason=reason,
             cost_cents=sum(costs) if costs else None,
         )
@@ -511,7 +567,7 @@ def default_converter() -> Converter:
     conversion = load_settings().conversion
     if conversion.backend == "datalab":
         return DatalabConverter(mode=conversion.mode)
-    return MineruConverter()
+    return MineruConverter(repair_ligatures=conversion.repair_ligatures)
 
 
 def _stage(paths: Sequence[Path], staged_dir: Path) -> dict[str, Path]:

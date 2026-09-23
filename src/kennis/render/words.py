@@ -220,3 +220,15 @@ def conversion_cost(cents: float | None) -> str:
     if cents < 100.0:
         return f"{cents:.1f}c"
     return f"${cents / 100.0:.2f}"
+
+
+def conversion_repairs(count: int) -> str:
+    """How many ligature repairs a conversion made, as a person reads it.
+
+    Nothing at all when there were none, which is the ordinary case: a
+    `0 ligatures repaired` on every add would be noise, and the absence of
+    the phrase is itself the good news.
+    """
+    if count <= 0:
+        return ""
+    return f"{count} ligature{'s' if count != 1 else ''} repaired"
