@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Final
 
 from kennis.engine.corpus.layout import default_corpus_root
+from kennis.engine.errors import CorpusNotFound
 from kennis.engine.settings import Settings, load_settings
 
 _ROOT_VARIABLE: Final = "KENNIS_CORPUS_ROOT"
@@ -37,6 +38,22 @@ def resolve_context() -> Context:
     """
     settings = load_settings()
     return Context(settings=settings, corpus_root=_root_from(settings))
+
+
+def existing_corpus() -> Context:
+    """The context, refusing early if there is no corpus to act on.
+
+    Checked here rather than left to the first engine call, so every command
+    fails the same way with the same resolution rather than each one
+    discovering it somewhere different.
+    """
+    context = resolve_context()
+    if not (context.corpus_root / ".git").is_dir():
+        raise CorpusNotFound(
+            f"there is no kennis corpus at {context.corpus_root}",
+            resolution="kennis corpus init",
+        )
+    return context
 
 
 def _root_from(settings: Settings) -> Path:

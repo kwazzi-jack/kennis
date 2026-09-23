@@ -23,6 +23,7 @@ from kennis.cli.commands import (
     config_group,
     corpus_group,
     read_command,
+    remember_command,
     search_command,
 )
 from kennis.cli.group import KennisGroup
@@ -54,6 +55,7 @@ main.add_command(corpus_group)
 main.add_command(config_group)
 main.add_command(search_command)
 main.add_command(read_command)
+main.add_command(remember_command)
 
 
 if __name__ == "__main__":

@@ -198,7 +198,7 @@ class _DiscardingSink:
 
 
 @dataclass
-class _Uniqueness:
+class Uniqueness:
     """The bookkeeping a batch keeps consistent as it goes.
 
     Loaded once per batch. Every write updates it in place, so the second
@@ -223,7 +223,7 @@ class _Uniqueness:
     problems: list[str] = field(default_factory=list)
 
     @classmethod
-    def of(cls, collection: Collection) -> _Uniqueness:
+    def of(cls, collection: Collection) -> Uniqueness:
         """Built from the survey rather than from validated documents.
 
         A document kennis cannot validate still holds an identifier and a
@@ -302,7 +302,7 @@ def add_notes(
     started_at = time.monotonic()
 
     resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
-    record = _Uniqueness.of(collection)
+    record = Uniqueness.of(collection)
     _report_problems(record, sink)
     outcomes: list[AddOutcome] = _skipped(resolved, sink)
     plan = _plan_binaries(
@@ -355,7 +355,7 @@ def _add_one(
     collection: Collection,
     identifier: str,
     walked_group: str,
-    record: _Uniqueness,
+    record: Uniqueness,
     options: AddOptions,
     plan: _Plan,
     sink: EventSink,
@@ -373,7 +373,7 @@ def _add_one(
             identifier=identifier, outcome=Outcome.FAILED, reason=str(error)
         )
 
-    existing = _duplicate_of(record, converted)
+    existing = duplicate_of(record, converted)
     if existing is not None:
         return AddOutcome(
             identifier=identifier,
@@ -395,7 +395,7 @@ def _add_one(
             )
         )
 
-    document_id, path = _write(
+    document_id, path = write_note(
         collection,
         record,
         converted=converted,
@@ -411,15 +411,21 @@ def _add_one(
     )
 
 
-def _write(
+def write_note(
     collection: Collection,
-    record: _Uniqueness,
+    record: Uniqueness,
     *,
     converted: Converted,
     title: str,
     group: str | None,
 ) -> tuple[str, Path]:
-    """Write one converted source as a note, keeping `record` current."""
+    """Write one converted source as a note, keeping `record` current.
+
+    Shared with `engine/remember.py`, which has a `Converted` it built from
+    prose rather than from a file. Both paths must mint identifiers and
+    reserve filenames against the same view of the collection, so there is
+    one writer rather than two.
+    """
     document_id = mint_id(record.identifiers)
     record.identifiers.add(document_id)
 
@@ -468,7 +474,7 @@ def _group_for(options: AddOptions, walked: str) -> str | None:
     return f"{options.group}/{walked}" if options.group else walked
 
 
-def _report_problems(record: _Uniqueness, sink: EventSink) -> None:
+def _report_problems(record: Uniqueness, sink: EventSink) -> None:
     """Say what the collection holds that kennis could not read.
 
     Reported rather than dropped, and reported without stopping: a corpus
@@ -543,7 +549,7 @@ class _Unresolved(KennisError):
     default_resolution = "kennis corpus add --help"
 
 
-def _duplicate_of(record: _Uniqueness, converted: Converted) -> str | None:
+def duplicate_of(record: Uniqueness, converted: Converted) -> str | None:
     if converted.sha256 is None:
         return None
     return record.checksums.get(converted.sha256)
@@ -551,7 +557,7 @@ def _duplicate_of(record: _Uniqueness, converted: Converted) -> str | None:
 
 def _plan_binaries(
     candidates: Sequence[Path],
-    record: _Uniqueness,
+    record: Uniqueness,
     options: AddOptions,
     converter: Converter,
     sink: EventSink,
@@ -692,7 +698,7 @@ def add_literature(
     started_at = time.monotonic()
 
     resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
-    record = _Uniqueness.of(collection)
+    record = Uniqueness.of(collection)
     _report_problems(record, sink)
     outcomes: list[AddOutcome] = _skipped(resolved, sink)
 
@@ -901,7 +907,7 @@ class _Identity:
 def _add_paper(
     collection: Collection,
     paper: _Paper,
-    record: _Uniqueness,
+    record: Uniqueness,
     options: AddOptions,
     plan: _Plan,
     arxiv: httpx.Client | None,
@@ -940,7 +946,7 @@ def _add_paper(
     if isinstance(converted, AddOutcome):
         return converted
 
-    by_checksum = _duplicate_of(record, converted)
+    by_checksum = duplicate_of(record, converted)
     if by_checksum is not None:
         return AddOutcome(
             identifier=paper.identifier,
@@ -1068,7 +1074,7 @@ def _enrich(
     )
 
 
-def _duplicate_identity(record: _Uniqueness, identity: _Identity) -> str | None:
+def _duplicate_identity(record: Uniqueness, identity: _Identity) -> str | None:
     """The document already holding any of this paper's identifiers."""
     for value in identity.values:
         existing = record.identities.get(value)
@@ -1203,7 +1209,7 @@ def _citekey_for(
     paper: _Paper,
     identity: _Identity,
     title: str,
-    record: _Uniqueness,
+    record: Uniqueness,
     options: AddOptions,
 ) -> str:
     """The paper's citekey: its own if it has one, derived otherwise.
@@ -1223,7 +1229,7 @@ def _citekey_for(
 
 def _write_paper(
     collection: Collection,
-    record: _Uniqueness,
+    record: Uniqueness,
     *,
     converted: Converted,
     title: str,
@@ -1342,7 +1348,7 @@ def add_docs(
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 
-    record = _Uniqueness.of(collection)
+    record = Uniqueness.of(collection)
     _report_problems(record, sink)
 
     owned = client is None
@@ -1481,7 +1487,7 @@ def _pages_of_site(
 def _add_page(
     collection: Collection,
     page: _Page,
-    record: _Uniqueness,
+    record: Uniqueness,
     client: httpx.Client,
 ) -> AddOutcome:
     """Fetch, convert and write one page, or say why it was not written."""
@@ -1544,7 +1550,7 @@ def _converted_page(page: _Page, client: httpx.Client) -> Converted:
 
 def _write_page(
     collection: Collection,
-    record: _Uniqueness,
+    record: Uniqueness,
     *,
     page: _Page,
     converted: Converted,
