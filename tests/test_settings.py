@@ -8,7 +8,12 @@ contains the delimiter.
 
 from __future__ import annotations
 
+import logging
+import os
+import subprocess
+import sys
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -289,3 +294,189 @@ def test_the_section_a_credential_sits_in_does_not_matter(
     )
 
     assert credential("DATALAB_API_KEY") == "dl-stored"
+
+
+# ---------------------------------------------------------------------------
+# Reading a credential from a .env file
+# ---------------------------------------------------------------------------
+#
+# Brian keeps his Datalab key in `.env.keys`. A key may therefore arrive from
+# four places, and which one wins has to be stated rather than emerge from
+# the order the code happens to be written in. Concern #140.
+
+
+def test_a_credential_in_env_keys_is_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / ".env.keys").write_text(
+        "DATALAB_API_KEY=dl-from-env-keys\n", encoding="utf-8"
+    )
+
+    assert credential("DATALAB_API_KEY") == "dl-from-env-keys"
+
+
+def test_a_credential_in_a_plain_env_file_is_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("DATALAB_API_KEY=dl-from-env\n", encoding="utf-8")
+
+    assert credential("DATALAB_API_KEY") == "dl-from-env"
+
+
+def test_every_source_in_order_of_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The one test that pins the order. Each source holds a *different*
+    value, so removing any step of the chain changes the answer rather than
+    leaving it accidentally right.
+
+    Environment, then `.env.keys`, then `.env`, then `credentials.toml`.
+    """
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    (tmp_path / ".env.keys").write_text("K=from-env-keys\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("K=from-env\n", encoding="utf-8")
+    (tmp_path / "credentials.toml").write_text(
+        '[conversion]\nK = "from-toml"\n', encoding="utf-8"
+    )
+
+    monkeypatch.setenv("K", "from-the-shell")
+    assert credential("K") == "from-the-shell"
+
+    monkeypatch.delenv("K")
+    assert credential("K") == "from-env-keys"
+
+    (tmp_path / ".env.keys").unlink()
+    assert credential("K") == "from-env"
+
+    (tmp_path / ".env").unlink()
+    assert credential("K") == "from-toml"
+
+    (tmp_path / "credentials.toml").unlink()
+    assert credential("K") == ""
+
+
+def test_an_env_file_in_the_working_directory_is_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """kennis is run from whatever directory the user is in, usually somebody
+    else's checkout. A `.env` there belongs to that project, and reading it
+    would let an arbitrary repository supply the key kennis uses to send a
+    document to a third party. rules.md 4.5."""
+    working = tmp_path / "somebody-elses-repo"
+    working.mkdir()
+    (working / ".env").write_text("DATALAB_API_KEY=dl-from-a-repo\n", encoding="utf-8")
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    monkeypatch.chdir(working)
+
+    assert credential("DATALAB_API_KEY") == ""
+
+
+def test_a_bare_name_with_no_value_is_not_a_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """dotenv represents a line that is just `KEY` as `None`, and a line that
+    is `KEY=` as the empty string. Neither is a key; both must fall through
+    to the next source rather than return as an answer."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / ".env.keys").write_text("DATALAB_API_KEY\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("DATALAB_API_KEY=\n", encoding="utf-8")
+    (tmp_path / "credentials.toml").write_text(
+        '[conversion]\nDATALAB_API_KEY = "dl-stored"\n', encoding="utf-8"
+    )
+
+    assert credential("DATALAB_API_KEY") == "dl-stored"
+
+
+MALFORMED_ENV: Final = 'DATALAB_API_KEY="unterminated\nnot a statement\n'
+
+
+def test_an_env_file_that_does_not_parse_is_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Every command calls `credential`, so a file only one command needs
+    must not be able to stop the rest."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / ".env.keys").write_text(MALFORMED_ENV, encoding="utf-8")
+
+    assert credential("DATALAB_API_KEY") == ""
+
+
+def test_a_malformed_env_file_emits_no_log_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """python-dotenv reports a bad line through `logging.warning`. The
+    suppression works by level, so the record is never created at all -
+    a stronger statement than "it was not printed", and the one that can be
+    checked in-process.
+
+    Checking stdout and stderr here would prove nothing: pytest's logging
+    plugin puts a handler on the root logger, so `logging.lastResort` never
+    fires and nothing reaches stderr whether kennis suppresses it or not.
+    That is how this test was hollow when first written.
+    """
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / ".env.keys").write_text(MALFORMED_ENV, encoding="utf-8")
+
+    with caplog.at_level(logging.DEBUG):
+        assert credential("DATALAB_API_KEY") == ""
+
+    assert [record.name for record in caplog.records] == []
+
+
+def test_a_malformed_env_file_prints_nothing_in_a_bare_process(tmp_path: Path):
+    """The claim the suppression exists for, tested where it is true or
+    false: a process with no logging configured, which is every real kennis
+    invocation. There `logging.lastResort` sends a warning to stderr.
+
+    A subprocess rather than a fixture because the condition *is* the absence
+    of pytest's own logging handler.
+    """
+    (tmp_path / ".env.keys").write_text(MALFORMED_ENV, encoding="utf-8")
+    finished = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from kennis.engine.settings import credential;"
+            " print(repr(credential('DATALAB_API_KEY')))",
+        ],
+        env={
+            **{k: v for k, v in os.environ.items() if k != "DATALAB_API_KEY"},
+            "KENNIS_CONFIG_DIR": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout.strip() == "''"
+    assert finished.stderr == ""
+
+
+def test_reading_an_env_file_does_not_alter_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`dotenv_values` is used rather than `load_dotenv` precisely so that
+    the process environment is untouched. If the file leaked into
+    `os.environ`, the environment-wins rule above would become an accident of
+    which call happened first."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("DATALAB_API_KEY", raising=False)
+    (tmp_path / ".env.keys").write_text(
+        "DATALAB_API_KEY=dl-from-env-keys\nOTHER=also-here\n", encoding="utf-8"
+    )
+
+    assert credential("DATALAB_API_KEY") == "dl-from-env-keys"
+    assert "DATALAB_API_KEY" not in os.environ
+    assert "OTHER" not in os.environ

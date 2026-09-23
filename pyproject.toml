@@ -81,6 +81,7 @@ dependencies = [
     # The two hosted embedding backends the settings offer beside fastembed.
     "ollama>=0.4",
     "openai>=1.60",
+    "python-dotenv>=1.2.3",
 ]
 
 [project.optional-dependencies]
