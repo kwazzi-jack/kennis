@@ -2,26 +2,32 @@
 # activate these. Everything runs through `uv run` against the project's own
 # environment rather than through pre-commit's isolated ones, so a hook and a
 # terminal see the same ruff and the same mypy.
+# `--no-sync` on every `uv run` below. Without it a hook re-syncs the
+# project, and on a `cz bump` commit - where pyproject's version has just
+# changed and uv.lock is part of what is being committed - that rewrites
+# uv.lock while the commit is in flight. pre-commit sees a file modified
+# during a hook and refuses the commit, which is how the first attempt at
+# tagging v0.1.0 failed with a message that named the wrong hook.
 repos:
   - repo: local
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: uv run ruff check --force-exclude
+        entry: uv run --no-sync ruff check --force-exclude
         language: system
         types_or: [python, pyi]
         require_serial: true
 
       - id: ruff-format
         name: ruff format
-        entry: uv run ruff format --force-exclude
+        entry: uv run --no-sync ruff format --force-exclude
         language: system
         types_or: [python, pyi]
         require_serial: true
 
       - id: mypy
         name: mypy
-        entry: uv run mypy src
+        entry: uv run --no-sync mypy src
         language: system
         types_or: [python, pyi]
         pass_filenames: false
@@ -47,7 +53,7 @@ repos:
 
       - id: one-line-commit-message
         name: one-line commit message
-        entry: uv run scripts/check_commit_message.py
+        entry: uv run --no-sync scripts/check_commit_message.py
         language: system
         stages: [commit-msg]
         pass_filenames: true
