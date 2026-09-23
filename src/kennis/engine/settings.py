@@ -21,17 +21,21 @@ which the design marks deferred, is deliberately absent.
 **Credentials are not settings.** `config show` writes this model to standard
 output by design, so a user debugging will paste it into an issue. A key here
 would make every printing path need redaction, and redaction is the step that
-gets forgotten when a new printing path is added. Keys live in
-`credentials.toml` at mode 0600, which nothing here reads.
+gets forgotten when a new printing path is added. Keys live outside this
+model, and `credential` below is the one function that reads them.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Final, Literal, get_args, get_origin
 
+from dotenv import dotenv_values
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field, ValidationError
 from pydantic.fields import FieldInfo
@@ -47,6 +51,11 @@ _ENVIRONMENT_PREFIX: Final = "KENNIS"
 _CONFIG_DIR_VARIABLE: Final = "KENNIS_CONFIG_DIR"
 _CONFIG_FILE: Final = "config.toml"
 _CREDENTIALS_FILE: Final = "credentials.toml"
+
+# Consulted in this order, both inside the configuration directory. `.env` is
+# the conventional name; `.env.keys` is preferred over it because a file whose
+# only job is secrets can be given a mode and a backup policy of its own.
+_ENV_FILES: Final[tuple[str, ...]] = (".env.keys", ".env")
 
 
 class EmbeddingSettings(BaseModel):
@@ -301,27 +310,59 @@ def config_path() -> Path:
 
 
 def credentials_path() -> Path:
-    """Where API keys live. Nothing in this module reads it."""
+    """Where `config init` writes API keys. `credential` reads it last."""
     return config_dir() / _CREDENTIALS_FILE
 
 
-def credential(variable: str) -> str:
-    """One API key, from the environment or from `credentials.toml`.
+@contextmanager
+def _without_dotenv_complaints() -> Iterator[None]:
+    """Keep python-dotenv's parser quiet for the duration of one read.
 
-    **The environment wins.** A shell export, a CI secret and a one-off
-    override all arrive that way, and none of them should be shadowed by a
-    file written months earlier.
-
-    The variable name is the identity; the section it sits under in the file
-    is an implementation detail of whatever wrote it, so every section is
-    searched. A file that does not parse yields nothing rather than raising:
-    only the command that needs a key should fail for the want of one, not
-    every command that happens to load settings.
+    A malformed line is reported through `logging`, and with no handler
+    configured that reaches standard error through the last-resort handler.
+    Every command calls `credential`, and the engine never prints, so one
+    stray quote in a secrets file would otherwise make every command emit a
+    line kennis did not compose. Raising the level on the parent suppresses
+    the child `dotenv.main` too, because a logger with no level of its own
+    inherits its ancestor's.
     """
-    from_environment = os.environ.get(variable)
-    if from_environment:
-        return from_environment
+    logger = logging.getLogger("dotenv")
+    previous = logger.level
+    logger.setLevel(logging.CRITICAL)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous)
 
+
+def _from_env_file(path: Path, variable: str) -> str:
+    """One variable out of a `.env` file, or `""` if it is not usable there.
+
+    `dotenv_values` is used rather than `load_dotenv` because it returns the
+    contents instead of merging them into `os.environ`. Were the file to leak
+    into the environment, the environment-wins rule in `credential` would
+    stop being a rule and become an accident of which call ran first.
+
+    A bare `NAME` with no `=` parses to `None` and `NAME=` to the empty
+    string. Neither is a key, and both fall through to the next source.
+    """
+    if not path.is_file():
+        return ""
+    with _without_dotenv_complaints():
+        try:
+            values = dotenv_values(path, encoding="utf-8")
+        except OSError:
+            return ""
+    found = values.get(variable)
+    return found if isinstance(found, str) else ""
+
+
+def _from_credentials_file(variable: str) -> str:
+    """One variable out of `credentials.toml`, or `""`.
+
+    The variable name is the identity; the section it sits under is an
+    implementation detail of whatever wrote it, so every section is searched.
+    """
     path = credentials_path()
     if not path.is_file():
         return ""
@@ -333,6 +374,42 @@ def credential(variable: str) -> str:
         if isinstance(values, dict) and isinstance(values.get(variable), str):
             return str(values[variable])
     return ""
+
+
+def credential(variable: str) -> str:
+    """One API key, from the first of four places that holds it.
+
+    The environment, then `.env.keys`, then `.env`, then `credentials.toml` -
+    the last three inside the configuration directory.
+
+    **The environment wins.** A shell export, a CI secret and a one-off
+    override all arrive that way, and none of them should be shadowed by a
+    file written months earlier. `credentials.toml` comes last because it is
+    the file kennis writes itself, and so the one a user is least likely to
+    have edited most recently.
+
+    **No `.env` is read from the working directory.** kennis is run from
+    wherever the user happens to be, frequently somebody else's checkout. A
+    `.env` there belongs to that project, and honouring it would let an
+    arbitrary repository supply the key kennis uses to send a document to a
+    third party (rules.md 4.5).
+
+    Every failure yields nothing rather than raising - a missing file, an
+    unreadable one, one that does not parse. Only the command that needs a
+    key should fail for the want of one, not every command that happens to
+    load settings.
+    """
+    from_environment = os.environ.get(variable)
+    if from_environment:
+        return from_environment
+
+    directory = config_dir()
+    for name in _ENV_FILES:
+        from_file = _from_env_file(directory / name, variable)
+        if from_file:
+            return from_file
+
+    return _from_credentials_file(variable)
 
 
 def load_settings() -> Settings:
@@ -360,8 +437,10 @@ def config_template() -> str:
         "# kennis configuration. Every key is shown at its default, commented",
         "# out, so improving a default still reaches you. Uncomment to change.",
         "#",
-        "# API keys do not belong here: `kennis config init` writes them to",
-        "# credentials.toml, readable only by you.",
+        "# API keys do not belong here. kennis takes one from the environment",
+        "# first, then .env.keys, then .env, then credentials.toml - the last",
+        "# three in this directory. `kennis config init` writes the last of",
+        "# them, readable only by you.",
     ]
     for section_name, section_field in Settings.model_fields.items():
         annotation = section_field.annotation

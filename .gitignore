@@ -21,3 +21,10 @@ wheels/
 
 # Agent instruction file, kept local.
 CLAUDE.md
+
+# API keys. Never committed - this repository is public, and a key that
+# reaches a public remote is burned even if the commit is removed later.
+.env
+.env.*
+*.key
+credentials.toml
