@@ -23,6 +23,7 @@ from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.rag.models import SearchResult
 from kennis.engine.rag.search import DocumentSpan
+from kennis.engine.remember import IndexOutcome
 
 # How much of a hit to show by default. Long enough to recognise the passage,
 # short enough that ten hits fit on a screen.
@@ -232,3 +233,17 @@ def conversion_repairs(count: int) -> str:
     if count <= 0:
         return ""
     return f"{count} ligature{'s' if count != 1 else ''} repaired"
+
+
+def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
+    """What became of the index after a note was remembered.
+
+    `unindexed` deliberately says nothing here: the collection has no index
+    at all, and what the reader needs then is the command that builds one,
+    which is a next step rather than a clause in a report line.
+    """
+    if outcome == "indexed":
+        return f"indexed, {count_of(chunk_count, 'chunk')}"
+    if outcome == "skipped":
+        return ""
+    return "not indexed"

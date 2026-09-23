@@ -20,6 +20,7 @@ from kennis.render.words import (
     describe_change,
     describe_freshness,
     describe_hit,
+    index_state,
     remedies_for,
     snippet_of,
 )
@@ -384,3 +385,26 @@ def test_repairs_are_reported_with_their_count():
 
     assert conversion_repairs(1) == "1 ligature repaired"
     assert conversion_repairs(77) == "77 ligatures repaired"
+
+
+# ---------------------------------------------------------------------------
+# What became of the index after a note was remembered
+# ---------------------------------------------------------------------------
+
+
+def test_an_indexed_note_says_how_big_the_index_now_is():
+    assert index_state("indexed", 4) == "indexed, 4 chunks"
+
+
+def test_one_chunk_is_singular():
+    assert index_state("indexed", 1) == "indexed, 1 chunk"
+
+
+def test_a_collection_with_no_index_says_the_note_is_not_in_one():
+    assert index_state("unindexed", 0) == "not indexed"
+
+
+def test_indexing_that_was_switched_off_says_nothing():
+    """The caller asked for no indexing, so reporting that it did not happen
+    is telling them what they just typed."""
+    assert index_state("skipped", 0) == ""

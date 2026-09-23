@@ -41,8 +41,21 @@ COLLECTION_NAMES: Final[tuple[str, ...]] = ("literature", "docs", "notes")
 # `format`: a PDF and a DOCX both arrive via "mineru", and an arXiv paper's
 # HTML arrives via "arxiv-html" or "ar5iv" depending on which renderer served
 # it.
+#
+# `remember` is the one value that is not a conversion at all: the markdown
+# was given directly rather than produced from source bytes. It is here
+# because this is the field that says how a document came to hold the text it
+# holds, and "the user told kennis" is an answer to that question which no
+# other value gives. Design section 12.
 type ConversionVia = Literal[
-    "verbatim", "html", "mineru", "arxiv-html", "ar5iv", "sphinx", "crawl"
+    "verbatim",
+    "html",
+    "mineru",
+    "arxiv-html",
+    "ar5iv",
+    "sphinx",
+    "crawl",
+    "remember",
 ]
 
 # The shape of the source bytes themselves, before conversion.

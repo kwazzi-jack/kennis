@@ -20,7 +20,7 @@ from typing import Final
 import click
 
 from kennis.cli import display
-from kennis.cli.context import Context, resolve_context
+from kennis.cli.context import Context, existing_corpus, resolve_context
 from kennis.cli.group import KennisGroup
 from kennis.cli.sink import marker_for, reporting
 from kennis.engine.corpus.add import (
@@ -34,7 +34,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, move_document
 from kennis.engine.corpus.layout import index_root, title_filename, unique_filename
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusNotFound, DocumentNotFound, KennisError
+from kennis.engine.errors import DocumentNotFound, KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.history import (
@@ -108,7 +108,7 @@ def init_command() -> None:
 @corpus_group.command(name="status")
 def status_command() -> None:
     """What the corpus holds, and what has changed since kennis last looked."""
-    context = _existing_corpus()
+    context = existing_corpus()
     repository = Repository(context.corpus_root)
 
     total = 0
@@ -209,7 +209,7 @@ def _report_freshness(context: Context, repository: Repository, name: str) -> bo
 )
 def list_command(collection: str | None) -> None:
     """Every document in the corpus."""
-    context = _existing_corpus()
+    context = existing_corpus()
     shown = 0
     for name in [collection] if collection else list(COLLECTION_NAMES):
         for document in (
@@ -229,7 +229,7 @@ def list_command(collection: str | None) -> None:
 )
 def tree_command(collection: str | None) -> None:
     """The corpus as the directories it really is."""
-    context = _existing_corpus()
+    context = existing_corpus()
     for name in [collection] if collection else list(COLLECTION_NAMES):
         root = context.corpus_root / name
         if not root.is_dir():
@@ -288,7 +288,7 @@ def add_command(
     max_depth: int,
 ) -> None:
     """Add files, directories or URLs to one collection."""
-    context = _existing_corpus()
+    context = existing_corpus()
     destination = _destination(
         collection, notes=notes, literature=literature, docs=docs
     )
@@ -436,7 +436,7 @@ def _report_add(report: AddReport) -> None:
 @click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
 def remove_command(handle: str, collection: str | None, yes: bool) -> None:
     """Delete a document, and its assets when it has any."""
-    context = _existing_corpus()
+    context = existing_corpus()
     found, document = _resolve(context, handle, collection)
 
     if not yes:
@@ -478,7 +478,7 @@ def move_command(
     to_collection: str | None,
 ) -> None:
     """Relocate or rename a document, keeping its identifier."""
-    context = _existing_corpus()
+    context = existing_corpus()
     if to_collection is not None:
         # The design allows a document to move between collections - to notes
         # drops the extra metadata, out of notes requires it to be
@@ -633,7 +633,7 @@ def _named(collections: Sequence[str]) -> str:
 )
 def index_command(collection: str | None) -> None:
     """Build the search index for one collection or all of them."""
-    context = _existing_corpus()
+    context = existing_corpus()
     binding = binding_from(context.settings.chunking, context.settings.embedding)
 
     # Named before the work starts, because a dense build downloads a model on
@@ -703,7 +703,7 @@ def index_command(collection: str | None) -> None:
 @click.option("--limit", type=int, default=20, show_default=True)
 def history_command(collection: str | None, limit: int) -> None:
     """What kennis did to this corpus, newest first."""
-    context = _existing_corpus()
+    context = existing_corpus()
     entries = read_history(
         Repository(context.corpus_root), collection=collection, limit=limit
     )
@@ -725,7 +725,7 @@ def history_command(collection: str | None, limit: int) -> None:
 )
 def restore_command(document_id: str, commit: str) -> None:
     """Put a document back as it was at a commit."""
-    context = _existing_corpus()
+    context = existing_corpus()
     repository = Repository(context.corpus_root)
     with corpus_lock(context.corpus_root):
         restored = restore_document(repository, document_id, commit=commit)
@@ -763,22 +763,6 @@ def _commit(context: Context, operation: str, *, scope: str, summary: str) -> No
     with noise, and raising would fail a command that succeeded.
     """
     Repository(context.corpus_root).commit(operation, scope=scope, summary=summary)
-
-
-def _existing_corpus() -> Context:
-    """The context, refusing early if there is no corpus to act on.
-
-    Checked here rather than left to the first engine call, so every command
-    fails the same way with the same resolution rather than each one
-    discovering it somewhere different.
-    """
-    context = resolve_context()
-    if not (context.corpus_root / ".git").is_dir():
-        raise CorpusNotFound(
-            f"there is no kennis corpus at {context.corpus_root}",
-            resolution="kennis corpus init",
-        )
-    return context
 
 
 __all__ = ["KennisError", "corpus_group"]

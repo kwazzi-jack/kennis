@@ -75,7 +75,7 @@ def sources(tmp_path: Path, count: int, *, prefix: str = "note") -> list[str]:
 def test_one_add_of_many_files_scans_the_collection_once(
     notes: Collection, tmp_path: Path, scans: list[str]
 ):
-    """`_Uniqueness` is loaded once per batch and updated in place, so the
+    """`Uniqueness` is loaded once per batch and updated in place, so the
     second document in a command sees the first without a second pass."""
     add_notes(notes, sources(tmp_path, 25))
 

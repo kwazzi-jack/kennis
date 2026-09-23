@@ -14,11 +14,11 @@ from typing import Final, get_args
 import click
 
 from kennis.cli import display
-from kennis.cli.context import Context, resolve_context
+from kennis.cli.context import Context, existing_corpus
 from kennis.cli.group import KennisCommand
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusNotFound, NothingToIndex, SearchUnavailable
+from kennis.engine.errors import NothingToIndex, SearchUnavailable
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Filter, SearchResult
 from kennis.engine.rag.search import Mode, read_span, search
@@ -81,7 +81,7 @@ def search_command(
     snippet: str,
 ) -> None:
     """Search the corpus and print the best-matching passages."""
-    context = _existing_corpus()
+    context = existing_corpus()
     if group is not None and project is not None:
         raise display.CliError("--project is an alias for --group; pass one of them.")
     filters = _filters(group if group is not None else project)
@@ -201,7 +201,7 @@ def read_command(
     chunk and a reader wants what surrounds it, which is why this reads the
     index and not the file.
     """
-    context = _existing_corpus()
+    context = existing_corpus()
 
     looked = False
     for name in [collection] if collection else list(COLLECTION_NAMES):
@@ -248,13 +248,3 @@ def _load(context: Context, name: str, *, named: bool) -> LoadedIndex | None:
         if named:
             raise
         return None
-
-
-def _existing_corpus() -> Context:
-    context = resolve_context()
-    if not (context.corpus_root / ".git").is_dir():
-        raise CorpusNotFound(
-            f"there is no kennis corpus at {context.corpus_root}",
-            resolution="kennis corpus init",
-        )
-    return context
