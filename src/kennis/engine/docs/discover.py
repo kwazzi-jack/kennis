@@ -147,7 +147,7 @@ def discover_pages(
     robots = robots_for(client, _origin_of(site.base_url))
 
     if mode == "sphinx":
-        return _sphinx_pages(client, site, prefix, robots)
+        return _sphinx_pages(client, site, prefix, robots, max_pages=max_pages)
     return _generic_pages(
         client,
         site,
@@ -287,13 +287,27 @@ def crawl_site(
 
 
 def _sphinx_pages(
-    client: httpx.Client, site: DocsSite, prefix: str, robots: RobotFileParser
+    client: httpx.Client,
+    site: DocsSite,
+    prefix: str,
+    robots: RobotFileParser,
+    *,
+    max_pages: int,
 ) -> Discovery:
     """The site's own page list, from the index it built for its own search.
 
     Unlike boepie, robots.txt is consulted here as well as on the crawl. That
     a site publishes what pages exist is a different statement from what may
     be fetched, and only the second is robots.txt's to make.
+
+    **The limit applies here too, and this is the mode that most needs it.**
+    A crawl walks links and stops when it runs out of them; a Sphinx site
+    hands over a complete list, so nothing else bounds the fetch that
+    follows. Without this a `--max-pages 5` against a 1433-page site
+    enumerated all of them and began fetching every one.
+
+    Truncated after the robots filter rather than before, so the limit counts
+    pages that may actually be fetched.
     """
     docnames = _docnames(client, site.base_url) or []
     pages = [
@@ -301,10 +315,11 @@ def _sphinx_pages(
         for docname in docnames
         if not _excluded(docname, site.exclude)
     ]
+    allowed = [page for page in pages if robots.can_fetch(_USER_AGENT, page.url)]
     return Discovery(
         mode="sphinx",
         version=_sphinx_version(client, site.base_url),
-        pages=[page for page in pages if robots.can_fetch(_USER_AGENT, page.url)],
+        pages=allowed[:max_pages],
         path_prefix=prefix,
     )
 
