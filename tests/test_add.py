@@ -688,3 +688,43 @@ def test_the_repair_count_reaches_the_report(notes: Collection, tmp_path: Path):
     )
 
     assert report.repairs == 7
+
+
+def test_a_duplicate_is_named_the_same_way_the_original_was(
+    notes: Collection, tmp_path: Path
+):
+    """Brian, on first use: adding `kennis-readme.md` reported `+ kennis`,
+    and adding it again reported `= kennis-readme.md`.
+
+    Both are right and the pair is wrong. The title came from the file's own
+    `# kennis` heading, which is what an added document is named by; an
+    `UNCHANGED` outcome carried no title and fell through to the identifier.
+    One report should not name documents two different ways.
+    """
+    path = a_note_file(tmp_path / "kennis-readme.md", "# kennis\n\nBody.\n")
+    first = add_notes(notes, [str(path)])
+
+    second = add_notes(notes, [str(path)])
+
+    assert second.outcomes[0].outcome is Outcome.UNCHANGED
+    assert second.outcomes[0].title == first.outcomes[0].title == "kennis"
+
+
+def test_a_duplicate_of_a_document_with_no_readable_title_still_reports(
+    notes: Collection, tmp_path: Path
+):
+    """The survey is the lenient reader, so a document it cannot validate
+    still reserves its identifier and its checksum. It may have no title to
+    give, and the report falls back to the identifier as it always did."""
+    path = a_note_file(tmp_path / "A note.md", "# A note\n\nBody.\n")
+    add_notes(notes, [str(path)])
+    stored = next(notes.path.rglob("*.md"))
+    stored.write_text(
+        stored.read_text(encoding="utf-8").replace("title: A note", "title:"),
+        encoding="utf-8",
+    )
+
+    report = add_notes(notes, [str(path)])
+
+    assert report.outcomes[0].outcome is Outcome.UNCHANGED
+    assert report.outcomes[0].title in (None, "")

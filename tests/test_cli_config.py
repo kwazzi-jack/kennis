@@ -151,8 +151,10 @@ def test_pressing_return_throughout_changes_nothing(run: CliRunner, isolated: Pa
     result = run.invoke(main, ["config", "init"], input="\n" * 20)
 
     assert result.exit_code == 0, result.output
-    written = (isolated / "config.toml").read_text(encoding="utf-8")
-    assert settings_in(written) == {}
+    # No file at all, rather than a file setting nothing. This test used to
+    # assert the second, which was the bug: an empty `config.toml` made
+    # `config show` print nothing where no file makes it print the defaults.
+    assert not (isolated / "config.toml").exists()
 
 
 def test_the_setup_asks_about_the_backend_first(run: CliRunner):
@@ -227,7 +229,7 @@ def test_the_count_is_of_what_was_written_not_what_was_asked(
     assert kept.exit_code == 0, kept.output
     assert "Configured" not in kept.output
     assert "Changed nothing" in kept.output
-    assert settings_in((isolated / "config.toml").read_text(encoding="utf-8")) == {}
+    assert not (isolated / "config.toml").exists()
 
     one = run.invoke(main, ["config", "init"], input="none\n" + "\n" * 20)
     assert one.exit_code == 0, one.output
@@ -241,3 +243,69 @@ def test_the_setup_closes_by_naming_the_next_command(run: CliRunner):
     result = run.invoke(main, ["config", "init"], input="\n" * 20)
 
     assert "kennis corpus init" in result.output
+
+
+def test_a_config_file_with_no_settings_is_treated_as_no_file(
+    run: CliRunner, isolated: Path
+):
+    """Found by running `config init` and then `config show` on a real
+    machine: the file existed, was 0 bytes, and `show` printed nothing.
+
+    "Is there a file" was never the question. "Are any settings set" is, and
+    a file holding none answers it the same way no file does.
+    """
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text("", encoding="utf-8")
+
+    result = run.invoke(main, ["config", "show"])
+
+    assert result.exit_code == 0, result.output
+    out, err = streams(result)
+    assert "[embedding]" in out
+    assert "no configuration file" in err or "no settings" in err
+    tomllib.loads(out)
+
+
+def test_a_file_holding_only_comments_is_treated_as_no_file(
+    run: CliRunner, isolated: Path
+):
+    """The same case one step along: `config init` could leave a template
+    behind with everything commented out, which sets nothing."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text("# nothing set here\n", encoding="utf-8")
+
+    result = run.invoke(main, ["config", "show"])
+
+    out, _ = streams(result)
+    assert "[embedding]" in out
+
+
+def test_a_file_with_settings_is_printed_as_it_is(run: CliRunner, isolated: Path):
+    """The control. A real configuration is shown verbatim, comments and
+    all, because that is what makes the output a usable file."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text(
+        "# mine\n[chunking]\nsize = 900\n", encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["config", "show"])
+
+    out, err = streams(result)
+    assert "# mine" in out
+    assert "size = 900" in out
+    assert "no configuration file" not in err
+
+
+def test_the_warning_comes_after_the_settings_it_is_about(run: CliRunner):
+    """Brian, on first use: it "should be at the end since it will scroll
+    down to the end of the output".
+
+    Sixty lines of TOML put a leading note off the top of the terminal before
+    the command has finished printing. It stays on stderr, so a redirect is
+    unaffected either way; what changes is whether a person sees it.
+    """
+    result = run.invoke(main, ["config", "show"])
+
+    combined = result.output
+    assert "no configuration file" in combined
+    assert combined.index("[embedding]") < combined.index("no configuration file")

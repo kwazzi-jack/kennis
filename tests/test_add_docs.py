@@ -22,6 +22,7 @@ from kennis.engine.events import (
     Diagnostic,
     ItemFinished,
     Outcome,
+    Progress,
     Recorder,
     Severity,
 )
@@ -514,3 +515,46 @@ def test_a_site_that_yielded_pages_warns_about_nothing(docs: Collection):
         for event in events.events
         if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
     ]
+
+
+def test_the_progress_bar_advances_once_per_page(docs: Collection):
+    """Brian, on first use: the bar "did not move at all".
+
+    `add_docs` emitted one `Progress` before the loop, at `completed=0`, and
+    the loop emitted only `ItemStarted` and `ItemFinished` - which the
+    display sink deliberately ignores. So the bar opened at 0 of 20 and sat
+    there for sixty-nine seconds.
+    """
+    events = Recorder()
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=sphinx_site(),
+        events=events,
+    )
+
+    reached = [
+        event.completed for event in events.events if isinstance(event, Progress)
+    ]
+    assert reached == [0, 1, 2], reached
+
+
+def test_the_progress_bar_knows_the_total_before_it_starts(docs: Collection):
+    """The first `Progress` is what opens the bar, and a bar opened without a
+    total shows a spinner rather than a proportion. Discovery already knows
+    how many pages there are, so it is emitted before the first page."""
+    events = Recorder()
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=sphinx_site(),
+        events=events,
+    )
+
+    first = next(event for event in events.events if isinstance(event, Progress))
+    assert first.completed == 0
+    assert first.total == 2

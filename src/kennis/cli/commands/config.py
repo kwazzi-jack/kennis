@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import shutil
 import textwrap
+import tomllib
+from pathlib import Path
 
 import click
 
@@ -48,17 +50,47 @@ def show_command() -> None:
     **The warning goes to stderr**, so `kennis config show > config.toml`
     produces a usable file rather than one with a warning in the middle. That
     is the same rule that keeps `serve` off stdout.
+
+    **A file that sets nothing is treated as no file.** "Is there a file" was
+    never the question a reader is asking; "are any settings set" is. A
+    0-byte `config.toml` - which a setup where every answer was left
+    unchanged used to write - otherwise made this command print nothing at
+    all.
+
+    The note comes *after* the body. It is sixty lines of TOML, so a leading
+    note is off the top of the terminal before the command has finished
+    printing, and a reader looks at the end.
     """
     path = config_path()
-    if not path.is_file():
-        display.note(
-            f"no configuration file at {path}; these are the defaults",
-            stderr=True,
-        )
-        display.next_step("kennis config init", stderr=True)
-        display.plain(config_template())
+    settings = _settings_in(path)
+    display.plain(settings if settings else config_template())
+    if settings:
         return
-    display.plain(path.read_text(encoding="utf-8"))
+    display.note(
+        f"no settings are set in {path}; these are the defaults"
+        if path.is_file()
+        else f"no configuration file at {path}; these are the defaults",
+        stderr=True,
+    )
+    display.next_step("kennis config init", stderr=True)
+
+
+def _settings_in(path: Path) -> str:
+    """The file's text, or empty when it sets nothing.
+
+    Parsed rather than measured: a file of nothing but comments is as empty
+    as a file of nothing, and both are what `config init` can leave behind.
+    """
+    if not path.is_file():
+        return ""
+    text = path.read_text(encoding="utf-8")
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        # Unreadable is not empty. Showing it as it is lets the reader see
+        # what is wrong with it, which printing the defaults would hide.
+        return text
+    return text if any(parsed.values()) else ""
 
 
 @config_group.command(name="get")

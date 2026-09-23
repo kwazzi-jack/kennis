@@ -209,6 +209,11 @@ class Uniqueness:
     identifiers: set[str] = field(default_factory=set)
     filenames: set[str] = field(default_factory=set)
     checksums: dict[str, str] = field(default_factory=dict)
+    # Document identifier to title, so a duplicate can be reported by the
+    # same name the original was added under. Without it one report names an
+    # added document by its title and an unchanged one by the argument that
+    # reached it, which reads as two different things happening.
+    titles: dict[str, str] = field(default_factory=dict)
     # Citekeys in use, so a derived one can be disambiguated against them.
     citekeys: set[str] = field(default_factory=set)
     # A lower-cased arXiv identifier, DOI or bibcode to the document holding
@@ -240,6 +245,8 @@ class Uniqueness:
                 record.citekeys.add(facts.citekey)
             if facts.identifier:
                 record.identifiers.add(facts.identifier)
+                if facts.title:
+                    record.titles[facts.identifier] = facts.title
                 if facts.checksum:
                     record.checksums[facts.checksum] = facts.identifier
                 for identity in facts.identities:
@@ -379,6 +386,7 @@ def _add_one(
             identifier=identifier,
             outcome=Outcome.UNCHANGED,
             document_id=existing,
+            title=record.titles.get(existing),
             reason="identical content is already in this collection",
         )
 
@@ -574,6 +582,7 @@ def _plan_binaries(
             identifier=str(path),
             outcome=Outcome.UNCHANGED,
             document_id=existing,
+            title=record.titles.get(existing),
             reason="identical content is already in this collection",
         )
     if not pending:
@@ -722,7 +731,9 @@ def add_literature(
         if position and delay:
             time.sleep(delay)
         sink.emit(ItemStarted(operation="add", item=paper.identifier))
-        outcome = _add_paper(collection, paper, record, options, plan, arxiv, client)
+        outcome = _add_paper(
+            collection, paper, record, options, plan, arxiv, sink, client
+        )
         outcomes.append(outcome)
         sink.emit(
             ItemFinished(
@@ -911,6 +922,7 @@ def _add_paper(
     options: AddOptions,
     plan: _Plan,
     arxiv: httpx.Client | None,
+    sink: EventSink,
     client: httpx.Client | None = None,
 ) -> AddOutcome:
     """One paper, from identity to written-or-refused."""
@@ -933,12 +945,29 @@ def _add_paper(
         )
 
     identity = _enrich(chosen, paper.entry, arxiv)
+    if chosen.kind == "arxiv" and not identity.authors:
+        # A lookup that failed degrades to None by design - refusing to store
+        # a paper because arXiv was briefly unreachable trades a small loss
+        # for a total one - but it must not do so in silence. What is lost is
+        # the author-and-year citekey, and the document is permanent: adding
+        # it again reports a duplicate by identity and never retries.
+        sink.emit(
+            Diagnostic(
+                severity=Severity.WARNING,
+                message=(
+                    f"arXiv did not answer for {paper.identifier}, so its "
+                    f"metadata is missing and its citekey is derived from "
+                    f"the title alone"
+                ),
+            )
+        )
     existing = _duplicate_identity(record, identity)
     if existing is not None:
         return AddOutcome(
             identifier=paper.identifier,
             outcome=Outcome.UNCHANGED,
             document_id=existing,
+            title=record.titles.get(existing),
             reason="this paper is already in this collection",
         )
 
@@ -952,6 +981,7 @@ def _add_paper(
             identifier=paper.identifier,
             outcome=Outcome.UNCHANGED,
             document_id=by_checksum,
+            title=record.titles.get(by_checksum),
             reason="identical content is already in this collection",
         )
 
@@ -1138,6 +1168,14 @@ def _converted_for(
                     format="html",
                     origin=_origin_of(identity, paper),
                     sha256=None,
+                    # The paper's own heading, which its LaTeXML rendering
+                    # always carries. This was the one `Converted` in the
+                    # codebase built without it, and the omission only shows
+                    # when arXiv's metadata query fails: the title chain then
+                    # falls past this step to the identifier, and a document
+                    # is stored called `arXiv:2101.11270` with the real title
+                    # sitting in its first line. Concern #177.
+                    suggested_title=title_from_markdown(fetched.markdown, ""),
                 ),
                 None,
             )
@@ -1377,6 +1415,15 @@ def add_docs(
                     reason=outcome.reason,
                 )
             )
+            # The display sink draws its bar from `Progress` alone, by
+            # design: an item's outcome is reported afterwards from the
+            # report, where it can be counted and capped. So a loop that
+            # emits only item events leaves the bar at zero for as long as it
+            # runs - which for twenty pages at the politeness delay is over a
+            # minute of a bar that looks stuck.
+            sink.emit(
+                Progress(operation="add", completed=position + 1, total=len(pages))
+            )
     finally:
         if owned:
             active.close()
@@ -1515,6 +1562,7 @@ def _add_page(
             identifier=page.identifier,
             outcome=Outcome.UNCHANGED,
             document_id=existing,
+            title=record.titles.get(existing),
             reason=f"already held as {page.project}/{page.key}",
         )
 

@@ -66,6 +66,11 @@ class DocumentFacts:
     wrapper_dir: Path | None
     identifier: str | None
     checksum: str | None
+    # The document's title, as a plain YAML key, for the same reason as the
+    # two above: a caller that matched this document by checksum or identity
+    # needs to name it, and a document that fails validation still has a
+    # title to be named by. None when there is none to read.
+    title: str | None
     # The citekey, and every bibliographic identifier the document answers to.
     # Carried for the same reason as the checksum: a paper reached by two
     # routes shares no source bytes, so its bibliographic identity is the only
@@ -167,6 +172,7 @@ def inspect_document(md_path: Path, *, collection: str) -> DocumentFacts:
             wrapper_dir=wrapper_dir,
             identifier=None,
             checksum=None,
+            title=None,
             citekey=None,
             identities=(),
             problem=str(error),
@@ -185,6 +191,7 @@ def inspect_document(md_path: Path, *, collection: str) -> DocumentFacts:
         wrapper_dir=wrapper_dir,
         identifier=_text(mapping.get("id")),
         checksum=_text(source.get("sha256")) if isinstance(source, dict) else None,
+        title=_text(mapping.get("title")),
         citekey=_text(bib.get("citekey")) if isinstance(bib, dict) else None,
         identities=_identities_of(mapping),
         problem=problem,
