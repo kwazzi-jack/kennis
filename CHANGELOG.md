@@ -1,0 +1,44 @@
+## v0.1.0 (2026-09-23)
+
+### Feat
+
+- **remember**: write a note from prose and index it in the same command
+- **conversion**: normalise converter html and repair ligature damage from the text layer
+- **conversion**: make the datalab mode a setting and report what a conversion cost
+- **settings**: read an api key from a .env file in the config directory
+- **conversion**: add the datalab backend and read stored credentials
+- **cli**: add the config command and the guided setup
+- **literature**: require a paper's text and stop resolving a doi to arxiv
+- **cli**: add the search and read commands
+- **cli**: add the corpus mutating commands and the display event sink
+- **cli**: add the corpus read commands, logging and error handling
+- **settings**: add the settings layer and the corpus lock
+- **history**: add corpus history and document restore
+- **history**: detect and resolve changes made outside kennis
+- **history**: derive index freshness from the commit it was built from
+- **history**: add the git wrapper and corpus initialisation
+- **rag**: add ranked search with reciprocal rank fusion and span reading
+- **rag**: build and publish an index with an atomic swap
+- **rag**: add the corpus loader and record source schemes correctly
+- **rag**: add embedding backends and the binding-keyed vector cache
+- **rag**: add chunking, the search models and the bm25 index
+- **docs**: add the docs collection, site discovery and the arxiv fetcher
+- **literature**: add identifiers, citekeys, arxiv metadata and the paper add path
+- **corpus**: add the notes ingestion path
+- **corpus**: add input resolution, format intake and the converter interface
+- **corpus**: add documents on disk, surrogate ids and collection resolution
+- **scaffold**: add errors, events, theme, display and the architecture tests
+
+### Fix
+
+- **docs**: honour the page limit for sphinx sites and report a site that yielded nothing
+- **history**: read git paths as bytes and restore deletions before a write
+- **intake**: convert a url by what the server sends and accept urls in literature
+- **corpus**: read and resolve past a document that cannot be validated
+- **corpus**: survive a document the collection cannot validate
+
+### Refactor
+
+- **render**: move wording out of the engine into a shared renderer
+
+## v0.0.0 (2026-09-20)
