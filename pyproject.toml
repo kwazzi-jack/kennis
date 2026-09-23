@@ -181,3 +181,8 @@ update_changelog_on_bump = true
 # commit marked breaking would take the project straight to 1.0.0.
 major_version_zero = true
 tag_format = "v$version"
+# ASCII, because commitizen's default is `bump: version 0.0.0 -> 0.1.0` with a
+# unicode arrow, and the project rule is that no arrow of that kind appears
+# anywhere. A commit message is not a file in the tree, but it is read back
+# out of `git log` by everything that reads the history.
+bump_message = "bump: version $current_version -> $new_version"
