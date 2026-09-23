@@ -17,29 +17,101 @@ still change without a migration.
 An MCP server, a per-workspace context bundle, and the pack format for
 supplying domain content come after that.
 
-## Getting started
+## Install
+
+Not published yet, so from source:
 
 ```
-kennis corpus init                      # the corpus, and the git repository it is
-kennis corpus add -n notes.md           # -n notes, -l literature, -d docs
-kennis corpus index                     # build the search index
-kennis search "what you are looking for"
-kennis read <document-id>               # the passage around a hit, in full
-kennis remember "something worth keeping"
+git clone git@github.com:kwazzi-jack/kennis.git
+cd kennis
+uv sync                       # add --extra mineru to convert PDFs
+uv run kennis --help
 ```
 
-`kennis config init` is a guided setup that asks which embedding backend to
-use, including none: with no backend the index is lexical only, and search
-falls back to BM25 rather than failing.
+`uv tool install .` puts a `kennis` on your PATH instead, if you would rather
+not prefix every command with `uv run`.
 
-`kennis remember` writes a note and indexes it in the same command, so what
-you have just told kennis is searchable straight away. Every command that
-changes the corpus records a commit, and `kennis corpus history` reads them
-back.
+## Usage
 
-Documents are converted to markdown on the way in. PDFs need a converter:
-`uv sync --extra mineru` installs MinerU, which runs locally and costs
-nothing.
+### Set up
+
+```
+kennis config init            # guided: embedding, conversion, retrieval, paths
+kennis config show            # valid TOML, safe to redirect to a file
+kennis config get embedding.backend
+kennis config set embedding.backend none
+```
+
+Nothing here is required. With no configuration kennis uses its defaults and
+`KENNIS_EMBEDDING_BACKEND=none` gives a lexical-only index, which needs no
+model download and is the quickest way to try it.
+
+### Put something in
+
+```
+kennis corpus init                             # the corpus, and the git repository it is
+kennis corpus add -n notes.md --group radio    # a file, or a directory, into notes
+kennis corpus add -l arXiv:2101.11270          # a paper, by identifier or DOI
+kennis corpus add -d https://docs.astropy.org/en/stable/ --max-pages 20
+```
+
+Three collections, each with a shorthand: `-n` notes, `-l` literature, `-d`
+docs. They differ in what kennis does *besides* storing the markdown -
+literature resolves bibliographic identity and derives a citekey, docs
+records which project and page a document is.
+
+Adding a site is polite by default: it waits between requests, honours
+`robots.txt`, and stops at `--max-pages`. Twenty pages takes about a minute.
+
+### Search it
+
+```
+kennis corpus index                            # build the index; after any batch of adds
+kennis search "complex gains"
+kennis search "gains" --collection notes --group radio -k 5
+kennis search "fits files" --mode bm25 --snippet full
+kennis read 3vgtsow3cl                         # the passage around a hit, in full
+```
+
+`--mode` is `hybrid` by default and falls back to `bm25` against a
+lexical-only index rather than failing.
+
+### Write something down
+
+```
+kennis remember "QuartiCal needs --input-ms-time-chunk tuned for long tracks"
+kennis remember --from jottings.md --title "Jottings"
+echo "The array has 64 dishes." | kennis remember
+```
+
+`remember` writes a note and indexes it in the same command, so what you have
+just told kennis is searchable straight away - provided the notes collection
+has already been indexed once. It says which of the two happened.
+
+### See what is there
+
+```
+kennis corpus status                           # per collection: how many, and how stale
+kennis corpus list --collection notes
+kennis corpus tree
+kennis corpus history --limit 10
+kennis corpus restore <document-id> --commit <hash>
+```
+
+Every command that changes the corpus records a commit, so `history` is the
+record of what kennis did and `restore` puts a document back as it was.
+
+### Where things live
+
+| what | where | override |
+|---|---|---|
+| the corpus | `~/.local/share/kennis` | `KENNIS_CORPUS_ROOT` |
+| configuration | `~/.config/kennis` | `KENNIS_CONFIG_DIR` |
+| the log | `~/.local/state/kennis/log` | `KENNIS_LOG_DIR` |
+
+Every setting can also be given as an environment variable:
+`KENNIS_EMBEDDING_BACKEND`, `KENNIS_CONVERSION_BACKEND`, and so on. The log is
+always on, and an error tells you where it is.
 
 ## Requirements
 
