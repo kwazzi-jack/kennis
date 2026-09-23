@@ -222,3 +222,13 @@ def test_source_file_is_ascii(path: Path):
         if any(byte > 0x7F for byte in line)
     ]
     assert not offending, f"{path} has non-ASCII bytes on lines {offending}"
+
+
+def test_the_typing_marker_is_there_to_be_shipped():
+    """`Typing :: Typed` is a claim to a downstream type checker, and without
+    this file mypy in another project silently treats every kennis import as
+    `Any`. The classifier said so before the marker existed; this is what
+    makes the two agree."""
+    assert (SOURCE_ROOT / "kennis" / "py.typed").is_file()
+    classifiers = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "Typing :: Typed" in classifiers
