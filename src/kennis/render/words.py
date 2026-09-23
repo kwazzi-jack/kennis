@@ -199,3 +199,24 @@ def describe_setting(key: str, value: object) -> str:
     else:
         shown = str(value)
     return f"{key} = {shown}"
+
+
+def conversion_cost(cents: float | None) -> str:
+    """What a hosted conversion cost, as a person reads it.
+
+    `None` is "no converter reported a cost", which is what a local run
+    always means, and it produces no words at all rather than a free one.
+    `0.0` is a real answer - the server returns it for a document it has
+    already converted - and says only that, because kennis is not told
+    whether it was a cache hit or an allowance.
+
+    Sub-dollar amounts stay in cents: a 19-page paper is 7.6 cents, and
+    `$0.08` would round away the only digits that vary between documents.
+    """
+    if cents is None:
+        return ""
+    if cents == 0.0:
+        return "no charge"
+    if cents < 100.0:
+        return f"{cents:.1f}c"
+    return f"${cents / 100.0:.2f}"

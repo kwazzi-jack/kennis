@@ -38,7 +38,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Literal, Protocol, runtime_checkable
 
 import httpx
 
@@ -59,6 +59,11 @@ class ConversionBatch:
     # The process's own wording when it exited non-zero, whether or not it
     # still produced output for some documents.
     failure_reason: str | None = None
+    # What the run cost, in cents, when the converter was told. `None` is
+    # "nothing was reported", which is what a local converter always means -
+    # not `0.0`, which is a claim about money. A hosted conversion of a
+    # document the server has already seen genuinely does return `0.0`.
+    cost_cents: float | None = None
 
 
 @runtime_checkable
@@ -217,6 +222,7 @@ class MineruConverter:
         reason = _failure_reason(completed) if completed.returncode != 0 else None
         if not markdown and reason is not None:
             raise ConversionFailed(f"mineru failed: {reason}")
+
         return ConversionBatch(
             markdown=markdown, front_page=front_page, failure_reason=reason
         )
@@ -303,6 +309,13 @@ DATALAB_FORMATS: Final[frozenset[SourceFormat]] = frozenset(
 # API's own example uses, and 300 polls is its example ceiling, so a document
 # gets ten minutes before kennis gives up. Unbounded polling is the one way
 # an HTTP call becomes a hang, which is what the timeout rule forbids.
+# What the hosted converter is asked to do, and what it costs. Measured on
+# three-page documents the server had not seen: fast 0.40 c/page, balanced
+# 0.40, accurate 1.00. `balanced` is the default because it costs what `fast`
+# costs, so the default forgoes no saving. Concern #146.
+type ConversionMode = Literal["fast", "balanced", "accurate"]
+_DEFAULT_MODE: Final[ConversionMode] = "balanced"
+
 _POLL_SECONDS: Final = 2.0
 _MAX_POLLS: Final = 300
 _REQUEST_TIMEOUT: Final = 120.0
@@ -328,11 +341,13 @@ class DatalabConverter:
         client: httpx.Client | None = None,
         poll_seconds: float = _POLL_SECONDS,
         max_polls: int = _MAX_POLLS,
+        mode: ConversionMode = _DEFAULT_MODE,
     ) -> None:
         self.api_key = credential(_DATALAB_KEY_VARIABLE) if api_key is None else api_key
         self._client = client
         self._poll_seconds = poll_seconds
         self._max_polls = max_polls
+        self._mode = mode
 
     def is_available(self) -> bool:
         """A key is the whole requirement. There is nothing to install."""
@@ -356,13 +371,20 @@ class DatalabConverter:
 
         markdown: dict[Path, str] = {}
         reasons: list[str] = []
+        # Costs of the documents that reported one. Left empty rather than
+        # zeroed, so "nobody told us" stays distinct from "it was free".
+        costs: list[float] = []
         client = self._client or httpx.Client(timeout=_REQUEST_TIMEOUT)
         try:
             for path in paths:
                 try:
-                    markdown[path] = self._convert_one(client, path)
+                    converted, cost = self._convert_one(client, path)
                 except ConversionFailed as failed:
                     reasons.append(f"{path.name}: {failed}")
+                    continue
+                markdown[path] = converted
+                if cost is not None:
+                    costs.append(cost)
         finally:
             if self._client is None:
                 client.close()
@@ -370,9 +392,15 @@ class DatalabConverter:
         reason = "; ".join(reasons) if reasons else None
         if not markdown and reason is not None:
             raise ConversionFailed(f"datalab failed: {reason}")
-        return ConversionBatch(markdown=markdown, failure_reason=reason)
+        return ConversionBatch(
+            markdown=markdown,
+            failure_reason=reason,
+            cost_cents=sum(costs) if costs else None,
+        )
 
-    def _convert_one(self, client: httpx.Client, path: Path) -> str:
+    def _convert_one(
+        self, client: httpx.Client, path: Path
+    ) -> tuple[str, float | None]:
         check_url = self._submit(client, path)
         return self._await_markdown(client, check_url, path)
 
@@ -385,7 +413,7 @@ class DatalabConverter:
                 _DATALAB_URL,
                 headers=self._headers(),
                 files={"file": (path.name, path.read_bytes())},
-                data={"output_format": "markdown", "mode": "balanced"},
+                data={"output_format": "markdown", "mode": self._mode},
                 timeout=_REQUEST_TIMEOUT,
             )
         except httpx.HTTPError as error:
@@ -399,8 +427,11 @@ class DatalabConverter:
             raise ConversionFailed("datalab returned no url to poll")
         return check_url
 
-    def _await_markdown(self, client: httpx.Client, url: str, path: Path) -> str:
-        """Poll until the status settles, bounded.
+    def _await_markdown(
+        self, client: httpx.Client, url: str, path: Path
+    ) -> tuple[str, float | None]:
+        """Poll until the status settles, bounded. Returns the markdown and
+        what the server said it cost, in cents, if it said anything.
 
         The key goes on this request too. It is a second, separate call and
         the service rejects an unauthenticated one, so a key sent only on
@@ -421,7 +452,7 @@ class DatalabConverter:
                 converted = _as_text(result.get("markdown"))
                 if not converted:
                     raise ConversionFailed("datalab returned no markdown")
-                return converted
+                return converted, _as_cost(result.get("total_cost"))
             time.sleep(self._poll_seconds)
         raise ConversionFailed(
             f"datalab did not finish converting {path.name} within "
@@ -437,6 +468,17 @@ def _as_text(value: object) -> str:
     document.
     """
     return value if isinstance(value, str) else ""
+
+
+def _as_cost(value: object) -> float | None:
+    """A JSON cost field in cents, or `None` when there is not one.
+
+    `bool` is excluded explicitly because it is a subclass of `int` in Python
+    and `True` would otherwise become a cost of one cent.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
 
 
 def require_converter(converter: Converter, paths: Sequence[Path]) -> None:
@@ -466,8 +508,9 @@ def default_converter() -> Converter:
     the local one: sending a document to a third party is something a user
     opts into, never something a default does for them.
     """
-    if load_settings().conversion.backend == "datalab":
-        return DatalabConverter()
+    conversion = load_settings().conversion
+    if conversion.backend == "datalab":
+        return DatalabConverter(mode=conversion.mode)
     return MineruConverter()
 
 

@@ -602,3 +602,69 @@ def test_an_unreadable_document_still_answers_for_its_content(
 
     assert report.outcomes[0].outcome is Outcome.UNCHANGED
     assert len(notes.survey()) == 1
+
+
+# ---------------------------------------------------------------------------
+# What the conversion cost reaches the report
+# ---------------------------------------------------------------------------
+#
+# The engine had the number and dropped it. Concern #146.
+
+
+class PricedConverter(CountingConverter):
+    """A converter that reports a cost, as the hosted one does."""
+
+    def __init__(self, cents: float | None) -> None:
+        super().__init__()
+        self.cents = cents
+
+    def convert(
+        self, paths: Sequence[Path], *, page_limit: int | None = None
+    ) -> ConversionBatch:
+        batch = super().convert(paths, page_limit=page_limit)
+        return ConversionBatch(
+            markdown=batch.markdown,
+            front_page=batch.front_page,
+            failure_reason=batch.failure_reason,
+            cost_cents=self.cents,
+        )
+
+
+def test_the_conversion_cost_reaches_the_report(notes: Collection, tmp_path: Path):
+    report = add_notes(
+        notes,
+        [str(a_pdf(tmp_path / "paper.pdf"))],
+        converter=PricedConverter(7.6),
+    )
+
+    assert report.cost_cents == pytest.approx(7.6)
+
+
+def test_the_cost_of_several_conversion_runs_is_summed(
+    notes: Collection, tmp_path: Path
+):
+    """One run per batch, and `batch_size=1` forces two runs. The plan has to
+    accumulate across them rather than keep the last."""
+    paths = [
+        str(a_pdf(tmp_path / "one.pdf", b"%PDF-1.7\nfirst\n")),
+        str(a_pdf(tmp_path / "two.pdf", b"%PDF-1.7\nsecond\n")),
+    ]
+
+    report = add_notes(
+        notes, paths, converter=PricedConverter(3.0), options=AddOptions(batch_size=1)
+    )
+
+    assert report.cost_cents == pytest.approx(6.0)
+
+
+def test_a_converter_that_reports_no_cost_leaves_the_report_silent(
+    notes: Collection, tmp_path: Path
+):
+    """Every local conversion. `None`, never `0.0`."""
+    report = add_notes(
+        notes,
+        [str(a_pdf(tmp_path / "paper.pdf"))],
+        converter=PricedConverter(None),
+    )
+
+    assert report.cost_cents is None

@@ -316,3 +316,54 @@ def test_a_count_of_one_is_not_written_as_a_plural():
 
     assert "1 document" in sentence
     assert "1 documents" not in sentence
+
+
+# ---------------------------------------------------------------------------
+# What a hosted conversion cost
+# ---------------------------------------------------------------------------
+#
+# The engine hands over a number of cents; the words are here. Concern #146.
+
+
+def test_no_reported_cost_says_nothing():
+    """A local conversion reports `None`, and kennis must not invent a
+    price for it - not even a free one."""
+    from kennis.render.words import conversion_cost
+
+    assert conversion_cost(None) == ""
+
+
+def test_a_free_conversion_says_so_without_claiming_why():
+    """The server returns 0.0 for a document it has already converted. That
+    is free, but kennis does not know whether it was a cache hit or an
+    allowance, so it says only what it was told."""
+    from kennis.render.words import conversion_cost
+
+    assert conversion_cost(0.0) == "no charge"
+
+
+def test_a_sub_dollar_cost_stays_in_cents():
+    """A 19-page paper is 7.6 cents. Rendering that as `$0.08` would round
+    away the only digits that vary."""
+    from kennis.render.words import conversion_cost
+
+    assert conversion_cost(7.6) == "7.6c"
+    assert conversion_cost(0.4) == "0.4c"
+
+
+def test_a_cost_of_a_dollar_or_more_is_shown_in_dollars():
+    from kennis.render.words import conversion_cost
+
+    assert conversion_cost(100.0) == "$1.00"
+    assert conversion_cost(813.0) == "$8.13"
+
+
+def test_a_half_cent_rounds_to_even_rather_than_up():
+    """Python's format rounds half to even, so 812.5c is `$8.12` and not
+    `$8.13`. Pinned rather than corrected: this is a displayed figure, and
+    reaching for `Decimal` to move a half cent would be a real dependency
+    bought for nothing. If kennis ever bills from this number, revisit."""
+    from kennis.render.words import conversion_cost
+
+    assert conversion_cost(812.5) == "$8.12"
+    assert conversion_cost(837.5) == "$8.38"

@@ -10,7 +10,6 @@ One test does reach it, marked `network`, and skips unless a key is present.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import httpx
@@ -21,6 +20,7 @@ from kennis.engine.corpus.converters import (
     default_converter,
 )
 from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from kennis.engine.settings import credential
 
 CHECK_URL = "https://www.datalab.to/api/v1/convert/abc123"
 
@@ -251,10 +251,16 @@ def test_the_default_converter_follows_the_setting(
 @pytest.mark.network
 def test_the_hosted_converter_converts_a_real_document(tmp_path: Path):
     """Skipped without a key. Nothing in this suite uploads a document to a
-    third party unless someone has deliberately provided credentials."""
-    key = os.environ.get("DATALAB_API_KEY")
+    third party unless someone has deliberately provided credentials.
+
+    The key is fetched through `credential`, not straight from `os.environ`,
+    so this exercises the same four-source lookup a real conversion uses -
+    including a key kept in `.env.keys`. A test that read the environment
+    directly would pass while the path users take was broken.
+    """
+    key = credential("DATALAB_API_KEY")
     if not key:
-        pytest.skip("DATALAB_API_KEY is not set")
+        pytest.skip("no DATALAB_API_KEY in the environment or the config directory")
 
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -267,3 +273,85 @@ def test_the_hosted_converter_converts_a_real_document(tmp_path: Path):
     batch = DatalabConverter(api_key=key).convert([path])
 
     assert "Wideband" in batch.markdown[path]
+
+
+# ---------------------------------------------------------------------------
+# The mode, and what a conversion cost
+# ---------------------------------------------------------------------------
+#
+# `mode` was a literal nobody chose and `total_cost` was a field nobody read.
+# Concern #146. Measured prices, one page uncached: fast 0.4c, balanced 0.4c,
+# accurate 1.0c.
+
+
+def test_the_mode_is_sent_with_the_document(tmp_path: Path):
+    transport, seen = conversation({"status": "complete", "markdown": "text"})
+    converter = DatalabConverter(
+        api_key="dl-notarealkey",
+        client=httpx.Client(transport=transport),
+        poll_seconds=0.0,
+        mode="accurate",
+    )
+
+    converter.convert([a_pdf(tmp_path / "a.pdf")])
+
+    submit = next(request for request in seen if request.method == "POST")
+    assert b'name="mode"' in submit.content
+    assert b"accurate" in submit.content
+
+
+def test_the_default_mode_is_balanced(tmp_path: Path):
+    """It costs what `fast` costs, so the default is not a saving forgone."""
+    transport, seen = conversation({"status": "complete", "markdown": "text"})
+
+    a_converter(transport).convert([a_pdf(tmp_path / "a.pdf")])
+
+    submit = next(request for request in seen if request.method == "POST")
+    assert b"balanced" in submit.content
+
+
+def test_the_reported_cost_is_carried_out_of_the_batch(tmp_path: Path):
+    transport, _ = conversation(
+        {"status": "complete", "markdown": "t", "total_cost": 7.6}
+    )
+
+    batch = a_converter(transport).convert([a_pdf(tmp_path / "a.pdf")])
+
+    assert batch.cost_cents == pytest.approx(7.6)
+
+
+def test_the_cost_of_several_documents_is_summed(tmp_path: Path):
+    transport, _ = conversation(
+        {"status": "complete", "markdown": "one", "total_cost": 1.2},
+        {"status": "complete", "markdown": "two", "total_cost": 3.0},
+    )
+
+    batch = a_converter(transport).convert(
+        [a_pdf(tmp_path / "a.pdf"), a_pdf(tmp_path / "b.pdf")]
+    )
+
+    assert batch.cost_cents == pytest.approx(4.2)
+
+
+def test_a_cache_hit_costs_zero_which_is_not_the_same_as_unknown(tmp_path: Path):
+    """The server returns `total_cost: 0.0` for a document it has already
+    converted. That is a real answer - it genuinely cost nothing - and it has
+    to stay distinguishable from a converter that reports no cost at all."""
+    transport, _ = conversation(
+        {"status": "complete", "markdown": "t", "total_cost": 0.0}
+    )
+
+    batch = a_converter(transport).convert([a_pdf(tmp_path / "a.pdf")])
+
+    assert batch.cost_cents == 0.0
+    assert batch.cost_cents is not None
+
+
+def test_a_response_without_a_cost_reports_none_rather_than_zero(tmp_path: Path):
+    """Zero is a claim about money. A converter that was told nothing must
+    not make it."""
+    transport, _ = conversation({"status": "complete", "markdown": "text"})
+
+    batch = a_converter(transport).convert([a_pdf(tmp_path / "a.pdf")])
+
+    assert batch.cost_cents is None
