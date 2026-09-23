@@ -18,7 +18,13 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.ids import derive_id, natural_key_for_docs
 from kennis.engine.corpus.schema import DocsFrontmatter
 from kennis.engine.errors import InputError
-from kennis.engine.events import ItemFinished, Outcome, Recorder
+from kennis.engine.events import (
+    Diagnostic,
+    ItemFinished,
+    Outcome,
+    Recorder,
+    Severity,
+)
 
 BASE = "https://example.org/en/latest/"
 
@@ -401,3 +407,110 @@ def test_an_offline_add_is_not_paced(docs: Collection, monkeypatch: pytest.Monke
     )
 
     assert slept == []
+
+
+# ---------------------------------------------------------------------------
+# A site that yielded nothing
+# ---------------------------------------------------------------------------
+
+
+def empty_site() -> httpx.Client:
+    """A site that answers, and publishes no page under the prefix asked for.
+
+    The real case this stands for: `docs.astropy.org/en/stable/io/fits/
+    index.html` makes discovery derive the prefix `/en/stable/io/fits/` and
+    settle on sitemap mode, and the sitemap lists nothing beneath it. The
+    site root finds 1433 pages, so the difference between working and not is
+    which URL was given - and the output was identical either way.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("robots.txt"):
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if path.endswith("searchindex.js"):
+            return httpx.Response(404)
+        if path.endswith("documentation_options.js"):
+            return httpx.Response(404)
+        if path.endswith("sitemap.xml"):
+            return httpx.Response(
+                200,
+                text='<?xml version="1.0"?><urlset></urlset>',
+                headers={"content-type": "application/xml"},
+            )
+        return httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_site_with_no_pages_says_so(docs: Collection):
+    """Found by running the command while writing the README.
+
+    `Added 0 documents in 864ms`, exit 0, and nothing else. A person cannot
+    tell from that whether the site has no pages, the prefix excluded all of
+    them, the probe chose the wrong mode, or the fetch failed - and the four
+    have different answers.
+    """
+    events = Recorder()
+
+    report = add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=empty_site(),
+        events=events,
+    )
+
+    assert report.outcomes == []
+    warnings = [
+        event
+        for event in events.events
+        if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
+    ]
+    assert warnings, "a site that produced nothing said nothing about it"
+    said = warnings[0].message
+    assert BASE in said
+    assert "no pages" in said
+
+
+def test_the_warning_names_the_mode_and_the_prefix(docs: Collection):
+    """The two facts that explain it. The prefix is derived rather than
+    given, so it is the surprising half of the answer, and the mode is what
+    decides whether a different URL would have worked."""
+    events = Recorder()
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=empty_site(),
+        events=events,
+    )
+
+    said = next(
+        event.message
+        for event in events.events
+        if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
+    )
+    assert "sitemap" in said
+    assert "/en/latest/" in said
+
+
+def test_a_site_that_yielded_pages_warns_about_nothing(docs: Collection):
+    """The control. A warning on every successful add would be noise, and
+    noise is what stops a real one being read."""
+    events = Recorder()
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=sphinx_site(),
+        events=events,
+    )
+
+    assert not [
+        event
+        for event in events.events
+        if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
+    ]

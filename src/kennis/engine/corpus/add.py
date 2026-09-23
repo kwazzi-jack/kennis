@@ -1465,6 +1465,23 @@ def _pages_of_site(
     # mode that found them is not said here: it is recorded on every page, so
     # a re-crawl reads it rather than being told it.
     sink.emit(Progress(operation="add", completed=0, total=len(found.pages)))
+    if not found.pages:
+        # Otherwise the command prints `Added 0 documents` and exits 0, and
+        # the four reasons that produces - an empty site, a prefix that
+        # excluded everything, the wrong mode probed, a fetch that failed -
+        # are indistinguishable. The prefix is the surprising half: it is
+        # derived from the URL, so a link deeper than the documentation root
+        # silently narrows the search to that subdirectory.
+        beneath = f" under '{found.path_prefix}'" if found.path_prefix else ""
+        sink.emit(
+            Diagnostic(
+                severity=Severity.WARNING,
+                message=(
+                    f"'{base_url}' produced no pages: {found.mode} discovery "
+                    f"found nothing{beneath}"
+                ),
+            )
+        )
     crawl = CrawlScope(
         discovery=found.mode,
         exclude=list(options.exclude),

@@ -410,3 +410,44 @@ def test_robots_is_consulted_on_the_sphinx_path_too():
         }
     )
     assert discover_pages(client, a_site()).pages == []
+
+
+# ---------------------------------------------------------------------------
+# The page limit, in the mode that ignored it
+# ---------------------------------------------------------------------------
+
+
+def a_sphinx_site_of(count: int) -> httpx.Client:
+    docnames = ", ".join(f'"page{index}"' for index in range(count))
+    return serving(
+        {
+            "searchindex.js": httpx.Response(
+                200, text=f'Search.setIndex({{"docnames": [{docnames}]}});'
+            ),
+            "documentation_options.js": httpx.Response(200, text=OPTIONS_JS),
+            "robots.txt": httpx.Response(200, text="User-agent: *\nAllow: /\n"),
+        }
+    )
+
+
+def test_sphinx_discovery_stops_at_the_page_limit():
+    """Found by running the command. `--max-pages 5` against a real Sphinx
+    site enumerated all 1433 of its pages and began fetching every one:
+    `discover_pages` passed `max_pages` to the generic crawl and not to
+    `_sphinx_pages`, which took no such argument.
+
+    This is the mode that matters most for the bound, because it is the one
+    that succeeds. A crawl walks links and stops; a Sphinx site hands over a
+    complete list, so nothing else limits it.
+    """
+    found = discover_pages(a_sphinx_site_of(40), a_site(), max_pages=5, delay=0)
+
+    assert found.mode == "sphinx"
+    assert len(found.pages) == 5
+
+
+def test_a_sphinx_site_under_the_limit_is_returned_whole():
+    """The control: the cap truncates, it does not pad or reorder."""
+    found = discover_pages(a_sphinx_site_of(3), a_site(), max_pages=300, delay=0)
+
+    assert [page.key for page in found.pages] == ["page0", "page1", "page2"]
