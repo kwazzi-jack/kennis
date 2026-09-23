@@ -82,7 +82,9 @@ def test_the_bar_is_opened_once_and_advanced_by_every_progress_event(
         shown.emit(Progress(operation="index", completed=2, total=3))
         shown.emit(Progress(operation="index", completed=3, total=3))
 
-    assert bar.opened == [("index", 3)]
+    # `Indexing`, not `index`: the engine emits the operation's name and
+    # `render.progress_label` turns it into what a bar says while it runs.
+    assert bar.opened == [("Indexing", 3)]
     assert bar.advanced == [(0, 3), (2, 3), (3, 3)]
 
 
@@ -105,7 +107,7 @@ def test_a_second_operation_opens_a_second_bar(bar: RecordingBar):
         shown.emit(OperationFinished(operation="notes", elapsed_seconds=0.1))
         shown.emit(Progress(operation="docs", completed=1, total=1))
 
-    assert [description for description, _ in bar.opened] == ["notes", "docs"]
+    assert [description for description, _ in bar.opened] == ["Notes", "Docs"]
     assert bar.closed == 2
 
 

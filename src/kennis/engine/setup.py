@@ -355,6 +355,14 @@ def _write_config(values: Mapping[str, str]) -> None:
     would write every default as an active value and freeze it at the moment
     the setup was run. `config_template`'s comment about that is the reason.
     """
+    if not values:
+        # Nothing to merge, so nothing is written. Without this a setup where
+        # every answer was left unchanged - the ordinary re-run, and the
+        # ordinary first run for somebody happy with the defaults - created a
+        # 0-byte `config.toml`, which `config show` then found and printed
+        # verbatim. An empty file is worse than no file: with no file at all
+        # `show` prints the defaults and says where they came from.
+        return
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, dict[str, object]] = {}

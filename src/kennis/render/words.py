@@ -25,6 +25,12 @@ from kennis.engine.rag.models import SearchResult
 from kennis.engine.rag.search import DocumentSpan
 from kennis.engine.remember import IndexOutcome
 
+# What a bar says while an operation runs. Two entries, because the engine
+# emits two operation verbs; a third would have to be added here and that is
+# the point - the words are not derived from the verb by a rule that would
+# produce "Statusing" the day a third verb appears.
+_PARTICIPLES: Final[dict[str, str]] = {"add": "Adding", "index": "Indexing"}
+
 # How much of a hit to show by default. Long enough to recognise the passage,
 # short enough that ten hits fit on a screen.
 _SNIPPET_CHARACTERS: Final = 240
@@ -247,3 +253,15 @@ def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
     if outcome == "skipped":
         return ""
     return "not indexed"
+
+
+def progress_label(operation: str) -> str:
+    """The name on a progress bar, for an engine operation verb.
+
+    The engine emits `add` and `index` because those are the operation's
+    names and a log line reads better with them. A bar is read while the
+    work is happening, so it takes the present participle. An operation
+    without an entry here is titled rather than guessed at, because a wrong
+    participle reads worse than a plain word.
+    """
+    return _PARTICIPLES.get(operation, operation.capitalize())

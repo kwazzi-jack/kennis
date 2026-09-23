@@ -21,6 +21,7 @@ from kennis.render.words import (
     describe_freshness,
     describe_hit,
     index_state,
+    progress_label,
     remedies_for,
     snippet_of,
 )
@@ -408,3 +409,22 @@ def test_indexing_that_was_switched_off_says_nothing():
     """The caller asked for no indexing, so reporting that it did not happen
     is telling them what they just typed."""
     assert index_state("skipped", 0) == ""
+
+
+# ---------------------------------------------------------------------------
+# The name on a progress bar
+# ---------------------------------------------------------------------------
+
+
+def test_a_bar_reads_as_something_happening():
+    """Brian, on first use: the bar "said add". The engine's verb is `add`
+    because that is the operation's name; a bar is read while the work is
+    going on."""
+    assert progress_label("add") == "Adding"
+    assert progress_label("index") == "Indexing"
+
+
+def test_an_unknown_operation_is_titled_rather_than_guessed_at():
+    """A rule that appended -ing would produce "Statusing" for the first verb
+    nobody thought about."""
+    assert progress_label("status") == "Status"

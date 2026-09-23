@@ -344,3 +344,36 @@ def test_the_mode_question_is_asked_before_the_key_is_typed():
     keys = [q.key for q in questions_for({"conversion.backend": "datalab"})]
 
     assert keys.index("conversion.mode") < keys.index("conversion.api_key")
+
+
+def test_a_setup_that_changes_nothing_writes_no_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Found by running `config init` and then `config show`, which printed
+    nothing at all.
+
+    Every answer left unchanged is filtered out before the write, which is
+    the design - but the write then happened anyway and produced a 0-byte
+    `config.toml`. A file that exists and holds no settings is worse than no
+    file: `config show` finds it, prints it verbatim, and says nothing, where
+    with no file it would have printed the defaults.
+    """
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+
+    apply_answers({})
+
+    assert not (tmp_path / "config.toml").exists()
+
+
+def test_an_answer_left_empty_does_not_rewrite_an_existing_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The same guard, from the other side: a re-run that changes nothing
+    must leave what is there untouched rather than rewriting it."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    apply_answers({"chunking.size": "900"})
+    before = (tmp_path / "config.toml").read_bytes()
+
+    apply_answers({"chunking.size": ""})
+
+    assert (tmp_path / "config.toml").read_bytes() == before

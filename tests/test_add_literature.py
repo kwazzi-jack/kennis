@@ -20,7 +20,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.converters import ConversionBatch
 from kennis.engine.corpus.ids import derive_id
 from kennis.engine.corpus.schema import LiteratureFrontmatter
-from kennis.engine.events import Outcome, Recorder
+from kennis.engine.events import Diagnostic, Outcome, Recorder, Severity
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -122,6 +122,30 @@ class FrontPageConverter:
             markdown={path: f"# {path.stem}\n\nBody.\n" for path in paths},
             front_page={path: self.front_pages.get(path.name, "") for path in paths},
         )
+
+
+XOVA_HTML = """<html><body><article class="ltx_document">
+<h1>Xova: Baseline-Dependent Averaging</h1>
+<p>The full text of the paper.</p>
+</article></body></html>
+"""
+
+
+def unreachable_arxiv(html: str = XOVA_HTML) -> httpx.Client:
+    """An arXiv that renders the paper and refuses the metadata query.
+
+    406 with an empty body, which is what arXiv really answered for a few
+    minutes on 2026-09-23 while a paper was being added. The rendering still
+    works, because that is the case that matters: the document is written,
+    and everything the metadata would have supplied is missing.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/html/" in str(request.url):
+            return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+        return httpx.Response(406)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
 
 
 @pytest.fixture
@@ -905,3 +929,102 @@ def test_a_fetch_that_fails_at_runtime_does_not_retract_the_batch(
     outcomes = {outcome.outcome for outcome in report.outcomes}
     assert Outcome.ADDED in outcomes and Outcome.FAILED in outcomes
     assert len(papers.contents().documents) == 1
+
+
+# ---------------------------------------------------------------------------
+# When arXiv cannot be reached
+# ---------------------------------------------------------------------------
+
+
+def test_a_paper_is_titled_from_its_own_heading_when_arxiv_is_unreachable(
+    papers: Collection,
+):
+    """**The defect first real use left in Brian's corpus.**
+
+    His stored paper reads `title: arXiv:2101.11270` and
+    `citekey: paperArxiv`, while its body begins `# Xova: Baseline-Dependent
+    Time and Channel Averaging for Radio Interferometry`. arXiv answered 406
+    for a few minutes, `lookup_arxiv_metadata` degraded to None as designed,
+    and the title chain - `options.title or identity.title or
+    converted.suggested_title or paper.identifier` - fell all the way to the
+    end.
+
+    It should have stopped one step earlier. The arXiv-fetched `Converted`
+    was the one construction site in the codebase that never set
+    `suggested_title`, so the correct title was in the first line of the very
+    markdown being written and was thrown away.
+
+    The document is permanent: re-running the add reports it as a duplicate
+    by identity and never retries the lookup.
+    """
+    client = unreachable_arxiv()
+
+    report = add_literature(
+        papers, ["arXiv:2101.11270"], AddOptions(), client=client, arxiv=client
+    )
+
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+    document = papers.resolve(report.outcomes[0].document_id or "")
+    assert document.frontmatter.title == "Xova: Baseline-Dependent Averaging"
+
+
+def test_a_paper_whose_text_has_no_heading_still_falls_back_to_its_identifier(
+    papers: Collection,
+):
+    """The end of the chain is still there for a paper whose markdown opens
+    with no `#` line at all."""
+    client = unreachable_arxiv(
+        html="<html><body><article class='ltx_document'>"
+        "<p>No heading here, just prose.</p></article></body></html>"
+    )
+
+    report = add_literature(
+        papers, ["arXiv:2101.11270"], AddOptions(), client=client, arxiv=client
+    )
+
+    document = papers.resolve(report.outcomes[0].document_id or "")
+    assert document.frontmatter.title == "arXiv:2101.11270"
+
+
+def test_a_failed_metadata_lookup_is_reported(papers: Collection):
+    """A degraded add that says nothing gives the reader no reason to look,
+    and what it wrote cannot be repaired by running the command again."""
+    events = Recorder()
+    client = unreachable_arxiv()
+
+    add_literature(
+        papers,
+        ["arXiv:2101.11270"],
+        AddOptions(),
+        client=client,
+        arxiv=client,
+        events=events,
+    )
+
+    warnings = [
+        event.message
+        for event in events.events
+        if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
+    ]
+    assert any("2101.11270" in message for message in warnings), warnings
+    assert any("citekey" in message or "metadata" in message for message in warnings)
+
+
+def test_metadata_that_arrives_is_not_warned_about(papers: Collection):
+    """The control: the ordinary case says nothing extra."""
+    events = Recorder()
+
+    add_literature(
+        papers,
+        ["arXiv:2101.11270"],
+        AddOptions(),
+        client=arxiv_client(),
+        arxiv=arxiv_client(),
+        events=events,
+    )
+
+    assert not [
+        event
+        for event in events.events
+        if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
+    ]

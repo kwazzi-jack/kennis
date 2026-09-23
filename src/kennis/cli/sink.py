@@ -37,6 +37,7 @@ from kennis.engine.events import (
     Severity,
 )
 from kennis.logs import LogSink
+from kennis.render.words import progress_label
 
 # The column glyph each outcome prints under. Layout rather than wording, so
 # it lives here and not in `render/`: `display.detail` colours by the marker,
@@ -100,7 +101,7 @@ class DisplaySink:
     def _progress(self, event: Progress) -> None:
         if self._advance is None:
             self._advance = self._stack.enter_context(
-                display.progress_bar(event.operation, event.total)
+                display.progress_bar(progress_label(event.operation), event.total)
             )
         self._advance(event.completed, event.total)
 
