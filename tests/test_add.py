@@ -668,3 +668,23 @@ def test_a_converter_that_reports_no_cost_leaves_the_report_silent(
     )
 
     assert report.cost_cents is None
+
+
+def test_the_repair_count_reaches_the_report(notes: Collection, tmp_path: Path):
+    """Concern #146's shape, for the repair count."""
+
+    class RepairingConverter(CountingConverter):
+        def convert(
+            self, paths: Sequence[Path], *, page_limit: int | None = None
+        ) -> ConversionBatch:
+            batch = super().convert(paths, page_limit=page_limit)
+            return ConversionBatch(
+                markdown=batch.markdown,
+                repairs={path: 7 for path in batch.markdown},
+            )
+
+    report = add_notes(
+        notes, [str(a_pdf(tmp_path / "paper.pdf"))], converter=RepairingConverter()
+    )
+
+    assert report.repairs == 7

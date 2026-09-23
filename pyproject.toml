@@ -82,6 +82,7 @@ dependencies = [
     "ollama>=0.4",
     "openai>=1.60",
     "python-dotenv>=1.2.3",
+    "pypdfium2>=5.10.1",
 ]
 
 [project.optional-dependencies]
@@ -146,7 +147,7 @@ warn_unreachable = true
 # the sanctioned way to say it: the project rule forbids `# type: ignore`,
 # which would silence a line rather than name a dependency.
 [[tool.mypy.overrides]]
-module = ["bm25s.*"]
+module = ["bm25s.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

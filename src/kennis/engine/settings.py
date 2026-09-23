@@ -174,6 +174,15 @@ class ConversionSettings(BaseModel):
             "mineru ignores this - it runs locally and costs nothing."
         ),
     )
+    repair_ligatures: bool = Field(
+        default=True,
+        description=(
+            "Repair ligature damage against the PDF's own text layer, read "
+            "with pypdfium2. mineru drops a letter from ff, fi and fl on "
+            "some documents, which no reindex can undo. Costs 0.7ms a page "
+            "and applies to mineru only - datalab showed no such damage."
+        ),
+    )
     batch_size: int = Field(
         default=8,
         ge=0,
