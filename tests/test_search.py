@@ -23,7 +23,7 @@ from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.rag.index import build_index, load_index
 from kennis.engine.rag.loaders import CollectionLoader
 from kennis.engine.rag.models import Filter
-from kennis.engine.rag.search import read_span, search
+from kennis.engine.rag.search import ChunkRange, read_span, search
 
 DIM = 8
 
@@ -183,6 +183,36 @@ def test_a_leg_that_did_not_run_reports_nothing_rather_than_zero(
     assert hit.dense_rank is None
     assert hit.dense_score is None
     assert hit.bm25_score is not None
+
+
+def test_every_hit_of_a_dense_search_carries_its_cosine(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    """`dense_score` is the hit's similarity to the query, not "the score it
+    happened to have inside the dense candidate window".
+
+    A hybrid hit fused in by the lexical leg alone used to carry None here,
+    which made a relevance band say nothing about a hit it could perfectly
+    well have measured. Cosine is defined for every chunk; the window is a
+    retrieval budget, not a limit on what is known.
+    """
+    a_corpus(notes, tmp_path)
+    index = built(notes, index_root)
+
+    # More notes than the 50-candidate window, all equidistant from the
+    # query under WordEmbedder, so the last of them cannot be in the dense
+    # window: ties break by position. Only the lexical leg reaches it.
+    for number in range(60):
+        a_note(notes, tmp_path, f"filler{number}.md", f"# Filler {number}\n\nprose")
+    a_note(notes, tmp_path, "rare.md", "# Rare\n\nzzuniquetoken appears here")
+    index = built(notes, index_root)
+
+    hits = search(index, "zzuniquetoken", top_k=10, embedder=WordEmbedder())
+
+    found = next(hit for hit in hits if hit.chunk.source_path.endswith("rare.md"))
+    assert found.dense_rank is None, "the fixture no longer exercises the case"
+    assert found.dense_score is not None
+    assert all(hit.dense_score is not None for hit in hits)
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +396,7 @@ def test_a_span_stitches_chunks_back_into_continuous_text(
     index = built(notes, index_root)
     document_id = index.chunks[0].document_id
 
-    span = read_span(index, document_id, chunk_index=0, before=0, after=2)
+    span = read_span(index, document_id, chunks=ChunkRange(0, 3))
 
     assert span.text.count("word word") > 0
     assert span.chunk_start == 0
@@ -383,7 +413,7 @@ def test_stitching_a_whole_document_gives_back_the_document(
     index = built(notes, index_root)
     held = notes.contents().documents[0]
 
-    span = read_span(index, held.id, chunk_index=0, before=0, after=len(index.chunks))
+    span = read_span(index, held.id, chunks=ChunkRange())
 
     assert span.text.strip() == held.body.strip()
 
@@ -395,9 +425,75 @@ def test_a_span_reports_the_sections_it_covers(
     index = built(notes, index_root)
     held = notes.contents().documents[0]
 
-    span = read_span(index, held.id, chunk_index=0, before=0, after=5)
+    span = read_span(index, held.id, chunks=ChunkRange())
 
     assert span.sections == ["One", "Two"]
+
+
+def test_a_negative_index_counts_from_the_end_of_the_document(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    """Of *this document*, not of the index. The range is resolved against
+    the chunks the document has, so the last chunk of a short note is its
+    own last chunk and not the last row of a corpus-wide table."""
+    a_note(notes, tmp_path, "long.md", "# Long\n\n" + ("word " * 900))
+    a_note(notes, tmp_path, "other.md", "# Other\n\nUnrelated.")
+    index = built(notes, index_root)
+    held = next(
+        document
+        for document in notes.contents().documents
+        if document.md_path.name.startswith("long")
+    )
+    every = read_span(index, held.id, chunks=ChunkRange())
+
+    last = read_span(index, held.id, chunks=ChunkRange(-1, None))
+
+    assert last.chunk_start == last.chunk_end == every.chunk_end
+    assert last.chunk_start > 0, "the fixture no longer has several chunks"
+
+
+def test_an_open_ended_range_runs_to_the_end(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    a_note(notes, tmp_path, "long.md", "# Long\n\n" + ("word " * 900))
+    index = built(notes, index_root)
+    held = notes.contents().documents[0]
+    every = read_span(index, held.id, chunks=ChunkRange())
+
+    tail = read_span(index, held.id, chunks=ChunkRange(1, None))
+
+    assert tail.chunk_start == 1
+    assert tail.chunk_end == every.chunk_end
+
+
+def test_a_range_past_the_end_is_clamped_rather_than_refused(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    """`slice.indices` clamps, which is what python does and so what a
+    reader who wrote `0:999` expects."""
+    a_note(notes, tmp_path, "long.md", "# Long\n\n" + ("word " * 900))
+    index = built(notes, index_root)
+    held = notes.contents().documents[0]
+    every = read_span(index, held.id, chunks=ChunkRange())
+
+    generous = read_span(index, held.id, chunks=ChunkRange(0, 999))
+
+    assert generous.text == every.text
+
+
+def test_a_range_that_selects_nothing_says_so(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    """A legal slice can be empty. Returning empty text would show a reader a
+    blank screen and let them conclude the document was empty."""
+    a_note(notes, tmp_path, "long.md", "# Long\n\n" + ("word " * 900))
+    index = built(notes, index_root)
+    held = notes.contents().documents[0]
+
+    with pytest.raises(SearchUnavailable) as raised:
+        read_span(index, held.id, chunks=ChunkRange(2, 2))
+
+    assert "select" in str(raised.value)
 
 
 def test_reading_a_document_that_is_not_in_the_index_is_refused(
@@ -407,7 +503,7 @@ def test_reading_a_document_that_is_not_in_the_index_is_refused(
     index = built(notes, index_root)
 
     with pytest.raises(SearchUnavailable):
-        read_span(index, "nosuchdoc1", chunk_index=0)
+        read_span(index, "nosuchdoc1", chunks=ChunkRange(0, 1))
 
 
 def test_position_within_a_leg_changes_the_fused_score(

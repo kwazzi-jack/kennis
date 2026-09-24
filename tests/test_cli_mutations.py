@@ -714,11 +714,12 @@ def test_adding_restores_a_document_deleted_outside_kennis(
     added(run, a_source(tmp_path, "Rivers.md"))
 
     assert document.exists()
-    # `a_source` writes `# <name>` as the heading, so a source called
-    # `Trees.md` is titled `Trees.md` and lands as `Trees.md.md`.
+    # A note is titled by its filename now, so a source called `Trees.md`
+    # lands as `Trees.md`. It used to be titled by its `# Trees.md` heading
+    # and land as `Trees.md.md`, which is the wart #189 removed.
     assert sorted(path.name for path in (corpus / "notes").rglob("*.md")) == [
-        "Rivers.md.md",
-        "Trees.md.md",
+        "Rivers.md",
+        "Trees.md",
     ]
 
 

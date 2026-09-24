@@ -60,10 +60,15 @@ def show_command() -> None:
     The note comes *after* the body. It is sixty lines of TOML, so a leading
     note is off the top of the terminal before the command has finished
     printing, and a reader looks at the end.
+
+    The body is styled rather than printed plain, because sixty lines in one
+    colour is read by nobody. rich drops colour when stdout is not a
+    terminal, so the redirect above still writes a file with no escape codes
+    in it.
     """
     path = config_path()
     settings = _settings_in(path)
-    display.plain(settings if settings else config_template())
+    display.toml(settings if settings else config_template())
     if settings:
         return
     display.note(
@@ -141,6 +146,7 @@ def init_command(defaults: bool) -> None:
     display.guidance("press return to keep the value shown in brackets")
 
     answers: dict[str, str] = {}
+    section = ""
     while True:
         remaining = [
             question
@@ -150,6 +156,20 @@ def init_command(defaults: bool) -> None:
         if not remaining:
             break
         question = remaining[0]
+        # The heading when the section changes, and not otherwise. The
+        # catalogue in `engine/setup.py` is already ordered by section, so
+        # this groups the run without deciding anything about its order -
+        # and a conditional question that changes which section comes next
+        # still gets its own heading rather than appearing under the last
+        # one printed.
+        # A blank line before every question, and the heading after it when
+        # the section changes. One rule rather than two: the questions are
+        # separated whether or not a heading falls between them, and a
+        # heading never ends up hugging the answer above it.
+        display.info()
+        if question.section != section:
+            section = question.section
+            display.heading(section.capitalize())
         answers[question.key] = _ask(question)
 
     apply_answers(answers)
@@ -177,10 +197,16 @@ def _ask(question: Question) -> str:
     The loop is here and not in the engine: re-asking is an interaction, and
     a form would handle a rejected value by marking the field rather than by
     asking again.
+
+    Everything but the input line is printed through `display`, so the
+    description and the accepted values meet the theme. `click.prompt` is
+    left only the short line it has to echo and read on, because it writes
+    with `click.echo` and nothing it prints can be styled.
     """
+    _describe(question)
     while True:
         answered: str = click.prompt(
-            _prompt_for(question),
+            f"{_QUESTION_INDENT}{question.key}",
             default=question.current,
             show_default=bool(question.current),
             hide_input=question.kind == "secret",
@@ -197,34 +223,38 @@ def _ask(question: Question) -> str:
         display.note(problem)
 
 
-def _prompt_for(question: Question) -> str:
-    """The question as a person reads it.
+# Questions sit under their section heading, and their own lines under them,
+# the same two steps the report grammar uses for an operation and its details.
+_QUESTION_INDENT = "  "
 
-    Assembled here because it is layout - the description and the values it
-    accepts above the field, wrapped to the terminal. A form would put the
-    description under the field and the options in a menu.
+
+def _describe(question: Question) -> None:
+    """What the question is, and what it will accept, above the input line.
+
+    Wrapped to the terminal here because that is layout: a form would put the
+    same description under the field and the options in a menu.
     """
-    width = _width()
-    lines = [textwrap.fill(question.description, width=width)]
+    for line in textwrap.wrap(question.description, width=_width()):
+        display.muted(f"{_QUESTION_INDENT}{line}")
     # On its own line rather than trailing the description, so that a long
     # description cannot push the list of accepted values across a line break
     # and split it mid-option.
     if question.options:
-        lines.append(f"[{' | '.join(question.options)}]")
+        display.info(f"{_QUESTION_INDENT}one of: {' | '.join(question.options)}")
     if question.minimum is not None and question.maximum is not None:
-        lines.append(f"[{question.minimum}-{question.maximum}]")
-    return "\n" + "\n".join([*lines, question.key])
+        display.info(f"{_QUESTION_INDENT}{question.minimum} to {question.maximum}")
 
 
 def _width() -> int:
-    """Wrapping width for a question.
+    """Wrapping width for a question's description.
 
     Capped as well as measured: a very wide terminal makes a paragraph that
     the eye cannot track back across, and a very narrow one still needs
-    something to wrap to.
+    something to wrap to. The indent is taken off, so the wrapped text ends
+    where an unindented line of the same width would.
     """
     columns = shutil.get_terminal_size(fallback=(80, 24)).columns
-    return max(40, min(columns - 2, 88))
+    return max(40, min(columns - 2, 88)) - len(_QUESTION_INDENT)
 
 
 def _hidden_if_secret(key: str, value: str) -> str:

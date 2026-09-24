@@ -125,6 +125,15 @@ class Converted:
     # A title the source suggested (a leading H1, a page's <title>); the
     # caller falls back to this when it was given no title of its own.
     suggested_title: str | None = None
+    # The name the source file had, without its extension. None for anything
+    # that came from a URL, an arXiv fetch or text typed at the command line,
+    # because there is no filename there to carry.
+    #
+    # Separate from `suggested_title` rather than folded into its fallback
+    # order, because the two answer different questions: what the document is
+    # *called* and what it is *about*. A note a person wrote and named wants
+    # the first; a converted paper wants the second. Concern #189.
+    source_name: str | None = None
 
 
 def sha256_of(data: bytes) -> str:
@@ -321,6 +330,7 @@ def convert_local_file(
         original_bytes=raw if keep_original else None,
         original_name=path.name if keep_original else None,
         suggested_title=title_from_markdown(markdown, path.stem),
+        source_name=path.stem,
     )
 
 

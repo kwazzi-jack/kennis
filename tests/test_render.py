@@ -15,11 +15,9 @@ import click
 from kennis.cli.__main__ import main
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import ChangeKind, OutOfBandChange
-from kennis.engine.rag.models import Chunk, SearchResult
 from kennis.render.words import (
     describe_change,
     describe_freshness,
-    describe_hit,
     index_state,
     progress_label,
     remedies_for,
@@ -190,56 +188,6 @@ def test_every_remedy_is_a_command_rather_than_a_sentence():
 # ---------------------------------------------------------------------------
 # Freshness
 # ---------------------------------------------------------------------------
-
-
-def test_a_hit_names_its_collection_title_and_identifier():
-    """The identifier because `kennis read` takes it, the title because that
-    is what a person recognises, the collection because a merged list is
-    several lists interleaved."""
-    hit = SearchResult(
-        chunk=Chunk(
-            id="c1",
-            collection="notes",
-            document_id="zrf1299xo1",
-            chunk_index=0,
-            text="Rivers carry sediment.",
-            source_path="notes/Rivers.md",
-            char_start=0,
-            char_end=22,
-            section="Deposition",
-            metadata={"title": "Rivers"},
-        ),
-        score=0.5,
-    )
-
-    described = describe_hit("notes", hit)
-
-    assert "[notes]" in described
-    assert "Rivers" in described
-    assert "Deposition" in described
-    assert "zrf1299xo1" in described
-
-
-def test_a_hit_does_not_repeat_the_title_as_its_section():
-    """A short document's only heading is its title, and "Rivers - Rivers"
-    reads as a stutter rather than as a location."""
-    hit = SearchResult(
-        chunk=Chunk(
-            id="c1",
-            collection="notes",
-            document_id="zrf1299xo1",
-            chunk_index=0,
-            text="Rivers carry sediment.",
-            source_path="notes/Rivers.md",
-            char_start=0,
-            char_end=22,
-            section="Rivers",
-            metadata={"title": "Rivers"},
-        ),
-        score=0.5,
-    )
-
-    assert describe_hit("notes", hit).count("Rivers") == 1
 
 
 def test_a_snippet_is_cut_at_a_word_boundary():

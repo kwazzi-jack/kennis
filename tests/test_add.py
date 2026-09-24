@@ -324,7 +324,10 @@ def test_a_walk_mirrors_its_subdirectories_onto_groups(
         document.frontmatter.title: document.md_path.relative_to(notes.path).parent
         for document in notes.contents().documents
     }
-    assert written == {"Top": Path("."), "X": Path("gains")}
+    # Titled by filename rather than by heading: a note is something a
+    # person wrote and named, and the name they typed is the one they will
+    # look for. Concern #189.
+    assert written == {"top": Path("."), "x": Path("gains")}
 
 
 def test_a_group_is_a_prefix_over_a_walk_not_an_override(
@@ -445,9 +448,42 @@ def test_the_stream_says_what_became_of_each_item(notes: Collection, tmp_path: P
     assert recorder.outcomes() == {str(path): Outcome.UNCHANGED}
 
 
+def test_a_note_from_a_file_keeps_the_filename_it_had(
+    notes: Collection, tmp_path: Path
+):
+    """Brian added `kennis-readme.md` and got `notes/kennis.md`, because the
+    file's first heading is `# kennis`. The name he typed is the name he
+    recognises. Concern #189."""
+    source = a_note_file(tmp_path / "kennis-readme.md", "# kennis\n\nProse.\n")
+
+    add_notes(notes, [str(source)])
+
+    stored = [path.name for path in notes.path.rglob("*.md")]
+    assert stored == ["kennis-readme.md"]
+
+
+def test_an_explicit_title_still_wins_over_the_filename(
+    notes: Collection, tmp_path: Path
+):
+    """`--title` is an instruction, and the filename is only a default."""
+    source = a_note_file(tmp_path / "kennis-readme.md", "# kennis\n\nProse.\n")
+
+    add_notes(notes, [str(source)], AddOptions(title="Something else"))
+
+    stored = [path.name for path in notes.path.rglob("*.md")]
+    assert stored == ["Something else.md"]
+
+
 def test_a_conversion_run_is_the_only_moment_there_is_to_report(
     notes: Collection, tmp_path: Path
 ):
+    """`completed` counts runs that have **finished**.
+
+    It used to be emitted at the top of the loop body, so a single PDF - one
+    run - showed a full bar and then sat there for the twenty seconds mineru
+    takes. A bar that reaches the end before the work starts is worse than
+    no bar: it says the pause that follows is a hang. Concern #191.
+    """
     paths = [
         a_pdf(tmp_path / f"p{index}.pdf", f"%PDF {index}\n".encode())
         for index in range(4)
@@ -463,7 +499,45 @@ def test_a_conversion_run_is_the_only_moment_there_is_to_report(
     )
 
     progress = recorder.events_of_type(Progress)
-    assert [(event.completed, event.total) for event in progress] == [(1, 2), (2, 2)]
+    assert [(event.completed, event.total) for event in progress] == [
+        (0, 2),
+        (1, 2),
+        (2, 2),
+    ]
+
+
+def test_no_conversion_is_reported_before_it_has_happened(
+    notes: Collection, tmp_path: Path
+):
+    """The assertion that discriminates. Counting the events is not enough -
+    an off-by-one emitting (1, 2) then (2, 2) has the right length and the
+    right last value, and is the defect. What has to hold is the *ordering*:
+    at the moment run `n` begins, `n - 1` runs have been reported done.
+    """
+    paths = [
+        a_pdf(tmp_path / f"p{index}.pdf", f"%PDF {index}\n".encode())
+        for index in range(4)
+    ]
+    recorder = Recorder()
+    seen: list[tuple[int, int]] = []
+
+    class _Witness(CountingConverter):
+        def convert(
+            self, paths: Sequence[Path], *, page_limit: int | None = None
+        ) -> ConversionBatch:
+            reported = recorder.events_of_type(Progress)
+            seen.append((len(self.runs), reported[-1].completed if reported else -1))
+            return super().convert(paths, page_limit=page_limit)
+
+    add_notes(
+        notes,
+        [str(path) for path in paths],
+        AddOptions(batch_size=2),
+        converter=_Witness(),
+        events=recorder,
+    )
+
+    assert seen == [(0, 0), (1, 1)]
 
 
 def test_the_operation_reports_its_counts_when_it_finishes(
@@ -487,8 +561,29 @@ def test_the_operation_reports_its_counts_when_it_finishes(
 
 def test_a_dotfile_title_is_reported_as_a_diagnostic(notes: Collection, tmp_path: Path):
     """The dot is stripped so the filename stays visible to the walk, which
-    means the file on disk is not named what the title says."""
-    path = a_note_file(tmp_path / "bashrc.md", "# .bashrc\n\nBody.\n")
+    means the file on disk is not named what the title says.
+
+    Reached through `--title` here. It used to be reached through a `#
+    .bashrc` heading, which since #189 is no longer what a note from a file
+    is titled by - the case below covers the route that replaced it.
+    """
+    path = a_note_file(tmp_path / "bashrc.md", "# bashrc\n\nBody.\n")
+    recorder = Recorder()
+
+    add_notes(notes, [str(path)], AddOptions(title=".bashrc"), events=recorder)
+
+    diagnostics = recorder.events_of_type(Diagnostic)
+    assert len(diagnostics) == 1
+    assert "dot" in diagnostics[0].message
+
+
+def test_a_dotted_source_filename_is_reported_the_same_way(
+    notes: Collection, tmp_path: Path
+):
+    """The route #189 created: the title now comes from the filename, so a
+    source file that is itself a dotfile carries the dot into the title and
+    has it stripped back out again."""
+    path = a_note_file(tmp_path / ".bashrc.md", "# bashrc\n\nBody.\n")
     recorder = Recorder()
 
     add_notes(notes, [str(path)], events=recorder)
@@ -707,7 +802,9 @@ def test_a_duplicate_is_named_the_same_way_the_original_was(
     second = add_notes(notes, [str(path)])
 
     assert second.outcomes[0].outcome is Outcome.UNCHANGED
-    assert second.outcomes[0].title == first.outcomes[0].title == "kennis"
+    # Both halves now say `kennis-readme`, which is also the name on disk:
+    # #189 made the filename the title, and #181 made the two outcomes agree.
+    assert second.outcomes[0].title == first.outcomes[0].title == "kennis-readme"
 
 
 def test_a_duplicate_of_a_document_with_no_readable_title_still_reports(

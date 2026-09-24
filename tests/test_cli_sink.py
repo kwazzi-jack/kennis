@@ -178,3 +178,29 @@ def test_the_fan_out_reaches_every_subscriber():
 
     assert first.seen == [event]
     assert second.seen == [event]
+
+
+def test_a_model_fetch_is_the_one_item_the_report_shows(
+    capsys: pytest.CaptureFixture[str],
+):
+    """Every other `ItemStarted` is the log's alone, because an item's
+    outcome is reported afterwards from the report. A model fetch has no
+    later line to account for it, and without one a reader watches sixty
+    seconds of nothing. Concern #209."""
+    from kennis.engine.rag.embedding import FETCH_MODEL
+
+    with sink.DisplaySink() as shown:
+        shown.emit(ItemStarted(operation=FETCH_MODEL, item="BAAI/bge-small-en-v1.5"))
+
+    written = capsys.readouterr()
+    assert "Downloading" in written.out
+    assert "BAAI/bge-small-en-v1.5" in written.out
+
+
+def test_an_ordinary_item_still_prints_nothing(capsys: pytest.CaptureFixture[str]):
+    """The exception is one operation, not the event type."""
+    with sink.DisplaySink() as shown:
+        shown.emit(ItemStarted(operation="add", item="trees.md"))
+
+    written = capsys.readouterr()
+    assert "trees.md" not in written.out + written.err

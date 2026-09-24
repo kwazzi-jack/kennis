@@ -354,7 +354,9 @@ def _vectors_for(
     if binding.model is None:
         return None, 0
 
-    active = embedder if embedder is not None else embedder_for(binding.model)
+    active = (
+        embedder if embedder is not None else embedder_for(binding.model, events=events)
+    )
     blocks: list[np.ndarray] = []
     embedded = 0
     total = sum(len(produced) for _, _, produced in chunked)
@@ -376,6 +378,7 @@ def _vectors_for(
                 [chunk.text for chunk in produced],
                 embedder=active,
                 batch_size=batch_size,
+                events=events,
             )
             cache.put(document.id, digest, block)
             blocks.append(block)

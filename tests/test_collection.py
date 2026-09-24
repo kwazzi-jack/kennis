@@ -188,6 +188,35 @@ def test_a_document_is_reachable_by_citekey_arxiv_identifier_and_doi(tmp_path: P
         assert collection.resolve(handle).id == "aaaaaaaaaa", handle
 
 
+def test_a_document_is_reachable_by_the_filename_it_has_on_disk(tmp_path: Path):
+    """The name `corpus tree` shows and the name a shell completes, with or
+    without the extension. A person looking at the directory has the filename
+    in front of them and nothing else."""
+    root = collection_root(tmp_path, "literature")
+    a_paper(root, identifier="aaaaaaaaaa", title="First light")
+    filename = next(root.iterdir()).name
+
+    collection = Collection(root=tmp_path, name="literature")
+
+    assert filename.endswith(".md")
+    assert collection.resolve(filename).id == "aaaaaaaaaa"
+    assert collection.resolve(filename.removesuffix(".md")).id == "aaaaaaaaaa"
+
+
+def test_a_filename_that_two_documents_would_share_resolves_to_nothing(tmp_path: Path):
+    """The same rule every other alias follows: a key two documents answer to
+    addresses neither. A filename cannot collide on disk, but its stem can
+    collide with another document's title."""
+    root = collection_root(tmp_path, "literature")
+    a_paper(root, identifier="aaaaaaaaaa", title="Shared name")
+    a_paper(root, identifier="bbbbbbbbbb", title="Shared name.md")
+
+    collection = Collection(root=tmp_path, name="literature")
+
+    with pytest.raises(DocumentNotFound):
+        collection.resolve("Shared name.md")
+
+
 def test_a_docs_page_is_reachable_by_project_and_page(tmp_path: Path):
     root = collection_root(tmp_path, "docs")
     a_page(root, identifier="aaaaaaaaaa", project="numpy", page="quickstart")

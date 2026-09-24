@@ -499,3 +499,23 @@ def test_the_mode_setting_says_it_does_not_apply_to_the_default_backend():
     description = ConversionSettings.model_fields["mode"].description or ""
 
     assert "mineru" in description.lower()
+
+
+def test_no_setting_description_names_an_install_command():
+    """A description is schema metadata and is written into `config.toml` as
+    a comment, so a command inside one is a command a reader is told to run.
+    Which install command is right depends on how kennis was installed, and
+    only `Converter.install_hint()` knows. This has now escaped twice - into
+    `converters.py` (#185) and into this description (#195) - so it is a test
+    rather than a comment.
+    """
+    from kennis.engine.settings import Settings
+
+    for section in Settings.model_fields.values():
+        model = section.annotation
+        assert model is not None
+        for field in getattr(model, "model_fields", {}).values():
+            description = field.description or ""
+            assert "uv sync" not in description, description
+            assert "uv tool install" not in description, description
+            assert "pip install" not in description, description

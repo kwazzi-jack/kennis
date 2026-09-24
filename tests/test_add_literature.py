@@ -225,6 +225,15 @@ def test_the_metadata_lookup_supplies_the_title_and_the_citekey(
     assert frontmatter.bib.year == "2024"
 
 
+def test_a_paper_is_stored_as_title_authors_year(papers: Collection):
+    """What a directory listing of papers is scanned by. Concern #190."""
+    add_literature(papers, ["2409.19750"], arxiv=arxiv_client())
+
+    stored = [path.name for path in papers.path.rglob("*.md")]
+
+    assert stored == ["A Paper About Calibration - Welman - 2024.md"]
+
+
 def test_a_paper_is_refused_when_arxiv_cannot_be_reached(papers: Collection):
     """An arXiv identifier's only source of text is arXiv, so an unreachable
     arXiv means no document. This used to land a stub, on the argument that

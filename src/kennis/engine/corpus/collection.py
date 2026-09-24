@@ -30,7 +30,6 @@ from kennis.engine.corpus.document import (
 from kennis.engine.corpus.layout import collection_root, iter_documents
 from kennis.engine.corpus.schema import (
     DocsFrontmatter,
-    DocumentFrontmatter,
     LiteratureFrontmatter,
 )
 from kennis.engine.errors import DocumentInvalid, DocumentNotFound
@@ -140,7 +139,7 @@ class Collection:
                 candidates.setdefault(variant, set()).add(document_id)
 
         for document in documents:
-            for key in _alias_keys(document.frontmatter):
+            for key in _alias_keys(document):
                 record(key, document.id)
 
         return {
@@ -184,14 +183,22 @@ class Collection:
         remove_document(document)
 
 
-def _alias_keys(frontmatter: DocumentFrontmatter) -> list[str]:
+def _alias_keys(document: Document) -> list[str]:
     """Every human-writable key one document answers to.
 
     The title is included because it is what a reader writes down when they
     have nothing else, and it is also the key most likely to be ambiguous -
     which is exactly why ambiguity drops the key rather than picking a winner.
+
+    The filename is included with and without its extension, because it is
+    what `corpus tree` shows and what a shell completes: someone looking at
+    the directory has that name in front of them and no other. A wrapped
+    document's file is always `content.md`, so the name used is the wrapper
+    directory's - which is the name that appears in a listing either way.
     """
-    keys: list[str] = [frontmatter.title]
+    frontmatter = document.frontmatter
+    on_disk = (document.wrapper_dir or document.md_path).name
+    keys: list[str] = [frontmatter.title, on_disk, on_disk.removesuffix(".md")]
     if isinstance(frontmatter, LiteratureFrontmatter):
         keys += [
             frontmatter.bib.citekey,

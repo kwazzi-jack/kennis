@@ -460,3 +460,35 @@ def test_a_fetched_page_records_a_url_scheme():
     )
 
     assert converted.origin == "url:https://example.org/a"
+
+
+# ---------------------------------------------------------------------------
+# The name the source had
+# ---------------------------------------------------------------------------
+
+
+def test_a_local_file_carries_the_name_it_had(tmp_path: Path):
+    """Separate from `suggested_title`, which is the first heading. The two
+    are different answers to different questions: what the document is called
+    and what it is about, and a note added from a file wants the first.
+    Concern #189."""
+    source = tmp_path / "kennis-readme.md"
+    source.write_text("# kennis\n\nProse.\n", encoding="utf-8")
+
+    converted = convert_local_file(source)
+
+    assert converted.source_name == "kennis-readme"
+    assert converted.suggested_title == "kennis"
+
+
+def test_a_fetched_page_has_no_source_name():
+    """There is no filename, so there is nothing to prefer over the heading.
+    None rather than a derived string, because a URL's last path segment is
+    not a name a person chose."""
+    client = httpx.Client(
+        transport=transport_returning("<html><h1>Title</h1><p>Body.</p></html>")
+    )
+
+    converted = convert_url("https://x/y", client=client)
+
+    assert converted.source_name is None
