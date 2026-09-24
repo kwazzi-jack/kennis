@@ -250,6 +250,86 @@ def test_tree_shows_the_groups(run: CliRunner, isolated: Path):
     assert "calibration" in result.output
 
 
+def test_tree_names_each_document_by_its_identifier(run: CliRunner, isolated: Path):
+    """Every other command takes an identifier, so the one view of the whole
+    corpus must be one something can be done from. Concern #188."""
+    initialised(run)
+    a_note(isolated, "one.md")
+
+    result = run.invoke(main, ["corpus", "tree"])
+
+    assert result.exit_code == 0
+    line = next(line for line in result.output.splitlines() if "one.md" in line)
+    assert "onexmdaaaa" in line
+
+
+def test_tree_shows_a_document_it_cannot_read(run: CliRunner, isolated: Path):
+    """A tree is a picture of what is on disk. A document with broken
+    frontmatter is on disk, and omitting it is how a corpus comes to hold a
+    file nobody knows about."""
+    initialised(run)
+    broken = isolated / "notes" / "broken.md"
+    broken.write_text("---\nnot: valid\n---\n\n# Broken\n", encoding="utf-8")
+
+    result = run.invoke(main, ["corpus", "tree"])
+
+    assert result.exit_code == 0
+    assert "broken.md" in result.output
+
+
+def test_tree_shows_a_wrapped_document_as_one_line(run: CliRunner, isolated: Path):
+    """A document with assets is a directory holding `content.md`. It is one
+    document, and walking into it would put `content.md` under every title
+    that happens to have a figure in it."""
+    initialised(run)
+    wrapper = isolated / "notes" / "Wrapped"
+    (wrapper / "images").mkdir(parents=True)
+    (wrapper / "images" / "figure.png").write_bytes(b"")
+    (wrapper / "content.md").write_text(
+        "---\nid: wrappedaaa\ntitle: Wrapped\nowner: user\n"
+        "source:\n  from: 'path:x'\n  via: verbatim\n  format: markdown\n"
+        "---\n\n# Wrapped\n",
+        encoding="utf-8",
+    )
+
+    result = run.invoke(main, ["corpus", "tree"])
+
+    assert result.exit_code == 0, result.output
+    assert "content.md" not in result.output
+    assert "figure.png" not in result.output
+    line = next(line for line in result.output.splitlines() if "Wrapped" in line)
+    assert "wrappedaaa" in line
+
+
+def test_tree_distinguishes_a_group_from_a_document(run: CliRunner, isolated: Path):
+    """Brian: groups should not look the same as the leaf nodes. A trailing
+    slash is the whole of the current difference. Concern #193."""
+    initialised(run)
+    grouped = isolated / "notes" / "calibration"
+    grouped.mkdir(parents=True)
+    (grouped / "gains.md").write_text(
+        "---\nid: gainsaaaaa\ntitle: Gains\nowner: user\n"
+        "source:\n  from: 'path:x'\n  via: verbatim\n  format: markdown\n"
+        "---\n\n# Gains\n",
+        encoding="utf-8",
+    )
+
+    result = run.invoke(main, ["corpus", "tree"])
+
+    assert result.exit_code == 0
+    group_line = next(
+        line for line in result.output.splitlines() if "calibration" in line
+    )
+    document_line = next(
+        line for line in result.output.splitlines() if "gains.md" in line
+    )
+    # A group carries no identifier, because nothing addresses one; a
+    # document carries its own.
+    assert "gainsaaaaa" not in group_line
+    assert "gainsaaaaa" in document_line
+    assert group_line.strip().endswith("/")
+
+
 # ---------------------------------------------------------------------------
 # Output discipline
 # ---------------------------------------------------------------------------

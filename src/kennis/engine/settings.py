@@ -159,9 +159,15 @@ class ConversionSettings(BaseModel):
     backend: Literal["mineru", "datalab"] = Field(
         default="mineru",
         description=(
+            # No install command here. A description is schema metadata: it
+            # is written into config.toml as a comment, where it would tell
+            # a reader to run something that does nothing for the way they
+            # installed kennis. The command that installs mineru depends on
+            # that, and is `MineruConverter.install_hint()`. Concerns #185,
+            # #195.
             "Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and "
-            "needs `uv sync --extra mineru`; datalab is hosted, needs an API "
-            "key, and sends the document to a third party."
+            "is installed with the mineru extra; datalab is hosted, needs an "
+            "API key, and sends the document to a third party."
         ),
     )
     mode: Literal["fast", "balanced", "accurate"] = Field(

@@ -15,13 +15,15 @@ rather than as a special case.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Final, Literal
 
 import numpy as np
 
-from kennis.engine.errors import SearchUnavailable
-from kennis.engine.rag.embedding import Embedder, embed_texts
+from kennis.engine.errors import InputError, SearchUnavailable
+from kennis.engine.events import EventSink
+from kennis.engine.rag.embedding import Embedder, embed_texts, reachable_model
 from kennis.engine.rag.index import LoadedIndex
 from kennis.engine.rag.models import (
     Chunk,
@@ -75,6 +77,8 @@ def search(
     filters: list[Filter] | None = None,
     mode: Mode = "hybrid",
     embedder: Embedder | None = None,
+    host: str | None = None,
+    events: EventSink | None = None,
 ) -> list[SearchResult]:
     """The best `top_k` chunks for `question`, best first.
 
@@ -82,6 +86,12 @@ def search(
     the index rather than taken from the caller's current configuration. A
     query vector computed with a different model is meaningless against these
     rows, and would not error - it would return confident nonsense.
+
+    `host` is the exception, and it is not one: an address is not part of
+    what the vectors are, so it is not in the stored binding and has to come
+    from the configuration in force now. Without it an ollama index cannot be
+    searched at all, because `validate_binding` refuses a daemon backend with
+    nowhere to reach. Concern #210.
 
     `filters` are applied to each leg's candidate list before fusion. That is
     the cheap choice, and it has a consequence worth knowing: a filter
@@ -99,10 +109,10 @@ def search(
     predicate = combine_filters(filters)
     candidates = max(top_k, _CANDIDATES)
 
-    dense_ranks, dense_scores = (
-        _dense_leg(index, question, candidates, predicate, embedder)
+    dense_ranks, cosines = (
+        _dense_leg(index, question, candidates, predicate, embedder, host, events)
         if mode in ("hybrid", "dense")
-        else ([], {})
+        else ([], None)
     )
     bm25_ranks, bm25_scores = (
         _bm25_leg(index, question, candidates, predicate)
@@ -117,37 +127,117 @@ def search(
             dense_rank=_rank_of(position, dense_ranks),
             bm25_rank=_rank_of(position, bm25_ranks),
             bm25_score=bm25_scores.get(position),
-            dense_score=dense_scores.get(position),
+            # Every position, not only the ones inside the dense window.
+            # Cosine is defined for every chunk, and the window is a
+            # retrieval budget rather than a limit on what is known - a hit
+            # fused in by the lexical leg alone is still a hit whose
+            # similarity can be reported.
+            dense_score=None if cosines is None else float(cosines[position]),
         )
         for position, score in _fuse(dense_ranks, bm25_ranks)[:top_k]
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkRange:
+    """Which chunks of a document to read, as a half-open range.
+
+    `None` at either end means "as far as the document goes", and a negative
+    index counts from the end, both exactly as a python slice does - because
+    resolving one *is* a python slice, so the semantics are borrowed rather
+    than reimplemented.
+
+    There is no step. A stepped selection would stitch non-adjacent chunks
+    into one passage: holes presented as continuous prose, and `char_start`
+    and `char_end` describing a range the text does not fill. A passage that
+    is not contiguous is not a passage. Concern #205.
+    """
+
+    start: int | None = None
+    stop: int | None = None
+
+    def resolve(self, count: int) -> tuple[int, int]:
+        """The concrete `[start, stop)` over a document of `count` chunks."""
+        start, stop, _ = slice(self.start, self.stop).indices(count)
+        return start, stop
+
+
+# `3` is one chunk; `0:3`, `2:`, `:3` and `:` are ranges. Groups are captured
+# so that an absent end can be told from an empty one.
+_RANGE = re.compile(r"^\s*(-?\d+)?\s*:\s*(-?\d+)?\s*$")
+_INDEX = re.compile(r"^\s*(-?\d+)\s*$")
+_ACCEPTED: Final = "3, 0:3, 2:, :3 or -1"
+
+
+def parse_chunk_range(text: str) -> ChunkRange:
+    """`--chunks` as a range, or `InputError` naming the forms that work.
+
+    Engine-side rather than in the command line, because the syntax is
+    kennis's own: an MCP tool taking `chunks="0:3"` has to get the same
+    answer, and a second parser is how two front ends come to disagree about
+    what `-1` means.
+    """
+    index = _INDEX.match(text)
+    if index is not None:
+        position = int(index.group(1))
+        # A bare index is that one chunk. Its half-open stop is the next
+        # position - except from the end, where the next position after -1 is
+        # 0, which python reads as "before the beginning" and which selects
+        # nothing. None is the only spelling of "to the end".
+        return ChunkRange(start=position, stop=position + 1 if position >= 0 else None)
+
+    found = _RANGE.match(text)
+    if found is not None:
+        start, stop = found.groups()
+        return ChunkRange(
+            start=int(start) if start is not None else None,
+            stop=int(stop) if stop is not None else None,
+        )
+
+    if text.count(":") > 1:
+        raise InputError(
+            f"'{text}' has a step, and a passage is contiguous; read a range instead",
+            resolution="kennis read --help",
+        )
+    raise InputError(
+        f"'{text}' is not a chunk range; write one of {_ACCEPTED}",
+        resolution="kennis read --help",
+    )
 
 
 def read_span(
     index: LoadedIndex,
     document_id: str,
     *,
-    chunk_index: int = 0,
-    before: int = 1,
-    after: int = 1,
+    chunks: ChunkRange,
 ) -> DocumentSpan:
-    """The text around one chunk, stitched back into a continuous run.
+    """One contiguous run of a document's chunks, stitched back into text.
 
-    A hit is one chunk and a reader usually wants what surrounds it.
+    The range is resolved against the chunks this document actually has, in
+    the order it has them, so `-1` is its last chunk rather than the last row
+    of the index.
     """
-    chunks = sorted(
+    held = sorted(
         (chunk for chunk in index.chunks if chunk.document_id == document_id),
         key=lambda chunk: chunk.chunk_index,
     )
-    if not chunks:
+    if not held:
         raise SearchUnavailable(
             f"'{document_id}' is not in the '{index.collection}' index",
             resolution=f"kennis corpus index --collection {index.collection}",
         )
 
-    positions = {chunk.chunk_index: position for position, chunk in enumerate(chunks)}
-    anchor = positions.get(chunk_index, 0)
-    run = chunks[max(0, anchor - before) : anchor + after + 1]
+    start, stop = chunks.resolve(len(held))
+    run = held[start:stop]
+    if not run:
+        # A legal slice that selects nothing - `5:5`, or a range past the
+        # end. Returning empty text would show a reader a blank screen and
+        # let them conclude the document was empty.
+        raise SearchUnavailable(
+            f"chunks {start}:{stop} of '{document_id}' select nothing; "
+            f"it has {len(held)}",
+            resolution=f"kennis read {document_id}",
+        )
 
     return DocumentSpan(
         document_id=document_id,
@@ -170,7 +260,9 @@ def _dense_leg(
     candidates: int,
     predicate: ChunkPredicate | None,
     embedder: Embedder | None,
-) -> tuple[list[int], dict[int, float]]:
+    host: str | None = None,
+    events: EventSink | None = None,
+) -> tuple[list[int], np.ndarray | None]:
     """The nearest chunks by cosine similarity, filtered.
 
     **This leg has no notion of "no match".** Cosine similarity is defined
@@ -182,16 +274,23 @@ def _dense_leg(
     """
     matrix = index.matrix
     if matrix is None or matrix.shape[0] == 0 or index.binding.model is None:
-        return [], {}
+        return [], None
 
     vector = embed_texts(
-        index.binding.model, [question], embedder=embedder, batch_size=1
+        reachable_model(index.binding.model, host=host),
+        [question],
+        embedder=embedder,
+        batch_size=1,
+        events=events,
     )[0]
     norm = float(np.linalg.norm(vector)) or 1.0
     scores = matrix @ (vector / norm)
     order = [int(position) for position in np.argsort(-scores)[:candidates]]
     kept = _kept(order, index.chunks, predicate)
-    return kept, {position: float(scores[position]) for position in kept}
+    # The similarities for the *whole* index, not only the kept window. The
+    # ranking uses `kept`; the caller reports the similarity of whatever
+    # fusion ends up returning, which the lexical leg can add to.
+    return kept, scores
 
 
 def _bm25_leg(

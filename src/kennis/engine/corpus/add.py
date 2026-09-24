@@ -93,7 +93,11 @@ from kennis.engine.events import (
     Progress,
     Severity,
 )
-from kennis.engine.literature.citekeys import derive_citekey, unique_citekey
+from kennis.engine.literature.citekeys import (
+    derive_citekey,
+    literature_stem,
+    unique_citekey,
+)
 from kennis.engine.literature.fetch import PaperText, fetch_paper
 from kennis.engine.literature.identifiers import (
     BibEntry,
@@ -390,7 +394,18 @@ def _add_one(
             reason="identical content is already in this collection",
         )
 
-    title = options.title or converted.suggested_title or identifier
+    # The name the file had comes before the heading inside it. A note is
+    # something a person wrote and named, and the name they typed is the one
+    # they will look for; the heading is a fallback for a source that has no
+    # filename at all - a URL, or text typed at the command line. Literature
+    # keeps the other order, because there `identity.title` leads and the
+    # heading is the right second choice for a paper. Concern #189.
+    title = (
+        options.title
+        or converted.source_name
+        or converted.suggested_title
+        or identifier
+    )
     if title_needs_dot_stripped(title):
         sink.emit(
             Diagnostic(
@@ -589,8 +604,12 @@ def _plan_binaries(
         return plan
 
     runs = list(_conversion_runs(pending, options.batch_size))
+    # Zero before anything has been converted, then one emission per run that
+    # has **finished**. Emitting at the top of the body instead showed a full
+    # bar for a single PDF and then sat there for the twenty seconds mineru
+    # takes, which reads as a hang rather than as progress. Concern #191.
+    sink.emit(Progress(operation="add", completed=0, total=len(runs)))
     for number, run in enumerate(runs, start=1):
-        sink.emit(Progress(operation="add", completed=number, total=len(runs)))
         batch = converter.convert(run)
         for path in run:
             markdown = batch.markdown.get(path)
@@ -611,6 +630,7 @@ def _plan_binaries(
         if batch.cost_cents is not None:
             plan.cost_cents = (plan.cost_cents or 0.0) + batch.cost_cents
         plan.repairs += sum(batch.repairs.values())
+        sink.emit(Progress(operation="add", completed=number, total=len(runs)))
     return plan
 
 
@@ -1289,7 +1309,17 @@ def _write_paper(
     for value in identity.values:
         record.identities[value] = document_id
 
-    filename = unique_filename(title_filename(title), record.filenames)
+    # `title - authors - year`, not the title alone: a directory listing of
+    # papers is scanned by author and year, and titles repeat across reviews,
+    # proceedings and preprint-plus-published pairs. What is unknown is left
+    # out, so a paper with no metadata is named exactly as it was before.
+    # Concern #190.
+    filename = unique_filename(
+        title_filename(
+            literature_stem(title=title, authors=identity.authors, year=identity.year)
+        ),
+        record.filenames,
+    )
     record.filenames.add(filename)
 
     frontmatter = LiteratureFrontmatter(

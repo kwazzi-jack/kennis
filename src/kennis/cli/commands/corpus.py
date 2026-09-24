@@ -13,7 +13,7 @@ be the one that waits for whatever is stuck.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
@@ -22,6 +22,7 @@ import click
 from kennis.cli import display
 from kennis.cli.context import Context, existing_corpus, resolve_context
 from kennis.cli.group import KennisGroup
+from kennis.cli.resolve import resolve_document
 from kennis.cli.sink import marker_for, reporting
 from kennis.engine.corpus.add import (
     AddOptions,
@@ -34,7 +35,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, move_document
 from kennis.engine.corpus.layout import index_root, title_filename, unique_filename
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import DocumentNotFound, KennisError
+from kennis.engine.errors import KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.history import (
@@ -228,19 +229,59 @@ def list_command(collection: str | None) -> None:
     help="Only this collection. All three by default.",
 )
 def tree_command(collection: str | None) -> None:
-    """The corpus as the directories it really is."""
+    """The corpus as the directories it really is, with each document's handle.
+
+    The identifiers come from `survey`, which reads them as plain YAML keys
+    and so still has one for a document that fails validation. That is
+    deliberate: a tree is a picture of what is on disk, and a document kennis
+    cannot read is exactly the one a reader needs to be shown.
+    """
     context = existing_corpus()
     for name in [collection] if collection else list(COLLECTION_NAMES):
-        root = context.corpus_root / name
+        found = Collection(root=context.corpus_root, name=name)
+        root = found.path
         if not root.is_dir():
             continue
         display.operation(name.capitalize())
+        identifiers = _identifiers_in(found)
         for path in sorted(root.rglob("*")):
-            if path.name.startswith("."):
+            if path.name.startswith(".") or _inside_a_wrapper(path, identifiers):
                 continue
             depth = len(path.relative_to(root).parts) - 1
-            marker = "/" if path.is_dir() else ""
-            display.detail(" ", f"{'  ' * depth}{path.name}{marker}")
+            if path.is_dir() and path.name not in identifiers:
+                display.tree_group(path.name, depth)
+            else:
+                display.tree_document(identifiers.get(path.name), path.name, depth)
+
+
+def _identifiers_in(collection: Collection) -> dict[str, str | None]:
+    """Every entry the walk will meet that is a document, by its name on disk.
+
+    Keyed by the name the directory really holds, which for a document with
+    assets is its **wrapper directory** - `Foo`, holding `Foo/content.md`.
+    Not `reserved_filename`, which is `Foo.md`: that is the name the wrapper
+    reserves against a future document's filename, and it is not a name the
+    walk will ever see.
+
+    A value of None is a document whose frontmatter carries no identifier to
+    read, which is a document kennis cannot validate rather than one it
+    cannot find.
+    """
+    return {
+        (facts.wrapper_dir or facts.md_path).name: facts.identifier
+        for facts in collection.survey()
+    }
+
+
+def _inside_a_wrapper(path: Path, identifiers: dict[str, str | None]) -> bool:
+    """True for a file that belongs to a wrapped document rather than to the
+    tree: its `content.md`, and anything under its `images/`.
+
+    The wrapper is one document and is printed as one line. Walking into it
+    would show a reader `content.md` under every title, which is an
+    implementation detail of how assets are stored.
+    """
+    return any(part in identifiers for part in path.parts[:-1])
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +478,7 @@ def _report_add(report: AddReport) -> None:
 def remove_command(handle: str, collection: str | None, yes: bool) -> None:
     """Delete a document, and its assets when it has any."""
     context = existing_corpus()
-    found, document = _resolve(context, handle, collection)
+    found, document = resolve_document(context, handle, collection)
 
     if not yes:
         # Recoverable through `corpus restore`, so this is a courtesy rather
@@ -491,7 +532,7 @@ def move_command(
     if group is None and title is None:
         raise display.CliError("nothing to change: pass --group, --title, or both.")
 
-    found, document = _resolve(context, handle, collection)
+    found, document = resolve_document(context, handle, collection)
     _refuse_regrouping_docs(found, group)
     target = _target_path(found, document, group=group, title=title)
 
@@ -579,45 +620,6 @@ def _stem(document: Document) -> str:
     if document.wrapper_dir is not None:
         return document.wrapper_dir.name
     return document.md_path.stem
-
-
-def _resolve(
-    context: Context, handle: str, collection: str | None
-) -> tuple[Collection, Document]:
-    """The collection holding `handle`, and the document it addresses.
-
-    Without `--collection` all three are tried, and a handle that resolves in
-    more than one is refused. That is the same rule one collection applies to
-    its own aliases - a key two documents share addresses nothing - applied
-    once more at the level above.
-    """
-    searched = [collection] if collection else list(COLLECTION_NAMES)
-    found: list[tuple[Collection, Document]] = []
-    for name in searched:
-        candidate = Collection(root=context.corpus_root, name=name)
-        try:
-            found.append((candidate, candidate.resolve(handle)))
-        except DocumentNotFound:
-            continue
-
-    if not found:
-        raise DocumentNotFound(
-            f"no document '{handle}' in {_named(searched)}",
-            resolution="kennis corpus list",
-        )
-    if len(found) > 1:
-        raise DocumentNotFound(
-            f"'{handle}' addresses a document in "
-            f"{_named([name.name for name, _ in found])}",
-            resolution="kennis corpus list",
-        )
-    return found[0]
-
-
-def _named(collections: Sequence[str]) -> str:
-    if len(collections) == 1:
-        return f"the {collections[0]} collection"
-    return f"{', '.join(collections[:-1])} or {collections[-1]}"
 
 
 # ---------------------------------------------------------------------------

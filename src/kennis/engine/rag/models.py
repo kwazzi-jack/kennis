@@ -71,8 +71,16 @@ class SearchResult(BaseModel):
     `score` is the fused value used for ordering and is comparable only
     across hits of the same query - never across collections or queries. The
     per-leg values are kept beside it because "why is this first" is a
-    question a maintainer asks and a fused score alone cannot answer. Either
+    question a maintainer asks and a fused score alone cannot answer. Each
     is None when that leg did not run.
+
+    A *rank* and a *score* are absent for different reasons, which is why
+    they are not set together. `dense_rank` is a position inside the leg's
+    candidate window and is None for a hit the window did not reach.
+    `dense_score` is a cosine, defined for every chunk against every query,
+    so it is present for every hit of a search whose dense leg ran - even
+    one fused in by the lexical leg alone. A relevance band reads the score,
+    and would otherwise have nothing to say about a hit it could measure.
     """
 
     chunk: Chunk

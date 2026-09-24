@@ -16,28 +16,63 @@ import click
 from kennis.cli import display
 from kennis.cli.context import Context, existing_corpus
 from kennis.cli.group import KennisCommand
+from kennis.cli.resolve import resolve_document
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import NothingToIndex, SearchUnavailable
+from kennis.engine.rag.embedding import resolve_host
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Filter, SearchResult
-from kennis.engine.rag.search import Mode, read_span, search
-from kennis.render.words import count_of, describe_hit, describe_span, snippet_of
+from kennis.engine.rag.search import (
+    ChunkRange,
+    Mode,
+    parse_chunk_range,
+    read_span,
+    search,
+)
+from kennis.render.hits import (
+    SCORE_STYLES,
+    Basis,
+    basis_for,
+    hit_handle,
+    hit_headline,
+    raw_scores,
+    relevance,
+    relevance_phrase,
+)
+from kennis.render.words import (
+    count_of,
+    describe_document,
+    describe_span,
+    snippet_of,
+)
 
 _MODES: Final[tuple[str, ...]] = get_args(Mode.__value__)
+
+# How many chunks either side of the anchor a passage carries. Named so
+# that `--before`/`--after` can be told apart from an explicit value equal
+# to the default, which is what makes refusing them possible.
+_CONTEXT_DEFAULT: Final = 1
 
 
 @dataclass(frozen=True, slots=True)
 class _Hit:
-    """One result, and which collection produced it.
+    """One result, which collection produced it, and on what scale.
 
-    Carried alongside rather than read off the chunk, because a merged list
-    is three lists interleaved and a reader has to be able to tell them apart
-    without looking anything up.
+    The collection is carried alongside rather than read off the chunk,
+    because a merged list is three lists interleaved and a reader has to be
+    able to tell them apart without looking anything up.
+
+    `basis` travels with the hit rather than with the list because each
+    collection has its own index and so its own embedding model: a corpus
+    part-way through a model change can hold one index a relevance band is
+    calibrated for and one it is not. `None` is "this hit cannot be banded".
     """
 
     collection: str
     result: SearchResult
+    basis: Basis | None
+    model: str | None
 
 
 @click.command(name="search", cls=KennisCommand)
@@ -71,6 +106,13 @@ class _Hit:
     show_default=True,
     help="How much of each hit's text to show.",
 )
+@click.option(
+    "--scores",
+    type=click.Choice(SCORE_STYLES),
+    default="human",
+    show_default=True,
+    help="How well each hit matched: a level, the raw per-leg numbers, or nothing.",
+)
 def search_command(
     question: str,
     collection: str | None,
@@ -79,6 +121,7 @@ def search_command(
     group: str | None,
     project: str | None,
     snippet: str,
+    scores: str,
 ) -> None:
     """Search the corpus and print the best-matching passages."""
     context = existing_corpus()
@@ -98,10 +141,23 @@ def search_command(
             continue
         searched.append(name)
         running = _fallback(index, asked, name)
+        model = index.binding.model.model if index.binding.model else None
+        basis = basis_for(model, dense_ran=running != "bm25")
         hits += [
-            _Hit(collection=name, result=result)
+            _Hit(collection=name, result=result, basis=basis, model=model)
             for result in search(
-                index, question, top_k=wanted, filters=filters, mode=running
+                index,
+                question,
+                top_k=wanted,
+                filters=filters,
+                mode=running,
+                # The address, from the configuration in force now. It is
+                # not in the stored binding, because it is not part of what
+                # the vectors are. Concern #210.
+                host=resolve_host(
+                    index.binding.model.kind if index.binding.model else "",
+                    context.settings.embedding.base_url or None,
+                ),
             )
         ]
 
@@ -115,11 +171,11 @@ def search_command(
     # because reciprocal rank fusion is a function of rank: 1/(k+rank) means
     # the same thing in literature as in notes, where a BM25 score would not.
     hits.sort(key=lambda hit: hit.result.score, reverse=True)
-    _report(hits[:wanted], searched, skipped, snippet)
+    _report(hits[:wanted], searched, skipped, snippet, scores)
 
 
 def _report(
-    hits: list[_Hit], searched: list[str], skipped: list[str], snippet: str
+    hits: list[_Hit], searched: list[str], skipped: list[str], snippet: str, scores: str
 ) -> None:
     if skipped:
         # One line for all of them. On a corpus with only notes indexed, one
@@ -135,11 +191,101 @@ def _report(
         display.note("no matching passages")
         return
 
-    display.operation("Found", count_of(len(hits), "passage"))
-    for hit in hits:
-        display.detail("=", describe_hit(hit.collection, hit.result))
+    style = _score_style(hits, scores)
+    display.operation("Found", _summary(hits, style))
+    best = _best_lexical(hits)
+    for rank, found in enumerate(hits, start=1):
+        display.hit(hit_headline(rank, found.collection, found.result))
+        display.hit_detail(_hit_detail(found, style, best))
         if snippet != "none":
-            display.plain(snippet_of(hit.result.chunk.text, full=snippet == "full"))
+            display.body(
+                snippet_of(found.result.chunk.text, full=snippet == "full"),
+                indent="      ",
+            )
+    # Once, not per hit. Rule 4.4 - it runs as printed - and the coordinates
+    # it needs are on every hit line above it.
+    first = hits[0].result.chunk
+    display.next_step(
+        f"kennis read {first.document_id} --chunks {_around(first.chunk_index)}",
+        note="to read one in context",
+    )
+
+
+def _around(chunk_index: int) -> str:
+    """The range that puts one chunk in context, as `--chunks` takes it.
+
+    The arithmetic `--before` and `--after` used to do, done once here so
+    that the printed command runs as printed (rule 4.4). `max(0, ...)` is
+    the part that matters: a hit at chunk 0 would otherwise print `-1:2`,
+    and `-1` is the document's *last* chunk - so the hint would send a
+    reader to the wrong end of it.
+    """
+    return f"{max(0, chunk_index - 1)}:{chunk_index + 2}"
+
+
+def _score_style(hits: list[_Hit], asked: str) -> str:
+    """The score rendering that can actually be produced.
+
+    `human` asks for a band, and a band needs a scale. A dense search on a
+    model kennis has never measured has none, so the request degrades to the
+    raw numbers and says so - the same choice `_fallback` makes about a
+    search mode, and for the same reason: refusing would be unhelpful and
+    substituting silently would have the reader trusting a measurement that
+    was never made.
+    """
+    if asked != "human" or any(found.basis is not None for found in hits):
+        return asked
+    display.note(
+        "no relevance band is calibrated for this embedding model, so these "
+        "are the raw scores"
+    )
+    return "raw"
+
+
+def _summary(hits: list[_Hit], style: str) -> str:
+    """`5 passages`, and what the levels beside them mean.
+
+    The basis is named once for the list rather than once per hit, because
+    it is a property of the search. It matters most for the lexical one,
+    whose best hit is the top level by construction: a reader who has not
+    been told that will read "very high" as a statement about the passage.
+    """
+    found = count_of(len(hits), "passage")
+    if style != "human":
+        return found
+    bases = {hit.basis for hit in hits if hit.basis is not None}
+    if len(bases) != 1:
+        return found
+    return f"{found}, {relevance_phrase(bases.pop())}"
+
+
+def _best_lexical(hits: list[_Hit]) -> float:
+    """The best BM25 score in the list, which the lexical band is a fraction of.
+
+    Across collections deliberately. Comparing BM25 scores between two
+    corpora is not meaningful in general, but the alternative here is worse:
+    a per-collection best makes the top hit of every collection "very high",
+    so a one-hit collection beside a twenty-hit one looks equally good.
+    """
+    return max(
+        (hit.result.bm25_score for hit in hits if hit.result.bm25_score is not None),
+        default=0.0,
+    )
+
+
+def _hit_detail(found: _Hit, style: str, best: float) -> str:
+    """The line under a hit: how well it matched, and how to read it."""
+    handle = hit_handle(found.result)
+    if style == "none":
+        return handle
+    if style == "raw":
+        return f"{raw_scores(found.result)}  {handle}"
+    if found.basis is None:
+        return handle
+    level = relevance(found.result, basis=found.basis, model=found.model, best=best)
+    if level is None:
+        return handle
+    return f"relevance: {level}  {handle}"
 
 
 def _fallback(index: LoadedIndex, asked: str, name: str) -> Mode:
@@ -183,54 +329,131 @@ def _filters(group: str | None) -> list[Filter] | None:
 
 
 @click.command(name="read", cls=KennisCommand)
-@click.argument("document_id")
+@click.argument("handle")
 @click.option(
     "--collection",
     type=click.Choice(COLLECTION_NAMES),
-    help="Look only here. Every indexed collection by default.",
+    help="Look only here. All three by default.",
 )
-@click.option("--chunk", type=int, default=0, show_default=True, help="Anchor chunk.")
-@click.option("--before", type=int, default=1, show_default=True)
-@click.option("--after", type=int, default=1, show_default=True)
+@click.option(
+    "--chunks",
+    "chunk_range",
+    metavar="RANGE",
+    default=None,
+    help="Read these chunks instead of the whole document, python-style: "
+    "'3', '0:3', '2:', ':3', '-1'. No step - a passage is contiguous.",
+)
+@click.option(
+    "--frontmatter",
+    is_flag=True,
+    help="Include the document's YAML frontmatter in the output.",
+)
 def read_command(
-    document_id: str, collection: str | None, chunk: int, before: int, after: int
+    handle: str,
+    collection: str | None,
+    chunk_range: str | None,
+    frontmatter: bool,
 ) -> None:
-    """Show the passage around one chunk of a document.
+    """Print a document, or the passage around one of its chunks.
 
-    The companion to a hit rather than a second `cat`: a search returns one
-    chunk and a reader wants what surrounds it, which is why this reads the
-    index and not the file.
+    **`HANDLE` is anything that names the document**: its identifier, its
+    title, the filename it has on disk with or without the extension, a
+    paper's citekey or arXiv identifier or DOI, a docs page's
+    `project/page`. The same resolution `corpus remove` and `corpus move`
+    use, so a handle that works for one works for all of them.
+
+    Without `--chunks` the document is read **from the corpus**, not from
+    the index, and a document that has never been indexed is still readable.
+    With `--chunks` the passage is stitched out of the index, which is what a
+    search hit's coordinates address - so that one, and only that one, needs
+    `kennis corpus index` to have run.
+
+    **`--chunks` is a python slice** over the document's own chunks: `3` is
+    one, `0:3` is the first three, `2:` runs to the end, `-1` is the last.
+    There is no step, because a passage that is not contiguous is not a
+    passage. It is an option value rather than a bracket on the handle
+    (`read x[0:3]`) because `[` and `]` are glob characters: the shell
+    rewrites an unquoted bracket expression against whatever files are in the
+    working directory, silently, and differently from one directory to the
+    next. Concern #205.
+
+    **One output contract either way: stdout is the text, stderr is the
+    provenance.** `kennis read x > x.md` and `kennis read x --chunks 3 |
+    less` both get the markdown and nothing else. A contract that changed
+    with a flag would put a report line on the front of one of them.
     """
     context = existing_corpus()
-
-    looked = False
-    for name in [collection] if collection else list(COLLECTION_NAMES):
-        index = _load(context, name, named=collection is not None)
-        if index is None:
-            continue
-        looked = True
-        try:
-            span = read_span(
-                index, document_id, chunk_index=chunk, before=before, after=after
-            )
-        except SearchUnavailable:
-            # Not in this collection's index. In a sweep that is ordinary -
-            # a document lives in one collection - so the search continues
-            # and only the last one answers.
-            continue
-        display.operation("Read", describe_span(name, span))
-        display.plain(span.text)
+    if chunk_range is None:
+        _read_document(context, handle, collection, frontmatter=frontmatter)
         return
-
-    if not looked:
-        raise NothingToIndex(
-            "no collection has an index yet, so there is nothing to read",
-            resolution="kennis corpus index",
+    if frontmatter:
+        # Silently ignoring it is how a person concludes the command did not
+        # work: it runs, it exits zero, and it does exactly what it would
+        # have done without the flag.
+        raise display.CliError(
+            "--frontmatter belongs to a whole-document read; drop --chunks to use it."
         )
-    raise SearchUnavailable(
-        f"'{document_id}' is not in any index",
-        resolution="kennis corpus index",
+    _read_span(context, handle, collection, chunks=parse_chunk_range(chunk_range))
+
+
+def _read_document(
+    context: Context, handle: str, collection: str | None, *, frontmatter: bool
+) -> None:
+    """The whole document, as markdown, on stdout.
+
+    The provenance goes to stderr rather than being dropped: the reader of a
+    terminal still wants to know which document answered, and the reader of
+    a pipe must not be given a report line in the middle of their file. The
+    same split `config show` makes.
+    """
+    found, document = resolve_document(context, handle, collection)
+    display.operation("Read", describe_document(found.name, document), stderr=True)
+    text = (
+        document.md_path.read_text(encoding="utf-8") if frontmatter else document.body
     )
+    display.body(text.rstrip("\n"))
+
+
+def _read_span(
+    context: Context, handle: str, collection: str | None, *, chunks: ChunkRange
+) -> None:
+    """One range of a document's chunks, stitched out of the index.
+
+    The handle is resolved against the corpus first, so `--chunks` accepts
+    every name the whole-document read does rather than the identifier
+    alone. Only then is the index asked, and only the collection the
+    document was actually found in.
+    """
+    found, document = resolve_document(context, handle, collection)
+    # Not `_load`: that one answers "an index, or None where None is
+    # allowed", and here it is not allowed - the document is known to be in
+    # this one collection and there is nowhere else to look. Asking for a
+    # required index directly keeps the type honest instead of narrowing an
+    # optional that could never be None.
+    index = _index_of(context, found.name)
+    try:
+        span = read_span(index, document.id, chunks=chunks)
+    except SearchUnavailable as error:
+        # The document is in the corpus and not in the index, which is a
+        # stale index rather than a missing document - so the resolution is
+        # to rebuild, not to go looking for another name.
+        error.add_note("run `kennis corpus index`")
+        raise
+    display.operation(
+        "Read",
+        describe_span(found.name, span, document.frontmatter.title),
+        stderr=True,
+    )
+    display.body(span.text)
+
+
+def _index_of(context: Context, name: str) -> LoadedIndex:
+    """One collection's index, or the error naming the command that builds it.
+
+    `NothingToIndex` already says which collection and carries
+    `kennis corpus index` as its resolution, so nothing is added here.
+    """
+    return load_index(index_root(context.corpus_root), name)
 
 
 def _load(context: Context, name: str, *, named: bool) -> LoadedIndex | None:

@@ -42,17 +42,65 @@ def derive_citekey(*, authors: str, year: str, title: str) -> str:
     return f"{_surname_part(authors)}{_title_part(title)}{year}"
 
 
-def _surname_part(authors: str) -> str:
+def literature_stem(*, title: str, authors: str, year: str) -> str:
+    """What a paper is called on disk: `title - authors - year`.
+
+    The title alone is not enough to tell two papers apart in a directory
+    listing: reviews and proceedings repeat titles, and the same work appears
+    as a preprint and as a published version. The authors and the year are
+    what a person actually scans for. Concern #190.
+
+    **Only the first surname**, with `et al` past one author: an astronomy
+    paper's full author list is not a filename. **A part that is not known is
+    omitted rather than left empty**, so a paper with neither degrades to the
+    title alone rather than to `Title -  - `, which reads as a fault rather
+    than as an absence.
+
+    The result is a stem. `title_filename` sanitises it and adds the
+    extension, as it does for every other collection.
+    """
+    parts = [title.strip()]
+    if authors.strip():
+        parts.append(_named_authors(authors))
+    if year.strip():
+        parts.append(year.strip())
+    return " - ".join(part for part in parts if part)
+
+
+def _named_authors(authors: str) -> str:
+    """The first author's surname, and whether there are others.
+
+    Surnames only, because the given names of a first author vary between
+    the sources kennis reads the same paper from - `Pan, Rui`, `Rui Pan`,
+    `R. Pan` - and a filename that changes with the source is not a name.
+    """
+    surname = _surname_of(authors)
+    if not surname:
+        return ""
+    return f"{surname} et al" if " and " in authors else surname
+
+
+def _surname_of(authors: str) -> str:
+    """The first author's surname, spelled as it was given.
+
+    Two conventions reach here and both have to parse: `Last, First M.` from
+    a Zotero export, and `First M. Last` from arXiv's Atom API.
+    """
     first = authors.split(" and ")[0].strip()
     if "," in first:
-        # "Last, First M." - the convention a Zotero export writes.
-        surname = first.split(",")[0].strip()
-    else:
-        # "First M. Last" - what arXiv's Atom API returns, and the real caller
-        # when a bare arXiv identifier was all there was.
-        parts = first.split()
-        surname = parts[-1].strip() if parts else ""
-    surname = re.sub(r"[^A-Za-z]", "", surname) or _NO_AUTHOR
+        return first.split(",")[0].strip()
+    parts = first.split()
+    return parts[-1].strip() if parts else ""
+
+
+def _surname_part(authors: str) -> str:
+    """The surname as a citekey fragment: letters only, lowercase initial.
+
+    A citekey is a slug and is typed by hand, so `Hallowes-Welman` becomes
+    `hallowesWelman`. A *filename* keeps the hyphen, which is why
+    `literature_stem` uses `_surname_of` and not this.
+    """
+    surname = re.sub(r"[^A-Za-z]", "", _surname_of(authors)) or _NO_AUTHOR
     return surname[:1].lower() + surname[1:]
 
 

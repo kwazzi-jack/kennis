@@ -55,6 +55,7 @@ rather than an unknown style tag rich would silently swallow.
 from __future__ import annotations
 
 import contextlib
+import textwrap
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import IO, Any
@@ -143,6 +144,103 @@ class MessageHighlighter(RegexHighlighter):
 
 
 _MESSAGE_HIGHLIGHTER = MessageHighlighter()
+
+
+# A ranked hit, styled through the roles `render/theme.py` has carried since
+# milestone 0 under "no renderer yet". The text is `render.hits`'s; nothing
+# here rewrites it, so the same words reach a front end that cannot colour.
+#
+# Anchored to line starts and to the shapes `render.hits` emits, in the order
+# broad-to-specific that the module docstring describes.
+_RANK = r"(?m)^\s*(?P<rank>\[\d+\])\s"
+# The second bracketed group on a hit line, which is the collection. The
+# lookbehind is what keeps it from matching the rank.
+_HIT_COLLECTION = r"(?<=\]\s)(?P<collection>\[\w+\])"
+# Everything after the collection, up to the " - " that introduces a section.
+_HIT_TITLE = r"(?<=\]\s)(?P<title>[^\n\[\]]+?)(?=\s-\s|$)"
+_HIT_SECTION = r"(?m)(?P<section>\s-\s[^\n]+)$"
+_RELEVANCE = r"(?P<label>\brelevance:)\s(?P<score>very high|very low|high|medium|low)"
+_LEG_SCORE = r"(?P<score_label>\b(?:bm25|cos|rrf)=)(?P<score>[\d.]+)"
+
+
+# Broad to specific, as above: the title claims the whole of what follows the
+# collection, and the rank, the collection and the scores are drawn over it.
+_HIT_PATTERNS = [
+    _HIT_TITLE,
+    _HIT_SECTION,
+    _RANK,
+    _HIT_COLLECTION,
+    _KEY_VALUE,
+    _RELEVANCE,
+    _LEG_SCORE,
+]
+
+
+class HitHighlighter(RegexHighlighter):
+    """Styles one ranked hit without touching a character of it."""
+
+    base_style = STYLE_PREFIX
+    highlights = _HIT_PATTERNS
+
+
+# Markdown, styled where it stands and never consumed: the terminal shows the
+# same characters the corpus holds and an agent would read, so a heading keeps
+# its hashes and a fence keeps its backticks.
+_MD_FENCE = r"(?m)^(?P<md_fence>```[\w-]*)$"
+_MD_HEADING = r"(?m)^(?P<md_heading>#{1,6} [^\n]*)$"
+_MD_CODE = r"(?P<md_code>`[^`\n]+`)"
+_MD_STRONG = r"(?P<md_strong>\*\*[^*\n]+\*\*)"
+_MD_EMPHASIS = r"(?P<md_emphasis>(?<![*\w])\*[^*\n]+\*(?![*\w]))"
+_MD_LINK = r"(?P<md_link>!?\[[^\]\n]*\])(?P<md_url>\([^)\n]*\))"
+
+
+_MD_PATTERNS = [
+    _MD_FENCE,
+    _MD_HEADING,
+    _MD_LINK,
+    _MD_STRONG,
+    _MD_EMPHASIS,
+    _MD_CODE,
+]
+
+
+class BodyHighlighter(RegexHighlighter):
+    """Styles a markdown body: a hit's snippet, or a document `read` prints."""
+
+    base_style = STYLE_PREFIX
+    highlights = _MD_PATTERNS
+
+
+# TOML, which rich has no highlighter for. `config show` emits a whole file
+# of it, and a sixty-line block of one colour is read by nobody.
+_TOML_COMMENT = r"(?m)(?P<toml_comment>(?:^|\s\s)#[^\n]*)$"
+_TOML_SECTION = r"(?m)^(?P<toml_section>\[[\w.-]+\])$"
+_TOML_KEY = r"(?m)^(?P<toml_key>[\w.-]+)(?=\s=\s)"
+_TOML_STRING = r"(?P<toml_string>\"(?:[^\"\\\n]|\\.)*\")"
+_TOML_NUMBER = r"(?<== )(?P<toml_number>-?\d+(?:\.\d+)?)\b"
+_TOML_BOOL = r"(?<== )(?P<toml_bool>true|false)\b"
+
+
+_TOML_PATTERNS = [
+    _TOML_SECTION,
+    _TOML_KEY,
+    _TOML_STRING,
+    _TOML_NUMBER,
+    _TOML_BOOL,
+    _TOML_COMMENT,
+]
+
+
+class TomlHighlighter(RegexHighlighter):
+    """Styles the TOML `config show` prints."""
+
+    base_style = STYLE_PREFIX
+    highlights = _TOML_PATTERNS
+
+
+_HIT_HIGHLIGHTER = HitHighlighter()
+_BODY_HIGHLIGHTER = BodyHighlighter()
+_TOML_HIGHLIGHTER = TomlHighlighter()
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +351,12 @@ def using(text: str) -> None:
 
 
 def operation(
-    verb: str, text: str = "", *, elapsed: float | None = None, style: str = "operation"
+    verb: str,
+    text: str = "",
+    *,
+    elapsed: float | None = None,
+    style: str = "operation",
+    stderr: bool = False,
 ) -> None:
     """One line of the report: what kennis did, to what, and how long it took.
 
@@ -269,7 +372,10 @@ def operation(
     line = Text(f"{verb} {text}{trailer}".rstrip())
     _MESSAGE_HIGHLIGHTER.highlight(line)
     line.stylize(style, 0, len(verb))
-    console.print(line, soft_wrap=True)
+    # `stderr` for a command whose stdout is a payload rather than a report:
+    # `kennis read x > x.md` must write the document and not a report line
+    # above it. The same split `note` makes, for the same reason.
+    (error_console if stderr else console).print(line, soft_wrap=True)
 
 
 # What each detail marker means, and so how it is coloured. `=` is unchanged
@@ -300,6 +406,48 @@ def detail(marker: str, text: str) -> None:
         _DETAIL_INDENT,
         (marker, rich_style_name(role)),
         (f" {text}", "muted"),
+    )
+    console.print(line, soft_wrap=True)
+
+
+# A corpus tree's own indent step. Two spaces per level on top of the content
+# indent, so a group's contents sit under its name rather than under the
+# collection heading.
+_TREE_STEP = "  "
+
+# What stands in an identifier column for a document whose frontmatter kennis
+# could not read. The same width as a real identifier, so the names stay in
+# one column and the gap is visibly a gap rather than a short name.
+_NO_IDENTIFIER = "-" * 10
+
+
+def tree_group(name: str, depth: int) -> None:
+    """A directory in the corpus tree: a collection's group, or a docs project.
+
+    Nothing addresses a group, so it carries no identifier - and that absence
+    is what tells it apart from the documents under it, along with the
+    trailing slash and the heading weight. `detail` is not used because its
+    marker column means added, removed or changed, and every line of a tree
+    is unchanged.
+    """
+    line = Text.assemble(
+        _DETAIL_INDENT + _TREE_STEP * depth,
+        (f"{name}/", rich_style_name("heading")),
+    )
+    console.print(line, soft_wrap=True)
+
+
+def tree_document(identifier: str | None, name: str, depth: int) -> None:
+    """A document in the corpus tree, with the handle every command takes.
+
+    The identifier leads so that the identifiers line up in one column and
+    can be read down and copied; the name follows, dim, because a reader
+    scanning for something already knows what they are looking for.
+    """
+    line = Text.assemble(
+        _DETAIL_INDENT + _TREE_STEP * depth,
+        (identifier or _NO_IDENTIFIER, rich_style_name("identifier")),
+        (f"  {name}", "muted"),
     )
     console.print(line, soft_wrap=True)
 
@@ -583,6 +731,74 @@ def plain(text: str) -> None:
     """Text that must reach stdout exactly as given, with no styling at all -
     a config value being read by a script, for instance."""
     console.print(Text(text), soft_wrap=True)
+
+
+# A hit's own contents - its handle, its relevance and its snippet - sit one
+# step in from the hit line, which is itself one step in from the `Found`
+# operation. Three levels rather than two because a hit is a thing with parts,
+# and at two the snippet's first line is indistinguishable from the next hit.
+_HIT_INDENT = " " * _CONTENT_INDENT
+_HIT_CONTENT_INDENT = " " * (_CONTENT_INDENT * 3)
+
+
+def hit(headline: str) -> None:
+    """One ranked hit's own line: `[1] [literature] Title - Section`."""
+    line = Text(f"{_HIT_INDENT}{headline}")
+    _HIT_HIGHLIGHTER.highlight(line)
+    console.print(line, soft_wrap=True)
+
+
+def hit_detail(text: str) -> None:
+    """A line belonging to the hit above it: its handle, or its relevance."""
+    line = Text(f"{_HIT_CONTENT_INDENT}{text}")
+    _HIT_HIGHLIGHTER.highlight(line)
+    console.print(line, soft_wrap=True)
+
+
+def body(text: str, *, indent: str = "") -> None:
+    """Markdown as the corpus holds it, styled but never rewritten.
+
+    With an `indent` the text is a snippet - one paragraph - and is wrapped
+    to the terminal with every line carried in, so a continuation lines up
+    with the line it continues instead of running back to the margin.
+
+    Without one it is a whole document, and it is printed exactly as stored:
+    re-wrapping would put line breaks inside fenced code and inside tables,
+    and this is the output a person pipes into a file.
+
+    Wrapped here rather than with `rich.padding.Padding`, which renders a
+    block and pads every line out to the console width - trailing spaces
+    that are invisible on screen and land in the file on a redirect.
+    """
+    if indent:
+        width = max(40, console.width - len(indent))
+        text = textwrap.fill(
+            text,
+            width=width,
+            initial_indent=indent,
+            subsequent_indent=indent,
+            # Neither break is right over a corpus: `sub-recipe` split across
+            # two lines reads as two words, and a long identifier or URL cut
+            # in the middle looks corrupted rather than wrapped. A line that
+            # overruns is the lesser fault.
+            break_on_hyphens=False,
+            break_long_words=False,
+        )
+    rendered = Text(text)
+    _BODY_HIGHLIGHTER.highlight(rendered)
+    console.print(rendered, soft_wrap=True)
+
+
+def toml(text: str) -> None:
+    """A whole TOML document, on stdout, styled so it can be read.
+
+    Styling survives only to a terminal: rich drops colour when stdout is
+    redirected, so `kennis config show > config.toml` still writes a file
+    with no escape codes in it.
+    """
+    rendered = Text(text)
+    _TOML_HIGHLIGHTER.highlight(rendered)
+    console.print(rendered, soft_wrap=True)
 
 
 # ---------------------------------------------------------------------------

@@ -144,7 +144,10 @@ def test_the_frontmatter_is_reachable_by_its_own_field_names(
     """Step 1's filters take a dotted path because kennis namespaces its
     per-collection fields into a block. The two were designed against each
     other, so the metadata has to arrive with those names."""
-    a_note(notes, tmp_path, "one.md", "# A Title\n\nBody.\n")
+    # Named `A Title.md` rather than headed `# A Title`: since #189 a note
+    # from a file is titled by its filename, and what this test is about is
+    # that the title reaches the metadata at all.
+    a_note(notes, tmp_path, "A Title.md", "# A Title\n\nBody.\n")
 
     metadata = CollectionLoader(notes).documents()[0].metadata
 

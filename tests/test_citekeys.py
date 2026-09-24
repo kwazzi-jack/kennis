@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from kennis.engine.literature.citekeys import derive_citekey, unique_citekey
+from kennis.engine.literature.citekeys import (
+    derive_citekey,
+    literature_stem,
+    unique_citekey,
+)
 
 
 def test_a_citekey_is_surname_then_title_words_then_year():
@@ -119,3 +123,53 @@ def test_numbering_continues_past_the_first_number():
 @pytest.mark.parametrize("year", ["", "2024"])
 def test_a_key_is_produced_whether_or_not_the_year_is_known(year: str):
     assert derive_citekey(authors="Welman, Brian", year=year, title="Gains")
+
+
+# ---------------------------------------------------------------------------
+# The filename a paper is stored under
+# ---------------------------------------------------------------------------
+
+
+def test_a_paper_is_named_title_authors_year():
+    """Brian's pattern. The title alone collides across a library and says
+    nothing about which edition or which authors. Concern #190."""
+    assert (
+        literature_stem(
+            title="Dying for freedom", authors="Hallowes-Welman, Lari", year="2026"
+        )
+        == "Dying for freedom - Hallowes-Welman - 2026"
+    )
+
+
+def test_a_paper_with_several_authors_names_the_first_and_says_so():
+    """The full list of a 200-author astronomy paper is not a filename."""
+    stem = literature_stem(
+        title="AstroMLab 2", authors="Rui Pan and Jane Doe and Ann Roe", year="2024"
+    )
+
+    assert stem == "AstroMLab 2 - Pan et al - 2024"
+
+
+def test_a_paper_with_no_authors_or_year_keeps_the_title_alone():
+    """What is unknown is omitted rather than left as an empty field: `Title
+    -  - .md` is a filename that reads as a fault."""
+    assert literature_stem(title="A paper", authors="", year="") == "A paper"
+
+
+def test_a_paper_missing_only_one_part_drops_only_that_part():
+    assert literature_stem(title="A paper", authors="Welman, B", year="") == (
+        "A paper - Welman"
+    )
+    assert literature_stem(title="A paper", authors="", year="2024") == (
+        "A paper - 2024"
+    )
+
+
+def test_a_separator_in_the_title_does_not_produce_a_second_field():
+    """A title of its own may contain ` - `, and the pattern has to stay
+    readable as three fields rather than four."""
+    stem = literature_stem(
+        title="Radio interferometry - a review", authors="Smirnov, O", year="2011"
+    )
+
+    assert stem.endswith(" - Smirnov - 2011")

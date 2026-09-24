@@ -10,9 +10,10 @@ computed against mismatched lists. Nothing errors.
 
 from __future__ import annotations
 
-from kennis.engine.rag.binding import Binding, document_digest
+from kennis.engine.rag.binding import Binding, binding_from, document_digest
 from kennis.engine.rag.chunking import ChunkParameters
-from kennis.engine.rag.embedding import ModelBinding
+from kennis.engine.rag.embedding import ModelBinding, reachable_model
+from kennis.engine.settings import ChunkingSettings, EmbeddingSettings
 
 
 def a_binding(
@@ -177,3 +178,61 @@ def test_the_recorded_form_names_its_fields():
     assert recorded["embedding_model"] == "bge-small"
     assert recorded["chunk_size"] == 1500
     assert recorded["digest"] == a_binding().digest
+
+
+# ---------------------------------------------------------------------------
+# What the stored binding is, and what it is not
+# ---------------------------------------------------------------------------
+
+
+def test_the_stored_binding_does_not_record_where_the_backend_lives():
+    """A binding says **what the vectors are**, not how to reach the thing
+    that made them. Two machines reaching the same ollama at different
+    addresses hold the same index, so an address in the binding would make
+    them disagree about a shared artefact.
+
+    This is also why a query has to be embedded with the stored identity and
+    the *current* host: reading the host back off the binding gets None, and
+    `validate_binding` then refuses every ollama search. Concern #210.
+    """
+    stored = binding_from(
+        ChunkingSettings(),
+        EmbeddingSettings(
+            backend="ollama",
+            model="nomic-embed-text",
+            dimensions=768,
+            base_url="http://localhost:11434",
+        ),
+    )
+
+    written = stored.recorded()
+
+    assert "host" not in written
+    assert "http://localhost:11434" not in str(written)
+
+
+def test_a_stored_binding_takes_a_runtime_host_for_the_query():
+    """The merge: identity from disk, connection from configuration."""
+    stored = binding_from(
+        ChunkingSettings(),
+        EmbeddingSettings(backend="ollama", model="nomic-embed-text", dimensions=768),
+    )
+    assert stored.model is not None
+
+    reachable = reachable_model(stored.model, host="http://elsewhere:11434")
+
+    assert reachable.host == "http://elsewhere:11434"
+    assert reachable.model == stored.model.model
+    assert reachable.dim == stored.model.dim
+    assert reachable.normalise == stored.model.normalise
+
+
+def test_a_runtime_host_of_none_leaves_the_binding_alone():
+    """fastembed has no host and must not acquire one."""
+    stored = binding_from(
+        ChunkingSettings(),
+        EmbeddingSettings(backend="fastembed", model="m", dimensions=8),
+    )
+    assert stored.model is not None
+
+    assert reachable_model(stored.model, host=None) == stored.model

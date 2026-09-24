@@ -28,8 +28,18 @@ uv sync                       # add --extra mineru to convert PDFs
 uv run kennis --help
 ```
 
-`uv tool install .` puts a `kennis` on your PATH instead, if you would rather
-not prefix every command with `uv run`.
+To get a `kennis` on your PATH instead of prefixing every command with
+`uv run`, install it as a tool. Converting PDFs needs the `mineru` extra,
+which is a large download:
+
+```
+uv tool install .                       # or
+uv tool install "kennis[mineru] @ ."    # with PDF conversion
+```
+
+`uv tool install` links only the requested package's executables, so `mineru`
+itself does not land on your PATH - kennis finds it in the environment it was
+installed into.
 
 ## Usage
 
@@ -70,11 +80,50 @@ kennis corpus index                            # build the index; after any batc
 kennis search "complex gains"
 kennis search "gains" --collection notes --group radio -k 5
 kennis search "fits files" --mode bm25 --snippet full
-kennis read 3vgtsow3cl                         # the passage around a hit, in full
+kennis search "complex gains" --scores raw     # the per-leg numbers instead of a level
 ```
 
-`--mode` is `hybrid` by default and falls back to `bm25` against a
-lexical-only index rather than failing.
+A hit looks like this:
+
+```
+Found 2 passages, relevance by cosine similarity
+  [1] [literature] Calibration of radio interferometers - Gain solutions
+      relevance: very high  id=gpfa1o3yad chunk=3
+      Complex gains are solved per antenna and per interval ...
+```
+
+`id` and `chunk` are what `read` takes. `--mode` is `hybrid` by default and
+falls back to `bm25` against a lexical-only index rather than failing.
+
+The first index on a new machine downloads the embedding model, which kennis
+says it is doing and keeps in `~/.cache/kennis/models`, so it is paid once.
+With `embedding.backend = ollama`, a model the daemon does not hold is pulled
+the same way.
+
+**Relevance is measured, not invented.** With a dense leg and an embedding
+model kennis has calibrated, the level is the hit's cosine similarity against
+cuts measured on a real corpus, so it means the same thing for every query.
+Against a lexical-only index it is relative to the best hit of that query,
+and the summary line says which of the two you are reading. `--scores raw`
+gives the numbers themselves.
+
+Reading a document:
+
+```
+kennis read 3vgtsow3cl                         # the whole document, as markdown
+kennis read "Recipe for-loops.md"              # by filename, title, or citekey
+kennis read 3vgtsow3cl --chunks 2:5            # just those chunks
+kennis read 3vgtsow3cl > paper.md              # the report goes to stderr, so this works
+```
+
+`--chunks` is a python slice over the document's own chunks: `3` is one,
+`0:3` is the first three, `2:` runs to the end, `-1` is the last. There is no
+step, because a passage that is not contiguous is not a passage. Without it
+the document is read from the corpus, so a document that has never been
+indexed is still readable; with it the passage is stitched out of the index.
+
+Either way stdout is the text and stderr is the provenance, so both forms
+pipe and redirect cleanly.
 
 ### Write something down
 
@@ -108,6 +157,7 @@ record of what kennis did and `restore` puts a document back as it was.
 | the corpus | `~/.local/share/kennis` | `KENNIS_CORPUS_ROOT` |
 | configuration | `~/.config/kennis` | `KENNIS_CONFIG_DIR` |
 | the log | `~/.local/state/kennis/log` | `KENNIS_LOG_DIR` |
+| downloaded embedding models | `~/.cache/kennis/models` | - |
 
 Every setting can also be given as an environment variable:
 `KENNIS_EMBEDDING_BACKEND`, `KENNIS_CONVERSION_BACKEND`, and so on. The log is

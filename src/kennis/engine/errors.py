@@ -171,7 +171,11 @@ class ConverterUnavailable(KennisError):
     """
 
     default_message = "no converter is available for this format"
-    default_resolution = "uv sync --extra mineru"
+    # Not an install command. Which one is right depends on how kennis was
+    # installed, and only `Converter.install_hint()` knows - the one place
+    # this is raised passes it. This default is the fallback, and it has to
+    # be a command that runs as printed either way. Concerns #185, #195.
+    default_resolution = "kennis config get conversion.backend"
 
 
 class ConversionFailed(KennisError):

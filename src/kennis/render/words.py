@@ -18,10 +18,10 @@ from __future__ import annotations
 
 from typing import Final
 
+from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.rag.models import SearchResult
 from kennis.engine.rag.search import DocumentSpan
 from kennis.engine.remember import IndexOutcome
 
@@ -145,36 +145,37 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
     return f"the {collection} index is in step"
 
 
-def describe_hit(collection: str, result: SearchResult) -> str:
-    """One search hit, named well enough to go and read it.
+def describe_document(collection: str, document: Document) -> str:
+    """Which document a whole-document read answered with.
 
-    The title rather than the path, because a person recognises what they
-    added by its name; the identifier because that is what `kennis read`
-    takes; and the section because a long document's hit is much easier to
-    place when it says which part matched.
+    The title, the identifier and the path, because the three answer
+    different questions: what it is, what to type to reach it again, and
+    where the bytes are. No chunk range, because there is no span - this is
+    the document, all of it.
     """
-    chunk = result.chunk
-    title = str(chunk.metadata.get("title") or chunk.document_id)
-    # A short document's only heading is its title, and "Rivers - Rivers"
-    # reads as a stutter rather than as a location.
-    section = chunk.section if chunk.section != title else None
-    where = f" - {section}" if section else ""
-    return f"[{collection}] {title}{where}  ({chunk.document_id})"
+    return (
+        f"[{collection}] {document.frontmatter.title}  "
+        f"({document.id})  {document.md_path}"
+    )
 
 
-def describe_span(collection: str, span: DocumentSpan) -> str:
+def describe_span(collection: str, span: DocumentSpan, title: str) -> str:
     """Which document was read, and which part of it.
 
-    The chunk range is named because `read` takes `--chunk`, `--before` and
-    `--after`: a reader who wants more has to know where they are before
-    they can ask for the next part.
+    The title leads, as it does on a search hit and on a whole-document
+    read, because that is what a person recognises; the identifier follows
+    because that is what they type. The chunk range is named because `read`
+    takes `--chunk`, `--before` and `--after`, and a reader who wants more
+    has to know where they are before they can ask for the next part.
     """
     chunks = (
         f"chunk {span.chunk_start}"
         if span.chunk_start == span.chunk_end
         else f"chunks {span.chunk_start} to {span.chunk_end}"
     )
-    return f"[{collection}] {span.document_id}  {span.source_path}  ({chunks})"
+    return (
+        f"[{collection}] {title}  ({span.document_id})  {span.source_path}  ({chunks})"
+    )
 
 
 def snippet_of(text: str, *, full: bool, limit: int = _SNIPPET_CHARACTERS) -> str:
@@ -253,6 +254,16 @@ def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
     if outcome == "skipped":
         return ""
     return "not indexed"
+
+
+def fetching_model(model: str) -> str:
+    """What is being downloaded, for the line printed before it starts.
+
+    Named rather than numbered: huggingface's own bar counted five files,
+    which told a reader nothing about what the pause was for or how much of
+    their disk it would take.
+    """
+    return f"the embedding model {model}"
 
 
 def progress_label(operation: str) -> str:

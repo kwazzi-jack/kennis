@@ -31,13 +31,15 @@ from kennis.cli import display
 from kennis.engine.events import (
     Diagnostic,
     Event,
+    ItemStarted,
     OperationFinished,
     Outcome,
     Progress,
     Severity,
 )
+from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.logs import LogSink
-from kennis.render.words import progress_label
+from kennis.render.words import fetching_model, progress_label
 
 # The column glyph each outcome prints under. Layout rather than wording, so
 # it lives here and not in `render/`: `display.detail` colours by the marker,
@@ -60,9 +62,10 @@ def marker_for(outcome: Outcome) -> str:
 class DisplaySink:
     """What the person running the command sees while it runs.
 
-    Three of the five events. `ItemStarted` and `ItemFinished` are the log's
-    alone: an item's outcome is reported afterwards from the report, where it
-    can be counted and capped.
+    Three of the five events, plus one exception. `ItemStarted` and
+    `ItemFinished` are otherwise the log's alone: an item's outcome is
+    reported afterwards from the report, where it can be counted and capped.
+    The exception is a model fetch, which no later report line accounts for.
 
     The bar is opened on the first `Progress` rather than up front, so a
     command that turns out to have nothing to do does not flash one. That is
@@ -86,6 +89,12 @@ class DisplaySink:
 
     def emit(self, event: Event) -> None:
         match event:
+            case ItemStarted(operation=operation) if operation == FETCH_MODEL:
+                # The one `ItemStarted` shown. A model fetch is a
+                # precondition of the operation rather than one of its items,
+                # so no later report line accounts for it - and it is sixty
+                # seconds of apparent silence if nothing says what it is.
+                display.operation("Downloading", fetching_model(event.item))
             case Progress():
                 self._progress(event)
             case Diagnostic():

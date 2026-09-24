@@ -8,8 +8,10 @@ hands over one that says so.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 import numpy as np
@@ -297,3 +299,52 @@ def test_the_openai_backend_uses_a_key_from_the_setup(
         embedder_for(binding).embed(["a"])
 
     assert seen["api_key"] == "sk-stored"
+
+
+# ---------------------------------------------------------------------------
+# Where a downloaded model is kept
+# ---------------------------------------------------------------------------
+
+
+def test_the_model_cache_is_not_in_a_temporary_directory():
+    """fastembed's own default is `<tempdir>/fastembed_cache`, which a reboot
+    or a tmpfiles sweep empties. The model is 65 MB and takes twenty seconds
+    to fetch, and the failure when it is gone names an ONNX runtime path
+    rather than anything a user can act on. Concern #196."""
+    import tempfile
+
+    from kennis.engine.rag.embedding import model_cache_dir
+
+    cache = model_cache_dir()
+
+    assert not cache.is_relative_to(Path(tempfile.gettempdir()))
+    assert "kennis" in cache.parts
+
+
+def test_the_fastembed_model_is_loaded_from_that_cache(monkeypatch: pytest.MonkeyPatch):
+    """The directory is only a fix if it is the one passed to the loader."""
+    from kennis.engine.rag import embedding as embedding_module
+
+    passed: dict[str, object] = {}
+
+    class _Recorder:
+        def __init__(self, **kwargs: object) -> None:
+            passed.update(kwargs)
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] for _ in texts]
+
+    fake = types.ModuleType("fastembed")
+    # Through monkeypatch rather than by assignment: a `ModuleType` has no
+    # declared `TextEmbedding`, so assigning one needs the attribute error
+    # silenced, and the project does not silence type errors.
+    monkeypatch.setattr(fake, "TextEmbedding", _Recorder, raising=False)
+    monkeypatch.setitem(sys.modules, "fastembed", fake)
+    monkeypatch.setattr(embedding_module._FastembedEmbedder, "_loaded", {})
+
+    embedder = embedding_module._FastembedEmbedder(
+        ModelBinding(kind="fastembed", model="BAAI/bge-small-en-v1.5", dim=384)
+    )
+    embedder.embed(["anything"])
+
+    assert passed["cache_dir"] == str(embedding_module.model_cache_dir())
