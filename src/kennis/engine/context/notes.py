@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 from kennis.engine._atomic import replace_file
 from kennis.engine.context.bundle import LANDING_FILENAME
 from kennis.engine.corpus.intake import sha256_of
@@ -124,14 +126,36 @@ def _holding(bundle: Path, digest: str) -> Path | None:
     and it is small enough that reading it is cheaper than maintaining one.
     """
     for path in bundle_documents(bundle):
-        _, body = split_frontmatter(path.read_text(encoding="utf-8"))
-        if sha256_of(body.strip().encode("utf-8")) == digest:
+        if sha256_of(_body_of(path).strip().encode("utf-8")) == digest:
             return path
     return None
 
 
+def _body_of(path: Path) -> str:
+    """The file's text without its frontmatter, or the whole file when the
+    frontmatter cannot be read.
+
+    `split_frontmatter` raises `yaml.YAMLError` on a header that is not
+    valid YAML, which the corpus path wants - a corpus document without its
+    frontmatter has no identity. Here it must not: one hand-broken header
+    anywhere in the bundle would otherwise take down every later write, and
+    a write has nothing to do with that file. Concern #239.
+    """
+    text = path.read_text(encoding="utf-8")
+    try:
+        _, body = split_frontmatter(text)
+    except yaml.YAMLError:
+        return text
+    return body
+
+
 def _title_of(path: Path) -> str:
-    frontmatter, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    """The file's recorded title, or its filename when it has none - and a
+    header that will not parse counts as having none. See `_body_of`."""
+    try:
+        frontmatter, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return path.stem
     recorded = frontmatter.get("title")
     return str(recorded) if recorded else path.stem
 

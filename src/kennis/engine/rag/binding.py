@@ -118,6 +118,16 @@ class Binding:
         )
 
 
+def chunk_parameters(chunking: ChunkingSettings) -> ChunkParameters:
+    """The chunker's parameters as a run's configuration describes them.
+
+    Separate from `binding_from` because a context bundle needs the chunking
+    half and has no embedding half at all - its index is lexical by design -
+    and deriving it twice would let the two drift.
+    """
+    return ChunkParameters(size=chunking.size, overlap=chunking.overlap)
+
+
 def binding_from(chunking: ChunkingSettings, embedding: EmbeddingSettings) -> Binding:
     """The binding a run's configuration describes.
 
@@ -130,7 +140,7 @@ def binding_from(chunking: ChunkingSettings, embedding: EmbeddingSettings) -> Bi
     chunking depends on there being an embedding backend.
     """
     return Binding(
-        chunking=ChunkParameters(size=chunking.size, overlap=chunking.overlap),
+        chunking=chunk_parameters(chunking),
         model=(
             None
             if embedding.backend == "none"

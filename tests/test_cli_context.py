@@ -15,7 +15,8 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
-from kennis.engine.context import BUNDLE_DIRNAME
+from kennis.engine.context import BUNDLE_DIRNAME, load_bundle_index
+from kennis.engine.rag.search import search
 
 
 @pytest.fixture(autouse=True)
@@ -310,3 +311,105 @@ def test_quiet_remember_context_prints_nothing_on_success(bundle: Path, run: Cli
     assert result.exit_code == 0, result.output
     assert result.output == ""
     assert len(bundle_notes(bundle)) == 1
+
+
+# ---------------------------------------------------------------------------
+# `kennis context index`
+# ---------------------------------------------------------------------------
+
+
+def test_context_index_builds_an_index_inside_the_bundle(bundle: Path, run: CliRunner):
+    """Inside, not beside: that is what lets the index be committed with the
+    project and arrive working in a fresh clone."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["context", "index"])
+
+    assert result.exit_code == 0, result.output
+    assert (bundle / ".index" / "context" / "latest.json").is_file()
+
+
+def test_context_index_does_not_commit_to_the_users_repository(
+    workspace: Path, bundle: Path, run: CliRunner
+):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+    assert log.stdout == ""
+
+
+def test_context_index_without_a_bundle_names_the_command_that_makes_one(
+    workspace: Path, run: CliRunner
+):
+    result = run.invoke(main, ["context", "index"])
+
+    assert result.exit_code != 0
+    assert "kennis context init" in result.output
+
+
+def test_indexing_an_empty_bundle_is_refused_rather_than_writing_nothing(
+    bundle: Path, run: CliRunner
+):
+    """A bundle straight out of `init` holds only the landing file and the
+    skeleton, both excluded from the index, so this is the first thing a new
+    user meets."""
+    result = run.invoke(main, ["context", "index"])
+
+    assert result.exit_code != 0
+    assert not (bundle / ".index").exists()
+    # `build_index` refuses an empty collection on its own, so asserting only
+    # the exit code would pass with the bundle wording removed. What is being
+    # tested is that the reader is told this is their project's bundle and
+    # what puts something in it.
+    assert "context bundle" in result.output
+    assert "kennis remember" in result.output
+
+
+def test_context_index_uses_the_configured_chunk_size(
+    bundle: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """The command reads the chunking settings rather than the chunker's own
+    defaults. Recorded in `binding.json`, which is what a second machine
+    compares against its own configuration to decide whether to rebuild."""
+    monkeypatch.setenv("KENNIS_CHUNKING_SIZE", "300")
+    monkeypatch.setenv("KENNIS_CHUNKING_OVERLAP", "30")
+    assert run.invoke(main, ["remember", "--context", "word " * 400]).exit_code == 0
+
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    assert load_bundle_index(bundle).binding.chunking.size == 300
+
+
+def test_a_remembered_note_is_searchable_after_indexing(bundle: Path, run: CliRunner):
+    """The command-line half of the crossing test: two commands, and the
+    second makes what the first wrote findable."""
+    assert (
+        run.invoke(
+            main,
+            ["remember", "--context", "Ionospheric screens need direction solutions."],
+        ).exit_code
+        == 0
+    )
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    loaded = load_bundle_index(bundle)
+    hits = search(loaded, "ionospheric screens", top_k=3, mode="bm25")
+    assert hits
+
+
+def test_quiet_context_index_prints_nothing_on_success(bundle: Path, run: CliRunner):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["--quiet", "context", "index"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""

@@ -14,14 +14,19 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand, KennisGroup
+from kennis.cli.sink import reporting
 from kennis.engine.context import (
     LANDING_FILENAME,
     BundleCreated,
     find_bundle,
+    index_bundle,
     init_bundle,
     workspace_root,
 )
 from kennis.engine.errors import ContextNotFound
+from kennis.engine.rag.binding import chunk_parameters
+from kennis.engine.settings import load_settings
+from kennis.render.words import count_of
 
 
 @click.group(name="context", cls=KennisGroup)
@@ -76,6 +81,38 @@ def _report_init(created: BundleCreated) -> None:
         display.details("+", list(created.restored))
         return
     display.guidance("already complete, nothing to put back")
+
+
+@context_group.command(name="index", cls=KennisCommand)
+def index_command_for_context() -> None:
+    """Build this project's context index.
+
+    **BM25 only, and offline.** Design section 13: a bundle index that
+    embedded would turn setting a project up from a 40ms scaffold into a
+    model download, and the bundle is small enough that lexical search over
+    it is the right answer rather than a concession.
+
+    The index is written inside the bundle, so committing `.context/` with
+    your project gives a fresh clone working search with no setup at all.
+    kennis does not commit it for you - the repository is yours.
+    """
+    bundle = require_bundle()
+    settings = load_settings()
+    with reporting() as events:
+        report = index_bundle(
+            bundle,
+            chunking=chunk_parameters(settings.chunking),
+            events=events,
+        )
+    display.operation(
+        "Indexed",
+        f"{count_of(report.document_count, 'document')} as "
+        f"{count_of(report.chunk_count, 'chunk')} in this project",
+        elapsed=report.elapsed_seconds,
+    )
+    # Named because it is the thing a user has to do and kennis will not:
+    # the bundle lives in a repository kennis does not own.
+    display.guidance(f"commit {bundle.name}/ to share the index with the project")
 
 
 def require_bundle() -> Path:
