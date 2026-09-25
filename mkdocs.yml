@@ -1,0 +1,105 @@
+# kennis's documentation.
+#
+# MkDocs rather than Sphinx, and the reason is measurable rather than a
+# preference: kennis's docstrings are markdown essays - 1026 backticks and
+# 38 modules opening a paragraph with `**Bold**`, against zero reST field
+# lists and zero Google sections. Sphinx `autodoc` reads a docstring as
+# reStructuredText, where a single backtick is a title reference, so it
+# would mangle every one of them. `mkdocstrings` renders the markdown that
+# is already there. Concern #219.
+
+site_name: kennis
+site_description: A knowledge and memory system for people and AI agents.
+site_url: https://kwazzi-jack.github.io/kennis/
+repo_url: https://github.com/kwazzi-jack/kennis
+repo_name: kwazzi-jack/kennis
+copyright: Brian Welman
+
+docs_dir: docs
+site_dir: site
+
+# `_settings-table.md` is a generated partial that is included into the
+# configuration page. Without this it is also built as a page of its own.
+exclude_docs: |
+  _*.md
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            # The docstrings are prose about why a mechanism has its shape,
+            # and they never document a parameter - the annotation does that.
+            # So the signature is shown in full and separately, and the
+            # docstring is left to be what it is.
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            docstring_section_style: list
+            filters: ["!^_"]
+            show_source: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - mkdocs-click
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: [docs]
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install: getting-started/install.md
+      - Tutorial - your first corpus: getting-started/tutorial.md
+  - How-to guides:
+      - Add documents: how-to/add-documents.md
+      - Search and read: how-to/search-and-read.md
+      - Choose an embedding backend: how-to/embedding-backends.md
+      - Keep credentials out of the config: how-to/credentials.md
+      - Inspect and recover: how-to/history.md
+  - Explanation:
+      - How retrieval works: explanation/retrieval.md
+      - What a document is: explanation/documents.md
+      - The corpus is a git repository: explanation/corpus.md
+      - Three layers: explanation/architecture.md
+  - Reference:
+      - Commands: reference/cli.md
+      - Configuration: reference/configuration.md
+      - Errors: reference/errors.md
+      - Python API: reference/api.md
