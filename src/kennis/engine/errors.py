@@ -68,6 +68,19 @@ class CorpusNotFound(KennisError):
     default_resolution = "kennis corpus init"
 
 
+class ContextNotFound(KennisError):
+    """No `.context/` bundle governs the directory kennis was run in.
+
+    The corpus is machine-global and a bundle is per-workspace, so this is
+    `CorpusNotFound` one scope down - and it is a different failure from a
+    bundle that exists and has no index, which is why the walk returns None
+    rather than raising and lets the caller pick.
+    """
+
+    default_message = "no context bundle found in this directory or any parent"
+    default_resolution = "kennis context init"
+
+
 class CorpusBusy(KennisError):
     """Another kennis process holds the corpus lock.
 

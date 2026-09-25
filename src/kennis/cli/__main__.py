@@ -21,6 +21,7 @@ from kennis import __version__
 from kennis.cli import display
 from kennis.cli.commands import (
     config_group,
+    context_group,
     corpus_group,
     read_command,
     remember_command,
@@ -53,6 +54,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
 
 main.add_command(corpus_group)
 main.add_command(config_group)
+main.add_command(context_group)
 main.add_command(search_command)
 main.add_command(read_command)
 main.add_command(remember_command)
