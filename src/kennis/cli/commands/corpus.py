@@ -201,7 +201,14 @@ def _report_freshness(
     if manifest is None:
         return False, True
     freshness = index_freshness(
-        repository, collection=name, built_from=manifest.built_from
+        repository,
+        collection=name,
+        built_from=manifest.built_from,
+        # What the index actually holds. Without it the diff is the only
+        # witness, and `built_from` is the head *before* the indexing
+        # command's own commit - so every `kennis remember` reported the
+        # note it had just indexed as not yet indexed. Concern #245.
+        indexed=manifest.documents,
     )
     described = describe_freshness(freshness, name)
     current = freshness.state == "in step" and not freshness.added

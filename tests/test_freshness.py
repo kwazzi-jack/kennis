@@ -12,8 +12,10 @@ from pathlib import Path
 
 import pytest
 
+from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.repository import Repository, initialise_corpus
+from kennis.engine.rag.binding import document_digest
 
 
 @pytest.fixture
@@ -257,3 +259,107 @@ def test_a_renamed_document_is_reported_rather_than_missed(corpus: Path):
     assert report.gone == 1
     assert report.added == 1
     assert report.state == "stale"
+
+
+# ---------------------------------------------------------------------------
+# What the index holds, against what the diff reports
+#
+# `built_from` is the head *before* the indexing command's own commit, so a
+# document written and indexed by one command is committed afterwards and
+# appears in the diff as added although the index holds it. The manifest's
+# digests are what settle it. Concern #245.
+# ---------------------------------------------------------------------------
+
+
+def indexed_digests(corpus: Path, *names: str) -> dict[str, str]:
+    """The manifest map, built by hand: path to the digest of that body."""
+    digests: dict[str, str] = {}
+    for name in names:
+        path = corpus / "notes" / name
+        _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        digests[f"notes/{name}"] = document_digest(body)
+    return digests
+
+
+def test_a_document_committed_after_the_build_is_not_reported_as_added(corpus: Path):
+    """The defect this exists for. `kennis remember` writes a note, indexes
+    it, and commits afterwards - so the diff lists it as added and the index
+    holds it. Every remember on an indexed corpus said so."""
+    a_note(corpus, "one.md")
+    built_from = committed(corpus)
+    a_note(corpus, "two.md")
+    held = indexed_digests(corpus, "one.md", "two.md")
+    committed(corpus, "2 added")
+
+    report = index_freshness(
+        Repository(corpus), collection="notes", built_from=built_from, indexed=held
+    )
+
+    assert report.state == "in step"
+    assert report.added == 0
+
+
+def test_a_document_the_index_does_not_hold_is_still_added(corpus: Path):
+    a_note(corpus, "one.md")
+    built_from = committed(corpus)
+    held = indexed_digests(corpus, "one.md")
+    a_note(corpus, "two.md")
+    committed(corpus, "1 added")
+
+    report = index_freshness(
+        Repository(corpus), collection="notes", built_from=built_from, indexed=held
+    )
+
+    assert report.added == 1
+    assert report.state == "in step"
+
+
+def test_an_edit_since_the_build_is_still_changed(corpus: Path):
+    """The digest is what tells this apart from the case above: same path,
+    different text."""
+    path = a_note(corpus, "one.md")
+    built_from = committed(corpus)
+    held = indexed_digests(corpus, "one.md")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("Body.", "Different."),
+        encoding="utf-8",
+    )
+
+    report = index_freshness(
+        Repository(corpus), collection="notes", built_from=built_from, indexed=held
+    )
+
+    assert report.state == "stale"
+    assert report.changed == 1
+
+
+def test_a_document_that_cannot_be_read_is_not_counted(corpus: Path):
+    """Reading it is how the digest is obtained, and a document whose
+    frontmatter will not parse is exactly what a corpus in trouble holds.
+    Failing here would break the command that diagnoses it - concern #21,
+    one layer down. `corpus status` reports it in its own right."""
+    path = a_note(corpus, "one.md")
+    built_from = committed(corpus)
+    held = indexed_digests(corpus, "one.md")
+    path.write_text("---\ntitle: [unclosed\n---\n\nBody.\n", encoding="utf-8")
+
+    report = index_freshness(
+        Repository(corpus), collection="notes", built_from=built_from, indexed=held
+    )
+
+    assert report.state == "in step"
+
+
+def test_without_a_manifest_the_diff_is_trusted_as_before(corpus: Path):
+    """`indexed=None` is for a caller with no manifest to hand, and keeps
+    the behaviour that shipped."""
+    a_note(corpus, "one.md")
+    built_from = committed(corpus)
+    a_note(corpus, "two.md")
+    committed(corpus, "1 added")
+
+    report = index_freshness(
+        Repository(corpus), collection="notes", built_from=built_from, indexed=None
+    )
+
+    assert report.added == 1

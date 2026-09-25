@@ -180,11 +180,17 @@ def build_index(
                     # rather than O(corpus).
                     "built_from": repository.head() if repository else None,
                     "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    # The digests a later staleness check compares against the
-                    # corpus, and the same ones the cache keys on: there is one
-                    # notion of "this document's current text" in the system.
+                    # The digests a later staleness check compares against
+                    # the corpus: there is one notion of "this document's
+                    # current text" in the system.
+                    #
+                    # **Keyed by source path, not by identifier.** Freshness
+                    # starts from the paths git reports as changed, and a
+                    # corpus identifier is a surrogate that no path carries -
+                    # so a map keyed by it could not be looked up from a
+                    # diff. For a bundle the two are the same string anyway.
                     "documents": {
-                        document.id: digest for document, digest, _ in chunked
+                        document.source_path: digest for document, digest, _ in chunked
                     },
                 },
                 indent=2,

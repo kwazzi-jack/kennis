@@ -772,3 +772,27 @@ def test_status_names_the_command_for_every_change_it_reports(
     # The hand-created file gets words rather than a command, because no
     # command adopts it in place (#129).
     assert "Move it outside the corpus" in result.output, result.output
+
+
+def test_remember_does_not_report_the_note_it_just_indexed_as_unindexed(
+    corpus: Path, run: CliRunner
+):
+    """The common case of concern #245, and the reason it was worth fixing:
+    `remember` writes a note, indexes it, and the command line commits
+    afterwards - so the freshness diff listed a note that was searchable as
+    not yet indexed, on the most-used command, every time."""
+    assert run.invoke(main, ["remember", "First note about gains."]).exit_code == 0
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    second = run.invoke(main, ["remember", "Ionospheric screens need solutions."])
+    assert second.exit_code == 0, second.output
+    status = run.invoke(main, ["corpus", "status"])
+
+    assert status.exit_code == 0, status.output
+    assert "not yet indexed" not in status.output
+    assert "kennis corpus index" not in status.output
+    # Searchable, which is what makes the warning false rather than merely
+    # unhelpful.
+    found = run.invoke(main, ["search", "ionospheric", "--collection", "notes"])
+    assert found.exit_code == 0, found.output
+    assert "onospheric" in found.output
