@@ -114,6 +114,7 @@ def status_command() -> None:
 
     total = 0
     indexed = False
+    current = True
     for name in COLLECTION_NAMES:
         facts = Collection(root=context.corpus_root, name=name).survey()
         total += len(facts)
@@ -125,7 +126,9 @@ def status_command() -> None:
             # corpus it exists to diagnose. Concern #21.
             if fact.problem:
                 display.detail("!", f"{fact.md_path.name}: {fact.problem}")
-        indexed |= _report_freshness(context, repository, name)
+        built, in_step = _report_freshness(context, repository, name)
+        indexed |= built
+        current &= in_step
 
     if total == 0:
         display.note("the corpus has no documents yet")
@@ -135,6 +138,12 @@ def status_command() -> None:
         # empty corpus, where the next step is to add documents, not to index
         # nothing.
         display.note("no index yet, so nothing is searchable")
+        display.next_step("kennis corpus index")
+    elif not current:
+        # The same rule the errors follow - name the command that resolves
+        # it. A stale or incomplete index was reported and left without one,
+        # so a reader was told something was wrong and not what to type.
+        # Once, for the same reason as above. Concern #244.
         display.next_step("kennis corpus index")
 
     for change in detect_changes(repository):
@@ -178,28 +187,34 @@ def _undo_hand_deletions(context: Context) -> None:
         display.detail("+", describe_change(change))
 
 
-def _report_freshness(context: Context, repository: Repository, name: str) -> bool:
+def _report_freshness(
+    context: Context, repository: Repository, name: str
+) -> tuple[bool, bool]:
     """How far this collection's index has fallen behind it, if it has one.
 
-    Returns whether there was an index to report on, so the caller can say
-    once - rather than three times - that the corpus has never been indexed.
+    Returns whether there was an index to report on, and whether it is
+    current - both so the caller can say once, rather than three times, what
+    is true of the corpus as a whole: that it has never been indexed, or
+    that something in it needs rebuilding.
     """
     manifest = read_manifest(index_root(context.corpus_root), name)
     if manifest is None:
-        return False
+        return False, True
     freshness = index_freshness(
         repository, collection=name, built_from=manifest.built_from
     )
     described = describe_freshness(freshness, name)
-    if freshness.state == "in step":
+    current = freshness.state == "in step" and not freshness.added
+    if current:
         # `=` is the marker that carries no colour, which is right: an index
         # that is current is the absence of news.
         display.detail("=", described)
     else:
-        # Stale and unverifiable are both things to act on, and a detail line
-        # in the same dim column as the good news would not read as one.
+        # Stale, unverifiable and in-step-with-additions are all things to
+        # act on, and a detail line in the same dim column as the good news
+        # would not read as one.
         display.note(described)
-    return True
+    return True, current
 
 
 @corpus_group.command(name="list")

@@ -34,6 +34,19 @@ def initialised(run: CliRunner) -> None:
     assert result.exit_code == 0, result.output
 
 
+def a_source(corpus: Path, name: str = "trees.md", body: str = "Body.") -> Path:
+    """A file outside the corpus, for `corpus add` to take.
+
+    Beside the corpus rather than in it: `add` converts and files it, which
+    is the supported route in, and the route whose commit lands before the
+    index is built.
+    """
+    path = corpus.parent / "sources" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {name.removesuffix('.md')}\n\n{body}\n", encoding="utf-8")
+    return path
+
+
 def a_note(corpus: Path, name: str, body: str = "Body.") -> Path:
     """A note written as kennis writes one.
 
@@ -185,6 +198,79 @@ def test_status_says_there_is_no_index_yet_rather_than_failing(
     assert result.exit_code == 0
     assert "no index yet" in result.output
     assert "kennis corpus index" in result.output
+
+
+def test_status_names_the_command_that_refreshes_a_stale_index(
+    run: CliRunner, isolated: Path
+):
+    """An index reported as stale used to be left without a command. The
+    project rule is that an error names what resolves it, and a warning a
+    reader can act on is no different - they were told something was wrong
+    and not what to type. Concern #244."""
+    initialised(run)
+    # Two things this route avoids. A hand-written document is committed by
+    # the *index* command, after `build_index` recorded the head it was
+    # built from, so it reads as "not yet indexed" even though it was
+    # (concern #245). And a hand-*edited* one is an out-of-band change,
+    # which `status` already ends by naming a remedy for - so the hint would
+    # appear whether or not the freshness line carried one, and the test
+    # would pass with its subject removed. Removing a document through
+    # kennis leaves the index stale and the working tree clean.
+    for name in ("trees.md", "rivers.md"):
+        added = run.invoke(main, ["corpus", "add", "-n", str(a_source(isolated, name))])
+        assert added.exit_code == 0, added.output
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    removed = run.invoke(main, ["corpus", "remove", "trees", "--yes"])
+    assert removed.exit_code == 0, removed.output
+
+    result = run.invoke(main, ["corpus", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "stale" in result.output
+    assert "kennis corpus index" in result.output
+
+
+def test_status_names_the_command_when_documents_are_not_yet_indexed(
+    run: CliRunner, isolated: Path
+):
+    """`in step, with 1 document not yet indexed` is not a fault - the index
+    holds less rather than something false - but it is still something to
+    act on, so it carries the command and is not printed as good news."""
+    initialised(run)
+    assert (
+        run.invoke(main, ["corpus", "add", "-n", str(a_source(isolated))]).exit_code
+        == 0
+    )
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    assert (
+        run.invoke(
+            main, ["corpus", "add", "-n", str(a_source(isolated, "rivers.md"))]
+        ).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["corpus", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "not yet indexed" in result.output
+    assert "kennis corpus index" in result.output
+
+
+def test_status_says_nothing_to_do_when_every_index_is_current(
+    run: CliRunner, isolated: Path
+):
+    initialised(run)
+    assert (
+        run.invoke(main, ["corpus", "add", "-n", str(a_source(isolated))]).exit_code
+        == 0
+    )
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["corpus", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "in step" in result.output
+    assert "kennis corpus index" not in result.output
 
 
 def test_status_on_an_empty_corpus_does_not_mention_the_index(run: CliRunner):

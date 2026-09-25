@@ -75,6 +75,34 @@ Two rules, and they are the whole of it:
   and it has to stay discoverable to an agent told to read it first, so it
   cannot be hidden by the dot trick.
 
+## Check on it
+
+```
+kennis context status
+```
+
+What the bundle holds, broken down by group when there is more than one,
+and whether the index is in step with it.
+
+Freshness is answered differently here than for the corpus. A corpus index
+records the commit it was built from and the question is a `git diff`;
+kennis does not write to your repository, so a bundle index records no
+commit and the comparison is made against the document digests the index
+stored. Same three counts either way:
+
+| line | what it means |
+|---|---|
+| `in step` | the index matches the bundle |
+| `in step, with N not yet indexed` | you have written since the last build - the index holds less, not something wrong |
+| `stale: N changed, N gone` | the index holds something false |
+
+`remember --context` does not index, so the middle line is the ordinary
+state of a bundle rather than a brief window.
+
+A file whose frontmatter block could not be read is listed with a `!`. It is
+still indexed - a bundle document's identity is its path, so a broken header
+costs its metadata and not the file.
+
 ## Search it
 
 ```
