@@ -61,10 +61,18 @@ def default_corpus_root() -> Path:
 def index_root(corpus_root: Path) -> Path:
     """Where the built indexes live: one directory per collection beneath it.
 
-    Inside the corpus rather than beside it, because `corpus.track_index`
-    decides whether it is committed and a path outside the repository could
-    not be. It is derived and never downloaded: a corpus copied to a machine
-    with no model still has a lexical index it can rebuild from.
+    Inside the corpus rather than beside it, so that it is committed with
+    the corpus and a clone or a pull arrives searchable - a path outside the
+    repository could not be. The vectors are the exception and are
+    gitignored (concern #92); what is committed is the chunks and the BM25
+    arrays, which are small beside the documents they were built from.
+
+    It is derived and never downloaded: a corpus copied to a machine with no
+    model still has a lexical index it can rebuild from.
+
+    A bundle's index is the opposite decision, and deliberately - see
+    `engine/context/bundle.py`. A corpus is kennis's own repository and is
+    not shared between people; a bundle sits in one that is.
     """
     return corpus_root / "index"
 

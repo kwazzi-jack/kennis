@@ -172,7 +172,12 @@ def test_the_manifest_records_what_was_indexed(
 
     held = notes.contents().documents[0]
     assert manifest["collection"] == "notes"
-    assert manifest["documents"][held.id] == document_digest(held.body)
+    # Keyed by where the document is, not by the identifier kennis minted.
+    # A freshness check starts from the paths git reports as changed, and a
+    # surrogate identifier appears in no path, so a map keyed by it could
+    # not be looked up from a diff. Concern #245.
+    relative = held.md_path.relative_to(notes.root).as_posix()
+    assert manifest["documents"] == {relative: document_digest(held.body)}
     assert manifest["chunk_count"] == report.chunk_count
 
 

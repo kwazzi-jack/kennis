@@ -96,7 +96,7 @@ def bundle_freshness(bundle: Path) -> Freshness | None:
         return None
     recorded = manifest.documents
     current = {
-        document.id: document_digest(document.text)
+        document.source_path: document_digest(document.text)
         for document in BundleLoader(bundle).documents()
     }
     added = {key for key in current if key not in recorded}
