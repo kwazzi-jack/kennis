@@ -34,7 +34,7 @@ from kennis.engine.corpus.layout import title_filename, unique_filename
 from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
-from kennis.engine.remember import title_for
+from kennis.engine.remember import title_for, titled_body
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +73,8 @@ def remember_in_bundle(
             resolution="kennis remember --help",
         )
 
-    existing = _holding(bundle, sha256_of(body.encode("utf-8")))
+    digest = sha256_of(body.encode("utf-8"))
+    existing = _holding(bundle, digest)
     if existing is not None:
         return BundleNote(
             outcome=Outcome.UNCHANGED,
@@ -89,7 +90,7 @@ def remember_in_bundle(
     taken = {path.name for path in directory.iterdir() if path.is_file()}
     path = directory / unique_filename(title_filename(chosen), taken)
 
-    replace_file(path, _document(chosen, body))
+    replace_file(path, _document(chosen, titled_body(title, body), digest))
     return BundleNote(
         outcome=Outcome.ADDED,
         title=chosen,
@@ -118,17 +119,38 @@ def bundle_documents(bundle: Path) -> list[Path]:
 
 
 def _holding(bundle: Path, digest: str) -> Path | None:
-    """The bundle file whose body is already this text, if there is one.
+    """The bundle file already holding this text, if there is one.
 
-    A full scan, keyed on the **body** so the same prose filed under another
-    name in another directory is still recognised. The corpus dedupes through
-    its `Uniqueness` record; a bundle has no identifiers to build one from,
-    and it is small enough that reading it is cheaper than maintaining one.
+    A full scan. The corpus dedupes through its `Uniqueness` record; a
+    bundle has no identifiers to build one from, and it is small enough that
+    reading it is cheaper than maintaining one.
+
+    **Against the recorded digest where there is one, and the body
+    otherwise.** `titled_body` may put a heading above the prose that was
+    given, so the stored body is no longer the text to compare - which would
+    silently stop recognising a repeat and write a second copy. A file kennis
+    wrote records the digest of what it was given; a hand-written one records
+    nothing and never had a heading added, so hashing its body is right for
+    it.
     """
     for path in bundle_documents(bundle):
-        if sha256_of(_body_of(path).strip().encode("utf-8")) == digest:
+        if _digest_of(path) == digest:
             return path
     return None
+
+
+def _digest_of(path: Path) -> str:
+    """The digest of the text this file was remembered from."""
+    try:
+        frontmatter, body = split_frontmatter(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return sha256_of(_body_of(path).strip().encode("utf-8"))
+    source = frontmatter.get("source")
+    if isinstance(source, dict):
+        recorded = source.get("sha256")
+        if isinstance(recorded, str):
+            return recorded
+    return sha256_of(body.strip().encode("utf-8"))
 
 
 def _body_of(path: Path) -> str:
@@ -160,13 +182,17 @@ def _title_of(path: Path) -> str:
     return str(recorded) if recorded else path.stem
 
 
-def _document(title: str, body: str) -> str:
+def _document(title: str, body: str, digest: str) -> str:
     """The file as it lands on disk.
 
     The shape `.skeleton.md` shows, so a remembered note and a hand-written
     one are the same kind of file. `description` is left empty rather than
     invented: the prose is one paragraph and a summary of it would be the
     paragraph again.
+
+    `source.sha256` is the digest of the text that was given, which is what
+    the corpus records for the same reason: `body` here may carry a heading
+    `titled_body` added, so the file is no longer its own dedup key.
     """
     written_at = datetime.now(UTC).isoformat(timespec="seconds")
     return (
@@ -177,6 +203,7 @@ def _document(title: str, body: str) -> str:
         "source:\n"
         "  via: remember\n"
         f"  at: '{written_at}'\n"
+        f"  sha256: {digest}\n"
         "---\n"
         "\n"
         f"{body}\n"

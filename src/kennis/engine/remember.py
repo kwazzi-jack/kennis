@@ -20,10 +20,11 @@ that at 50s for 1942 chunks.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from kennis.engine.corpus.add import Uniqueness, duplicate_of, write_note
 from kennis.engine.corpus.collection import Collection
@@ -111,8 +112,13 @@ def remember(
 
     collection = Collection(root=corpus_root, name="notes")
     record = Uniqueness.of(collection)
+    # Resolved before `Converted` is built, because the markdown written to
+    # disk carries the chosen title as a heading while the digest below
+    # stays the digest of the text that was given. Deduplication therefore
+    # still recognises the same prose whatever it was titled.
+    title = options.title or title_for(body)
     converted = Converted(
-        markdown=body,
+        markdown=titled_body(options.title, body),
         via="remember",
         format="markdown",
         origin=origin,
@@ -135,7 +141,6 @@ def remember(
             elapsed_seconds=time.monotonic() - started_at,
         )
 
-    title = options.title or title_for(body)
     document_id, path = write_note(
         collection,
         record,
@@ -221,6 +226,41 @@ def title_for(body: str) -> str:
     return heading.rstrip(" .,;:")
 
 
+# An ATX heading: up to three spaces of indent, one to six hashes, then a
+# space. The space is what distinguishes `# Notes` from `#tag`, and
+# CommonMark says so.
+_ATX_HEADING: Final = re.compile(r"^ {0,3}#{1,6}(?: |$)")
+
+
+def titled_body(title: str | None, body: str) -> str:
+    """The note's text as it is written down.
+
+    **A title the caller chose is prepended as a heading; a derived one is
+    not.** The chunker is given the body, so a word that appears only in the
+    frontmatter cannot be searched for - `--title "Solver choice"` over prose
+    that says "we use quartical rather than cubical" is the whole of what a
+    search for "solver" could match. A title `title_for` derived needs no
+    such help: it was taken from the body's first heading or its first line,
+    so its words are there already, and prepending it would repeat the note's
+    opening back at itself. Concern #243.
+
+    Left alone when the body already opens with an ATX heading, at any level.
+    `title_for` would have taken that heading as the title, so adding another
+    above it duplicates the same words one line up.
+
+    `title` is None for a derived title, which is how the caller says which
+    of the two cases this is.
+    """
+    if title is None or _opens_with_a_heading(body):
+        return body
+    return f"# {title}\n\n{body}"
+
+
+def _opens_with_a_heading(body: str) -> bool:
+    first_line = next((line for line in body.splitlines() if line.strip()), "")
+    return _ATX_HEADING.match(first_line) is not None
+
+
 __all__ = [
     "INLINE_ORIGIN",
     "IndexOutcome",
@@ -228,4 +268,5 @@ __all__ = [
     "RememberReport",
     "remember",
     "title_for",
+    "titled_body",
 ]
