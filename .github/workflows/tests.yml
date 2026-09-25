@@ -53,17 +53,22 @@ jobs:
       # drifts in CI tests an environment nobody has.
       - run: uv sync --frozen --python ${{ matrix.python }}
 
+      # `--python` on each run as well as on the sync: without it `uv run`
+      # reads `.python-version`, which says 3.12, and warns that the
+      # environment does not satisfy it on the 3.14 job. It ran 3.14 anyway,
+      # but a warning that suggests the wrong interpreter is being used is
+      # worth not printing.
       - name: ruff check
-        run: uv run --no-sync ruff check src tests
+        run: uv run --no-sync --python ${{ matrix.python }} ruff check src tests
 
       - name: ruff format
-        run: uv run --no-sync ruff format --check src tests
+        run: uv run --no-sync --python ${{ matrix.python }} ruff format --check src tests
 
       - name: mypy
-        run: uv run --no-sync mypy src
+        run: uv run --no-sync --python ${{ matrix.python }} mypy src
 
       - name: ascii only
         run: sh scripts/check_ascii.sh src tests docs scripts README.md
 
       - name: tests
-        run: uv run --no-sync pytest
+        run: uv run --no-sync --python ${{ matrix.python }} pytest

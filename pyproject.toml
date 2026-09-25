@@ -115,6 +115,10 @@ dev = [
     "pre-commit>=3.7",
     "pytest>=8.2",
     "pytest-cov>=5.0",
+    # Three converter tests build a real PDF rather than carry a binary
+    # fixture. It used to arrive only because the `mineru` extra depends
+    # on it, so CI - which installs no extras - could not run them.
+    "reportlab>=5.0.1",
     "ruff>=0.6",
     "types-pygments>=2.21.0.20260819",
     "types-pyyaml>=6.0.12.20260906",

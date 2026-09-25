@@ -47,6 +47,26 @@ exit "${MINERU_FAKE_EXIT-0}"
 """
 
 
+@pytest.fixture(autouse=True)
+def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reaches Hugging Face unless it asks to.
+
+    `retrieval.corpus_method` defaults to `hybrid`, so `kennis corpus index`
+    builds a dense index; `embed_texts` builds an embedder when the caller
+    supplied none, and building one downloads the model. A test that drives
+    the command line supplies none, so this setting is the only thing
+    between the default suite and a 65 MB download.
+
+    It was set per module in seven files and missing from an eighth, which
+    nothing here could notice: the model is cached in
+    `~/.cache/kennis/models` on a developer machine, so the download happens
+    once, invisibly, and never again. It took a fresh CI runner to show it
+    (concern #253). Autouse makes the safe case the default; a module that
+    wants a real backend sets its own value, which runs after this and wins.
+    """
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+
+
 @pytest.fixture
 def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Put a fake `mineru` first on PATH and return the log it writes."""
