@@ -1,0 +1,67 @@
+# Run the test suite and the static gate on every push and pull request.
+#
+# The same four checks a commit runs locally through pre-commit - ruff check,
+# ruff format, mypy, ASCII - plus the tests, which pre-commit does not run
+# because a suite that takes twenty seconds does not belong on every commit.
+# CI is where it does belong.
+#
+# `-m "not network and not slow"` is pytest's own default here, set in
+# pyproject. The deselected tests need a host to be up or a model to download,
+# and neither belongs in a run that gates a push.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded run on the same ref is cancelled: unlike a Pages deploy,
+# nothing is half-finished by stopping a test run.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Every version runs even when one fails, so a 3.14-only break is
+      # visible as exactly that rather than hidden behind a 3.12 failure.
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of `requires-python`. 3.13 is skipped
+        # deliberately: it is between two versions that are both tested, and
+        # a third full run buys little against the minutes it costs.
+        python: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          # The lockfile is what decides the environment, so it is what the
+          # cache key should follow.
+          cache-dependency-glob: uv.lock
+
+      - run: uv python install ${{ matrix.python }}
+
+      # `--frozen` so the lockfile is used as committed. A resolution that
+      # drifts in CI tests an environment nobody has.
+      - run: uv sync --frozen --python ${{ matrix.python }}
+
+      - name: ruff check
+        run: uv run --no-sync ruff check src tests
+
+      - name: ruff format
+        run: uv run --no-sync ruff format --check src tests
+
+      - name: mypy
+        run: uv run --no-sync mypy src
+
+      - name: ascii only
+        run: sh scripts/check_ascii.sh src tests docs scripts README.md
+
+      - name: tests
+        run: uv run --no-sync pytest
