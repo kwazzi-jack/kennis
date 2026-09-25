@@ -1055,3 +1055,35 @@ def test_a_lexical_corpus_index_still_reports_the_downgrade(
 
     assert result.exit_code == 0, result.output
     assert "the notes index has no dense leg" in result.output
+
+
+def test_the_default_hit_count_applies_to_each_scope(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """`-k` is per scope, so the default is what one group can print, not
+    what the report can. It was 5 while one merged list was truncated
+    globally; grouping made a three-collection sweep able to print fifteen
+    hits, and 3 keeps the worst case near what the merged list used to show.
+    Concern #232."""
+    indexed_notes(
+        run,
+        tmp_path,
+        **{f"sediment{index}": "Rivers carry sediment." for index in range(5)},
+    )
+
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "notes") == 3
+
+
+def test_the_default_can_still_be_raised(corpus: Path, run: CliRunner, tmp_path: Path):
+    indexed_notes(
+        run,
+        tmp_path,
+        **{f"sediment{index}": "Rivers carry sediment." for index in range(5)},
+    )
+
+    result = run.invoke(main, ["search", "sediment", "-k", "5"])
+
+    assert hits_in(result.output, "notes") == 5
