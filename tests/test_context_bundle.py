@@ -10,12 +10,14 @@ existing, so a stray or half-made `.context/` cannot hijack it.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from kennis.engine.context import (
     BUNDLE_DIRNAME,
+    INDEX_DIRNAME,
     MANIFEST_FILENAME,
     find_bundle,
     init_bundle,
@@ -189,13 +191,60 @@ def test_the_skeleton_shows_the_frontmatter_a_bundle_file_carries(tmp_path: Path
     assert "owner: user" in skeleton
 
 
-def test_init_writes_no_gitignore(tmp_path: Path):
-    """boepie ignored `.index/`; design section 19 reverses that, because
-    committing the bundle's index is what gives a fresh clone working
-    search with no setup."""
+def test_init_keeps_the_index_out_of_the_repository(tmp_path: Path):
+    """The index is derived from the documents beside it, rebuilt in
+    milliseconds, and specific to whoever built it - their chunk settings,
+    and their embedding model if they configured one. Committing it would
+    put one person's configuration in everyone's working tree.
+
+    design.md section 19 used to say the opposite, and said it for a real
+    reason: a committed index means a clone searches with no setup. That
+    was weighed against a per-person index and lost. Concern #248.
+    """
     created = init_bundle(a_workspace(tmp_path))
 
-    assert not (created.path / ".gitignore").exists()
+    ignored = (created.path / ".gitignore").read_text(encoding="utf-8")
+    assert ".index/" in ignored
+
+
+def test_git_actually_ignores_the_index(tmp_path: Path):
+    """Asked of git rather than of the file's contents. A rule that reads
+    correctly and does not match is the failure worth catching, and the
+    pattern is relative to the file that holds it - which is inside the
+    bundle, not at the repository root."""
+    root = a_workspace(tmp_path)
+    subprocess.run(
+        ["git", "init", "-q", "."],
+        cwd=root,
+        check=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+    bundle = init_bundle(root).path
+    index_file = bundle / INDEX_DIRNAME / "context" / "latest.json"
+    index_file.parent.mkdir(parents=True)
+    index_file.write_text("{}\n", encoding="utf-8")
+
+    checked = subprocess.run(
+        ["git", "check-ignore", "-q", str(index_file)],
+        cwd=root,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert checked.returncode == 0, "git does not ignore the bundle index"
+
+
+def test_a_deleted_gitignore_is_written_again(tmp_path: Path):
+    """It is scaffolding like the rest, and the consequence of losing it is
+    the one thing this whole decision was about."""
+    first = init_bundle(a_workspace(tmp_path))
+    (first.path / ".gitignore").unlink()
+
+    second = init_bundle(tmp_path)
+
+    assert ".gitignore" in second.restored
+    assert (second.path / ".gitignore").is_file()
 
 
 def test_init_is_re_runnable(tmp_path: Path):

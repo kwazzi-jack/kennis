@@ -34,6 +34,7 @@ BUNDLE_DIRNAME: Final = ".context"
 MANIFEST_FILENAME: Final = "bundle.json"
 LANDING_FILENAME: Final = "LANDING.md"
 SKELETON_FILENAME: Final = ".skeleton.md"
+GITIGNORE_FILENAME: Final = ".gitignore"
 INDEX_DIRNAME: Final = ".index"
 
 SCHEMA_VERSION: Final = 1
@@ -132,6 +133,7 @@ def init_bundle(root: Path) -> BundleCreated:
         (MANIFEST_FILENAME, _manifest()),
         (LANDING_FILENAME, _landing()),
         (SKELETON_FILENAME, _skeleton()),
+        (GITIGNORE_FILENAME, _gitignore()),
     ):
         path = bundle / name
         if path.exists():
@@ -140,6 +142,27 @@ def init_bundle(root: Path) -> BundleCreated:
         if existed:
             restored.append(name)
     return BundleCreated(path=bundle, created=not existed, restored=tuple(restored))
+
+
+def _gitignore() -> str:
+    """Keep the index out of the user's repository.
+
+    **The index is local to one machine and one configuration.** It is
+    derived from the documents beside it, it is rebuilt in milliseconds, and
+    what it was built with - the chunk parameters, the embedding model if
+    there is one - is a per-person setting. Committing it would put one
+    person's configuration in everyone's working tree, so a clone rebuilds
+    with its own.
+
+    Inside the bundle rather than in the project's root `.gitignore`: that
+    file is the user's, kennis does not edit files it does not own, and a
+    self-contained rule travels with the directory it governs.
+    """
+    return """# The search index is derived, rebuilt in milliseconds, and specific to
+# whoever built it - their chunk settings, and their embedding model if they
+# configured one. Run `kennis context index` after cloning.
+.index/
+"""
 
 
 def _manifest() -> str:

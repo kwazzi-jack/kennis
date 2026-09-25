@@ -99,9 +99,11 @@ def index_command_for_context() -> None:
     model download, and the bundle is small enough that lexical search over
     it is the right answer rather than a concession.
 
-    The index is written inside the bundle, so committing `.context/` with
-    your project gives a fresh clone working search with no setup at all.
-    kennis does not commit it for you - the repository is yours.
+    **The index is not committed.** `context init` writes a `.gitignore`
+    that keeps it out of the repository, because it is derived from the
+    documents beside it and specific to whoever built it - their chunk
+    settings, and their embedding model if they configured one. A clone
+    gets the documents and runs this command once.
     """
     bundle = require_bundle()
     settings = load_settings()
@@ -125,9 +127,11 @@ def index_command_for_context() -> None:
         f"{count_of(report.chunk_count, 'chunk')} in this project",
         elapsed=report.elapsed_seconds,
     )
-    # Named because it is the thing a user has to do and kennis will not:
-    # the bundle lives in a repository kennis does not own.
-    display.guidance(f"commit {bundle.name}/ to share the index with the project")
+    # The documents, not the index: `init` gitignores the index, so what is
+    # worth committing is what the index was built from. Named because it is
+    # the thing a user has to do and kennis will not - the repository is
+    # theirs.
+    display.guidance(f"commit {bundle.name}/ to share these notes with the project")
 
 
 @context_group.command(name="status", cls=KennisCommand)
