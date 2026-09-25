@@ -1,0 +1,162 @@
+"""Writing prose into a `.context/` bundle.
+
+The bundle half of design section 12. `engine/remember.py` does this for the
+corpus; the two are separate because a bundle is not a collection:
+
+- its files are addressed by **path**, so there is no surrogate identifier to
+  mint and no `Uniqueness` record to reserve a name against;
+- its repository is **the user's**, so nothing here commits. Every corpus
+  mutation ends in `Repository.commit`; doing that here would take over
+  version control of a repository kennis does not own. The design says the
+  bundle is committed with the project "if the user wants" - the user
+  commits. This is the one place symmetry with the corpus would be wrong.
+
+What *is* shared is the filename rule, from `corpus/layout.py`, because it
+is the same question in both scopes - including the leading-dot strip.
+In the corpus a dotted name is bookkeeping and invisible to the walk; in a
+bundle it is excluded from the index. A note titled `.env notes` must not be
+written and then be unfindable forever.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from kennis.engine._atomic import replace_file
+from kennis.engine.context.bundle import LANDING_FILENAME
+from kennis.engine.corpus.intake import sha256_of
+from kennis.engine.corpus.layout import title_filename, unique_filename
+from kennis.engine.errors import InputError
+from kennis.engine.events import Outcome
+from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.remember import title_for
+
+
+@dataclass(frozen=True, slots=True)
+class BundleNote:
+    """What one `remember --context` did.
+
+    `relative_path` rather than only the absolute one, because a bundle file
+    is addressed by its path within the project and that is what a report,
+    a search hit and a commit message all want to say.
+    """
+
+    outcome: Outcome
+    title: str
+    path: Path
+    relative_path: str
+    elapsed_seconds: float
+
+
+def remember_in_bundle(
+    bundle: Path,
+    text: str,
+    *,
+    title: str | None = None,
+    group: str | None = None,
+) -> BundleNote:
+    """Write `text` into `bundle` as a markdown file, unless it is already there.
+
+    Takes no lock and makes no commit. See the module docstring for why the
+    second one is deliberate.
+    """
+    started_at = time.monotonic()
+    body = text.strip()
+    if not body:
+        raise InputError(
+            "there is nothing to remember - no text was given",
+            resolution="kennis remember --help",
+        )
+
+    existing = _holding(bundle, sha256_of(body.encode("utf-8")))
+    if existing is not None:
+        return BundleNote(
+            outcome=Outcome.UNCHANGED,
+            title=_title_of(existing),
+            path=existing,
+            relative_path=existing.relative_to(bundle).as_posix(),
+            elapsed_seconds=time.monotonic() - started_at,
+        )
+
+    chosen = title or title_for(body)
+    directory = bundle / group if group else bundle
+    directory.mkdir(parents=True, exist_ok=True)
+    taken = {path.name for path in directory.iterdir() if path.is_file()}
+    path = directory / unique_filename(title_filename(chosen), taken)
+
+    replace_file(path, _document(chosen, body))
+    return BundleNote(
+        outcome=Outcome.ADDED,
+        title=chosen,
+        path=path,
+        relative_path=path.relative_to(bundle).as_posix(),
+        elapsed_seconds=time.monotonic() - started_at,
+    )
+
+
+def bundle_documents(bundle: Path) -> list[Path]:
+    """Every markdown file in `bundle` that counts as knowledge.
+
+    Excludes anything dot-prefixed at any depth - `.index/`, `.skeleton.md`,
+    and whatever a user renamed to hide - and `LANDING.md`, which is a map
+    rather than an answer. That pair is the *whole* exclusion rule; boepie
+    needed a hardcoded name list beside the dot check because its templates
+    were not dotted, and an undotted template matches every query about its
+    own section while answering none of them. Concern #227.
+    """
+    return sorted(
+        path
+        for path in bundle.rglob("*.md")
+        if path.name != LANDING_FILENAME
+        and not any(part.startswith(".") for part in path.relative_to(bundle).parts)
+    )
+
+
+def _holding(bundle: Path, digest: str) -> Path | None:
+    """The bundle file whose body is already this text, if there is one.
+
+    A full scan, keyed on the **body** so the same prose filed under another
+    name in another directory is still recognised. The corpus dedupes through
+    its `Uniqueness` record; a bundle has no identifiers to build one from,
+    and it is small enough that reading it is cheaper than maintaining one.
+    """
+    for path in bundle_documents(bundle):
+        _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        if sha256_of(body.strip().encode("utf-8")) == digest:
+            return path
+    return None
+
+
+def _title_of(path: Path) -> str:
+    frontmatter, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    recorded = frontmatter.get("title")
+    return str(recorded) if recorded else path.stem
+
+
+def _document(title: str, body: str) -> str:
+    """The file as it lands on disk.
+
+    The shape `.skeleton.md` shows, so a remembered note and a hand-written
+    one are the same kind of file. `description` is left empty rather than
+    invented: the prose is one paragraph and a summary of it would be the
+    paragraph again.
+    """
+    written_at = datetime.now(UTC).isoformat(timespec="seconds")
+    return (
+        "---\n"
+        f"title: {title}\n"
+        "description: ''\n"
+        "owner: user\n"
+        "source:\n"
+        "  via: remember\n"
+        f"  at: '{written_at}'\n"
+        "---\n"
+        "\n"
+        f"{body}\n"
+    )
+
+
+__all__ = ["BundleNote", "bundle_documents", "remember_in_bundle"]

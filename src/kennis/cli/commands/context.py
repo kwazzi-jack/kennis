@@ -60,13 +60,13 @@ def _report_init(created: BundleCreated) -> None:
     """
     if created.created:
         display.operation("Created", f"context bundle at {created.path}")
-        # Not `next_step`: rule 4.4 says a printed command runs as printed,
-        # and the command a new bundle wants next - `remember --context` -
-        # does not exist yet. The landing file does, and reading it first is
-        # what it asks for anyway.
-        # Relative to the bundle, which the line above just named in full.
-        # An absolute path here is long enough to be wrapped by the prose
-        # style that prints it, and a wrapped path cannot be copied.
+        # Not `next_step`, which prints a command: rule 4.4 says a printed
+        # command runs as printed, and the one a new bundle wants next is
+        # `kennis remember --context <text>`, whose placeholder does not.
+        # The landing file is a place rather than a command, so it can be
+        # named exactly. Relative to the bundle, which the line above just
+        # gave in full: an absolute path is long enough to be wrapped by the
+        # prose style that prints it, and a wrapped path cannot be copied.
         display.guidance(f"start at {created.path.name}/{LANDING_FILENAME}")
         return
     display.operation("Found", f"context bundle at {created.path}")

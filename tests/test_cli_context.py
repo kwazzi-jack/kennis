@@ -145,3 +145,168 @@ def test_the_printed_landing_path_exists_and_is_on_one_line(
     relative = printed[0].split("start at ")[-1].strip()
     assert relative == f"{BUNDLE_DIRNAME}/LANDING.md"
     assert (workspace / relative).is_file()
+
+
+# ---------------------------------------------------------------------------
+# `kennis remember --context`
+#
+# Tested here rather than in `test_cli_remember.py` because the bundle, not
+# the note, is what makes these true: the corpus half of that file gives
+# every test a corpus and a lock, and this half must work without either.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def bundle(workspace: Path, run: CliRunner) -> Path:
+    assert run.invoke(main, ["context", "init"]).exit_code == 0
+    return workspace / BUNDLE_DIRNAME
+
+
+def bundle_notes(bundle: Path) -> list[Path]:
+    """Every document the bundle holds that a person put there. `LANDING.md`
+    and the dot-prefixed skeleton are scaffolding, not notes."""
+    return sorted(
+        path
+        for path in bundle.rglob("*.md")
+        if path.name != "LANDING.md"
+        and not any(part.startswith(".") for part in path.relative_to(bundle).parts)
+    )
+
+
+def test_remember_context_writes_into_the_bundle(bundle: Path, run: CliRunner):
+    result = run.invoke(
+        main, ["remember", "--context", "This project calibrates in 4-minute chunks."]
+    )
+
+    assert result.exit_code == 0, result.output
+    written = bundle_notes(bundle)
+    assert len(written) == 1, written
+    assert "4-minute chunks" in written[0].read_text(encoding="utf-8")
+
+
+def test_remember_context_needs_no_corpus(bundle: Path, run: CliRunner):
+    """A bundle belongs to one project; a corpus is machine-global. Writing
+    a project's own note must not require the second to exist, and this test
+    is run with no `KENNIS_CORPUS_ROOT` and no `corpus init`."""
+    result = run.invoke(main, ["remember", "--context", "A local decision."])
+
+    assert result.exit_code == 0, result.output
+    assert len(bundle_notes(bundle)) == 1
+
+
+def test_remember_context_does_not_commit_to_the_users_repository(
+    workspace: Path, bundle: Path, run: CliRunner
+):
+    """The bundle sits inside a repository kennis does not own. Committing
+    to it would take over the user's version control."""
+    assert (
+        run.invoke(main, ["remember", "--context", "A local decision."]).exit_code == 0
+    )
+
+    log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+    assert log.stdout == ""
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+    assert BUNDLE_DIRNAME in status.stdout
+
+
+def test_remember_context_without_a_bundle_names_the_command_that_makes_one(
+    workspace: Path, run: CliRunner
+):
+    result = run.invoke(main, ["remember", "--context", "A local decision."])
+
+    assert result.exit_code != 0
+    assert "kennis context init" in result.output
+
+
+def test_remember_context_takes_the_title(bundle: Path, run: CliRunner):
+    result = run.invoke(
+        main, ["remember", "--context", "--title", "Chunking", "Four minutes."]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [path.name for path in bundle_notes(bundle)] == ["Chunking.md"]
+
+
+def test_remember_context_takes_a_group(bundle: Path, run: CliRunner):
+    result = run.invoke(
+        main, ["remember", "--context", "--group", "decisions", "Four minutes."]
+    )
+
+    assert result.exit_code == 0, result.output
+    written = bundle_notes(bundle)
+    assert [path.parent.name for path in written] == ["decisions"]
+
+
+def test_remembering_the_same_thing_twice_writes_one_file(bundle: Path, run: CliRunner):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    again = run.invoke(main, ["remember", "--context", "Four minutes."])
+
+    assert again.exit_code == 0, again.output
+    assert "nchanged" in again.output
+    assert len(bundle_notes(bundle)) == 1
+
+
+def test_remember_context_reads_a_file_and_standard_input(
+    bundle: Path, run: CliRunner, tmp_path: Path
+):
+    """The three routes are resolved before the write path is chosen, so
+    `--from` and a pipe have to reach the bundle too."""
+    path = tmp_path / "jottings.md"
+    path.write_text("# From a file\n\nFour minutes.\n", encoding="utf-8")
+
+    assert (
+        run.invoke(main, ["remember", "--context", "--from", str(path)]).exit_code == 0
+    )
+    piped = run.invoke(main, ["remember", "--context"], input="# Piped\n\nEight.\n")
+
+    assert piped.exit_code == 0, piped.output
+    assert sorted(path.name for path in bundle_notes(bundle)) == [
+        "From a file.md",
+        "Piped.md",
+    ]
+
+
+def test_no_index_with_context_is_refused_rather_than_ignored(
+    bundle: Path, run: CliRunner
+):
+    """A bundle is not indexed yet (#169). A flag asking for the index to be
+    skipped therefore has nothing to skip, and accepting it silently would
+    tell the caller something was honoured that was never considered."""
+    result = run.invoke(main, ["remember", "--context", "--no-index", "Four minutes."])
+
+    assert result.exit_code != 0
+    assert bundle_notes(bundle) == []
+
+
+def test_remember_context_says_where_it_went(bundle: Path, run: CliRunner):
+    """The path is named from the bundle directory down. `remember` writes
+    to two different places, and a bundle-relative path on its own would not
+    say which of them this was."""
+    result = run.invoke(main, ["remember", "--context", "--title", "Chunking", "Four."])
+
+    assert "Remembered" in result.output
+    assert f"{BUNDLE_DIRNAME}/Chunking.md" in result.output
+
+
+def test_quiet_remember_context_prints_nothing_on_success(bundle: Path, run: CliRunner):
+    result = run.invoke(main, ["--quiet", "remember", "--context", "Four minutes."])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""
+    assert len(bundle_notes(bundle)) == 1
