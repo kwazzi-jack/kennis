@@ -37,6 +37,10 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """
     directory = tmp_path / "config"
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(directory))
+    # These modules are about what the settings layer reads, so the
+    # suite-wide `offline_embedding` default must not be in the
+    # environment they read. Removed after it, never in place of it.
+    monkeypatch.delenv("KENNIS_EMBEDDING_BACKEND", raising=False)
     return directory
 
 

@@ -295,8 +295,6 @@ def a_real_pdf(path: Path) -> Path:
     Built so the expected text is visible in the test that asserts it, and
     so no binary fixture has to be carried in the repository.
     """
-    reportlab = pytest.importorskip("reportlab")
-    del reportlab
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 

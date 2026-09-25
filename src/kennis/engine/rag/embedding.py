@@ -146,9 +146,11 @@ def embed_texts(
     """`texts` as an `(len(texts), dim)` float32 matrix, in input order.
 
     `embedder` is supplied by the caller so a test hands over something that
-    never downloads a model; left out, one is built for `binding.kind` - and
-    only then is the model fetched, so no test acquires a network dependency
-    by supplying nothing.
+    never downloads a model; left out, one is built for `binding.kind`, and
+    building it fetches the model. A test that drives the command line
+    supplies nothing, so it does acquire a network dependency - what keeps
+    the suite offline is `KENNIS_EMBEDDING_BACKEND=none`, set for every test
+    by `tests/conftest.py`. Concern #253.
 
     `on_progress(done, total)` is called with zero up front and after each
     batch, and `done` never decreases - batches finish out of order, so the
@@ -362,9 +364,11 @@ def ensure_model_available(
 ) -> None:
     """Fetch the model this binding names, saying so first if it is not here.
 
-    Called by `embed_texts` only when it built the embedder itself, so a
-    caller that supplied its own - which is every test that is not this file
-    - never reaches it and never acquires a network dependency by accident.
+    Called by `embed_texts` only when it built the embedder itself. A caller
+    that supplies its own never reaches it; a caller that does not - which
+    includes every test driving the command line - reaches it and downloads.
+    The suite stays offline by configuring the backend away, not by this
+    path being unreachable from a test. Concern #253.
 
     **The announcement comes before the fetch**, because it exists to explain
     the pause that follows it. Where kennis cannot tell whether a fetch is

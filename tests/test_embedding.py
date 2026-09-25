@@ -114,7 +114,14 @@ def test_texts_are_sent_in_batches():
         batch_size=4,
     )
 
-    assert [len(batch) for batch in embedder.batches] == [4, 4, 2]
+    # The sizes as a multiset, not a sequence: `embed_texts` submits the
+    # batches to a thread pool, so the order a batch is recorded in is the
+    # order a worker picked it up. Asserting `[4, 4, 2]` passed here for
+    # months and failed on a CI runner with a different core count, which is
+    # a test disagreeing with the docstring above it rather than a defect.
+    assert sorted(len(batch) for batch in embedder.batches) == [2, 4, 4]
+    sent = [text for batch in embedder.batches for text in batch]
+    assert sorted(sent) == sorted(f"text {index}" for index in range(10))
 
 
 # ---------------------------------------------------------------------------
