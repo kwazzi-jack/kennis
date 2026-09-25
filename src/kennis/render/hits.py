@@ -158,6 +158,20 @@ def hit_handle(result: SearchResult) -> str:
     return f"id={result.chunk.document_id} chunk={result.chunk.chunk_index}"
 
 
+def bundle_hit_handle(result: SearchResult, *, bundle_name: str) -> str:
+    """Where a context hit is, which is the only handle it has.
+
+    A corpus document is addressed by an identifier kennis minted and
+    `kennis read` resolves. A bundle document is a file in the user's own
+    project - the plan is explicit that there is no `read_context` - so the
+    handle is the path, prefixed with the bundle's directory so it can be
+    opened from the workspace root without working out where it lives.
+
+    No chunk index, because there is no command here that takes a pair.
+    """
+    return f"path={bundle_name}/{result.chunk.document_id}"
+
+
 def raw_scores(result: SearchResult) -> str:
     """Every leg that ran, at the precision that distinguishes hits.
 

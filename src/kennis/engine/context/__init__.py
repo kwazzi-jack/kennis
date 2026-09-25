@@ -23,7 +23,7 @@ from kennis.engine.context.bundle import (
     workspace_root,
 )
 from kennis.engine.context.index import (
-    COLLECTION_NAME,
+    CONTEXT_COLLECTION,
     BundleLoader,
     index_bundle,
     load_bundle_index,
@@ -36,7 +36,7 @@ from kennis.engine.context.notes import (
 
 __all__ = [
     "BUNDLE_DIRNAME",
-    "COLLECTION_NAME",
+    "CONTEXT_COLLECTION",
     "INDEX_DIRNAME",
     "LANDING_FILENAME",
     "MANIFEST_FILENAME",
