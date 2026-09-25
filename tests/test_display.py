@@ -99,6 +99,44 @@ def test_every_marker_sits_in_the_same_column(marker: str):
     assert capture(lambda: display.detail(marker, "a")) == f"  {marker} a\n"
 
 
+class TestRowsAreNotDetails:
+    """A listing that *is* the command is not a footnote to an operation.
+
+    `detail` gives the marker the colour and dims the name, which is right
+    for the ten paths under an `Added` line. `corpus list`, `corpus history`
+    and `config get` have no operation above them, so the same treatment
+    dims the whole output and spends a column on a marker that is a space.
+    Concern #217.
+    """
+
+    def test_a_row_has_no_marker_column(self):
+        assert capture(lambda: display.row("nwgswtko72", "Dying for freedom.md")) == (
+            "  nwgswtko72  Dying for freedom.md\n"
+        )
+
+    def test_a_row_aligns_with_a_detail_beneath_the_same_margin(self):
+        """Both are indented one step, so a listing and a report read as the
+        same document rather than two."""
+        row = capture(lambda: display.row("abc", "x"))
+        detail = capture(lambda: display.detail("+", "x"))
+
+        assert row.startswith("  ") and detail.startswith("  ")
+
+    def test_a_row_without_an_identifier_prints_only_its_text(self):
+        assert capture(lambda: display.row("", "just text")) == "  just text\n"
+
+    def test_a_setting_row_reads_as_the_toml_it_is(self):
+        assert capture(lambda: display.setting_row("embedding.dimensions = 384")) == (
+            "  embedding.dimensions = 384\n"
+        )
+
+    def test_a_row_is_silent_when_quiet(self):
+        display.set_verbosity(quiet=True)
+
+        assert capture(lambda: display.row("abc", "x")) == ""
+        assert capture(lambda: display.setting_row("a = 1")) == ""
+
+
 def test_details_are_capped_so_a_large_batch_stays_readable():
     """The count is already on the operation line above, so the elision loses
     nothing but names."""

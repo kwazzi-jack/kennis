@@ -221,7 +221,10 @@ class BodyHighlighter(RegexHighlighter):
 # of it, and a sixty-line block of one colour is read by nobody.
 _TOML_COMMENT = r"(?m)(?P<toml_comment>(?:^|\s\s)#[^\n]*)$"
 _TOML_SECTION = r"(?m)^(?P<toml_section>\[[\w.-]+\])$"
-_TOML_KEY = r"(?m)^(?P<toml_key>[\w.-]+)(?=\s=\s)"
+# `\s*` rather than a bare `^`: the key is at the margin in a config file
+# and indented in a `config get` row, and anchoring to the margin silently
+# left every indented key unstyled.
+_TOML_KEY = r"(?m)^\s*(?P<toml_key>[\w.-]+)(?=\s=\s)"
 _TOML_STRING = r"(?P<toml_string>\"(?:[^\"\\\n]|\\.)*\")"
 _TOML_NUMBER = r"(?<== )(?P<toml_number>-?\d+(?:\.\d+)?)\b"
 _TOML_BOOL = r"(?<== )(?P<toml_bool>true|false)\b"
@@ -244,9 +247,39 @@ class TomlHighlighter(RegexHighlighter):
     highlights = _TOML_PATTERNS
 
 
+# `config get` with no key prints `key = value` lines, which is the shape of
+# TOML without being TOML: the values are unquoted, and an unset one is
+# `(unset)`. So the value is styled by position rather than by syntax -
+# everything after the ` = ` - with the two kinds that *are* unambiguous
+# applied after it, and stacked on top of it.
+_SETTING_VALUE = r"(?<== )(?!\(unset\)$)(?P<toml_string>.+)$"
+_SETTING_NUMBER = r"(?<== )(?P<toml_number>-?\d+(?:\.\d+)?)$"
+_SETTING_BOOL = r"(?<== )(?P<toml_bool>true|false)$"
+_SETTING_UNSET = r"(?<== )(?P<toml_unset>\(unset\))$"
+
+_SETTING_PATTERNS = [
+    _TOML_KEY,
+    _SETTING_VALUE,
+    _SETTING_NUMBER,
+    _SETTING_BOOL,
+    _SETTING_UNSET,
+]
+# The lookahead in `_SETTING_VALUE` is what keeps `(unset)` plain dim rather
+# than dim yellow: rich stacks the spans, so a generic value match underneath
+# would contribute its colour to whatever is laid over it.
+
+
+class SettingHighlighter(RegexHighlighter):
+    """Styles the `key = value` lines of `config get`."""
+
+    base_style = STYLE_PREFIX
+    highlights = _SETTING_PATTERNS
+
+
 _HIT_HIGHLIGHTER = HitHighlighter()
 _BODY_HIGHLIGHTER = BodyHighlighter()
 _TOML_HIGHLIGHTER = TomlHighlighter()
+_SETTING_HIGHLIGHTER = SettingHighlighter()
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +489,48 @@ def tree_document(identifier: str | None, name: str, depth: int) -> None:
         (f"  {name}", "muted"),
     )
     console.print(line, soft_wrap=True)
+
+
+def row(identifier: str, text: str) -> None:
+    """One line of a listing that *is* the command's output.
+
+    Not `detail`, and the difference is the point. `detail` styles a list
+    appended to an operation: the marker carries the colour and the name
+    stays dim, so ten added paths do not shout as loudly as the `Added` line
+    above them. `corpus list` and `corpus history` have no line above them -
+    the listing is the whole answer - so the same treatment dims everything
+    the command was asked for and spends a column on a marker that is a
+    space.
+
+    The identifier leads and keeps full weight, as it does in a corpus tree
+    and in a search hit: it is the column a reader scans down and copies out
+    of. Concern #217.
+    """
+    if _quiet:
+        return
+    if not identifier:
+        console.print(Text.assemble(_DETAIL_INDENT, (text, "muted")), soft_wrap=True)
+        return
+    line = Text.assemble(
+        _DETAIL_INDENT,
+        (identifier, rich_style_name("identifier")),
+        (f"  {text}", "muted"),
+    )
+    console.print(line, soft_wrap=True)
+
+
+def setting_row(text: str) -> None:
+    """One `key = value` line of `config get` with no key given.
+
+    Styled with the same highlighter as `config show`, because it is the same
+    information in the same shape and the two commands disagreeing about what
+    a number looks like is not a distinction worth having.
+    """
+    if _quiet:
+        return
+    rendered = Text(f"{_DETAIL_INDENT}{text}")
+    _SETTING_HIGHLIGHTER.highlight(rendered)
+    console.print(rendered, soft_wrap=True)
 
 
 def details(

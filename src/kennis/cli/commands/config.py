@@ -106,7 +106,7 @@ def get_command(key: str | None) -> None:
     if key is None:
         for name in Settings.model_fields:
             for field, value in _section_values(settings, name).items():
-                display.detail(" ", describe_setting(f"{name}.{field}", value))
+                display.setting_row(describe_setting(f"{name}.{field}", value))
         return
     display.plain(str(_value_of(settings, key)))
 
