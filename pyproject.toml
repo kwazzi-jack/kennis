@@ -47,6 +47,10 @@ dependencies = [
     "click>=8.1",
     "rich>=13.0",
     "rich-click>=1.8",
+    # rich already requires pygments, but `read` imports it directly to lex a
+    # fenced code block, so it is named here rather than relied on through
+    # another package's resolution.
+    "pygments>=2.13",
     # Prompting. A runtime dependency rather than a development one, because
     # terminal interaction is a module every command resolves inputs through.
     "prompt-toolkit>=3.0",
@@ -112,6 +116,7 @@ dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
     "ruff>=0.6",
+    "types-pygments>=2.21.0.20260819",
     "types-pyyaml>=6.0.12.20260906",
 ]
 

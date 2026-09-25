@@ -58,9 +58,13 @@ import contextlib
 import textwrap
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from functools import lru_cache
 from typing import IO, Any
 
 import click
+from pygments.lexer import Lexer
+from pygments.lexers import get_lexer_by_name
+from pygments.util import ClassNotFound
 from rich.console import Console, RenderableType
 from rich.highlighter import RegexHighlighter
 from rich.padding import Padding
@@ -71,9 +75,11 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from rich.syntax import SyntaxTheme
 from rich.text import Text
 
-from kennis.cli.theme import rich_style_name, rich_theme
+from kennis.cli.theme import rich_style_name, rich_theme, syntax_theme
+from kennis.render.markdown import Block, detected_language, split_blocks
 from kennis.render.theme import STYLE_PREFIX
 
 _THEME = rich_theme()
@@ -784,9 +790,90 @@ def body(text: str, *, indent: str = "") -> None:
             break_on_hyphens=False,
             break_long_words=False,
         )
+        # A snippet is one collapsed paragraph, so there are no blocks in it
+        # to find and nothing for the block renderer to do. `textwrap.fill`
+        # returns no trailing newline, so the line ending is supplied here.
+        _prose(text + "\n")
+        return
+    for block in split_blocks(text):
+        _block(block)
+
+
+def _block(block: Block) -> None:
+    """One run of a markdown body, styled for what it is.
+
+    Every branch prints with `end=""` and passes the block's text unaltered,
+    because the text already carries the newlines the document had. `read` is
+    a payload: what comes out must be what is stored, byte for byte, and a
+    renderer that adds a newline turns a document into a different document.
+    A test asserts the whole round trip.
+    """
+    if block.kind == "prose":
+        _prose(block.text)
+    elif block.kind == "fence":
+        console.print(
+            Text(block.text, style=rich_style_name("md_fence")),
+            end="",
+            soft_wrap=True,
+        )
+    else:
+        language = block.language or detected_language(block.text)
+        # Named no language and parsed as nothing, so no lexer. Coloured as
+        # one thing, which says "this is not prose" without claiming to know
+        # what it is - the claim guessing made and got wrong every time.
+        # Concern #214.
+        rendered = _lexed(block.text, language) if language else None
+        if rendered is None:
+            rendered = Text(block.text, style=rich_style_name("code_block"))
+        console.print(rendered, end="", soft_wrap=True)
+
+
+@lru_cache(maxsize=1)
+def _syntax_theme() -> SyntaxTheme:
+    return syntax_theme()
+
+
+@lru_cache(maxsize=16)
+def _lexer_for(language: str) -> Lexer | None:
+    """The pygments lexer for `language`, or None if there is no such thing.
+
+    A fence's info string is whatever its author typed, so an unknown name is
+    ordinary input rather than an error.
+
+    `ensurenl=False` and `stripnl=False` are what make the token stream
+    concatenate back into the text it came from. With the defaults pygments
+    appends a newline to a block that had none and strips leading ones, and
+    `read` would then emit a document the corpus does not hold.
+    """
+    try:
+        return get_lexer_by_name(language, stripnl=False, ensurenl=False)
+    except ClassNotFound:
+        return None
+
+
+def _lexed(text: str, language: str) -> Text | None:
+    """`text` styled token by token, or None when `language` is not a lexer.
+
+    Built from the token stream rather than with `rich.syntax.Syntax`, which
+    pads every line out to the console width - trailing spaces that are
+    invisible on screen and land in the file when `read` is redirected, the
+    same fault that ruled out `rich.padding.Padding` for snippets.
+    """
+    lexer = _lexer_for(language)
+    if lexer is None:
+        return None
+    theme = _syntax_theme()
+    rendered = Text()
+    for token_type, value in lexer.get_tokens(text):
+        rendered.append(value, theme.get_style_for_token(token_type))
+    return rendered
+
+
+def _prose(text: str) -> None:
+    """Prose printed verbatim, with `end=""` for the same reason as code."""
     rendered = Text(text)
     _BODY_HIGHLIGHTER.highlight(rendered)
-    console.print(rendered, soft_wrap=True)
+    console.print(rendered, end="", soft_wrap=True)
 
 
 def toml(text: str) -> None:

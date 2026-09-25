@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Final
 
+from pygments.token import string_to_tokentype
 from rich.style import Style
+from rich.syntax import ANSISyntaxTheme, SyntaxTheme
 from rich.theme import Theme
 
 from kennis.render.theme import ROLES, SENTENCE_ROLES, STYLE_PREFIX
@@ -35,6 +37,49 @@ def rich_style_name(role: str) -> str:
     names directly. Everything else is namespaced.
     """
     return role if role in SENTENCE_ROLES else f"{STYLE_PREFIX}{role}"
+
+
+# Which role each pygments token class wears. Deliberately short: a full
+# pygments style names a hundred token types, and the eight colours cannot
+# carry a hundred distinctions - so the map covers the classes that separate
+# code from prose at a glance and lets everything else inherit.
+_TOKEN_ROLES: Final[dict[str, str]] = {
+    "Keyword": "code_keyword",
+    "Name.Builtin": "code_keyword",
+    "Name.Tag": "code_name",
+    "Name.Function": "code_name",
+    "Name.Class": "code_name",
+    "Name.Attribute": "code_name",
+    "Literal.String": "code_string",
+    "Literal.Number": "code_number",
+    "Comment": "code_comment",
+    "Operator": "code_operator",
+    "Punctuation": "code_operator",
+}
+
+
+def syntax_theme() -> SyntaxTheme:
+    """The role table as a theme `rich.syntax.Syntax` can highlight with.
+
+    An `ANSISyntaxTheme` rather than one of pygments' own. Every pygments
+    style is written in true colour or 256-colour indices, which is exactly
+    what `render.theme` refuses: those do not resolve against the palette the
+    user's terminal is themed with, so a code block would be the one place
+    kennis's output stopped being legible on a light background.
+
+    Token classes not named here inherit, which is why the map is short -
+    eight colours cannot carry the hundred distinctions a pygments style
+    draws, and pretending otherwise would give six of them the same colour.
+    """
+    # Annotated as rich spells it. pygments' `_TokenType` subclasses `tuple`
+    # and rich types its map as `dict[tuple[str, ...], Style]`; a dict is
+    # invariant in its key, so the widening has to be stated rather than
+    # inferred.
+    styles: dict[tuple[str, ...], Style] = {
+        string_to_tokentype(token): Style.parse(ROLES[role].rich_style())
+        for token, role in _TOKEN_ROLES.items()
+    }
+    return ANSISyntaxTheme(styles)
 
 
 def rich_theme() -> Theme:

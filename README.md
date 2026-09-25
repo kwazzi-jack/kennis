@@ -123,7 +123,17 @@ the document is read from the corpus, so a document that has never been
 indexed is still readable; with it the passage is stitched out of the index.
 
 Either way stdout is the text and stderr is the provenance, so both forms
-pipe and redirect cleanly.
+pipe and redirect cleanly. Redirected, the text is the document byte for
+byte: colour is dropped when stdout is not a terminal, and no line is padded
+or re-wrapped.
+
+**Code blocks are highlighted where the language is known.** A fence that
+names one (` ```yaml `) is lexed as that. A fence that names nothing is
+*parsed* rather than guessed at - if the text is a YAML or JSON document it
+is highlighted as one, and otherwise it is coloured as a single block and
+left alone. Guessing was tried and measured: over 262 unlabelled fences it
+answered MySQL, GDScript, scdoc and Tera Term macro for content that was
+plainly YAML, so it is not used.
 
 ### Write something down
 
