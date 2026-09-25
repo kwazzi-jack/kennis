@@ -32,6 +32,7 @@ from kennis.engine.events import Diagnostic, EventSink, Severity
 from kennis.engine.frontmatter import Frontmatter, split_frontmatter
 from kennis.engine.rag.binding import Binding
 from kennis.engine.rag.chunking import ChunkParameters
+from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.rag.index import (
     BuildReport,
     LoadedIndex,
@@ -152,14 +153,17 @@ def index_bundle(
     bundle: Path,
     *,
     chunking: ChunkParameters | None = None,
+    model: ModelBinding | None = None,
     events: EventSink | None = None,
+    embed_batch_size: int = 64,
 ) -> BuildReport:
     """Build and publish the bundle's BM25 index.
 
-    `chunking` defaults to the same parameters a corpus uses. Passing
-    `model=None` is not a fallback here but the design: `retrieval.
-    context_method` will name it explicitly, and until it exists a bundle is
-    lexical-only either way.
+    `chunking` defaults to the same parameters a corpus uses, and `model`
+    to none - which is the bundle's nature rather than a caller's
+    preference. `retrieval.context_method` is what changes it, and the
+    front end resolves that setting into a model before calling here,
+    because nothing under `engine/` reads settings (concern #87).
 
     Takes no lock and makes no commit. `build_index` stages into a temporary
     directory and writes the pointer only after the swap, so the worst a
@@ -169,8 +173,9 @@ def index_bundle(
         return build_index(
             BundleLoader(bundle),
             index_root=index_root_for(bundle),
-            binding=Binding(chunking=chunking or ChunkParameters(), model=None),
+            binding=Binding(chunking=chunking or ChunkParameters(), model=model),
             events=events,
+            embed_batch_size=embed_batch_size,
         )
     except NothingToIndex as error:
         # Translated rather than pre-empted by a second emptiness check:

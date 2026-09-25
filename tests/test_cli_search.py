@@ -980,3 +980,18 @@ def test_an_empty_corpus_collection_is_not_reported_as_unindexed(
 
     assert result.exit_code == 0, result.output
     assert "not searched" not in result.output
+
+
+def test_a_lexical_corpus_index_still_reports_the_downgrade(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """`retrieval.corpus_method` defaults to hybrid and this corpus is
+    indexed with no backend, so the search ran as lexical and says so. The
+    context scope has its own setting now; without this the two could be
+    swapped and every test would still pass."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+
+    result = run.invoke(main, ["search", "calibration", "--collection", "notes"])
+
+    assert result.exit_code == 0, result.output
+    assert "the notes index has no dense leg" in result.output

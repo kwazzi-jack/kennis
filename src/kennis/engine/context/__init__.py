@@ -33,6 +33,12 @@ from kennis.engine.context.notes import (
     bundle_documents,
     remember_in_bundle,
 )
+from kennis.engine.context.reset import (
+    USER_OWNER,
+    BundleReset,
+    owned_by_kennis,
+    reset_bundle,
+)
 from kennis.engine.context.status import (
     BundleStatus,
     bundle_freshness,
@@ -47,9 +53,11 @@ __all__ = [
     "MANIFEST_FILENAME",
     "SCHEMA_VERSION",
     "SKELETON_FILENAME",
+    "USER_OWNER",
     "BundleCreated",
     "BundleLoader",
     "BundleNote",
+    "BundleReset",
     "BundleStatus",
     "bundle_documents",
     "bundle_freshness",
@@ -61,6 +69,8 @@ __all__ = [
     "init_bundle",
     "is_bundle_dir",
     "load_bundle_index",
+    "owned_by_kennis",
     "remember_in_bundle",
+    "reset_bundle",
     "workspace_root",
 ]
