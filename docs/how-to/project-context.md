@@ -60,6 +60,14 @@ model download, and a bundle is small enough that lexical search over it is
 the right answer rather than a concession - a three-document bundle indexes
 in about 4ms and produces under 3 KB.
 
+`retrieval.context_method` changes it, and defaults to `bm25` for that
+reason. Setting it to `hybrid` or `dense` gives the bundle a
+model-specific index, which needs an embedding backend and makes the index
+much less likely to be usable on another machine - so a clone would rebuild
+rather than search immediately, which is what committing the index was for.
+With no embedding backend configured, asking for `hybrid` still produces a
+lexical index rather than an error.
+
 The index is written **inside** the bundle, at `.context/.index/`. That is
 the point: commit it with the project and a clone searches with no setup.
 
@@ -102,6 +110,30 @@ state of a bundle rather than a brief window.
 A file whose frontmatter block could not be read is listed with a `!`. It is
 still indexed - a bundle document's identity is its path, so a broken header
 costs its metadata and not the file.
+
+## Start again
+
+```
+kennis context reset
+```
+
+Removes the index and anything kennis owns, and keeps your own files. It
+asks first and names what will go; `-y` skips the question.
+
+**Today that is the index and nothing else.** Files kennis owns are files a
+pack applied, and there are no packs yet - everything `remember --context`
+writes is `owner: user`, and so is anything you wrote by hand, including a
+file with no frontmatter at all and one whose header kennis cannot read. The
+two mistakes do not cost the same: keeping a pack's file costs a stale file
+the next sync overwrites, and deleting yours costs your writing.
+
+`LANDING.md`, `.skeleton.md` and `bundle.json` are left alone even though
+kennis wrote them, because you are expected to edit the first two.
+`kennis context init` puts back any one of them you delete.
+
+There is no undo inside kennis. A bundle lives in your repository and kennis
+keeps no history of it, so `git checkout` is the way back - if you
+committed.
 
 ## Search it
 

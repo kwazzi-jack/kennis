@@ -15,8 +15,10 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.cli.commands.context import context_model
 from kennis.engine.context import BUNDLE_DIRNAME, load_bundle_index
 from kennis.engine.rag.search import search
+from kennis.engine.settings import load_settings
 
 
 @pytest.fixture(autouse=True)
@@ -534,3 +536,216 @@ def test_quiet_context_status_prints_nothing(bundle: Path, run: CliRunner):
 
     assert result.exit_code == 0, result.output
     assert result.output == ""
+
+
+# ---------------------------------------------------------------------------
+# `kennis context reset`
+# ---------------------------------------------------------------------------
+
+
+def a_pack_file(bundle: Path, relative: str) -> Path:
+    """What a pack will write once packs exist: a document kennis owns."""
+    path = bundle / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "---\ntitle: From a pack\nowner: pack\n---\n\nPack prose.\n", encoding="utf-8"
+    )
+    return path
+
+
+def test_context_reset_removes_the_index_and_keeps_your_files(
+    bundle: Path, run: CliRunner
+):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "reset", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert not (bundle / ".index").exists()
+    assert len(bundle_notes(bundle)) == 1
+
+
+def test_context_reset_says_that_everything_was_yours(bundle: Path, run: CliRunner):
+    """The plan asks for this in as many words: until packs exist, `reset`
+    removes almost nothing, and that is worth stating rather than leaving a
+    reader to discover."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "reset", "--yes"])
+
+    assert "your own files were left untouched" in result.output
+
+
+def test_context_reset_with_nothing_to_remove_does_nothing(
+    bundle: Path, run: CliRunner
+):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["context", "reset"])
+
+    assert result.exit_code == 0, result.output
+    assert "nothing to remove" in result.output
+    assert len(bundle_notes(bundle)) == 1
+
+
+def test_context_reset_asks_first_and_an_answer_of_no_removes_nothing(
+    bundle: Path, run: CliRunner
+):
+    """Not recoverable through kennis: a bundle is in a repository kennis
+    has no history of, so the only undo is the user's own."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "reset"], input="n\n")
+
+    assert result.exit_code != 0
+    assert (bundle / ".index").is_dir()
+
+
+def test_the_prompt_names_what_will_go(bundle: Path, run: CliRunner):
+    a_pack_file(bundle, "conventions/naming.md")
+
+    result = run.invoke(main, ["context", "reset"], input="n\n")
+
+    assert "conventions/naming.md" in result.output
+
+
+def test_context_reset_removes_a_file_kennis_owns(bundle: Path, run: CliRunner):
+    applied = a_pack_file(bundle, "conventions/naming.md")
+    assert run.invoke(main, ["remember", "--context", "Mine."]).exit_code == 0
+
+    result = run.invoke(main, ["context", "reset", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert not applied.exists()
+    assert len(bundle_notes(bundle)) == 1
+
+
+def test_context_reset_names_the_command_that_rebuilds_the_index(
+    bundle: Path, run: CliRunner
+):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "reset", "--yes"])
+
+    assert "kennis context index" in result.output
+
+
+def test_context_reset_without_a_bundle_names_the_command_that_makes_one(
+    workspace: Path, run: CliRunner
+):
+    result = run.invoke(main, ["context", "reset", "--yes"])
+
+    assert result.exit_code != 0
+    assert "kennis context init" in result.output
+
+
+def test_quiet_context_reset_prints_nothing(bundle: Path, run: CliRunner):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["--quiet", "context", "reset", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""
+
+
+# ---------------------------------------------------------------------------
+# `retrieval.context_method`
+# ---------------------------------------------------------------------------
+
+
+def test_a_bundle_is_indexed_lexically_by_default(bundle: Path, run: CliRunner):
+    """The default is the design's decision, not a cautious fallback: a
+    dense bundle index would turn `context init` into a model download and
+    would make the binding match across machines much less likely, which is
+    what committing the index is for."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    assert load_bundle_index(bundle).binding.model is None
+
+
+def test_the_method_setting_is_what_asks_for_a_dense_leg(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Asked of the resolution directly rather than through `context index`.
+    On a machine with no embedding backend both answers produce a lexical
+    index, so a test that ran the command could not tell whether the setting
+    was read - and the one written first passed with the setting ignored.
+    `ollama` is named because building a `ModelBinding` for it reaches
+    nothing: no download, no daemon, no network."""
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "ollama")
+
+    monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "bm25")
+    assert context_model(load_settings()) is None
+
+    monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "hybrid")
+    asked = context_model(load_settings())
+    assert asked is not None
+    assert asked.kind == "ollama"
+
+
+def test_asking_for_hybrid_without_a_backend_is_a_lexical_index(
+    bundle: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Not a failure. The corpus behaves the same way, and refusing would
+    make a setting change break a command that has everything it needs to
+    do something useful."""
+    monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "hybrid")
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["context", "index"])
+
+    assert result.exit_code == 0, result.output
+    assert "lexical search only" in result.output
+    assert load_bundle_index(bundle).binding.model is None
+
+
+def test_a_default_context_search_reports_no_downgrade(bundle: Path, run: CliRunner):
+    """`bm25` is what was asked for, so nothing was downgraded and there is
+    nothing to report. This used to need a special case in `_fallback`; the
+    setting is what removed it."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
+
+    assert result.exit_code == 0, result.output
+    assert "no dense leg" not in result.output
+
+
+def test_asking_for_a_dense_context_search_reports_the_downgrade(
+    bundle: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """The other half. Someone who set the method to hybrid and got a
+    lexical index is owed the sentence a corpus collection would get."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+    monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "hybrid")
+
+    result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
+
+    assert result.exit_code == 0, result.output
+    assert "no dense leg" in result.output
+
+
+def test_a_corpus_method_of_hybrid_does_not_reach_the_bundle(
+    bundle: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """The two settings are separate, which is the point of having two. A
+    corpus asking for hybrid must not make a bundle report a downgrade it
+    never asked to avoid."""
+    monkeypatch.setenv("KENNIS_RETRIEVAL_CORPUS_METHOD", "hybrid")
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
+
+    assert result.exit_code == 0, result.output
+    assert "no dense leg" not in result.output

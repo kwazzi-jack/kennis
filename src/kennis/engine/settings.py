@@ -133,6 +133,20 @@ class RetrievalSettings(BaseModel):
     corpus_method: Literal["hybrid", "bm25", "dense"] = Field(
         default="hybrid", description="Retrieval method for corpus collections."
     )
+    # `bm25` rather than `hybrid`, and it is the design's decision rather
+    # than a cautious default. A dense bundle index would turn `context
+    # init` from an offline scaffold into a 65 MB model download, and it
+    # makes the binding match across machines much less likely - which is
+    # what committing the index with the project is for. design.md,
+    # "The context bundle carries its own index".
+    context_method: Literal["hybrid", "bm25", "dense"] = Field(
+        default="bm25",
+        description=(
+            "Retrieval method for a project's context bundle. bm25 keeps "
+            "`kennis context init` offline and its index portable between "
+            "machines; anything else needs an embedding backend."
+        ),
+    )
 
 
 class CorpusSettings(BaseModel):

@@ -162,8 +162,8 @@ class _Skipped:
     "--mode",
     type=click.Choice(_MODES),
     default=None,
-    help="Retrieval method. Falls back to bm25 against a lexical-only "
-    "index, and does not apply to context, whose index is lexical by design.",
+    help="Retrieval method, overriding retrieval.corpus_method and "
+    "retrieval.context_method. Falls back to bm25 against a lexical index.",
 )
 @click.option(
     "--group",
@@ -226,7 +226,6 @@ def search_command(
     corpus_exists = (context.corpus_root / ".git").is_dir()
     filters = _filters(group if group is not None else project)
     wanted = top_k or context.settings.retrieval.default_top_k
-    asked = mode or context.settings.retrieval.corpus_method
 
     # Resolved once rather than per scope: the walk is the same answer every
     # time within one command, and the report needs to know whether there
@@ -248,6 +247,15 @@ def search_command(
                 skipped.append(unsearched)
             continue
         searched.append(name)
+        # Per scope, not once for the report. A bundle's method is its own
+        # setting with its own default, because a dense bundle index costs
+        # what `retrieval.context_method` exists to avoid. An explicit
+        # `--mode` overrides both.
+        asked = mode or (
+            context.settings.retrieval.context_method
+            if name == CONTEXT_COLLECTION
+            else context.settings.retrieval.corpus_method
+        )
         running = _fallback(index, asked, name)
         model = index.binding.model.model if index.binding.model else None
         basis = basis_for(model, dense_ran=running != "bm25")
@@ -481,17 +489,12 @@ def _fallback(index: LoadedIndex, asked: str, name: str) -> Mode:
     """
     if index.matrix is not None or asked == "bm25":
         return _as_mode(asked)
-    if name != CONTEXT_COLLECTION:
-        display.note(
-            f"the {name} index has no dense leg, so this ran as a lexical search"
-        )
-    # Said for a corpus collection and not for a bundle. For a collection it
-    # is news - the index was built without a backend, or part-way through a
-    # model change, and the reader may not expect it. A bundle index is
-    # lexical by design (section 13: a dense one would turn `context init`
-    # into a model download), so reporting it as a downgrade describes a
-    # degradation that did not happen. The group's own basis line already
-    # says the band is relative.
+    # No exception for context any more, and the exception it used to have
+    # is what `retrieval.context_method` removed. A bundle asks `bm25` by
+    # default, which short-circuits above without a word; reaching here for
+    # a bundle means someone set the method to hybrid or dense and the index
+    # has no dense leg, which is exactly the news this line carries.
+    display.note(f"the {name} index has no dense leg, so this ran as a lexical search")
     return "bm25"
 
 

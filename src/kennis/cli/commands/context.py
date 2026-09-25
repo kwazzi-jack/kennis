@@ -19,15 +19,20 @@ from kennis.engine.context import (
     CONTEXT_COLLECTION,
     LANDING_FILENAME,
     BundleCreated,
+    bundle_documents,
     bundle_status,
     find_bundle,
     index_bundle,
+    index_root_for,
     init_bundle,
+    owned_by_kennis,
+    reset_bundle,
     workspace_root,
 )
 from kennis.engine.errors import ContextNotFound
-from kennis.engine.rag.binding import chunk_parameters
-from kennis.engine.settings import load_settings
+from kennis.engine.rag.binding import binding_from, chunk_parameters
+from kennis.engine.rag.embedding import ModelBinding
+from kennis.engine.settings import Settings, load_settings
 from kennis.render.words import count_of, describe_freshness
 
 
@@ -100,11 +105,19 @@ def index_command_for_context() -> None:
     """
     bundle = require_bundle()
     settings = load_settings()
+    model = context_model(settings)
+    display.using(
+        f"{model.kind} {model.model}"
+        if model
+        else "lexical search only, which is what a bundle is indexed with"
+    )
     with reporting() as events:
         report = index_bundle(
             bundle,
             chunking=chunk_parameters(settings.chunking),
+            model=model,
             events=events,
+            embed_batch_size=settings.embedding.batch_size,
         )
     display.operation(
         "Indexed",
@@ -165,6 +178,86 @@ def status_command_for_context() -> None:
     display.next_step("kennis context index")
 
 
+@context_group.command(name="reset", cls=KennisCommand)
+@click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
+def reset_command(yes: bool) -> None:
+    """Remove the index and anything kennis owns, keeping your own files.
+
+    **Today that is the index and nothing else.** Files kennis owns are
+    files a pack applied, and there are no packs yet - everything
+    `remember --context` writes is marked `owner: user`, and so is anything
+    you wrote by hand, including a file with no frontmatter at all. The
+    command is here so that the behaviour exists and is tested before packs
+    arrive, and it is already the honest way to force a full rebuild.
+
+    A file with a header kennis cannot read counts as yours. The two
+    mistakes do not cost the same.
+    """
+    bundle = require_bundle()
+    owned = [
+        path.relative_to(bundle).as_posix()
+        for path in bundle_documents(bundle)
+        if owned_by_kennis(path)
+    ]
+    has_index = index_root_for(bundle).is_dir()
+    if not owned and not has_index:
+        display.guidance("nothing to remove - everything here is yours")
+        return
+
+    if not yes:
+        # Not recoverable through kennis, unlike `corpus remove`. A bundle
+        # is in a repository kennis has no history of, so the only undo is
+        # the user's own `git checkout`, and only if they committed. The
+        # prompt says what will go rather than asking in the abstract.
+        click.confirm(f"Remove {_what_goes(owned, has_index)}?", abort=True)
+
+    report = reset_bundle(bundle)
+    # Documents first, each under its own heading, and the index last with
+    # the command that rebuilds it beside it. The other order put a hint
+    # about the index above the list of documents it had nothing to do with.
+    if report.removed:
+        display.operation("Removed", count_of(len(report.removed), "document"))
+        for relative in report.removed:
+            display.detail("-", relative)
+    else:
+        display.guidance("your own files were left untouched, which was all of them")
+    if report.index_removed:
+        display.operation("Removed", "the context index")
+        display.next_step("kennis context index", note="to build it again")
+
+
+def context_model(settings: Settings) -> ModelBinding | None:
+    """The embedding model a bundle index is built with, if any.
+
+    One line of policy, named so it can be asked directly: without a name it
+    is only observable through a command that builds an index, and on a
+    machine with no embedding backend both answers look identical from
+    there.
+
+    `binding_from` answers `model=None` when the backend is `none`, so
+    asking for hybrid without a backend yields a lexical index rather than a
+    failure - the corpus behaves the same way.
+    """
+    if settings.retrieval.context_method == "bm25":
+        return None
+    return binding_from(settings.chunking, settings.embedding).model
+
+
+def _what_goes(owned: list[str], has_index: bool) -> str:
+    """What the prompt says is about to be deleted.
+
+    Named rather than counted where there is one of them: "Remove
+    conventions/naming.md and the context index?" is checkable at a glance
+    and a bare count is not.
+    """
+    parts: list[str] = []
+    if owned:
+        parts.append(owned[0] if len(owned) == 1 else count_of(len(owned), "document"))
+    if has_index:
+        parts.append("the context index")
+    return " and ".join(parts)
+
+
 def require_bundle() -> Path:
     """The bundle governing the working directory, or the error naming the
     command that makes one.
@@ -177,4 +270,4 @@ def require_bundle() -> Path:
     return bundle
 
 
-__all__ = ["context_group", "require_bundle"]
+__all__ = ["context_group", "context_model", "require_bundle"]
