@@ -217,7 +217,7 @@ def list_command(collection: str | None) -> None:
             Collection(root=context.corpus_root, name=name).contents().documents
         ):
             shown += 1
-            display.detail(" ", f"{document.id}  {document.md_path.name}")
+            display.row(document.id, document.md_path.name)
     if shown == 0:
         display.note("no documents")
 
@@ -713,9 +713,11 @@ def history_command(collection: str | None, limit: int) -> None:
         display.note("nothing recorded yet")
         return
     for entry in entries:
-        display.detail(
-            " ",
-            f"{entry.commit[:8]}  {entry.when:%Y-%m-%d %H:%M}  "
+        # The short commit is the identifier here: it is what `corpus
+        # restore` takes, so it belongs in the column a reader copies from.
+        display.row(
+            entry.commit[:8],
+            f"{entry.when:%Y-%m-%d %H:%M}  "
             f"{entry.operation or '-'}({entry.scope or '-'}): {entry.summary}",
         )
 

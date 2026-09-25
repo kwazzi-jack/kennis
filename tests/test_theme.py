@@ -83,7 +83,29 @@ def test_the_rich_theme_carries_a_quiet_variant_for_each_sentence_role():
 
     for name in SENTENCE_ROLES:
         assert f"{name}.line" in theme.styles
-        assert theme.styles[f"{name}.line"].bold is not True
+
+
+@pytest.mark.parametrize("name", sorted(SENTENCE_ROLES), ids=str)
+def test_a_quiet_variant_drops_the_bold_unless_that_is_all_there_is(name: str):
+    theme = rich_theme()
+    quietened = theme.styles[f"{name}.line"]
+
+    if ROLES[name].rich_style() == "bold":
+        assert quietened.bold is True
+    else:
+        assert quietened.bold is not True
+
+
+@pytest.mark.parametrize("name", sorted(SENTENCE_ROLES), ids=str)
+def test_a_quietened_sentence_role_is_still_visible(name: str):
+    """`quiet()` removes the bold, so a role defined *only* as bold is
+    quietened into nothing and reaches the terminal unstyled.
+
+    This is how `heading` printed with no style at all for five milestones.
+    Checking that the bold was dropped passed either way; checking that
+    something survives is the property that was meant. Concern #216.
+    """
+    assert ROLES[name].quiet().rich_style() != "none"
 
 
 def test_the_rich_theme_restates_the_progress_styles():

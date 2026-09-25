@@ -95,8 +95,21 @@ class Role:
         A short lead word ("Indexed", "warning:") carries the bold variant and
         the rest of the sentence stays plain. Where a whole sentence takes the
         role instead, bold would shout, so it takes this one.
+
+        **A role that is only bold is returned unchanged.** Dropping the bold
+        would leave a style with no attributes at all, which reaches the
+        terminal as plain text - not a quieter version of the role but no
+        role, and silently, because an empty style raises nothing. `heading`
+        is such a role and printed unstyled for five milestones because of
+        it. Quietening is meant to lower a voice, not remove it. Concern
+        #216.
         """
-        return replace(self, bold=False)
+        quietened = replace(self, bold=False)
+        # Asked of the rendered style rather than field by field, so a role
+        # gaining an attribute later cannot slip past the guard.
+        if quietened.rich_style() == "none":
+            return self
+        return quietened
 
 
 # The severities. These five are the roles a whole sentence can be given, so
@@ -117,6 +130,9 @@ ROLES: Final[dict[str, Role]] = {
     "warning": Role(colour="yellow", bold=True),
     "error": Role(colour="red", bold=True),
     "muted": Role(dim=True),
+    # Bold and nothing else, which is why `quiet` has the guard it has: a
+    # heading is printed as a line of its own and so goes through the `.line`
+    # variant. See `Role.quiet`. Concern #216.
     "heading": Role(bold=True),
     # Detail markers. The marker carries the colour and the name beside it
     # stays dim: a detail line is a list of things, and what a reader scans
@@ -192,4 +208,7 @@ ROLES: Final[dict[str, Role]] = {
     "toml_string": Role(colour="yellow"),
     "toml_number": Role(colour="cyan"),
     "toml_bool": Role(colour="magenta"),
+    # `config get` prints an unset setting as `(unset)`. It is the absence of
+    # a value, so it is dim rather than coloured as one.
+    "toml_unset": Role(dim=True),
 }
