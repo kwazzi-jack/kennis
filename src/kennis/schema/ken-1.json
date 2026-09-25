@@ -1,0 +1,363 @@
+{
+  "$defs": {
+    "ContentSource": {
+      "additionalProperties": false,
+      "description": "A directory of markdown the pack ships, copied verbatim.\n\n`source` is validated here only as far as a string can be: relative, no\nparent segments, no home reference. Whether a file *discovered* under it\nresolves inside the pack root is a filesystem question, and it is asked\nby the walk rather than by the model - a symlink is invisible to this\ncheck by construction.",
+      "properties": {
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
+        },
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Include",
+          "type": "array"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "ContentSource",
+      "type": "object"
+    },
+    "CorpusSection": {
+      "additionalProperties": false,
+      "description": "The three corpus collections a pack may declare.",
+      "properties": {
+        "docs": {
+          "items": {
+            "$ref": "#/$defs/DocsEntry"
+          },
+          "title": "Docs",
+          "type": "array"
+        },
+        "literature": {
+          "items": {
+            "$ref": "#/$defs/LiteratureEntry"
+          },
+          "title": "Literature",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/ContentSource"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "title": "CorpusSection",
+      "type": "object"
+    },
+    "DocsEntry": {
+      "additionalProperties": false,
+      "description": "A documentation site the pack declares, crawled from `base_url`.",
+      "properties": {
+        "base_url": {
+          "title": "Base Url",
+          "type": "string"
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "project": {
+          "title": "Project",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "base_url"
+      ],
+      "title": "DocsEntry",
+      "type": "object"
+    },
+    "GeneratedBlock": {
+      "additionalProperties": false,
+      "description": "Written by `pack update`; never hand-edited.\n\n`at` and `by` are restamped only when a digest actually changed, so a\nprovider rebuild that altered nothing leaves the file byte-identical and\nthe fast path of section 5 step 2 keeps its short circuit.",
+      "properties": {
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "by": {
+          "title": "By",
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/GeneratedContent"
+        }
+      },
+      "required": [
+        "at",
+        "by"
+      ],
+      "title": "GeneratedBlock",
+      "type": "object"
+    },
+    "GeneratedContent": {
+      "additionalProperties": false,
+      "description": "Digests nested by section and source.\n\nNested rather than a flat map because section 5 keys content on its\n**destination**: the same relative path under `notes/` and under\n`content/` is two different documents, and a bare path could belong to\neither.",
+      "properties": {
+        "context": {
+          "items": {
+            "$ref": "#/$defs/GeneratedSource"
+          },
+          "title": "Context",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/GeneratedSource"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "title": "GeneratedContent",
+      "type": "object"
+    },
+    "GeneratedSource": {
+      "additionalProperties": false,
+      "description": "The digests of one source's files, keyed by path relative to it.",
+      "properties": {
+        "files": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "object"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "GeneratedSource",
+      "type": "object"
+    },
+    "KennisHeader": {
+      "additionalProperties": false,
+      "description": "The two fields that decide whether this kennis may read the file.",
+      "properties": {
+        "min_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Version"
+        },
+        "schema_version": {
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version"
+      ],
+      "title": "KennisHeader",
+      "type": "object"
+    },
+    "LiteratureEntry": {
+      "additionalProperties": false,
+      "description": "A paper the pack declares, fetched over the network rather than copied.\n\nThe citekey is a handle for humans - it goes in a `.bib`, in prose and in\na read call. The **identifier** is the identity, which is why at least\none is required and why section 5 keys the diff on it: correcting a\ncitekey against an unchanged identifier is a rename, not a delete and a\nrefetch.",
+      "properties": {
+        "arxiv_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arxiv Id"
+        },
+        "authors": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authors"
+        },
+        "bibcode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bibcode"
+        },
+        "citekey": {
+          "title": "Citekey",
+          "type": "string"
+        },
+        "doi": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doi"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Year"
+        }
+      },
+      "required": [
+        "citekey",
+        "title"
+      ],
+      "title": "LiteratureEntry",
+      "type": "object"
+    },
+    "PackIdentity": {
+      "additionalProperties": false,
+      "description": "Who the pack is. `id` is the dedupe key and is stable forever.",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "homepage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Homepage"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version"
+      ],
+      "title": "PackIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A complete, self-describing declaration of what a provider ships.",
+  "properties": {
+    "context": {
+      "items": {
+        "$ref": "#/$defs/ContentSource"
+      },
+      "title": "Context",
+      "type": "array"
+    },
+    "corpus": {
+      "$ref": "#/$defs/CorpusSection"
+    },
+    "generated": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GeneratedBlock"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "kennis": {
+      "$ref": "#/$defs/KennisHeader"
+    },
+    "pack": {
+      "$ref": "#/$defs/PackIdentity"
+    }
+  },
+  "required": [
+    "kennis",
+    "pack"
+  ],
+  "title": "Pack",
+  "type": "object"
+}
