@@ -7,6 +7,17 @@ retrieval stack over both that combines BM25 with dense embeddings. It is
 domain-agnostic: it knows nothing about any particular subject, and domain
 content is supplied from outside as data rather than code.
 
+## Documentation
+
+Full documentation - a tutorial, how-to guides, the reasoning behind each
+mechanism, and a command reference generated from the code - is built with
+MkDocs:
+
+```
+uv run --group docs mkdocs serve      # http://127.0.0.1:8000
+uv run --group docs mkdocs build      # into site/
+```
+
 ## Status
 
 Pre-release. Everything v0.1 is meant to cover is built and tested - the

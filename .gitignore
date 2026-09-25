@@ -28,3 +28,6 @@ CLAUDE.md
 .env.*
 *.key
 credentials.toml
+
+# The built documentation site. `mkdocs build` regenerates it.
+/site/
