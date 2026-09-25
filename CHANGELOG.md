@@ -1,3 +1,16 @@
+## v0.1.1 (2026-09-25)
+
+### Feat
+
+- **cli**: highlight code blocks in read and search output
+- **cli**: rework what search and read show, and how documents are named
+
+### Fix
+
+- **cli**: style headings and listings that were printing as footnotes
+- **conversion**: find mineru in the environment kennis was installed into
+- **cli**: correct what the config, the add report and the progress bar say
+
 ## v0.1.0 (2026-09-23)
 
 ### Feat
