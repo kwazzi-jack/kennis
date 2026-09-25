@@ -413,3 +413,124 @@ def test_quiet_context_index_prints_nothing_on_success(bundle: Path, run: CliRun
 
     assert result.exit_code == 0, result.output
     assert result.output == ""
+
+
+# ---------------------------------------------------------------------------
+# `kennis context status`
+# ---------------------------------------------------------------------------
+
+
+def test_context_status_reports_what_the_bundle_holds(bundle: Path, run: CliRunner):
+    assert (
+        run.invoke(
+            main, ["remember", "--context", "--group", "decisions", "Four minutes."]
+        ).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["context", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert str(bundle) in result.output
+    assert "1 document" in result.output
+    # One group and one document, so no breakdown: the row would repeat the
+    # line above it.
+    assert "decisions" not in result.output
+
+
+def test_context_status_breaks_down_by_group_when_there_is_more_than_one(
+    bundle: Path, run: CliRunner
+):
+    assert run.invoke(main, ["remember", "--context", "At the top."]).exit_code == 0
+    assert (
+        run.invoke(
+            main, ["remember", "--context", "--group", "decisions", "Four minutes."]
+        ).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["context", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "(top level)" in result.output
+    assert "decisions" in result.output
+
+
+def test_context_status_on_an_empty_bundle_says_what_fills_it(
+    bundle: Path, run: CliRunner
+):
+    result = run.invoke(main, ["context", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "0 documents" in result.output
+    assert "kennis remember" in result.output
+
+
+def test_context_status_names_the_command_that_indexes_an_unindexed_bundle(
+    bundle: Path, run: CliRunner
+):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["context", "status"])
+
+    assert "kennis context index" in result.output
+
+
+def test_context_status_says_an_index_is_in_step(bundle: Path, run: CliRunner):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "status"])
+
+    assert "in step" in result.output
+    # Nothing left to do, so no command: a next step that changes nothing is
+    # what concern #242 was about.
+    assert "kennis context index" not in result.output
+
+
+def test_context_status_counts_what_was_written_since_the_build(
+    bundle: Path, run: CliRunner
+):
+    """`remember --context` does not index, so this is the ordinary state of
+    a bundle rather than a brief window - which is why the count has to be
+    on the line rather than implied by 'in step'."""
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+    assert run.invoke(main, ["remember", "--context", "Per scan."]).exit_code == 0
+
+    result = run.invoke(main, ["context", "status"])
+
+    assert "1 document not yet indexed" in result.output
+    assert "kennis context index" in result.output
+
+
+def test_context_status_reports_a_stale_index(bundle: Path, run: CliRunner):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+    written = next(path for path in bundle.glob("*.md") if path.name != "LANDING.md")
+    written.write_text(
+        written.read_text(encoding="utf-8").replace("Four", "Eight"), encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["context", "status"])
+
+    assert "stale" in result.output
+    assert "kennis context index" in result.output
+
+
+def test_context_status_without_a_bundle_names_the_command_that_makes_one(
+    workspace: Path, run: CliRunner
+):
+    result = run.invoke(main, ["context", "status"])
+
+    assert result.exit_code != 0
+    assert "kennis context init" in result.output
+
+
+def test_quiet_context_status_prints_nothing(bundle: Path, run: CliRunner):
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["--quiet", "context", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""

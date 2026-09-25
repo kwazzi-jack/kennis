@@ -33,6 +33,11 @@ from kennis.engine.context.notes import (
     bundle_documents,
     remember_in_bundle,
 )
+from kennis.engine.context.status import (
+    BundleStatus,
+    bundle_freshness,
+    bundle_status,
+)
 
 __all__ = [
     "BUNDLE_DIRNAME",
@@ -45,8 +50,11 @@ __all__ = [
     "BundleCreated",
     "BundleLoader",
     "BundleNote",
+    "BundleStatus",
     "bundle_documents",
+    "bundle_freshness",
     "bundle_override",
+    "bundle_status",
     "find_bundle",
     "index_bundle",
     "index_root_for",

@@ -16,8 +16,10 @@ from kennis.cli import display
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import reporting
 from kennis.engine.context import (
+    CONTEXT_COLLECTION,
     LANDING_FILENAME,
     BundleCreated,
+    bundle_status,
     find_bundle,
     index_bundle,
     init_bundle,
@@ -26,7 +28,7 @@ from kennis.engine.context import (
 from kennis.engine.errors import ContextNotFound
 from kennis.engine.rag.binding import chunk_parameters
 from kennis.engine.settings import load_settings
-from kennis.render.words import count_of
+from kennis.render.words import count_of, describe_freshness
 
 
 @click.group(name="context", cls=KennisGroup)
@@ -113,6 +115,54 @@ def index_command_for_context() -> None:
     # Named because it is the thing a user has to do and kennis will not:
     # the bundle lives in a repository kennis does not own.
     display.guidance(f"commit {bundle.name}/ to share the index with the project")
+
+
+@context_group.command(name="status", cls=KennisCommand)
+def status_command_for_context() -> None:
+    """What this project's context holds, and whether its index is in step.
+
+    The same question `corpus status` answers, one scope down - and the
+    freshness half is answered differently, because there is no commit to
+    diff against. kennis does not write to your repository, so the index
+    records no commit and the comparison is made against the document
+    digests the index stored instead.
+    """
+    status = bundle_status(require_bundle())
+    display.operation("Context", str(status.path))
+    # "Holds" rather than "Documents", which would print `Documents 3
+    # documents`. `corpus status` gets away with the shape because its verb
+    # is the collection's name.
+    display.operation("Holds", count_of(status.document_count, "document"))
+    if len(status.groups) > 1:
+        # Only when there is a breakdown to give. A bundle whose files all
+        # sit at the top level would otherwise get one row repeating the
+        # line above it, and a fresh bundle has no directories at all -
+        # they are the user's own invention, not a fixed three.
+        for group, held in sorted(status.groups.items()):
+            # The root's own count is labelled rather than left blank: a
+            # blank first column in a list of directory names reads as a
+            # missing value rather than as "here".
+            display.row(group or "(top level)", count_of(held, "document"))
+    for relative in status.unreadable:
+        display.detail("!", f"{relative}: frontmatter could not be read")
+
+    if status.freshness is None:
+        if status.document_count:
+            display.note("no index yet, so nothing here is searchable")
+            display.next_step("kennis context index")
+        else:
+            # No "nothing here yet": the count line above has just said so,
+            # and the only thing left to add is what changes it.
+            display.next_step("kennis remember --help")
+        return
+    described = describe_freshness(status.freshness, CONTEXT_COLLECTION)
+    if status.freshness.state == "in step" and not status.freshness.added:
+        # `=` is the marker that carries no colour, which is right: an index
+        # that is current is the absence of news.
+        display.detail("=", described)
+        return
+    display.note(described)
+    display.next_step("kennis context index")
 
 
 def require_bundle() -> Path:
