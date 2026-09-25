@@ -1,3 +1,22 @@
+## v0.2.0 (2026-09-25)
+
+### Feat
+
+- **context**: keep a bundle's index out of the repository
+- **context**: add reset and a retrieval method setting for the bundle
+- **context**: report what a bundle holds and whether its index is in step
+- **search**: make context a fourth scope of the collection selector
+- **context**: index a bundle with the corpus retrieval engine
+- **context**: remember into the project's bundle rather than the corpus
+- **context**: find the bundle governing a directory, and scaffold one
+
+### Fix
+
+- **search**: return three hits per scope by default, not five
+- **history**: decide index freshness by recorded digest, not by the diff alone
+- **remember**: write a chosen title into the note so a search can find it
+- **search**: group results by collection so each keeps its own scale
+
 ## v0.1.1 (2026-09-25)
 
 ### Feat
