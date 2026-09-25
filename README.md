@@ -97,11 +97,25 @@ kennis search "complex gains" --scores raw     # the per-leg numbers instead of 
 A hit looks like this:
 
 ```
-Found 2 passages, relevance by cosine similarity
-  [1] [literature] Calibration of radio interferometers - Gain solutions
+Found 2 in literature, 1 in notes
+
+Literature relevance by cosine similarity
+  [1] Calibration of radio interferometers - Gain solutions
       relevance: very high  id=gpfa1o3yad chunk=3
       Complex gains are solved per antenna and per interval ...
+
+Notes relevance relative to the best lexical match
+  [1] Calibration conventions
+      relevance: very high  id=f4inoeh3gd chunk=0
+      We solve gains on a 30 second interval ...
 ```
+
+**Results are grouped by collection, and that is not only cosmetic.** Each
+group carries the scale its own levels are on. A collection indexed without
+an embedding backend is banded relative to its own best hit, where one with
+a dense leg is banded on an absolute cosine - and those two `very high`
+above mean different things. Ordering them into one column would state a
+comparison kennis cannot make. `-k` applies per group.
 
 `id` and `chunk` are what `read` takes. `--mode` is `hybrid` by default and
 falls back to `bm25` against a lexical-only index rather than failing.

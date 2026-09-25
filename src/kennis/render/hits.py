@@ -114,20 +114,30 @@ def _banded(value: float, cuts: tuple[float, float, float, float]) -> Relevance:
 def relevance_phrase(basis: Basis) -> str:
     """What the band on these hits is a band of.
 
-    Printed once for the list rather than once per hit: it is a property of
-    the search, and the lexical one in particular has to be read before the
-    levels are, because its best hit is the top level by construction.
+    Printed once per **group** rather than once per hit: it is a property of
+    a collection's own search, and the lexical one in particular has to be
+    read before the levels are, because its best hit is the top level by
+    construction.
+
+    It used to be printed once for the whole report, which was true only
+    while every collection agreed - and the report dropped it entirely when
+    they did not, which is the one case a reader needs it. Concern #230.
     """
     if basis == "cosine":
         return "relevance by cosine similarity"
     return "relevance relative to the best lexical match"
 
 
-def hit_headline(rank: int, collection: str, result: SearchResult) -> str:
-    """The line a reader scans: where it came from and what it is.
+def hit_headline(rank: int, result: SearchResult) -> str:
+    """The line a reader scans: what this hit is.
 
-    The identifier is not here. It is on the handle line below, with the
-    chunk index it has to travel with, because the pair is what
+    The collection is not here. It is on the group heading above, printed
+    once for every hit that shares it; carrying it on each line was what a
+    merged list of three collections needed, and there is no merged list any
+    more. Concern #231.
+
+    The identifier is not here either. It is on the handle line below, with
+    the chunk index it has to travel with, because the pair is what
     `kennis read` takes and splitting them across two lines invites copying
     one without the other.
     """
@@ -135,7 +145,7 @@ def hit_headline(rank: int, collection: str, result: SearchResult) -> str:
     title = str(chunk.metadata.get("title") or chunk.document_id)
     section = chunk.section if chunk.section != title else None
     where = f" - {section}" if section else ""
-    return f"[{rank}] [{collection}] {title}{where}"
+    return f"[{rank}] {title}{where}"
 
 
 def hit_handle(result: SearchResult) -> str:

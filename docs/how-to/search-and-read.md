@@ -9,17 +9,40 @@ kennis search "reciprocal rank fusion"
 A hit looks like this:
 
 ```
-Found 5 passages, relevance by cosine similarity
-  [1] [docs] Recipe variable assignments - Step assignments
+Found 2 in docs
+
+Docs relevance by cosine similarity
+  [1] Recipe variable assignments - Step assignments
       relevance: high  id=yusk5agyfk chunk=3
       ## Step assignments Any step definition can contain an `assign`
-      section of its own. Use this if you need to change the value of a
+      section of its own. Use this if you need to change the value of
       recipe variable just for that one step. ...
 ```
 
-The first line says which scale the relevance levels are on, which is worth
-reading - see [How retrieval works](../explanation/retrieval.md). The
 `id=` and `chunk=` are the coordinates you pass to `read`.
+
+## Results are grouped by collection
+
+Each collection gets its own group, its own ranking, and its own line saying
+what its relevance levels are a band of.
+
+That line matters. A collection indexed with an embedding backend is banded
+on an **absolute cosine**; one without a dense leg is banded **relative to
+its own best hit**, whose top result is therefore `very high` by
+construction. Those are different claims, and printing them in one ranked
+column would state a comparison kennis cannot make - see
+[How retrieval works](../explanation/retrieval.md).
+
+Two consequences:
+
+- **`-k` applies per group**, so `-k 5` on a three-collection corpus can
+  return up to fifteen hits. Each group is a complete answer from its
+  source rather than a truncated share of a blend.
+- **Groups run in a fixed order** - literature, docs, notes - not best
+  first. Ordering them by quality would reintroduce the comparison the
+  grouping exists to avoid. The summary line tells you where the hits are.
+
+A collection that matched nothing gets no group.
 
 ### Narrow it
 
