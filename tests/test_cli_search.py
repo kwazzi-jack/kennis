@@ -58,14 +58,38 @@ def identifier_of(path: Path) -> str:
     raise AssertionError(f"no identifier in {path}")
 
 
-def hits_in(output: str, collection: str = "notes") -> int:
-    """How many result lines the report printed.
+def group_of(output: str, collection: str) -> str:
+    """The lines belonging to one collection's group, heading excluded.
 
-    Counted by the bracketed collection label, which appears on a hit line
-    and nowhere else - the warnings name a collection in prose, so a bare
-    substring search finds them too and has passed for the wrong reason.
+    A group runs from its heading to the next heading or the end. The
+    heading is the capitalised collection at the margin, which is the
+    grammar `corpus status` uses and nothing else in this output does.
     """
-    return output.count(f"[{collection}]")
+    lines = output.splitlines()
+    headings = [
+        index
+        for index, line in enumerate(lines)
+        if line[:1].isupper() and line[:1] == line[:1].strip()
+    ]
+    wanted = f"{collection.capitalize()} "
+    for position, index in enumerate(headings):
+        if not lines[index].startswith(wanted):
+            continue
+        end = headings[position + 1] if position + 1 < len(headings) else len(lines)
+        return "\n".join(lines[index + 1 : end])
+    return ""
+
+
+def hits_in(output: str, collection: str | None = None) -> int:
+    """How many result lines the report printed, in total or in one group.
+
+    Counted by `id=`, which is on every hit's handle line whatever
+    `--scores` is set to, and nowhere else. The old counter used the
+    bracketed collection label, which the grouped report prints once per
+    group rather than once per hit.
+    """
+    text = output if collection is None else group_of(output, collection)
+    return text.count("id=")
 
 
 def a_docs_page(corpus: Path, page: str, body: str) -> None:
@@ -116,20 +140,23 @@ def test_search_finds_the_document_that_says_it(
     assert "trees" not in result.output.lower()
 
 
-def test_each_hit_names_the_collection_it_came_from(
+def test_each_group_names_its_collection_and_its_relevance_basis(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):
-    """A merged list has to stay readable as the several lists it is.
+    """The heading carries both, so a level below it can be read correctly.
 
-    Asserted on the bracketed label rather than on the bare word, which also
-    appears in the warning about the lexical fallback.
+    The basis line used to be printed once for the whole report and dropped
+    whenever two collections disagreed about it - which is the one case a
+    reader needs it. Concern #230.
     """
     indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
 
     result = run.invoke(main, ["search", "sediment"])
 
     assert result.exit_code == 0, result.output
-    assert hits_in(result.output) == 1
+    assert "Notes" in result.output
+    assert "relevance relative to the best lexical match" in result.output
+    assert hits_in(result.output, "notes") == 1
 
 
 def test_a_sweep_skips_a_collection_with_no_index(
@@ -198,13 +225,15 @@ def test_top_k_bounds_the_answer(corpus: Path, run: CliRunner, tmp_path: Path):
     assert hits_in(three.output) == 3
 
 
-def test_a_merged_result_is_bounded_by_top_k(
+def test_top_k_bounds_each_group_rather_than_the_total(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):
-    """Each collection is asked for `top_k` of its own, so the merged list is
-    as long as the number of collections searched until it is cut. With one
-    collection indexed the final bound is unobservable, which is why this
-    test indexes two."""
+    """`-k` is per collection now.
+
+    Each group is a complete answer from its source; a group truncated to
+    one because another collection happened to be noisier is worse than a
+    longer report. Concern #231.
+    """
     a_docs_page(corpus, "indexing", "Sediment is not an indexing concept.")
     indexed_notes(
         run,
@@ -213,10 +242,101 @@ def test_a_merged_result_is_bounded_by_top_k(
         second="Sediment moves with the current.",
     )
 
-    result = run.invoke(main, ["search", "sediment", "--top-k", "2"])
+    result = run.invoke(main, ["search", "sediment", "--top-k", "1"])
 
     assert result.exit_code == 0, result.output
-    assert hits_in(result.output, "notes") + hits_in(result.output, "docs") == 2
+    assert hits_in(result.output, "notes") == 1
+    assert hits_in(result.output, "docs") == 1
+    assert hits_in(result.output) == 2
+
+
+def test_groups_run_in_a_fixed_order_not_by_quality(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Ordering groups by their best hit would put the cross-collection
+    comparison back in through the layout, which is what grouping removes.
+
+    The notes hit is deliberately the stronger lexical match, so fixed order
+    and quality order disagree. Without that they agree and the test passes
+    for free - which is how it was written the first time, and an injection
+    sorting the groups by BM25 went straight through it.
+    """
+    a_docs_page(corpus, "sediment", "Sediment is mentioned here once.")
+    indexed_notes(
+        run,
+        tmp_path,
+        rivers="Sediment sediment sediment sediment sediment deposition.",
+    )
+
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "docs") == 1
+    assert hits_in(result.output, "notes") == 1
+    assert result.output.index("Docs ") < result.output.index("Notes ")
+
+
+def test_a_lexical_band_is_relative_to_its_own_group(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Each group's best lexical hit is the top level *of that group*.
+
+    Taken across collections, a strong match in one would push every hit in
+    the other down a band for no reason a reader could see. That compromise
+    existed only while one column served every collection; the group heading
+    says "relative to the best lexical match" now, once per group.
+    Concern #231.
+    """
+    a_docs_page(
+        corpus, "sediment", "Sediment sediment sediment sediment sediment sediment."
+    )
+    indexed_notes(run, tmp_path, rivers="Sediment is mentioned here once.")
+
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code == 0, result.output
+    notes = group_of(result.output, "notes")
+    assert "relevance: very high" in notes, notes
+
+
+def test_a_collection_with_no_hits_gets_no_group(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    a_docs_page(corpus, "indexing", "Nothing about rivers here.")
+    indexed_notes(run, tmp_path, rivers="Sediment settles slowly.")
+
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "notes") == 1
+    assert "Docs " not in result.output
+
+
+def test_ranks_restart_in_each_group(corpus: Path, run: CliRunner, tmp_path: Path):
+    """A rank is a position in a ranking, and there is no longer one
+    ranking across collections."""
+    a_docs_page(corpus, "sediment", "Sediment deposition in the delta.")
+    indexed_notes(run, tmp_path, rivers="Sediment settles slowly.")
+
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("[1]") == 2
+
+
+def test_the_summary_counts_each_collection(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """How much came from where is the thing a grouped report can say and a
+    merged one could not."""
+    a_docs_page(corpus, "sediment", "Sediment deposition in the delta.")
+    indexed_notes(run, tmp_path, rivers="Sediment settles slowly.")
+
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code == 0, result.output
+    assert "1 in docs" in result.output
+    assert "1 in notes" in result.output
 
 
 def test_no_hits_is_not_a_failure(corpus: Path, run: CliRunner, tmp_path: Path):

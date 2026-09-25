@@ -58,18 +58,27 @@ def a_hit(
 # ---------------------------------------------------------------------------
 
 
-def test_a_headline_carries_the_rank_collection_title_and_section():
-    headline = hit_headline(3, "literature", a_hit())
+def test_a_headline_carries_the_rank_title_and_section():
+    headline = hit_headline(3, a_hit())
 
     assert headline.startswith("[3] ")
-    assert "[literature]" in headline
     assert "Rivers" in headline
     assert "Deposition" in headline
 
 
+def test_a_headline_does_not_name_the_collection():
+    """The group heading above it does. Repeating it on every hit is noise
+    that was only needed while the list was three lists interleaved.
+    Concern #231."""
+    headline = hit_headline(1, a_hit())
+
+    assert "[literature]" not in headline
+    assert "[notes]" not in headline
+
+
 def test_a_headline_does_not_repeat_the_title_as_its_section():
     """A short document's only heading is its title."""
-    assert hit_headline(1, "notes", a_hit(section="Rivers")).count("Rivers") == 1
+    assert hit_headline(1, a_hit(section="Rivers")).count("Rivers") == 1
 
 
 def test_a_handle_carries_what_read_takes():

@@ -41,7 +41,6 @@ from kennis.render.hits import (
     relevance_phrase,
 )
 from kennis.render.words import (
-    count_of,
     describe_document,
     describe_span,
     snippet_of,
@@ -133,7 +132,10 @@ def search_command(
 
     searched: list[str] = []
     skipped: list[str] = []
-    hits: list[_Hit] = []
+    # Insertion-ordered by `COLLECTION_NAMES`, which is the order the report
+    # prints. Fixed rather than ranked: ordering groups by their best hit
+    # would put the cross-collection comparison back in through the layout.
+    groups: dict[str, list[_Hit]] = {}
     for name in [collection] if collection else list(COLLECTION_NAMES):
         index = _load(context, name, named=collection is not None)
         if index is None:
@@ -143,7 +145,7 @@ def search_command(
         running = _fallback(index, asked, name)
         model = index.binding.model.model if index.binding.model else None
         basis = basis_for(model, dense_ran=running != "bm25")
-        hits += [
+        found = [
             _Hit(collection=name, result=result, basis=basis, model=model)
             for result in search(
                 index,
@@ -160,6 +162,12 @@ def search_command(
                 ),
             )
         ]
+        # `top_k` per collection, not across them: each group is a complete
+        # answer from its source rather than a truncated share of a blend.
+        # No slice here - `search` is asked for `wanted` and returns at most
+        # that, so one would be dead code. An injection proved it was.
+        if found:
+            groups[name] = found
 
     if not searched:
         raise NothingToIndex(
@@ -167,16 +175,30 @@ def search_command(
             resolution="kennis corpus index",
         )
 
-    # Ordered by the fused score across collections. Defensible precisely
-    # because reciprocal rank fusion is a function of rank: 1/(k+rank) means
-    # the same thing in literature as in notes, where a BM25 score would not.
-    hits.sort(key=lambda hit: hit.result.score, reverse=True)
-    _report(hits[:wanted], searched, skipped, snippet, scores)
+    # Not sorted across collections, and that is the point. A fused score is
+    # `sum 1/(k+rank)` over the legs that ranked a chunk, so a hybrid
+    # collection contributes two terms where a lexical-only one contributes
+    # one and scores double for the same rank - on a real corpus every
+    # dual-leg hit in the candidate window beat every single-leg hit, always.
+    # Concern #229. Each group keeps its own ranking instead.
+    _report(groups, searched, skipped, snippet, scores)
 
 
 def _report(
-    hits: list[_Hit], searched: list[str], skipped: list[str], snippet: str, scores: str
+    groups: dict[str, list[_Hit]],
+    searched: list[str],
+    skipped: list[str],
+    snippet: str,
+    scores: str,
 ) -> None:
+    """One group per collection, each with its own ranking and its own scale.
+
+    Not one merged list. There is no common quality scale between
+    collections indexed differently, so every single-column ordering is a
+    policy presented as a measurement - and the fused score it would sort on
+    is biased by leg count besides (#229). Grouping states what kennis knows:
+    it ranks within a collection, and across them it only presents.
+    """
     if skipped:
         # One line for all of them. On a corpus with only notes indexed, one
         # warning per collection is two thirds of the output before the
@@ -186,29 +208,55 @@ def _report(
         )
         display.next_step("kennis corpus index")
 
-    if not hits:
+    if not groups:
         display.operation("Searched", ", ".join(searched))
         display.note("no matching passages")
         return
 
-    style = _score_style(hits, scores)
-    display.operation("Found", _summary(hits, style))
-    best = _best_lexical(hits)
-    for rank, found in enumerate(hits, start=1):
-        display.hit(hit_headline(rank, found.collection, found.result))
-        display.hit_detail(_hit_detail(found, style, best))
-        if snippet != "none":
-            display.body(
-                snippet_of(found.result.chunk.text, full=snippet == "full"),
-                indent="      ",
-            )
-    # Once, not per hit. Rule 4.4 - it runs as printed - and the coordinates
-    # it needs are on every hit line above it.
-    first = hits[0].result.chunk
+    everything = [hit for hits in groups.values() for hit in hits]
+    style = _score_style(everything, scores)
+    display.operation("Found", _summary(groups))
+    for name, hits in groups.items():
+        display.info()
+        display.operation(name.capitalize(), _basis_phrase(hits, style))
+        # Per group, which is what it wanted to be: the objection its old
+        # docstring recorded - that a per-collection best makes every
+        # collection's top hit "very high" - only bit while one column
+        # served every collection. Each group now carries a line saying its
+        # band is relative. Concern #231.
+        best = _best_lexical(hits)
+        for rank, found in enumerate(hits, start=1):
+            display.hit(hit_headline(rank, found.result))
+            display.hit_detail(_hit_detail(found, style, best))
+            if snippet != "none":
+                display.body(
+                    snippet_of(found.result.chunk.text, full=snippet == "full"),
+                    indent="      ",
+                )
+    # Once for the report, not per group and not per hit. Rule 4.4 - it runs
+    # as printed - and the coordinates it needs are on every hit line above.
+    # The first group's first hit, because it is the first thing printed, not
+    # because it is the best: there is no "best" across groups to name.
+    first = everything[0].result.chunk
+    display.info()
     display.next_step(
         f"kennis read {first.document_id} --chunks {_around(first.chunk_index)}",
         note="to read one in context",
     )
+
+
+def _basis_phrase(hits: list[_Hit], style: str) -> str:
+    """What this group's relevance levels are a band of, or nothing.
+
+    Empty when no level is being printed at all, so a `--scores raw` report
+    does not carry a heading explaining a column it does not have.
+    """
+    if style != "human":
+        return ""
+    bases = {hit.basis for hit in hits if hit.basis is not None}
+    if len(bases) != 1:
+        return ""
+    return relevance_phrase(bases.pop())
 
 
 def _around(chunk_index: int) -> str:
@@ -242,30 +290,26 @@ def _score_style(hits: list[_Hit], asked: str) -> str:
     return "raw"
 
 
-def _summary(hits: list[_Hit], style: str) -> str:
-    """`5 passages`, and what the levels beside them mean.
+def _summary(groups: dict[str, list[_Hit]]) -> str:
+    """`5 in docs, 2 in notes`: how much came from where.
 
-    The basis is named once for the list rather than once per hit, because
-    it is a property of the search. It matters most for the lexical one,
-    whose best hit is the top level by construction: a reader who has not
-    been told that will read "very high" as a statement about the passage.
+    Which is the thing a grouped report can say and a merged one could not,
+    and it is why the groups need no ranking between them - a reader sees
+    the distribution before the first hit.
+
+    The basis is not here. It belongs to a group, and this line spans them.
     """
-    found = count_of(len(hits), "passage")
-    if style != "human":
-        return found
-    bases = {hit.basis for hit in hits if hit.basis is not None}
-    if len(bases) != 1:
-        return found
-    return f"{found}, {relevance_phrase(bases.pop())}"
+    return ", ".join(f"{len(hits)} in {name}" for name, hits in groups.items())
 
 
 def _best_lexical(hits: list[_Hit]) -> float:
     """The best BM25 score in the list, which the lexical band is a fraction of.
 
-    Across collections deliberately. Comparing BM25 scores between two
-    corpora is not meaningful in general, but the alternative here is worse:
-    a per-collection best makes the top hit of every collection "very high",
-    so a one-hit collection beside a twenty-hit one looks equally good.
+    Within one collection, which is the only place a BM25 score is
+    comparable. It used to be taken across all of them, because one column
+    served every collection and a per-collection best would have made each
+    collection's top hit "very high" with nothing to say so. The group
+    heading says so now. Concern #231.
     """
     return max(
         (hit.result.bm25_score for hit in hits if hit.result.bm25_score is not None),
