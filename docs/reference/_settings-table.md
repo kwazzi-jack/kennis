@@ -30,7 +30,7 @@ How a search is run.
 
 | key | type | default | what it does |
 |---|---|---|---|
-| `default_top_k` | `int` | `5` | How many hits a search returns. |
+| `default_top_k` | `int` | `3` | How many hits a search returns from each scope it searched, so a sweep can return this many times the number of scopes. |
 | `rrf_k` | `int` | `60` | Reciprocal rank fusion constant: score = sum 1 / (k + rank). |
 | `corpus_method` | `hybrid` / `bm25` / `dense` | `hybrid` | Retrieval method for corpus collections. |
 | `context_method` | `hybrid` / `bm25` / `dense` | `bm25` | Retrieval method for a project's context bundle. bm25 keeps `kennis context init` offline and its index portable between machines; anything else needs an embedding backend. |

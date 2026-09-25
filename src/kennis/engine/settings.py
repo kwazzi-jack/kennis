@@ -121,8 +121,19 @@ class ChunkingSettings(BaseModel):
 class RetrievalSettings(BaseModel):
     """How a search is run."""
 
+    # Per scope, not across them: search prints one group per collection and
+    # each contributes up to this many, so a corpus with three indexed
+    # collections and a project bundle can print four times it. It was 5
+    # while one merged list was truncated globally; 3 keeps the worst case
+    # near what that used to show. Concern #232.
     default_top_k: int = Field(
-        default=5, ge=1, le=100, description="How many hits a search returns."
+        default=3,
+        ge=1,
+        le=100,
+        description=(
+            "How many hits a search returns from each scope it searched, so a "
+            "sweep can return this many times the number of scopes."
+        ),
     )
     rrf_k: int = Field(
         default=60,

@@ -67,9 +67,11 @@ column would state a comparison kennis cannot make - see
 
 Two consequences:
 
-- **`-k` applies per group**, so `-k 5` on a three-collection corpus can
-  return up to fifteen hits. Each group is a complete answer from its
-  source rather than a truncated share of a blend.
+- **`-k` applies per scope**, so `-k 5` on a three-collection corpus plus a
+  project bundle can return up to twenty hits. Each group is a complete
+  answer from its source rather than a truncated share of a blend, which is
+  why the default is 3 rather than the 5 it was when one merged list was
+  truncated globally.
 - **Groups run in a fixed order** - context, literature, docs, notes - not
   best first. Ordering them by quality would reintroduce the comparison the
   grouping exists to avoid. The summary line tells you where the hits are.
