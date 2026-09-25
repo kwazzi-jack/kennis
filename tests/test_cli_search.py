@@ -83,13 +83,14 @@ def group_of(output: str, collection: str) -> str:
 def hits_in(output: str, collection: str | None = None) -> int:
     """How many result lines the report printed, in total or in one group.
 
-    Counted by `id=`, which is on every hit's handle line whatever
-    `--scores` is set to, and nowhere else. The old counter used the
-    bracketed collection label, which the grouped report prints once per
-    group rather than once per hit.
+    Counted by the handle line, which every hit has whatever `--scores` is
+    set to and nothing else does. Two spellings, because a corpus hit's
+    handle is `id=` plus a chunk index and a context hit's is `path=` - a
+    bundle document is addressed by where it is, not by an identifier
+    kennis minted.
     """
     text = output if collection is None else group_of(output, collection)
-    return text.count("id=")
+    return text.count("id=") + text.count("path=")
 
 
 def a_docs_page(corpus: Path, page: str, body: str) -> None:
@@ -163,15 +164,22 @@ def test_a_sweep_skips_a_collection_with_no_index(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):
     """A collection you never mentioned is not part of the answer. Failing
-    the run would make every search depend on having indexed all three."""
+    the run would make every search depend on having indexed all three.
+
+    It used to assert that the two unindexed collections were named in a
+    warning. They are empty here, and an empty collection is no longer
+    reported - `kennis corpus index` skips one, so the line named a command
+    that changes nothing. `test_an_unindexed_corpus_collection_is_still_reported`
+    covers the case that is still news, and
+    `test_an_empty_corpus_collection_is_not_reported_as_unindexed` covers
+    this one directly.
+    """
     indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
 
     result = run.invoke(main, ["search", "sediment"])
 
     assert result.exit_code == 0, result.output
     assert hits_in(result.output) == 1
-    assert "no index yet" in result.output
-    assert "literature" in result.output and "docs" in result.output
 
 
 def test_naming_a_collection_with_no_index_fails(
@@ -619,3 +627,356 @@ def test_reading_a_document_that_is_not_there_says_which_command_to_run(
 
     assert result.exit_code != 0
     assert "kennis corpus list" in result.output
+
+
+# ---------------------------------------------------------------------------
+# The context bundle as a fourth collection
+#
+# Not a second axis: the plan settles this by reading boepie. `--context` as
+# its own flag would make two questions out of one - which scopes to search -
+# so `context` is a value of the selector the corpus collections already use.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    root = tmp_path / "project"
+    root.mkdir()
+    monkeypatch.chdir(root)
+    monkeypatch.delenv("KENNIS_CONTEXT_DIR", raising=False)
+    return root
+
+
+def indexed_context(run: CliRunner, **notes: str) -> None:
+    """A bundle holding one note per keyword, then indexed."""
+    assert run.invoke(main, ["context", "init", "--here"]).exit_code == 0
+    for title, body in notes.items():
+        assert (
+            run.invoke(
+                main, ["remember", "--context", "--title", title, body]
+            ).exit_code
+            == 0
+        )
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+
+def test_context_is_searched_by_default(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(main, ["search", "calibration chunks"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "context") >= 1
+    assert hits_in(result.output, "notes") >= 1
+
+
+def test_context_can_be_searched_alone(workspace: Path, run: CliRunner):
+    """And with no corpus at all: a bundle belongs to a project, and a
+    machine that has never run `corpus init` must still search one."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(
+        main, ["search", "four-minute chunks", "--collection", "context"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "context") >= 1
+
+
+def test_the_selector_takes_a_comma_separated_list(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    indexed_context(run, Chunking="Calibration runs in four-minute chunks.")
+
+    result = run.invoke(
+        main, ["search", "calibration", "--collection", "notes,context"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "notes") >= 1
+    assert hits_in(result.output, "context") >= 1
+
+
+def test_an_unknown_collection_names_the_ones_that_exist(
+    workspace: Path, corpus: Path, run: CliRunner
+):
+    result = run.invoke(main, ["search", "anything", "--collection", "notes,pack"])
+
+    assert result.exit_code != 0
+    assert "pack" in result.output
+    assert "context" in result.output
+
+
+def test_a_context_hit_is_addressed_by_path_and_not_by_an_identifier(
+    workspace: Path, run: CliRunner
+):
+    """There is no `kennis read` for a bundle file. It is a file in the
+    user's own project, so its handle is where it is."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(
+        main, ["search", "four-minute chunks", "--collection", "context"]
+    )
+
+    group = group_of(result.output, "context")
+    assert "path=.context/Chunking.md" in group
+    assert "id=" not in group
+
+
+def test_a_context_only_report_offers_no_read_command(workspace: Path, run: CliRunner):
+    """Rule 4.4: `kennis read` resolves a handle against the corpus, so a
+    hint built from a bundle path would print a command that cannot run."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(
+        main, ["search", "four-minute chunks", "--collection", "context"]
+    )
+
+    assert "kennis read" not in result.output
+
+
+def test_a_mixed_report_anchors_the_read_hint_on_a_corpus_hit(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Context is printed first, so the hint cannot simply take the first
+    hit of the report - it has to take the first one `read` can resolve."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    indexed_context(run, Chunking="Calibration runs in four-minute chunks.")
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    hint = [line for line in result.output.splitlines() if "kennis read" in line]
+    assert len(hint) == 1
+    # A corpus handle is an opaque identifier kennis minted; a bundle
+    # document is addressed by its filename. Asserting the absence of
+    # `.context/` would prove nothing - the hint is built from
+    # `chunk.document_id`, which for a context hit is the bundle-relative
+    # path with no prefix, so the string would be absent either way.
+    assert ".md" not in hint[0]
+
+
+def test_the_read_hint_runs_as_printed_in_a_mixed_report(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    indexed_context(run, Chunking="Calibration runs in four-minute chunks.")
+    found = run.invoke(main, ["search", "calibration"])
+
+    invocation = re.search(r"`(kennis read [^`]+)`", found.output)
+    assert invocation is not None, found.output
+    replayed = run.invoke(main, shlex.split(invocation.group(1))[1:])
+
+    assert replayed.exit_code == 0, replayed.output
+
+
+def test_context_comes_first_because_it_is_the_nearest_scope(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    indexed_context(run, Chunking="Calibration runs in four-minute chunks.")
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    assert result.output.index("Context ") < result.output.index("Notes ")
+
+
+def test_no_bundle_is_not_an_error_in_a_sweep(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """The same asymmetry a missing index has: a scope you never mentioned
+    is not part of the answer, and one you named is what you asked for."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "notes") >= 1
+
+
+def test_no_bundle_is_an_error_when_context_was_asked_for(
+    workspace: Path, corpus: Path, run: CliRunner
+):
+    result = run.invoke(main, ["search", "anything", "--collection", "context"])
+
+    assert result.exit_code != 0
+    assert "kennis context init" in result.output
+
+
+def test_an_unindexed_bundle_names_the_command_that_indexes_it(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """`kennis corpus index` does not build a bundle's index, so a report
+    that skipped context must not print it as the way to fix that."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    assert run.invoke(main, ["context", "init", "--here"]).exit_code == 0
+    assert (
+        run.invoke(main, ["remember", "--context", "Four-minute chunks."]).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    assert result.exit_code == 0, result.output
+    assert "kennis context index" in result.output
+
+
+def test_a_context_group_says_its_band_is_relative(workspace: Path, run: CliRunner):
+    """A bundle index is lexical by design, not by a missing backend, so the
+    band is a fraction of this query's own best hit and the heading says so."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(
+        main, ["search", "four-minute chunks", "--collection", "context"]
+    )
+
+    assert "relative to the best lexical match" in result.output
+
+
+def test_a_context_search_does_not_report_a_missing_dense_leg(
+    workspace: Path, run: CliRunner
+):
+    """That note exists for a corpus collection part-way through a model
+    change. A bundle is lexical on purpose - design section 13 - so saying
+    it 'ran as a lexical search' reads as a degradation that did not
+    happen."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(main, ["search", "four-minute chunks"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "context") >= 1
+    assert "no dense leg" not in result.output
+
+
+def test_the_group_filter_reaches_a_bundle_subdirectory(
+    workspace: Path, run: CliRunner
+):
+    assert run.invoke(main, ["context", "init", "--here"]).exit_code == 0
+    for group, body in (("decisions", "Calibration in chunks."), ("", "Calibration.")):
+        command = ["remember", "--context", body]
+        if group:
+            command += ["--group", group]
+        assert run.invoke(main, command).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(
+        main,
+        ["search", "calibration", "--collection", "context", "--group", "decisions"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "context") == 1
+
+
+def test_read_explains_why_it_does_not_take_a_context_handle(
+    workspace: Path, corpus: Path, run: CliRunner
+):
+    """`invalid choice: context` is accurate and says nothing about why, and
+    why is a decision worth one sentence: the file is the user's own."""
+    result = run.invoke(main, ["read", "anything", "--collection", "context"])
+
+    assert result.exit_code != 0
+    assert "open it with your own tools" in result.output
+
+
+def test_a_sweep_works_on_a_machine_with_no_corpus(workspace: Path, run: CliRunner):
+    """A bundle belongs to a project and a corpus is machine-global. If the
+    default sweep required a corpus, `kennis search` inside a project would
+    be unusable until an unrelated global store had been created."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(main, ["search", "four-minute chunks"])
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "context") >= 1
+
+
+def test_a_named_corpus_collection_still_requires_a_corpus(
+    workspace: Path, run: CliRunner
+):
+    result = run.invoke(main, ["search", "anything", "--collection", "notes"])
+
+    assert result.exit_code != 0
+    assert "kennis corpus init" in result.output
+
+
+def test_nothing_to_search_at_all_names_what_is_missing(
+    workspace: Path, run: CliRunner
+):
+    """`kennis corpus index` is the fix for an unindexed corpus and fails on
+    a machine that has none, so printing it here would hand the reader a
+    second error instead of an answer."""
+    result = run.invoke(main, ["search", "anything"])
+
+    assert result.exit_code != 0
+    assert "kennis corpus init" in result.output
+    assert "kennis corpus index" not in result.output
+
+
+def test_a_sweep_with_no_corpus_says_nothing_about_the_corpus(
+    workspace: Path, run: CliRunner
+):
+    """`kennis corpus index` fails on a machine with no corpus, so printing
+    it as the fix hands the reader a second error. Nothing is printed at
+    all: nobody believes a store they have never created was searched, and
+    a line about it above every answer is noise."""
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(main, ["search", "four-minute chunks"])
+
+    assert result.exit_code == 0, result.output
+    assert "kennis corpus index" not in result.output
+    assert "not searched" not in result.output
+
+
+def test_a_sweep_outside_a_project_says_nothing_about_a_bundle(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Most searches are run outside any project."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    assert result.exit_code == 0, result.output
+    # The group heading, not the bare word: the closing hint ends "to read
+    # one in context", which would make a substring check pass for the
+    # wrong reason.
+    assert "Context " not in result.output
+    # The corpus's other two collections are genuinely unindexed and are
+    # reported, which is the rule working; what must not appear in that line
+    # is context, because there is no bundle here to have an index.
+    assert "kennis context" not in result.output
+
+
+def test_an_unindexed_corpus_collection_is_still_reported(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """The other half of the rule: a store that exists and has not been
+    indexed is news, because the reader has one and may believe it was
+    searched."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+    a_docs_page(corpus, "quickstart", "Arrays are contiguous.")
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    assert "not searched" in result.output
+    assert "kennis corpus index" in result.output
+
+
+def test_an_empty_corpus_collection_is_not_reported_as_unindexed(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """`kennis corpus index` skips a collection with no documents, so naming
+    it as the fix would print a command that runs, changes nothing, and
+    leaves the identical warning on the next search. A fresh corpus has two
+    such collections, so this is what every search on one looks like."""
+    indexed_notes(run, tmp_path, calibration="Calibration solves for gains.")
+
+    result = run.invoke(main, ["search", "calibration"])
+
+    assert result.exit_code == 0, result.output
+    assert "not searched" not in result.output

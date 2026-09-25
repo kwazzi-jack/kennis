@@ -21,9 +21,41 @@ Docs relevance by cosine similarity
 
 `id=` and `chunk=` are the coordinates you pass to `read`.
 
+## Scopes: the corpus and this project
+
+`kennis search` looks in two places, and the selector names both:
+
+| scope | what it is |
+|---|---|
+| `literature`, `docs`, `notes` | the corpus, which is machine-global |
+| `context` | this project's `.context/` bundle, found by walking up from where you are |
+| `all` | every one of them that has an index - the default |
+
+```
+kennis search "query"                             # every scope (the default)
+kennis search "query" --collection context        # this project only
+kennis search "query" --collection notes,context  # comma-separated
+```
+
+**A scope you name is a promise; a scope you did not is not.** Asking for
+`context` outside a project is an error. A default sweep outside a project
+simply does not mention it, and the same goes for a machine with no corpus -
+so `kennis search` works inside a project before `kennis corpus init` has
+ever been run.
+
+A scope that exists and has no index is reported, with the command that
+builds it. A scope that does not exist, or that holds nothing, is not: an
+empty collection is skipped by `kennis corpus index` itself, so naming that
+command would change nothing.
+
+**A context hit is addressed by path, not by an identifier.** There is no
+`kennis read` for a bundle file - it is a file in your own project, so the
+handle line gives you `path=.context/...` and you open it with your own
+tools. See [Project knowledge](../how-to/project-context.md).
+
 ## Results are grouped by collection
 
-Each collection gets its own group, its own ranking, and its own line saying
+Each scope gets its own group, its own ranking, and its own line saying
 what its relevance levels are a band of.
 
 That line matters. A collection indexed with an embedding backend is banded
@@ -38,16 +70,19 @@ Two consequences:
 - **`-k` applies per group**, so `-k 5` on a three-collection corpus can
   return up to fifteen hits. Each group is a complete answer from its
   source rather than a truncated share of a blend.
-- **Groups run in a fixed order** - literature, docs, notes - not best
-  first. Ordering them by quality would reintroduce the comparison the
+- **Groups run in a fixed order** - context, literature, docs, notes - not
+  best first. Ordering them by quality would reintroduce the comparison the
   grouping exists to avoid. The summary line tells you where the hits are.
+  Context comes first because it is the nearest scope: one project rather
+  than the whole machine. That is a fact about where knowledge lives, not a
+  claim about which hit is better.
 
 A collection that matched nothing gets no group.
 
 ### Narrow it
 
 ```
-kennis search "query" --collection literature   # one collection
+kennis search "query" --collection literature   # one scope
 kennis search "query" --group 'physics/*'       # one group, shell-style
 kennis search "query" --project stimela         # docs only: by project
 kennis search "query" -k 20                     # more hits
@@ -72,6 +107,11 @@ kennis search "query" --mode hybrid   # both legs, the default
 kennis search "query" --mode dense    # meaning only
 kennis search "query" --mode bm25     # words only, needs no model
 ```
+
+`--mode` does not apply to `context`. A bundle's index is BM25-only by
+design - a dense one would turn `kennis context init` from an offline
+scaffold into a model download - so a context group is always a lexical
+search and its heading says the band is relative.
 
 ## Read
 

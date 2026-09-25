@@ -40,7 +40,7 @@ from kennis.engine.rag.index import (
 )
 from kennis.engine.rag.models import Document, Metadata
 
-COLLECTION_NAME = "context"
+CONTEXT_COLLECTION = "context"
 
 _FRONTMATTER_DELIMITER = "---"
 
@@ -53,7 +53,7 @@ class BundleLoader:
 
     @property
     def name(self) -> str:
-        return COLLECTION_NAME
+        return CONTEXT_COLLECTION
 
     def documents(self, *, events: EventSink | None = None) -> list[Document]:
         """Every file in the bundle that counts as knowledge.
@@ -140,7 +140,7 @@ def load_bundle_index(bundle: Path) -> LoadedIndex:
     happens here rather than in every caller.
     """
     try:
-        return load_index(index_root_for(bundle), COLLECTION_NAME)
+        return load_index(index_root_for(bundle), CONTEXT_COLLECTION)
     except NothingToIndex as error:
         raise NothingToIndex(
             "this project's context bundle has not been indexed yet",
@@ -186,7 +186,7 @@ def index_bundle(
 
 
 __all__ = [
-    "COLLECTION_NAME",
+    "CONTEXT_COLLECTION",
     "BundleLoader",
     "index_bundle",
     "load_bundle_index",
