@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from kennis.engine.context.bundle import (
     BUNDLE_DIRNAME,
+    GITIGNORE_FILENAME,
     INDEX_DIRNAME,
     LANDING_FILENAME,
     MANIFEST_FILENAME,
@@ -48,6 +49,7 @@ from kennis.engine.context.status import (
 __all__ = [
     "BUNDLE_DIRNAME",
     "CONTEXT_COLLECTION",
+    "GITIGNORE_FILENAME",
     "INDEX_DIRNAME",
     "LANDING_FILENAME",
     "MANIFEST_FILENAME",

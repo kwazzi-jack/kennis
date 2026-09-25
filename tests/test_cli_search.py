@@ -360,12 +360,72 @@ def test_no_hits_is_not_a_failure(corpus: Path, run: CliRunner, tmp_path: Path):
 
 
 def test_searching_an_unindexed_corpus_names_the_command_that_fixes_it(
-    corpus: Path, run: CliRunner
+    corpus: Path, run: CliRunner, tmp_path: Path
 ):
+    """Documents and no index. The fixture used to give an *empty* corpus,
+    where `kennis corpus index` is not the fix at all - it skips a
+    collection with no documents, which is concern #242."""
+    assert (
+        run.invoke(
+            main, ["corpus", "add", "-n", str(a_source(tmp_path, "rivers.md", "Silt."))]
+        ).exit_code
+        == 0
+    )
+
     result = run.invoke(main, ["search", "sediment"])
 
     assert result.exit_code != 0
     assert "kennis corpus index" in result.output
+
+
+def test_searching_an_empty_corpus_names_what_fills_it(corpus: Path, run: CliRunner):
+    """Nothing to index, so nothing to rebuild: the command that changes
+    this is the one that puts a document in."""
+    result = run.invoke(main, ["search", "sediment"])
+
+    assert result.exit_code != 0
+    assert "kennis corpus add" in result.output
+    assert "kennis corpus index" not in result.output
+
+
+def test_a_clone_with_an_unindexed_bundle_is_told_to_index_it(
+    workspace: Path, corpus: Path, run: CliRunner
+):
+    """The ordinary state of a fresh clone: the documents are committed and
+    the index is gitignored (#248), so this is the first thing many readers
+    will ever see from `kennis search`. Naming a corpus command here would
+    send them away from the one thing that is actually there."""
+    assert run.invoke(main, ["context", "init", "--here"]).exit_code == 0
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["search", "four minutes"])
+
+    assert result.exit_code != 0
+    assert "kennis context index" in result.output
+    assert "kennis corpus" not in result.output
+
+
+def test_the_refusal_names_the_nearest_scope_when_several_are_unindexed(
+    workspace: Path, corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Two scopes with documents and no index. The refusal can name only one
+    command, and it names the first in scope order - context, the nearest.
+    Without a second unindexed scope this test cannot tell the first from
+    the last, which is how the ordering went untested at first."""
+    assert (
+        run.invoke(
+            main, ["corpus", "add", "-n", str(a_source(tmp_path, "rivers.md", "Silt."))]
+        ).exit_code
+        == 0
+    )
+    assert run.invoke(main, ["context", "init", "--here"]).exit_code == 0
+    assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
+
+    result = run.invoke(main, ["search", "four minutes"])
+
+    assert result.exit_code != 0
+    assert "kennis context index" in result.output
+    assert "kennis corpus index" not in result.output
 
 
 def test_a_group_filter_narrows_the_search(

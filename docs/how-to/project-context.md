@@ -2,8 +2,11 @@
 
 The corpus is machine-global. A **context bundle** is the other scope: a
 `.context/` directory at the root of one project, holding what is true about
-that project, committed with it so a fresh clone has working search with no
-setup.
+that project and committed with it, so the knowledge travels with a clone.
+
+The **index** does not travel. It is derived from the documents beside it,
+rebuilt in milliseconds, and specific to whoever built it, so `context init`
+gitignores it and a clone runs `kennis context index` once.
 
 ## Create one
 
@@ -23,6 +26,7 @@ It scaffolds three things:
 | `bundle.json` | the manifest that marks this directory as a bundle |
 | `LANDING.md` | the entry point, written for an agent: read this first, then jump |
 | `.skeleton.md` | the template a file at this level is copied from |
+| `.gitignore` | one line, `.index/`, keeping the index out of the repository |
 
 Re-running it is safe, and converging rather than merely harmless: a
 scaffold file you deleted is written again, and anything you added is left
@@ -61,15 +65,21 @@ the right answer rather than a concession - a three-document bundle indexes
 in about 4ms and produces under 3 KB.
 
 `retrieval.context_method` changes it, and defaults to `bm25` for that
-reason. Setting it to `hybrid` or `dense` gives the bundle a
-model-specific index, which needs an embedding backend and makes the index
-much less likely to be usable on another machine - so a clone would rebuild
-rather than search immediately, which is what committing the index was for.
-With no embedding backend configured, asking for `hybrid` still produces a
-lexical index rather than an error.
+reason. Setting it to `hybrid` or `dense` gives the bundle a model-specific
+index and needs an embedding backend; with none configured, asking for
+`hybrid` still produces a lexical index rather than an error. The setting is
+yours alone - the index is not shared, so nobody else in the project is
+affected by it.
 
-The index is written **inside** the bundle, at `.context/.index/`. That is
-the point: commit it with the project and a clone searches with no setup.
+The index is written **inside** the bundle, at `.context/.index/`, and
+`context init` gitignores that directory. Inside so that it travels with the
+bundle if you move the project; ignored because it is derived and because
+what it was built with - your chunk settings, and your embedding model if
+you configured one - is yours rather than the project's.
+
+**A fresh clone has the documents and no index.** `kennis search` says so
+and names this command; run it once and the clone searches with your own
+settings.
 
 ## What is and is not indexed
 
@@ -127,9 +137,9 @@ file with no frontmatter at all and one whose header kennis cannot read. The
 two mistakes do not cost the same: keeping a pack's file costs a stale file
 the next sync overwrites, and deleting yours costs your writing.
 
-`LANDING.md`, `.skeleton.md` and `bundle.json` are left alone even though
-kennis wrote them, because you are expected to edit the first two.
-`kennis context init` puts back any one of them you delete.
+`LANDING.md`, `.skeleton.md`, `bundle.json` and `.gitignore` are left alone
+even though kennis wrote them, because you are expected to edit the first
+two. `kennis context init` puts back any one of them you delete.
 
 There is no undo inside kennis. A bundle lives in your repository and kennis
 keeps no history of it, so `git checkout` is the way back - if you

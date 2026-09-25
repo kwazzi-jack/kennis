@@ -284,20 +284,7 @@ def search_command(
             groups[name] = found
 
     if not searched:
-        # `kennis corpus index` is the fix for an unindexed corpus and does
-        # nothing for a machine that has no corpus at all - it fails with
-        # "no corpus found", which is a second error to read rather than an
-        # answer. So the resolution is chosen from what is actually absent.
-        if not corpus_exists:
-            raise NothingToIndex(
-                "there is nothing to search: no corpus on this machine, and "
-                "no indexed context bundle in this directory",
-                resolution="kennis corpus init",
-            )
-        raise NothingToIndex(
-            "no scope has an index yet, so there is nothing to search",
-            resolution="kennis corpus index",
-        )
+        raise _nothing_to_search(skipped, corpus_exists=corpus_exists)
 
     # Not sorted across collections, and that is the point. A fused score is
     # `sum 1/(k+rank)` over the legs that ranked a chunk, so a hybrid
@@ -659,6 +646,42 @@ def _index_of(context: Context, name: str) -> LoadedIndex:
     `kennis corpus index` as its resolution, so nothing is added here.
     """
     return load_index(index_root(context.corpus_root), name)
+
+
+def _nothing_to_search(
+    skipped: list[_Skipped], *, corpus_exists: bool
+) -> NothingToIndex:
+    """The refusal when no scope could be searched, naming a real command.
+
+    **The first skipped scope's own command**, and `skipped` is in
+    `SCOPE_NAMES` order, so a project with an unindexed bundle is told
+    `kennis context index` rather than something about the corpus. That is
+    the ordinary state of a fresh clone - the bundle's index is gitignored
+    (#248), so the documents arrive and the index does not - which makes it
+    the first thing many readers will ever see from this command.
+
+    An empty `skipped` means nothing exists to index: every scope was
+    dropped for not being there at all, which `_why_skipped` reports as
+    None. Then the command is the one that creates something.
+    """
+    if skipped:
+        first = skipped[0]
+        return NothingToIndex(
+            "nothing that could be searched has an index yet",
+            resolution=first.resolution,
+        )
+    if not corpus_exists:
+        # `kennis corpus index` would fail with "no corpus found", which is
+        # a second error to read rather than an answer.
+        return NothingToIndex(
+            "there is nothing to search: no corpus on this machine, and no "
+            "context bundle in this directory",
+            resolution="kennis corpus init",
+        )
+    return NothingToIndex(
+        "there is nothing to search: the corpus is empty",
+        resolution="kennis corpus add --help",
+    )
 
 
 def _why_skipped(

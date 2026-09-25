@@ -211,3 +211,38 @@ builds; it is unit 5's question.
 `kennis corpus index --collection <name>` when an index is missing, and
 `context` is not one of the three values that option accepts. Contained by
 `load_bundle_index`, logged as #241.
+
+## Addendum, 2026-09-26: the index is not committed
+
+Brian reversed the decision this unit was built on, before v0.2 was tagged.
+The index is gitignored, per-person, and rebuilt by whoever clones the
+project with their own settings. Concern #248 holds the reasoning; the short
+form is that an index is derived from the documents committed beside it and
+is specific to whoever built it, so committing it puts one person's
+configuration in everyone's working tree to save a command that takes
+milliseconds.
+
+What this unit built is unchanged. The index still lives at
+`.context/.index/` - inside, so it travels with the bundle when the project
+is moved - and the binding file still decides reuse. `init_bundle` writes
+one more scaffold file, `.context/.gitignore`, holding `.index/`.
+
+**The clone test lost its justification and kept its subject.** It was
+written as "a bundle indexed on one machine and cloned to another is
+searchable with no rebuild", which is now false by design. Underneath it was
+a property that has nothing to do with cloning: nothing in an index may name
+the path it was built at, because a workspace gets renamed, moved between
+machines and restored from backup whether or not it is ever cloned. It is
+now a moved-bundle test and asserts the same thing.
+
+**The reversal made a latent defect into the common case.** `kennis search`
+in a fresh clone - documents present, index absent - answered "there is
+nothing to search: no corpus on this machine" and named
+`kennis corpus init`. True about the corpus and useless: the bundle is right
+there with one command needed. Before this decision that state was rare;
+now it is what every clone starts in, and it is the first thing many readers
+will ever see from the command. The refusal now names the first skipped
+scope's own resolution, in scope order, so the nearest scope answers.
+
+Its first test could not distinguish first from last, because only one scope
+was skipped in the case it set up. A second unindexed scope was added.

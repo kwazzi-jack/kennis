@@ -193,20 +193,25 @@ def test_an_empty_bundle_is_refused_with_something_to_do_about_it(bundle: Path):
 def test_an_index_moved_to_another_path_is_searchable_without_rebuilding(
     bundle: Path, tmp_path: Path
 ):
-    """The whole reason the index is committed: a fresh clone of the project
-    lands at a different absolute path and must search with no setup. Copying
-    the bundle is the closest a test gets to cloning it."""
+    """Nothing in the index may name the path it was built at.
+
+    This used to be justified by the clone: a committed index had to work
+    wherever the clone landed. The index is no longer committed (#248), and
+    the property survives the reason for it - a workspace gets renamed,
+    moved between machines, or restored from a backup, and an index full of
+    absolute paths would point at nothing while the documents were fine.
+    """
     remember_in_bundle(bundle, "Calibration runs in four-minute chunks.")
     index_bundle(bundle)
 
-    clone = tmp_path / "clone" / ".context"
-    clone.parent.mkdir(parents=True)
-    shutil.copytree(bundle, clone)
-    # Removed, so nothing in the clone can be resolving against it. Copying
-    # alone would let an index full of absolute paths pass.
+    moved = tmp_path / "moved" / ".context"
+    moved.parent.mkdir(parents=True)
+    shutil.copytree(bundle, moved)
+    # Removed, so nothing at the new path can be resolving against the old
+    # one. Copying alone would let an index full of absolute paths pass.
     shutil.rmtree(bundle)
 
-    loaded = load_index(index_root_for(clone), "context")
+    loaded = load_index(index_root_for(moved), "context")
     hits = search(loaded, "calibration chunks", top_k=3, mode="bm25")
     assert hits
     assert not Path(hits[0].chunk.source_path).is_absolute()
