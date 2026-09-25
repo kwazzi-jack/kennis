@@ -327,3 +327,68 @@ def test_every_abort_kennis_writes_itself_is_one_type():
     cannot silently get rich-click's bordered panel back."""
     assert issubclass(display.CliError, display.PlainMessage)
     assert issubclass(display.Cancelled, display.PlainMessage)
+
+
+# ---------------------------------------------------------------------------
+# A document body
+
+
+class TestBodyIsTheDocument:
+    """`read` is a payload: what comes out is what is stored.
+
+    The temptation in a highlighter is to normalise - strip a trailing blank
+    line, pad a line out to the terminal, add the final newline the file was
+    missing. Each one produces a document the corpus does not hold, and each
+    is invisible on screen and only shows up in the file after a redirect.
+    `rich.syntax.Syntax` does the padding one, which is why it is not used.
+    """
+
+    @pytest.mark.parametrize(
+        "document",
+        [
+            pytest.param("Just prose.\n", id="prose"),
+            pytest.param("Prose with no final newline.", id="no-final-newline"),
+            pytest.param("One.\n\nTwo.\n", id="paragraphs"),
+            pytest.param("Before.\n\n```\nx\n```\n\nAfter.\n", id="plain-fence"),
+            pytest.param("```yaml\na: 1\nb:\n  c: 2\n```\n", id="declared-yaml"),
+            pytest.param("```\na: 1\nb:\n  c: 2\n```\n", id="detected-yaml"),
+            pytest.param("```python\ndef f(x):\n    return x\n```\n", id="python"),
+            pytest.param("```nosuchlanguage\nx\n```\n", id="unknown-language"),
+            pytest.param("```\n\n\nx\n\n\n```\n", id="blank-lines-in-code"),
+            # pygments strips leading newlines and appends a trailing one
+            # unless told not to, and only a lexed block can show it.
+            pytest.param("```yaml\n\n\na: 1\n```\n", id="lexed-leading-blanks"),
+            pytest.param("```yaml\na: 1", id="lexed-no-final-newline"),
+            pytest.param("```\nunterminated\n", id="unterminated-fence"),
+            pytest.param("````\n```\ninner\n```\n````\n", id="nested-fences"),
+            pytest.param("# Heading\n\n```\na:\n  b: 1\n```\n", id="heading-and-code"),
+        ],
+    )
+    def test_the_rendered_body_is_the_document(self, document: str):
+        assert capture(lambda: display.body(document)) == document
+
+    def test_a_long_code_line_is_not_wrapped(self):
+        """A wrapped code line is a different line. The terminal may fold it
+        on screen; the bytes must not change."""
+        document = "```python\nx = " + " + ".join(["1"] * 200) + "\n```\n"
+
+        assert capture(lambda: display.body(document)) == document
+
+    def test_no_line_gains_trailing_whitespace(self):
+        """The `Syntax` defect, stated directly: padding to the console width
+        is invisible until the output is redirected to a file."""
+        rendered = capture(lambda: display.body("```yaml\na: 1\nb:\n  c: 2\n```\n"))
+
+        assert not any(line != line.rstrip() for line in rendered.splitlines())
+
+    def test_shapes_taken_from_the_real_corpus_survive(self):
+        """The cases above are shapes I thought of; these are shapes the
+        corpus actually holds. All 49 documents in it round trip exactly,
+        checked separately - only the shapes are pinned here, because the
+        corpus is not a fixture."""
+        for document in [
+            "---\ntitle: x\n---\n\n# T\n\ntext\n",
+            "```sh\n$ kennis read abc\n```\n",
+            "Trailing blanks after code.\n\n```\nx\n```\n\n\n",
+        ]:
+            assert capture(lambda body=document: display.body(body)) == document

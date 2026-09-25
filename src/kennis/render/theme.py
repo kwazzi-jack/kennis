@@ -171,6 +171,20 @@ ROLES: Final[dict[str, Role]] = {
     "md_link": Role(colour="cyan"),
     "md_url": Role(colour="cyan", underline=True),
     "citation": Role(colour="magenta"),
+    # Code inside a fence. `code_block` is the whole of a block that named no
+    # language - it says "this is not prose" without claiming to know what it
+    # is, which guessing did claim and got wrong 262 times out of 262 (#214).
+    # The rest are pygments token classes, named as roles here so that the
+    # eight-colour rule holds inside a code block as it does everywhere else:
+    # every pygments style ships true colour or a 256-colour index, and either
+    # stops resolving against the palette the terminal is themed with.
+    "code_block": Role(colour="cyan"),
+    "code_keyword": Role(colour="magenta"),
+    "code_string": Role(colour="yellow"),
+    "code_number": Role(colour="cyan"),
+    "code_comment": Role(dim=True),
+    "code_name": Role(colour="green"),
+    "code_operator": Role(colour="white"),
     # `config show`'s TOML, which rich has no highlighter for. No renderer yet.
     "toml_comment": Role(dim=True),
     "toml_section": Role(colour="cyan", bold=True),
