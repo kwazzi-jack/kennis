@@ -246,3 +246,18 @@ class SearchUnavailable(KennisError):
 
     default_message = "this index cannot answer that"
     default_resolution = "kennis search --help"
+
+
+class PackInvalid(KennisError):
+    """A `.ken.yml` file does not validate against the schema.
+
+    Design section 5, step 1: refuse naming the field path, because a
+    message that says only "invalid" makes the author hunt through a file
+    that may declare hundreds of documents. Separate from the two version
+    refusals - a `schema_version` kennis does not understand and a
+    `min_version` above its own - which are not defects in the file and are
+    resolved by upgrading rather than by editing.
+    """
+
+    default_message = "a pack file could not be read"
+    default_resolution = "kennis pack validate"
