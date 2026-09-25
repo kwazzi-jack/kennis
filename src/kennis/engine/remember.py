@@ -135,7 +135,7 @@ def remember(
             elapsed_seconds=time.monotonic() - started_at,
         )
 
-    title = options.title or _title_for(body)
+    title = options.title or title_for(body)
     document_id, path = write_note(
         collection,
         record,
@@ -199,7 +199,7 @@ def _index(
     return "indexed", report.chunk_count
 
 
-def _title_for(body: str) -> str:
+def title_for(body: str) -> str:
     """The note's own title: its heading, or its first line, trimmed.
 
     Trimmed between words rather than through one, because the result is a
@@ -227,4 +227,5 @@ __all__ = [
     "RememberOptions",
     "RememberReport",
     "remember",
+    "title_for",
 ]

@@ -17,8 +17,10 @@ from pathlib import Path
 import click
 
 from kennis.cli import display
+from kennis.cli.commands.context import require_bundle
 from kennis.cli.context import existing_corpus
 from kennis.cli.sink import reporting
+from kennis.engine.context import remember_in_bundle
 from kennis.engine.events import Outcome
 from kennis.engine.history.history import commit_summary
 from kennis.engine.history.repository import Repository
@@ -42,7 +44,13 @@ from kennis.render.words import index_state
     help="Read the text from this file instead of the argument.",
 )
 @click.option("--title", help="Title for the note, overriding its first line.")
-@click.option("--group", help="Subdirectory within the notes collection.")
+@click.option("--group", help="Subdirectory within the collection or bundle.")
+@click.option(
+    "--context",
+    "to_context",
+    is_flag=True,
+    help="Write into this project's .context/ bundle instead of notes.",
+)
 @click.option(
     "--no-index",
     is_flag=True,
@@ -53,11 +61,21 @@ def remember_command(
     from_path: Path | None,
     title: str | None,
     group: str | None,
+    to_context: bool,
     no_index: bool,
 ) -> None:
-    """Write something down, into notes, and index it."""
-    context = existing_corpus()
+    """Write something down, into notes or this project, and index it.
+
+    **`--context` writes into the workspace, not the corpus.** Notes are
+    machine-global; a `.context/` bundle belongs to one project and is
+    committed with it. Either way the file is marked `owner: user`, so no
+    pack and no sync will ever overwrite it.
+    """
     body, origin = _text_and_origin(text, from_path)
+    if to_context:
+        _remember_in_context(body, title=title, group=group, no_index=no_index)
+        return
+    context = existing_corpus()
     binding = binding_from(context.settings.chunking, context.settings.embedding)
 
     with corpus_lock(context.corpus_root), reporting() as events:
@@ -79,6 +97,43 @@ def remember_command(
         )
 
     _report(report)
+
+
+def _remember_in_context(
+    body: str, *, title: str | None, group: str | None, no_index: bool
+) -> None:
+    """The bundle path: no corpus, no lock, and no commit.
+
+    The corpus one takes `corpus_lock` and ends in `Repository.commit`.
+    Neither applies here. The bundle lives inside a repository kennis does
+    not own, so committing to it would take over the user's version control
+    - the design says the bundle is committed with the project "if the user
+    wants", and the wanting is theirs.
+    """
+    if no_index:
+        # Absent rather than present and ignored, which is the rule #169
+        # states: `context index` does not exist yet, so nothing here could
+        # honour a flag asking it not to run.
+        raise display.CliError(
+            "--no-index has nothing to skip for --context; a bundle is not indexed yet."
+        )
+    bundle = require_bundle()
+    note = remember_in_bundle(bundle, body, title=title, group=group)
+    if note.outcome is Outcome.UNCHANGED:
+        display.operation(
+            "Unchanged",
+            f"{note.title} is already in this project's context",
+            style="unchanged",
+        )
+        return
+    # No `elapsed`: the corpus path's time is dominated by indexing, and
+    # there is none here, so every run would report `in 0ms` - a number that
+    # answers a question nobody asked of a file write.
+    display.operation("Remembered", f"{note.title}, in this project")
+    # Prefixed with the bundle's own directory name rather than left bundle-
+    # relative, because `decisions/Solver choice.md` does not say which of
+    # the two places `remember` writes to it landed in.
+    display.detail("+", f"{bundle.name}/{note.relative_path}")
 
 
 def _text_and_origin(text: str | None, from_path: Path | None) -> tuple[str, str]:

@@ -22,6 +22,11 @@ from kennis.engine.context.bundle import (
     is_bundle_dir,
     workspace_root,
 )
+from kennis.engine.context.notes import (
+    BundleNote,
+    bundle_documents,
+    remember_in_bundle,
+)
 
 __all__ = [
     "BUNDLE_DIRNAME",
@@ -31,10 +36,13 @@ __all__ = [
     "SCHEMA_VERSION",
     "SKELETON_FILENAME",
     "BundleCreated",
+    "BundleNote",
+    "bundle_documents",
     "bundle_override",
     "find_bundle",
     "index_root_for",
     "init_bundle",
     "is_bundle_dir",
+    "remember_in_bundle",
     "workspace_root",
 ]

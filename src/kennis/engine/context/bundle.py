@@ -203,8 +203,14 @@ them after the questions they answer, nesting as deep as is useful:
 
 ## Writing a file
 
-Copy `.skeleton.md`. Every file carries `title`, `description` and `owner`
-in its frontmatter.
+    kennis remember --context "what you want kept"
+
+That writes one file here, with the frontmatter filled in. `--title` names
+it and `--group` puts it in a subdirectory, which is created if it is not
+there yet.
+
+By hand instead: copy `.skeleton.md`. Every file carries `title`,
+`description` and `owner` in its frontmatter.
 
 `owner: user` means you wrote it and nothing will overwrite it.
 
