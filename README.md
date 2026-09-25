@@ -20,13 +20,23 @@ uv run --group docs mkdocs build      # into site/
 
 ## Status
 
-Pre-release. Everything v0.1 is meant to cover is built and tested - the
-corpus with git-backed history, BM25 and dense retrieval over it, and the
-command line - but nothing has been published yet, and the on-disk format may
-still change without a migration.
+Pre-release, and nothing has been published. Two scopes of knowledge are
+built and tested:
 
-An MCP server, a per-workspace context bundle, and the pack format for
-supplying domain content come after that.
+- **the corpus**, machine-global, with git-backed history, BM25 and dense
+  retrieval over it, and the command line (v0.1);
+- **the context bundle**, one per project, committed with it, with its own
+  lexical index and searched alongside the corpus (v0.2).
+
+An MCP server and the pack format for supplying domain content come after
+that.
+
+**The on-disk format may still change without a migration.** Every
+frontmatter model refuses an unknown key rather than ignoring it, so a corpus
+written by a later version is not readable by an earlier one, and there is no
+version recorded on a document to say so. That is a deliberate choice about
+failing loudly, and it is why a corpus built now is a corpus you should be
+prepared to rebuild.
 
 ## Install
 
@@ -92,7 +102,14 @@ kennis search "complex gains"
 kennis search "gains" --collection notes --group radio -k 5
 kennis search "fits files" --mode bm25 --snippet full
 kennis search "complex gains" --scores raw     # the per-leg numbers instead of a level
+kennis search "gains" --collection context     # this project's bundle only
+kennis search "gains" --collection notes,context
 ```
+
+`--collection` takes a comma-separated list over four scopes - `literature`,
+`docs`, `notes` and `context` - and defaults to `all`. A scope you name is a
+promise and a scope you did not is not: asking for `context` outside a
+project is an error, while a sweep outside one simply does not mention it.
 
 A hit looks like this:
 
@@ -172,6 +189,25 @@ echo "The array has 64 dishes." | kennis remember
 just told kennis is searchable straight away - provided the notes collection
 has already been indexed once. It says which of the two happened.
 
+### Knowledge that belongs to one project
+
+```
+kennis context init                                  # a .context/ bundle at the workspace root
+kennis remember --context "Calibration runs in four-minute chunks"
+kennis remember --context --group decisions --title "Solver" "We use quartical"
+kennis context index                                 # BM25 only, offline, milliseconds
+kennis context status                                # what it holds, and whether the index is in step
+```
+
+The corpus is machine-global; a bundle belongs to one project and is
+committed with it, so the knowledge travels with a clone. **The index does
+not travel** - it is derived, rebuilt in milliseconds, and specific to
+whoever built it, so `context init` gitignores it and a clone runs
+`kennis context index` once.
+
+kennis never commits to your repository. Committing `.context/` is yours to
+do.
+
 ### See what is there
 
 ```
@@ -190,6 +226,7 @@ record of what kennis did and `restore` puts a document back as it was.
 | what | where | override |
 |---|---|---|
 | the corpus | `~/.local/share/kennis` | `KENNIS_CORPUS_ROOT` |
+| a project's context bundle | `.context/` at the workspace root | `KENNIS_CONTEXT_DIR` |
 | configuration | `~/.config/kennis` | `KENNIS_CONFIG_DIR` |
 | the log | `~/.local/state/kennis/log` | `KENNIS_LOG_DIR` |
 | downloaded embedding models | `~/.cache/kennis/models` | - |
