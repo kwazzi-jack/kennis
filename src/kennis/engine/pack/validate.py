@@ -22,14 +22,16 @@ digests, the other source - and `render/` turns it into a sentence.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Final, Literal
 
 from packaging.version import InvalidVersion, Version
 
 from kennis import __version__
 from kennis.engine.errors import PackInvalid
+from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.content import address_of, content_digest, read_source
 from kennis.engine.pack.schema import (
     SCHEMA_VERSION,
@@ -103,12 +105,21 @@ class PackReport:
         return self.refusal is None and not self.problems
 
 
-def validate_pack(path: Path) -> PackReport:
+OPERATION: Final = "pack-validate"
+
+
+def validate_pack(path: Path, *, events: EventSink | None = None) -> PackReport:
     """Read the pack at `path` and check it against kennis and its content.
 
     Raises `PackInvalid` when there is no pack to report on: the file is
     missing, unreadable, or does not parse.
+
+    **`events` is what the log subscribes to.** The report names every
+    problem it found, so less is left out here than in most operations - but
+    a pipeline running with `--quiet` sees a count and an exit code, and
+    then the log is the only record of which file was wrong. Section 14.
     """
+    started = time.monotonic()
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
@@ -119,6 +130,7 @@ def validate_pack(path: Path) -> PackReport:
     if refusal is not None:
         # A newer schema may use sections this kennis cannot interpret, so
         # judging its content would be judging it by rules that do not apply.
+        _reported(events, (), refusal, path, started)
         return PackReport(
             path=path,
             pack=pack,
@@ -132,12 +144,57 @@ def validate_pack(path: Path) -> PackReport:
     checked = pack.generated is not None
     for section, source in _content_sources(pack):
         problems.extend(_checked_source(root, section, source, pack))
+    _reported(events, tuple(problems), None, path, started)
     return PackReport(
         path=path,
         pack=pack,
         refusal=None,
         problems=tuple(problems),
         digests_checked=checked,
+    )
+
+
+def _reported(
+    events: EventSink | None,
+    problems: tuple[PackProblem, ...],
+    refusal: VersionRefusal | None,
+    path: Path,
+    started: float,
+) -> None:
+    """Every finding to the stream, as a kind rather than as a sentence.
+
+    `reason` carries the problem's `kind` - `digest-mismatch`, not "has
+    changed since the last update". The sentence belongs to `render/`, and a
+    second copy of it here would be a second place to change it. Concern
+    #81.
+    """
+    if events is None:
+        return
+    for problem in problems:
+        events.emit(
+            ItemFinished(
+                operation=OPERATION,
+                item=problem.path,
+                outcome=Outcome.FAILED,
+                reason=problem.kind,
+            )
+        )
+    if refusal is not None:
+        events.emit(
+            ItemFinished(
+                operation=OPERATION,
+                item=str(path),
+                outcome=Outcome.FAILED,
+                reason=f"{refusal.kind}: needs {refusal.required}",
+            )
+        )
+    failed = len(problems) + (1 if refusal is not None else 0)
+    events.emit(
+        OperationFinished(
+            operation=OPERATION,
+            elapsed_seconds=time.monotonic() - started,
+            counts={Outcome.FAILED: failed} if failed else {},
+        )
     )
 
 
@@ -283,6 +340,7 @@ def _compared(
 
 
 __all__ = [
+    "OPERATION",
     "PackProblem",
     "PackReport",
     "ProblemKind",

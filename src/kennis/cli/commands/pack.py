@@ -15,13 +15,16 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand, KennisGroup
+from kennis.cli.sink import reporting
 from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
 from kennis.engine.pack.update import update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.render.packs import (
     describe_problem,
+    describe_recorded,
     describe_refusal,
     describe_update_needed,
+    describe_verdict,
     remedy_for,
 )
 from kennis.render.words import count_of
@@ -70,13 +73,15 @@ def init_command(
     write and cannot restore.
     """
     destination = path if path is not None else Path(f"{identifier}.ken.yml")
-    written = scaffold_pack(
-        destination,
-        identifier=identifier,
-        name=name,
-        version=version,
-        description=description,
-    )
+    with reporting() as events:
+        written = scaffold_pack(
+            destination,
+            identifier=identifier,
+            name=name,
+            version=version,
+            description=description,
+            events=events,
+        )
     display.operation("Created", f"{written}")
     display.detail("+", f"{identifier} {version}")
 
@@ -94,13 +99,14 @@ def update_command(path: Path) -> None:
     A run that finds nothing changed leaves the file byte-identical, so
     calling it on every release build is free.
     """
-    result = update_pack(path)
+    with reporting() as events:
+        result = update_pack(path, events=events)
     if result.outcome == "unchanged":
         display.operation("Unchanged", f"{path}")
-        display.detail("=", count_of(result.files, "file") + " already recorded")
+        display.detail("=", describe_recorded(result))
         return
     display.operation("Updated", f"{path}")
-    display.detail("+", count_of(result.files, "file") + " recorded")
+    display.detail("+", describe_recorded(result))
 
 
 @pack_group.command(name="validate", cls=KennisCommand)
@@ -118,7 +124,8 @@ def validate_command(path: Path) -> None:
 
     Exits non-zero when anything is wrong, so a pipeline stops.
     """
-    report = validate_pack(path)
+    with reporting() as events:
+        report = validate_pack(path, events=events)
     _report(report)
     if not report.ok:
         raise SystemExit(1)
@@ -132,7 +139,12 @@ def _report(report: PackReport) -> None:
         return
 
     if not report.problems:
-        display.operation("Valid", f"{report.pack.pack.id} {report.pack.pack.version}")
+        # "Checked", not "Valid": `display.operation` takes the past-tense
+        # verb for what the command did, and the verdict is the line under
+        # it. Every other operation in kennis reads the same way.
+        display.operation(
+            "Checked", f"{report.pack.pack.id} {report.pack.pack.version}"
+        )
         _say_what_was_checked(report)
         return
 
@@ -152,10 +164,12 @@ def _say_what_was_checked(report: PackReport) -> None:
     a forgotten `pack update` should be caught, and a bare "valid" would
     report the same word for two different amounts of checking.
     """
-    if report.digests_checked:
-        display.detail("+", "digests agree with the content")
-        return
-    display.guidance("no generated block, so no digest was checked")
+    # Both verdicts are details of the same operation, so both sit in the
+    # detail column. `>` is the marker `sink.marker_for` already gives a
+    # skipped item, and the digest check is exactly what was skipped - not a
+    # warning, because a pack that ships no content is not going wrong.
+    marker = "+" if report.digests_checked else ">"
+    display.detail(marker, describe_verdict(report))
 
 
 __all__ = ["pack_group", "validate_command"]

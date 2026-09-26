@@ -14,10 +14,12 @@ versioned, so schema 2 is a new file and this line never changes meaning.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Final
 
 from kennis.engine.errors import PackInvalid
+from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.schema import SCHEMA_VERSION, load_pack
 
 # Raw GitHub serves `text/plain`, which the extension accepts. A fact about
@@ -29,6 +31,8 @@ SCHEMA_URL: Final = (
 )
 
 DEFAULT_VERSION: Final = "0.1.0"
+
+OPERATION: Final = "pack-init"
 
 _TEMPLATE: Final = """# yaml-language-server: $schema={url}
 
@@ -68,6 +72,7 @@ def scaffold_pack(
     name: str,
     version: str = DEFAULT_VERSION,
     description: str | None = None,
+    events: EventSink | None = None,
 ) -> Path:
     """Write a new pack file at `path` and return it.
 
@@ -81,6 +86,7 @@ def scaffold_pack(
     history for. Rewriting it would delete work with nothing to restore
     from.
     """
+    started = time.monotonic()
     if path.exists():
         # `resolution=None` rather than the class default. `PackInvalid`
         # normally points at `kennis pack validate`, and validating the file
@@ -106,6 +112,17 @@ def scaffold_pack(
     # delete before trying again.
     load_pack(text)
     path.write_text(text, encoding="utf-8")
+    if events is not None:
+        events.emit(
+            ItemFinished(operation=OPERATION, item=str(path), outcome=Outcome.ADDED)
+        )
+        events.emit(
+            OperationFinished(
+                operation=OPERATION,
+                elapsed_seconds=time.monotonic() - started,
+                counts={Outcome.ADDED: 1},
+            )
+        )
     return path
 
 
@@ -123,4 +140,4 @@ def _description_line(description: str | None) -> str:
     return f'  description: "{description}"\n'
 
 
-__all__ = ["DEFAULT_VERSION", "SCHEMA_URL", "scaffold_pack"]
+__all__ = ["DEFAULT_VERSION", "OPERATION", "SCHEMA_URL", "scaffold_pack"]
