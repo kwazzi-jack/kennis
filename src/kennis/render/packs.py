@@ -7,11 +7,28 @@ sentence could not rewrap it, group it, or say it differently. Concern #81.
 
 from __future__ import annotations
 
+from kennis.engine.pack.store import PackInstall
 from kennis.engine.pack.update import PackUpdate
 from kennis.engine.pack.validate import PackProblem, PackReport, VersionRefusal
 from kennis.render.words import count_of
 
 _DIGEST_SHOWN = 12
+
+
+def describe_install(install: PackInstall) -> str:
+    """What an install did, and the word `repaired` earning its place.
+
+    Three outcomes rather than two, because "the provider shipped something
+    new" and "what was here was damaged and has been put back" are
+    different facts about the machine, and a reader seeing `repaired`
+    twice in a row has something to investigate that `installed` would hide.
+    """
+    counted = count_of(install.files, "file")
+    if install.outcome == "unchanged":
+        return f"{counted}, already installed"
+    if install.outcome == "repaired":
+        return f"{counted}, restored after the store was found damaged"
+    return f"{counted} installed"
 
 
 def describe_verdict(report: PackReport) -> str:
@@ -106,6 +123,7 @@ def _short(digest: str | None) -> str:
 
 
 __all__ = [
+    "describe_install",
     "describe_problem",
     "describe_recorded",
     "describe_refusal",

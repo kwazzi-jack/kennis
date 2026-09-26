@@ -5,11 +5,13 @@ declaring what it ships, plus the content it names. It is data and never
 code, so a pack cannot run anything - the worst a bad one can do is declare
 documents you did not want.
 
-!!! note "Authoring works; installing does not yet"
-    `kennis pack init`, `update` and `validate` are built. `pack add`,
-    `remove`, `list` and `status` - the half that installs a pack into a
-    corpus - are not. So today you can write a pack and check that it is
-    correct; nothing yet consumes one.
+!!! note "Installing works; materialising does not yet"
+    `kennis pack init`, `update`, `validate` and `add` are built.
+    `pack remove`, `list` and `status` are not, and neither are
+    `corpus sync` and `context sync` - the commands that turn an installed
+    pack's declarations into documents you can search. So today a pack can
+    be written, checked and installed, and its content sits in the store
+    rather than in the corpus.
 
 The three commands here are what a **provider** runs, in its own repository
 and its own release pipeline. A provider is any tool that wants its
@@ -149,3 +151,45 @@ believed.
 A pack with no `generated:` block is valid - it may simply ship no content -
 so `validate` says out loud when it checked no digests, rather than
 reporting the same "valid" for two different amounts of checking.
+
+## Install it
+
+```
+kennis pack add boepie.ken.yml
+```
+
+This is the call a provider makes from its own sync command, on every run.
+It does no network I/O: it copies what the pack declares into this
+machine's store at `<corpus>/packs/<id>/`, beside the declaration itself
+and a `state.json` recording what was applied.
+
+Calling it repeatedly is cheap. A second `add` of an unchanged pack reports
+`Unchanged` and rewrites nothing, which is why a provider can call it
+unconditionally.
+
+Three outcomes, and the third is worth knowing about:
+
+| outcome | what happened |
+|---|---|
+| `Installed` | the pack is new, or the provider shipped a change |
+| `Unchanged` | the declaration and the store both check out |
+| `Repaired` | the declaration was unchanged and **the store was damaged** |
+
+`Repaired` means kennis found files missing from the store, or holding
+something other than their recorded digest, and copied them again. Seeing
+it once after an interrupted run is ordinary; seeing it repeatedly is worth
+investigating, because something is removing files kennis wrote.
+
+kennis checks the store rather than trusting `state.json` alone for a
+specific reason: a store that claims to hold content it does not is
+indistinguishable from a pack that ships nothing, and that claim is one the
+sync commands would act on.
+
+The store is **not** part of the corpus history. It is a cache of what a
+provider last handed over, re-supplied by that provider's next run, so
+`corpus init` gitignores `packs/` and `pack add` makes sure of it on a
+corpus that predates the feature.
+
+`pack add` re-checks everything `pack validate` checks, including the
+digests, and installs nothing if any of it fails. `validate` is the
+provider's own check and nothing makes them run it.
