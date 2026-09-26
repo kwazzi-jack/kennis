@@ -56,6 +56,11 @@ type ConversionVia = Literal[
     "sphinx",
     "crawl",
     "remember",
+    # Copied out of the pack store by `corpus sync`. Not a conversion at
+    # all - a pack ships markdown - but `via` answers "how did this get
+    # here", and "a pack put it there" is a different answer from "a
+    # person typed it".
+    "pack",
 ]
 
 # The shape of the source bytes themselves, before conversion.
@@ -131,6 +136,14 @@ class Source(BaseModel):
     # Filename of the retained source bytes inside this document's wrapper
     # directory, when the setting to keep originals was on at ingestion time.
     original: str | None = None
+    # The digest of the file in the pack store that this document was
+    # written from. Present only for `via: pack`, and it is not the same
+    # thing as `sha256`: that one is the body kennis wrote, which a user
+    # edit moves, and this one is what the provider shipped, which a
+    # release moves. One value cannot answer both questions, because a
+    # pack file carrying its own frontmatter has that header read and
+    # replaced rather than copied.
+    pack_sha256: str | None = None
 
 
 class DocumentFrontmatter(BaseModel):

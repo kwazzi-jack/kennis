@@ -7,12 +7,14 @@ command-line half: what a person sees, and what the exit status says.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.engine.locking import corpus_lock
 
 
 @pytest.fixture(autouse=True)
@@ -451,3 +453,190 @@ def test_a_command_writes_its_events_to_the_log(run: CliRunner, tmp_path: Path):
     log = tmp_path / "state" / "kennis.log"
     assert log.is_file()
     assert "init" in log.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# `corpus sync`, `claim` and `disown`. Milestone 7 unit 7.
+# ---------------------------------------------------------------------------
+
+
+def a_notes_pack(
+    root: Path, run: CliRunner, *, files: dict[str, str] | None = None
+) -> Path:
+    """A pack shipping notes, rebuilt from scratch so a second call with
+    fewer files really ships fewer."""
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
+    for relative, text in (files or {"notes/one.md": "One.\n"}).items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    path = root / "boepie.ken.yml"
+    path.write_text(
+        "kennis:\n  schema_version: 1\n"
+        'pack:\n  id: boepie\n  name: n\n  version: "1.0.0"\n'
+        "corpus:\n  notes:\n    - source: notes/\n",
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
+    return path
+
+
+def sole_id(run: CliRunner) -> str:
+    result = run.invoke(main, ["corpus", "list", "--collection", "notes"])
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.output.splitlines() if line.strip()]
+    assert len(lines) == 1, result.output
+    return lines[0].split()[0]
+
+
+def test_sync_writes_a_packs_notes_into_the_corpus(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "added by boepie" in result.output
+    assert run.invoke(main, ["corpus", "list"]).output.strip() != ""
+
+
+def test_sync_records_one_commit_naming_what_it_did(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    """The corpus is kennis's own repository, so a sync is history."""
+    del isolated
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
+
+    history = run.invoke(main, ["corpus", "history"])
+
+    assert "sync(notes)" in history.output
+    assert "1 write" in history.output
+
+
+def test_a_sync_that_changed_nothing_adds_no_commit(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    """An empty commit would fill history with noise."""
+    del isolated
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
+    before = run.invoke(main, ["corpus", "history"]).output.count("\n")
+
+    assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
+
+    assert run.invoke(main, ["corpus", "history"]).output.count("\n") == before
+
+
+def test_sync_names_the_index_command_when_something_changed(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    del isolated
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert "kennis corpus index" in result.output
+
+
+def test_a_synced_note_is_searchable_after_indexing(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    """The crossing test the plan singles out: a document written by one
+    path must be visible to the indexer."""
+    del isolated
+    initialised(run)
+    path = a_notes_pack(
+        tmp_path / "provider",
+        run,
+        files={"notes/one.md": "Calibration runs in four-minute chunks.\n"},
+    )
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["search", "four-minute chunks"])
+
+    assert result.exit_code == 0, result.output
+    assert "four-minute chunks" in result.output
+
+
+def test_an_edited_document_names_the_command_that_keeps_the_edit(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    """Section 5 step 4a says to name `kennis corpus claim <id>`, and the
+    handle is the only way to address a corpus document - so the report
+    names the identifier rather than sending the reader to look it up."""
+    initialised(run)
+    provider = tmp_path / "provider"
+    path = a_notes_pack(provider, run, files={"notes/one.md": "First.\n"})
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
+    document_id = sole_id(run)
+    written = next((isolated / "notes").glob("*.md"))
+    written.write_text(
+        written.read_text().replace("First.", "Mine now."), encoding="utf-8"
+    )
+
+    path = a_notes_pack(provider, run, files={"notes/one.md": "Second.\n"})
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert "you edited this" in result.output
+    assert f"kennis corpus claim {document_id}" in result.output
+
+
+def test_claim_then_disown_returns_the_document_to_the_pack(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    del isolated
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
+    document_id = sole_id(run)
+
+    claimed = run.invoke(main, ["corpus", "claim", document_id])
+    disowned = run.invoke(main, ["corpus", "disown", document_id])
+
+    assert claimed.exit_code == 0, claimed.output
+    assert "yours now" in claimed.output
+    assert disowned.exit_code == 0, disowned.output
+    assert "boepie's again" in disowned.output
+
+
+def test_disowning_a_note_the_user_wrote_is_refused(run: CliRunner, isolated: Path):
+    del isolated
+    initialised(run)
+    assert run.invoke(main, ["remember", "Mine."]).exit_code == 0
+    document_id = sole_id(run)
+
+    result = run.invoke(main, ["corpus", "disown", document_id])
+
+    assert result.exit_code != 0
+    assert "did not come from a pack" in result.output
+
+
+def test_sync_refuses_while_another_command_holds_the_corpus(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    with corpus_lock(isolated):
+        result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code != 0
+    assert "another kennis command is using the corpus" in result.output

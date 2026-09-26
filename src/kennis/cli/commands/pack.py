@@ -94,15 +94,12 @@ def add_command(path: Path) -> None:
         # declared and a sync materialises it. Only when something
         # changed - a provider calling this on every run does not need the
         # same sentence each time.
-        #
-        # One command named and not two. `context sync` exists and runs as
-        # printed; the corpus half does not, so it is described rather
-        # than named. Rule 4.4.
         display.guidance(
-            "nothing is materialised yet: run this in a project to apply "
-            "the pack's context content"
+            "nothing is materialised yet: a sync converges each scope with "
+            "what every installed pack declares"
         )
-        display.next_step("kennis context sync")
+        display.next_step("kennis corpus sync")
+        display.next_step("kennis context sync", note="in each project that wants it")
 
 
 @pack_group.command(name="init", cls=KennisCommand)
@@ -364,9 +361,12 @@ def remove_command(pack_id: str) -> None:
     display.detail("-", describe_removal(removal))
     display.guidance(describe_what_remove_cannot_reach())
     # Named because the limit above is otherwise only a statement of
-    # helplessness: the user cannot be reached by kennis, and they can
-    # reach each project themselves.
-    display.next_step("kennis context sync")
+    # helplessness: kennis cannot reach the user's projects, and the user
+    # can. The corpus it *can* reach, so that one is named too.
+    display.next_step("kennis corpus sync")
+    display.next_step(
+        "kennis context sync", note="in each project that has its content"
+    )
 
 
 __all__ = ["pack_group", "validate_command"]

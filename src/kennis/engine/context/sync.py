@@ -36,9 +36,9 @@ from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Out
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.installed import (
-    InstalledPack,
     declared_content,
     list_installed,
+    refuse_damaged_packs,
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
 
@@ -84,7 +84,7 @@ def sync_bundle(
     """
     started = time.monotonic()
     packs = list_installed(corpus_root).packs
-    _refuse_damaged_packs(packs)
+    refuse_damaged_packs(packs)
     union = declared_content(corpus_root, packs, "context")
     _refuse_reserved_destinations(union.declarations)
 
@@ -96,36 +96,6 @@ def sync_bundle(
     counts = Counter(action.verdict for action in actions)
     _reported(events, actions, started)
     return BundleSync(actions=actions, counts=dict(counts), deferred=union.deferred)
-
-
-def _refuse_damaged_packs(packs: tuple[InstalledPack, ...]) -> None:
-    """A damaged pack is not a pack that ships nothing. Section 5, step 2a.
-
-    **This is the door the silent deletion comes in by.** A store whose
-    content is gone, or whose stored declaration will not parse, declares
-    nothing that can be read - and a sync that took that at face value
-    would find every file the pack owns undeclared and delete all of them,
-    with the report saying `removed` and nothing naming the cause. The
-    design states the rule from exactly this side: "the store says N files
-    and disk has 0" is corruption, never a declaration that the pack now
-    ships nothing.
-
-    So a sync refuses while any installed pack is damaged, rather than
-    converging with what is left. Refusing is an acceptable outcome;
-    proceeding to delete is not.
-    """
-    damaged = sorted(
-        one.state.pack_id
-        for one in packs
-        if not one.verified or one.declaration is None
-    )
-    if not damaged:
-        return
-    raise PackInvalid(
-        "the store is damaged for these packs, so nothing has been "
-        f"synchronised: {', '.join(damaged)}",
-        resolution="kennis pack status",
-    )
 
 
 def _refuse_reserved_destinations(declarations: dict[str, Declaration]) -> None:

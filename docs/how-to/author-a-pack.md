@@ -164,9 +164,17 @@ machine's store at `<corpus>/packs/<id>/`, beside the declaration itself
 and a `state.json` recording what was applied.
 
 **Installing is not applying.** `pack add` records what a provider
-declared; `kennis context sync`, run inside a project, applies the context
-half of it to that project. See
-[Project knowledge](project-context.md#apply-a-pack).
+declared; a **sync** converges a scope with what every installed pack
+declares. There is one per scope:
+
+| command | scope | what it applies |
+|---|---|---|
+| `kennis corpus sync` | machine-global | the pack's notes, as corpus documents |
+| `kennis context sync` | the project you are standing in | the pack's context content |
+
+See [Apply a pack](project-context.md#apply-a-pack) for the rules both
+follow - they are the same rules, and neither will overwrite something you
+own or something you have edited.
 
 Calling it repeatedly is cheap. A second `add` of an unchanged pack reports
 `Unchanged` and rewrites nothing, which is why a provider can call it
@@ -198,6 +206,62 @@ corpus that predates the feature.
 `pack add` re-checks everything `pack validate` checks, including the
 digests, and installs nothing if any of it fails. `validate` is the
 provider's own check and nothing makes them run it.
+
+## Apply it to the corpus
+
+```
+kennis corpus sync
+```
+
+Writes the pack's `corpus.notes` content into the notes collection, as
+ordinary documents: they are searchable after `kennis corpus index`,
+readable with `kennis read`, and they appear in `kennis corpus list`.
+
+**Offline, and notes only.** The papers and documentation sites a pack
+declares are fetched by a command that is not built yet, so `pack add`
+reports them as declared rather than added.
+
+Each document carries `owner: pack:<id>` and records the address it came
+from:
+
+```yaml
+source:
+  from: pack:boepie/install/setup.md
+  via: pack
+  sha256: <the body kennis wrote>
+  pack_sha256: <the file in the store>
+```
+
+The address is recorded rather than read off the filename, because a
+corpus document's filename comes from its title. Without it a sync could
+not find the document it wrote last time and would add a second copy on
+every run. **The identifier never changes**: a provider shipping new
+content rewrites the document in place, so every handle pointing at it
+still works.
+
+The corpus is kennis's own repository, so a sync that changed anything
+makes one commit, visible in `kennis corpus history`.
+
+### Ownership can be moved, in both directions
+
+```
+kennis corpus claim <id>      # the pack's -> yours
+kennis corpus disown <id>     # yours -> back to the pack it came from
+```
+
+`claim` is how you keep a document a pack supplied. It stops every future
+sync from rewriting or removing it, and each run reports that a pack still
+declares it. The content, the identifier and every handle are unchanged,
+and so is the recorded address - that is what lets the sync recognise it
+and leave it alone rather than writing a second copy.
+
+`disown` is the reverse, and only works on a document that came from a
+pack: there is no pack to hand a note you wrote back to.
+
+**An edit is a claim you have not made yet.** If you edit a pack's
+document in place, the next sync notices - it compares the body against
+the digest recorded when kennis wrote it - leaves it alone, and names
+`kennis corpus claim <id>` with the real identifier.
 
 ## See what is installed
 

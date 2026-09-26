@@ -7,7 +7,8 @@ sentence could not rewrap it, group it, or say it differently. Concern #81.
 
 from __future__ import annotations
 
-from kennis.engine.context.sync import BundleSync
+from kennis.engine.corpus.document import Document
+from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.pack.installed import InstalledPack, Overlap, PackRemoval
 from kennis.engine.pack.resolve import ACTING, Action, Verdict
 from kennis.engine.pack.store import PackInstall
@@ -302,30 +303,32 @@ def describe_action(action: Action) -> str:
     return f"{action.address}: {word}"
 
 
-def describe_sync(result: BundleSync) -> str:
+def describe_sync(counts: dict[Verdict, int], *, noun: str = "file") -> str:
     """The one line above the detail, counting what actually happened.
 
     Counts the verdicts that changed something and says so, rather than
-    counting every address looked at: a bundle where nothing moved should
-    not report the same number as one where everything did.
+    counting every address looked at: a destination where nothing moved
+    should not report the same number as one where everything did.
+
+    Takes the counts rather than either sync's result, because the two
+    destinations differ in what they hold and not at all in how the line
+    reads - `noun` is the whole of the difference.
     """
-    changed = sum(
-        count for verdict, count in result.counts.items() if verdict in ACTING
-    )
-    looked = sum(result.counts.values())
+    changed = sum(count for verdict, count in counts.items() if verdict in ACTING)
+    looked = sum(counts.values())
     if not looked:
         return "nothing declared by any installed pack"
     if changed:
-        return f"{count_of(changed, 'file')} changed, of {looked}"
-    held = result.counts.get("edited", 0) + result.counts.get("yours", 0)
+        return f"{count_of(changed, noun)} changed, of {looked}"
+    held = counts.get("edited", 0) + counts.get("yours", 0)
     if held:
-        # Not "already in step": a file kennis declined to write is
-        # precisely a file that is *not* in step, and saying otherwise
+        # Not "already in step": something kennis declined to write is
+        # precisely something that is *not* in step, and saying otherwise
         # would report the protection as if it were agreement.
         if looked == held:
-            return f"{count_of(held, 'file')} left as yours"
-        return f"{count_of(looked - held, 'file')} in step, {held} left as yours"
-    return f"{count_of(looked, 'file')} already in step"
+            return f"{count_of(held, noun)} left as yours"
+        return f"{count_of(looked - held, noun)} in step, {held} left as yours"
+    return f"{count_of(looked, noun)} already in step"
 
 
 def describe_claim_needed(count: int) -> str:
@@ -340,6 +343,43 @@ def describe_claim_needed(count: int) -> str:
         "own edits, so none of them was changed; set `owner: user` in a "
         "file to keep it and stop it being reported"
     )
+
+
+def describe_corpus_claim_needed(count: int) -> str:
+    """Why an edited corpus document was left alone.
+
+    Names `kennis corpus claim`, which the bundle's wording cannot: a
+    corpus document is addressed by an identifier and a command is the
+    only handle on it, where a bundle file is open in the user's editor
+    and one line of its frontmatter is the whole transfer. Section 5
+    step 4a names this command for exactly this case.
+    """
+    return (
+        f"{count_of(count, 'document')} kennis would have written carries "
+        "your own edits, so none of them was changed"
+    )
+
+
+def describe_owner(document: Document) -> str:
+    """Who may overwrite or delete this document, after a transfer."""
+    pack_id = pack_id_of(document.frontmatter.owner)
+    if pack_id is None:
+        return "yours now; no sync will rewrite it or remove it"
+    return f"{pack_id}'s again; the next sync may rewrite it or remove it"
+
+
+def describe_sync_summary(counts: dict[Verdict, int]) -> str:
+    """The one line a sync's commit carries into the corpus history.
+
+    Verdicts rather than outcomes, and in a fixed order, so that two
+    commits doing the same thing read the same way in `corpus history`.
+    """
+    named = [
+        f"{count} {verdict}"
+        for verdict in ("write", "rewrite", "adopt", "delete")
+        if (count := counts.get(verdict, 0))
+    ]
+    return ", ".join(named) if named else "nothing to change"
 
 
 def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
@@ -365,14 +405,16 @@ def describe_what_remove_cannot_reach() -> str:
     workspace content to be gone.
     """
     return (
-        "documents already in the corpus are untouched, and so is this "
-        "pack's content in any project you have checked out"
+        "nothing this pack supplied has been removed: the corpus keeps its "
+        "documents until the next sync, and each project keeps its content "
+        "until it is synchronised there"
     )
 
 
 __all__ = [
     "describe_action",
     "describe_claim_needed",
+    "describe_corpus_claim_needed",
     "describe_damage",
     "describe_declarations",
     "describe_deferred",
@@ -380,11 +422,13 @@ __all__ = [
     "describe_installed",
     "describe_lost_source",
     "describe_overlap",
+    "describe_owner",
     "describe_problem",
     "describe_recorded",
     "describe_refusal",
     "describe_removal",
     "describe_sync",
+    "describe_sync_summary",
     "describe_unreadable",
     "describe_unselected",
     "describe_update_needed",
