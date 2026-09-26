@@ -16,6 +16,7 @@ here.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Final
 
 from kennis.engine.corpus.document import Document
@@ -45,6 +46,20 @@ def count_of(number: int, noun: str, plural: str | None = None) -> str:
     if number == 1:
         return f"1 {noun}"
     return f"{number} {plural or noun + 's'}"
+
+
+def joined(items: Sequence[str]) -> str:
+    """Names in a sentence: `a`, `a and b`, `a, b and c`.
+
+    Here rather than at each call site because a comma-separated list read
+    aloud in the middle of a sentence - "declared by alpha, beta" - sounds
+    like the sentence was cut off.
+    """
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return f"{', '.join(items[:-1])} and {items[-1]}"
 
 
 def describe_change(change: OutOfBandChange) -> str:

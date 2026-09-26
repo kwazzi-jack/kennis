@@ -261,3 +261,15 @@ class PackInvalid(KennisError):
 
     default_message = "a pack file could not be read"
     default_resolution = "kennis pack validate"
+
+
+class PackNotInstalled(KennisError):
+    """No pack of that id is in this machine's store.
+
+    Named rather than treated as a success, because the realistic cause is
+    a mistyped id and reporting "removed" for a pack that was never there
+    tells the user the thing they meant is gone.
+    """
+
+    default_message = "no pack of that id is installed"
+    default_resolution = "kennis pack list"

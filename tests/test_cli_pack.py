@@ -298,16 +298,17 @@ def test_a_damaged_store_is_repaired_and_says_so(
 def test_add_does_not_name_a_command_that_does_not_exist(
     run: CliRunner, corpus: Path, tmp_path: Path
 ):
-    """Rule 4.4 again. "Installed" implies the documents are searchable and
-    they are not, so the report says so - and `corpus sync`, which will
-    change that, is not built, so it is not named. This test changes when
-    it is."""
+    """Rule 4.4 again. "Installed" implies the content is searchable and
+    it is not, so the report says so - and it names the one command that
+    changes that and exists. `corpus sync` does not exist yet, so it is
+    described rather than named; this test changes when it is built."""
     del corpus
     path = a_provider(tmp_path / "provider", run)
 
     result = run.invoke(main, ["pack", "add", str(path)])
 
-    assert "not in the corpus yet" in result.output
+    assert "nothing is materialised yet" in result.output
+    assert "kennis context sync" in result.output
     assert "corpus sync" not in result.output
 
 
@@ -349,6 +350,127 @@ def test_add_is_refused_while_the_corpus_is_locked(
 
     with corpus_lock(corpus):
         result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert result.exit_code != 0
+    assert "another kennis command is using the corpus" in result.output
+
+
+# ---------------------------------------------------------------------------
+# list, status and remove. Milestone 7 unit 6.
+# ---------------------------------------------------------------------------
+
+
+def a_second_provider(root: Path, run: CliRunner, *, identifier: str) -> Path:
+    """Another provider shipping the same documentation project.
+
+    Two packs declaring one item is the state `pack status` exists to
+    report, and it takes two providers to produce it.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{identifier}.ken.yml"
+    path.write_text(
+        HEADER.replace("id: boepie", f"id: {identifier}")
+        + 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n',
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
+    return path
+
+
+def test_list_names_every_installed_pack(run: CliRunner, corpus: Path, isolated: Path):
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "boepie" in result.output
+    assert "0.1.0" in result.output
+
+
+def test_list_says_so_when_there_are_none(run: CliRunner, corpus: Path):
+    result = run.invoke(main, ["pack", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "no packs installed" in result.output
+
+
+def test_status_reports_when_a_pack_was_added(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "boepie" in result.output
+    assert "added " in result.output
+
+
+def test_status_reports_an_overlap_and_names_the_owner(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """The line the design says must be persistent state rather than a
+    sentence printed once inside an automated run."""
+    first = a_second_provider(isolated / "one", run, identifier="alpha")
+    second = a_second_provider(isolated / "two", run, identifier="beta")
+    assert run.invoke(main, ["pack", "add", str(first)]).exit_code == 0
+    assert run.invoke(main, ["pack", "add", str(second)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "stimela" in result.output
+    assert "owns it" in result.output
+
+
+def test_status_reports_a_store_that_does_not_verify(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    (corpus / "packs" / "boepie" / "notes" / "conventions.md").unlink()
+
+    result = run.invoke(main, ["pack", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "not believed" in result.output
+
+
+def test_remove_drops_the_pack_and_says_what_it_did_not_reach(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "remove", "boepie"])
+
+    assert result.exit_code == 0, result.output
+    assert "Removed" in result.output
+    assert "untouched" in result.output
+    assert not (corpus / "packs" / "boepie").exists()
+
+
+def test_removing_a_pack_that_is_not_there_fails_with_the_command_to_run(
+    run: CliRunner, corpus: Path
+):
+    result = run.invoke(main, ["pack", "remove", "nosuch"])
+
+    assert result.exit_code != 0
+    assert "nosuch" in result.output
+    assert "kennis pack list" in result.output
+
+
+def test_remove_refuses_while_another_command_holds_the_corpus(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """A mutation, so it takes the lock every other mutation takes."""
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    with corpus_lock(corpus):
+        result = run.invoke(main, ["pack", "remove", "boepie"])
 
     assert result.exit_code != 0
     assert "another kennis command is using the corpus" in result.output

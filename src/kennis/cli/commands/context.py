@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from kennis.cli import display
+from kennis.cli.context import existing_corpus
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import reporting
 from kennis.engine.context import (
@@ -29,10 +30,18 @@ from kennis.engine.context import (
     reset_bundle,
     workspace_root,
 )
+from kennis.engine.context.sync import BundleSync, sync_bundle
 from kennis.engine.errors import ContextNotFound
+from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from, chunk_parameters
 from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.settings import Settings, load_settings
+from kennis.render.packs import (
+    describe_action,
+    describe_claim_needed,
+    describe_deferred,
+    describe_sync,
+)
 from kennis.render.words import count_of, describe_freshness
 
 
@@ -132,6 +141,67 @@ def index_command_for_context() -> None:
     # the thing a user has to do and kennis will not - the repository is
     # theirs.
     display.guidance(f"commit {bundle.name}/ to share these notes with the project")
+
+
+@context_group.command(name="sync", cls=KennisCommand)
+def sync_command_for_context() -> None:
+    """Converge this project's context with every installed pack.
+
+    **Offline.** A pack's context content is already in this machine's
+    store, put there by `kennis pack add`, so this copies and never
+    fetches.
+
+    Nothing you own is touched. A file whose `owner` is you is reported
+    and left alone on every run, and so is a pack's file you have edited
+    in place - kennis will not overwrite your writing to apply a
+    provider's release.
+
+    **kennis does not commit.** The bundle is in your repository.
+    """
+    bundle = require_bundle()
+    context = existing_corpus()
+    with reporting() as events:
+        result = sync_bundle(bundle, context.corpus_root, events=events)
+    display.operation("Synchronised", describe_sync(result))
+    for action in result.actions:
+        display.detail(_SYNC_MARKERS[action.verdict], describe_action(action))
+    _report_what_was_left(result)
+    if any(action.verdict in ACTING for action in result.actions):
+        # The index is derived from these documents and this command did
+        # not rebuild it, for the same reason `remember --context` does
+        # not: indexing is a separate decision with its own cost.
+        display.next_step("kennis context index")
+
+
+# The detail marker for each verdict. Layout rather than wording, so it
+# lives here. `>` is the skipped marker, and both skips earn it: one file
+# kennis would have written and did not, one it was never asked to.
+_SYNC_MARKERS: dict[str, str] = {
+    "write": "+",
+    "rewrite": "~",
+    "adopt": "~",
+    "delete": "-",
+    "keep": "=",
+    "edited": ">",
+    "yours": ">",
+}
+
+
+def _report_what_was_left(result: BundleSync) -> None:
+    """The two things a sync did not do, each said once above nothing.
+
+    Both are reported every run rather than only on the run they began,
+    because a provider whose file never appears, and a user whose edit is
+    never applied, both need telling more than once.
+    """
+    edited = result.counts.get("edited", 0)
+    if edited:
+        # Guidance rather than a note: nothing is going wrong. kennis
+        # protected the user's writing and is saying so, and `warning:`
+        # would read as a fault in a bundle that is behaving correctly.
+        display.guidance(describe_claim_needed(edited))
+    if result.deferred:
+        display.note(describe_deferred(result.deferred))
 
 
 @context_group.command(name="status", cls=KennisCommand)
