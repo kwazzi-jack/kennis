@@ -20,13 +20,12 @@ from kennis.engine.context import (
     CONTEXT_COLLECTION,
     LANDING_FILENAME,
     BundleCreated,
-    bundle_documents,
     bundle_status,
     find_bundle,
     index_bundle,
     index_root_for,
     init_bundle,
-    owned_by_kennis,
+    removable_documents,
     reset_bundle,
     workspace_root,
 )
@@ -40,6 +39,7 @@ from kennis.render.packs import (
     describe_action,
     describe_claim_needed,
     describe_deferred,
+    describe_moved,
     describe_sync,
 )
 from kennis.render.words import count_of, describe_freshness
@@ -176,9 +176,10 @@ def sync_command_for_context() -> None:
 def _report_what_was_left(result: BundleSync) -> None:
     """The two things a sync did not do, each said once above nothing.
 
-    Both are reported every run rather than only on the run they began,
-    because a provider whose file never appears, and a user whose edit is
-    never applied, both need telling more than once.
+    All three are reported every run rather than only on the run they
+    began, because a provider whose file never appears, a user whose edit
+    is never applied, and a file that is not where the pack says it is
+    all need telling more than once.
     """
     edited = result.counts.get("edited", 0)
     if edited:
@@ -186,6 +187,11 @@ def _report_what_was_left(result: BundleSync) -> None:
         # protected the user's writing and is saying so, and `warning:`
         # would read as a fault in a bundle that is behaving correctly.
         display.guidance(describe_claim_needed(edited))
+    if result.moved:
+        # Guidance, not a diagnostic: the user moved the file and kennis
+        # honoured it. `note` prints `warning:`, which would read as a
+        # fault in a bundle that is doing exactly what was asked.
+        display.guidance(describe_moved(result.moved))
     if result.deferred:
         display.note(describe_deferred(result.deferred))
 
@@ -243,21 +249,26 @@ def status_command_for_context() -> None:
 def reset_command(yes: bool) -> None:
     """Remove the index and anything kennis owns, keeping your own files.
 
-    **Today that is the index and nothing else.** Files kennis owns are
-    files a pack applied, and there are no packs yet - everything
-    `remember --context` writes is marked `owner: user`, and so is anything
-    you wrote by hand, including a file with no frontmatter at all. The
-    command is here so that the behaviour exists and is tested before packs
-    arrive, and it is already the honest way to force a full rebuild.
+    A file kennis owns is one a pack applied - `owner: pack:<id>` in its
+    frontmatter. Everything `remember --context` writes is marked `owner:
+    user`, and so is anything you wrote by hand, including a file with no
+    frontmatter at all, so a reset leaves all of it.
+
+    Renaming a file to a dot-prefixed name keeps it out of the index; it
+    does not make it yours, and a reset removes it if a pack owns it.
+    `LANDING.md` and `.skeleton.md` are kept whatever they say, because
+    they are yours to maintain and `context init` restores either one.
 
     A file with a header kennis cannot read counts as yours. The two
     mistakes do not cost the same.
     """
     bundle = require_bundle()
+    # Asked, not restated. The prompt has to offer exactly what the reset
+    # will take, and a second copy of the rule here is a copy that can
+    # stop matching - as it did when the engine widened to see a file the
+    # user had hidden.
     owned = [
-        path.relative_to(bundle).as_posix()
-        for path in bundle_documents(bundle)
-        if owned_by_kennis(path)
+        path.relative_to(bundle).as_posix() for path in removable_documents(bundle)
     ]
     has_index = index_root_for(bundle).is_dir()
     if not owned and not has_index:

@@ -146,3 +146,37 @@ def test_a_directory_holding_a_users_file_survives(bundle: Path):
     reset_bundle(bundle)
 
     assert (bundle / "conventions").is_dir()
+
+
+def test_a_pack_file_the_user_hid_is_still_removed(bundle: Path):
+    """Renaming a pack's file to a dot-prefixed name keeps it out of the
+    index; it does not make it the user's. A reset that could not see it
+    left pack content behind in a bundle it reported as clean. Concern
+    #247."""
+    hidden = a_pack_file(bundle, ".naming.md")
+
+    report = reset_bundle(bundle)
+
+    assert not hidden.exists()
+    assert report.removed == (".naming.md",)
+
+
+def test_a_hidden_pack_file_in_a_group_is_removed_with_its_directory(bundle: Path):
+    a_pack_file(bundle, "conventions/.naming.md")
+
+    reset_bundle(bundle)
+
+    assert not (bundle / "conventions").exists()
+
+
+def test_a_skeleton_below_the_root_is_left_alone(bundle: Path):
+    """Each directory may carry its own template, so the exclusion is by
+    name at any depth and not only at the bundle root. Marked `owner:
+    pack` for the reason the root scaffolding test gives: otherwise the
+    ownership rule would protect it and the exclusion would go
+    untested."""
+    skeleton = a_pack_file(bundle, "conventions/.skeleton.md")
+
+    reset_bundle(bundle)
+
+    assert skeleton.is_file()

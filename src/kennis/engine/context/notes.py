@@ -28,7 +28,7 @@ from pathlib import Path
 import yaml
 
 from kennis.engine._atomic import replace_file
-from kennis.engine.context.bundle import LANDING_FILENAME
+from kennis.engine.context.bundle import INDEX_DIRNAME, LANDING_FILENAME
 from kennis.engine.corpus.intake import sha256_of
 from kennis.engine.corpus.layout import title_filename, unique_filename
 from kennis.engine.errors import InputError
@@ -115,6 +115,28 @@ def bundle_documents(bundle: Path) -> list[Path]:
         for path in bundle.rglob("*.md")
         if path.name != LANDING_FILENAME
         and not any(part.startswith(".") for part in path.relative_to(bundle).parts)
+    )
+
+
+def bundle_files(bundle: Path) -> list[Path]:
+    """Every markdown file under `bundle`, hidden ones included.
+
+    The wider walk, and the difference from `bundle_documents` is the
+    point of having both. That one answers *what is indexed*, and so
+    drops a dot-prefixed path, because renaming a file to one is the
+    documented way to keep it out of the index. This one answers *what is
+    there*, which is what a caller deciding whether kennis wrote a file
+    needs: a file the user hid is hidden from search, not from kennis.
+
+    Only `.index/` is excluded, because kennis owns it and nothing in it
+    is a document. Callers that must protect the scaffolding -
+    `LANDING.md` and `.skeleton.md` - exclude it by name, since this walk
+    no longer does so by side effect.
+    """
+    return sorted(
+        path
+        for path in bundle.rglob("*.md")
+        if INDEX_DIRNAME not in path.relative_to(bundle).parts
     )
 
 
@@ -210,4 +232,4 @@ def _document(title: str, body: str, digest: str) -> str:
     )
 
 
-__all__ = ["BundleNote", "bundle_documents", "remember_in_bundle"]
+__all__ = ["BundleNote", "bundle_documents", "bundle_files", "remember_in_bundle"]

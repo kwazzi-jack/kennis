@@ -30,7 +30,7 @@ from pathlib import Path
 
 from kennis.engine._atomic import replace_file
 from kennis.engine.context.bundle import LANDING_FILENAME
-from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.notes import bundle_files
 from kennis.engine.errors import DocumentInvalid, PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.frontmatter import split_frontmatter
@@ -71,6 +71,11 @@ class BundleSync:
     actions: tuple[Action, ...]
     counts: dict[Verdict, int]
     deferred: tuple[tuple[str, str], ...]
+    # The files found somewhere other than the address their pack
+    # declares, as `(address, where it is now)`. A sync follows such a
+    # file rather than writing the declared address a second time, so
+    # without this the report would name a path that is not on disk.
+    moved: tuple[tuple[str, str], ...]
 
 
 def sync_bundle(
@@ -88,14 +93,38 @@ def sync_bundle(
     union = declared_content(corpus_root, packs, "context")
     _refuse_reserved_destinations(union.declarations)
 
-    actions = resolve(union.declarations, _present(bundle))
+    present, locations = _present(bundle)
+    actions = resolve(union.declarations, present)
     _refuse_unrecognised_owners(actions)
 
     for action in actions:
-        _applied(bundle, action)
+        _applied(bundle, action, locations)
     counts = Counter(action.verdict for action in actions)
     _reported(events, actions, started)
-    return BundleSync(actions=actions, counts=dict(counts), deferred=union.deferred)
+    return BundleSync(
+        actions=actions,
+        counts=dict(counts),
+        deferred=union.deferred,
+        moved=_moved(bundle, actions, locations),
+    )
+
+
+def _moved(
+    bundle: Path, actions: tuple[Action, ...], locations: dict[str, Path]
+) -> tuple[tuple[str, str], ...]:
+    """Every action whose file is not at the address its pack declares.
+
+    Only for an address a pack still declares: a file with no
+    declaration is deleted or is the user's, and neither is a move worth
+    reporting.
+    """
+    return tuple(
+        (action.address, locations[action.address].relative_to(bundle).as_posix())
+        for action in actions
+        if action.declaration is not None
+        and action.address in locations
+        and locations[action.address] != bundle / action.address
+    )
 
 
 def _refuse_reserved_destinations(declarations: dict[str, Declaration]) -> None:
@@ -143,18 +172,42 @@ def _refuse_unrecognised_owners(actions: tuple[Action, ...]) -> None:
     )
 
 
-def _present(bundle: Path) -> dict[str, Existing]:
-    """Every bundle document, as the resolution table needs to see it.
+def _present(bundle: Path) -> tuple[dict[str, Existing], dict[str, Path]]:
+    """Every bundle file, keyed by the address it stands for, and where it is.
 
-    Uses `bundle_documents`, so the two rules that decide what a bundle
-    holds - no dot-prefixed path at any depth, and not `LANDING.md` - are
-    stated once and apply here too.
+    **Wider than `bundle_documents` on purpose.** That function answers
+    what a bundle *indexes*, and excludes a dot-prefixed path because
+    renaming a file to one is the documented way to keep it out of the
+    index. A file the user hid that way is still a file kennis wrote, and
+    a sync that could not see it wrote the declared address again and
+    left two copies of the same content. Concern #247. `bundle_files`
+    states the wider rule; it excludes only `.index/`.
+
+    **A file kennis wrote is keyed by the address it records, not by
+    where it sits**, so hiding it or renaming it moves the file rather
+    than resurrecting the old path. A recorded address is honoured only
+    when no file actually sits at it and no earlier file has claimed it;
+    that keeps every key distinct however many copies of one file a user
+    has made, and leaves the copies to resolve on their own paths, where
+    they are pack-owned and undeclared and so are deleted and reported.
+
+    Returns the values the resolution table reads, and separately the
+    path each one was found at - which the table must not see, because it
+    decides on owner and digests and nothing else.
     """
+    files = bundle_files(bundle)
+    occupied = {path.relative_to(bundle).as_posix() for path in files}
+
     found: dict[str, Existing] = {}
-    for path in bundle_documents(bundle):
-        address = path.relative_to(bundle).as_posix()
+    locations: dict[str, Path] = {}
+    for path in files:
+        here = path.relative_to(bundle).as_posix()
         frontmatter, body = split_frontmatter(path.read_text(encoding="utf-8"))
-        written, shipped = _recorded_in(frontmatter)
+        written, shipped, recorded = _recorded_in(frontmatter)
+        claimed = (
+            recorded is not None and recorded not in occupied and recorded not in found
+        )
+        address = recorded if claimed and recorded is not None else here
         found[address] = Existing(
             address=address,
             owner=_owner_in(frontmatter),
@@ -162,7 +215,8 @@ def _present(bundle: Path) -> dict[str, Existing]:
             written_digest=written,
             pack_digest=shipped,
         )
-    return found
+        locations[address] = path
+    return found, locations
 
 
 def _owner_in(frontmatter: dict[str, object]) -> str:
@@ -178,8 +232,10 @@ def _owner_in(frontmatter: dict[str, object]) -> str:
     return str(owner) if owner is not None else "user"
 
 
-def _recorded_in(frontmatter: dict[str, object]) -> tuple[str | None, str | None]:
-    """The two digests a pack's file records: what kennis wrote, and from what.
+def _recorded_in(
+    frontmatter: dict[str, object],
+) -> tuple[str | None, str | None, str | None]:
+    """What a pack's file records: two digests, and the address it stands for.
 
     `sha256` is the body kennis wrote and is what a user edit moves.
     `pack_sha256` is the store file it was built from and is what a
@@ -191,21 +247,32 @@ def _recorded_in(frontmatter: dict[str, object]) -> tuple[str | None, str | None
     and it means something else. Read only when `source.via` says `pack`,
     so the two cannot be confused - though `owner` decides the row before
     either is ever consulted for a user's file.
+
+    `address` is the declared destination the file was written for, which
+    is the only fact about itself a moved file cannot recover from where
+    it sits.
     """
     source = frontmatter.get("source")
     if not isinstance(source, dict) or source.get("via") != "pack":
-        return None, None
+        return None, None, None
     written = source.get("sha256")
     shipped = source.get("pack_sha256")
+    address = source.get("address")
     return (
         str(written) if written is not None else None,
         str(shipped) if shipped is not None else None,
+        str(address) if address is not None else None,
     )
 
 
-def _applied(bundle: Path, action: Action) -> None:
-    """Carry out one action. `keep`, `yours` and `edited` write nothing."""
-    path = bundle / action.address
+def _applied(bundle: Path, action: Action, locations: dict[str, Path]) -> None:
+    """Carry out one action. `keep`, `yours` and `edited` write nothing.
+
+    Writes to where the file was found rather than to the declared path,
+    so a pack's file the user hid or renamed is updated in place instead
+    of being written a second time at the address it left.
+    """
+    path = locations.get(action.address, bundle / action.address)
     if action.verdict == "delete":
         path.unlink(missing_ok=True)
         _prune(bundle, path.parent)
@@ -267,6 +334,7 @@ def _document(declaration: Declaration) -> str:
         "  via: pack\n"
         f"  pack: {declaration.pack_id}\n"
         f"  at: '{written_at}'\n"
+        f"  address: {declaration.address}\n"
         f"  sha256: {content_digest(body.encode('utf-8'))}\n"
         f"  pack_sha256: {declaration.digest}\n"
         "---\n"

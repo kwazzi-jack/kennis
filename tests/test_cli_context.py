@@ -933,3 +933,28 @@ def test_sync_makes_no_commit_in_the_users_repository(
         stdin=subprocess.DEVNULL,
     )
     assert log.stdout.strip() == ""
+
+
+def test_context_reset_removes_a_pack_file_the_user_hid(bundle: Path, run: CliRunner):
+    """The command used to decide for itself what a reset would reach,
+    with a copy of the engine's rule that had stopped matching it: the
+    engine removed a hidden pack file and the command, seeing none,
+    returned before calling the engine at all."""
+    hidden = a_pack_file(bundle, "conventions/.naming.md")
+
+    result = run.invoke(main, ["context", "reset", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert not hidden.exists()
+    assert "conventions/.naming.md" in result.output
+
+
+def test_the_prompt_names_a_hidden_pack_file_too(bundle: Path, run: CliRunner):
+    """What the prompt offers to remove and what the reset removes are
+    the same list, or the confirmation is not informed consent."""
+    hidden = a_pack_file(bundle, ".naming.md")
+
+    result = run.invoke(main, ["context", "reset"], input="n\n")
+
+    assert ".naming.md" in result.output
+    assert hidden.is_file()

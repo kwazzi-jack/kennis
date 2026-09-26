@@ -38,6 +38,7 @@ from kennis.engine.context.reset import (
     USER_OWNER,
     BundleReset,
     owned_by_kennis,
+    removable_documents,
     reset_bundle,
 )
 from kennis.engine.context.status import (
@@ -73,6 +74,7 @@ __all__ = [
     "load_bundle_index",
     "owned_by_kennis",
     "remember_in_bundle",
+    "removable_documents",
     "reset_bundle",
     "workspace_root",
 ]
