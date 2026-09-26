@@ -91,6 +91,7 @@ nav:
       - Add documents: how-to/add-documents.md
       - Search and read: how-to/search-and-read.md
       - Project knowledge: how-to/project-context.md
+      - Author a pack: how-to/author-a-pack.md
       - Choose an embedding backend: how-to/embedding-backends.md
       - Keep credentials out of the config: how-to/credentials.md
       - Inspect and recover: how-to/history.md

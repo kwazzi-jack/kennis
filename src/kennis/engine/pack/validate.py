@@ -22,8 +22,6 @@ digests, the other source - and `render/` turns it into a sentence.
 
 from __future__ import annotations
 
-import hashlib
-import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal
@@ -31,8 +29,8 @@ from typing import Literal
 from packaging.version import InvalidVersion, Version
 
 from kennis import __version__
-from kennis.engine._glob import globstar_regex
 from kennis.engine.errors import PackInvalid
+from kennis.engine.pack.content import address_of, content_digest, read_source
 from kennis.engine.pack.schema import (
     SCHEMA_VERSION,
     ContentSource,
@@ -105,19 +103,6 @@ class PackReport:
         return self.refusal is None and not self.problems
 
 
-def content_digest(data: bytes) -> str:
-    """The digest a pack records for one of its files.
-
-    sha256 of the bytes. Named here rather than left to the caller because a
-    pack is an interchange format that another tool may write without kennis,
-    and `state.json`'s `file_sha256` already fixes the family. Deliberately
-    not `rag.binding.document_digest`, which is blake2b over decoded text and
-    exists to keep chunking stable - a different question with a different
-    answer.
-    """
-    return hashlib.sha256(data).hexdigest()
-
-
 def validate_pack(path: Path) -> PackReport:
     """Read the pack at `path` and check it against kennis and its content.
 
@@ -130,7 +115,7 @@ def validate_pack(path: Path) -> PackReport:
         raise PackInvalid(f"{path} could not be read: {error}") from error
     pack = load_pack(text)
 
-    refusal = _version_refusal(pack)
+    refusal = version_refusal(pack)
     if refusal is not None:
         # A newer schema may use sections this kennis cannot interpret, so
         # judging its content would be judging it by rules that do not apply.
@@ -156,7 +141,7 @@ def validate_pack(path: Path) -> PackReport:
     )
 
 
-def _version_refusal(pack: Pack) -> VersionRefusal | None:
+def version_refusal(pack: Pack) -> VersionRefusal | None:
     """Whether this kennis may read this pack at all."""
     if pack.kennis.schema_version > SCHEMA_VERSION:
         return VersionRefusal(
@@ -231,76 +216,26 @@ def _contains(outer: str, inner: str) -> bool:
 def _checked_source(
     root: Path, section: str, source: ContentSource, pack: Pack
 ) -> list[PackProblem]:
-    """Walk one source: hygiene on every file, then digests if there are any."""
-    directory = root / source.source
-    if not directory.is_dir():
+    """Judge what the walk found under one source.
+
+    The walk itself is `content.read_source`, shared with `pack update` so
+    the two cannot disagree about which files a source holds.
+    """
+    found = read_source(root, source)
+    if not found.exists:
         return [PackProblem(kind="source-missing", path=source.source)]
 
-    problems: list[PackProblem] = []
-    on_disk: dict[str, str] = {}
-    for relative, path in _walked(directory):
-        if not _selected(relative, source):
-            continue
-        address = _address(source.source, relative)
-        if path.is_symlink():
-            # Not followed, so the two cases are told apart by where the link
-            # points rather than by whether it was read.
-            kind: ProblemKind = (
-                "symlink" if _resolves_inside(path, root) else "escapes-root"
-            )
-            problems.append(PackProblem(kind=kind, path=address))
-            continue
-        if not _resolves_inside(path, root):
-            problems.append(PackProblem(kind="escapes-root", path=address))
-            continue
-        on_disk[relative] = content_digest(path.read_bytes())
+    problems = [
+        PackProblem(kind="escapes-root", path=address) for address in found.escaping
+    ]
+    problems += [
+        PackProblem(kind="symlink", path=address) for address in found.symlinks
+    ]
 
     recorded = _recorded_digests(pack, section, source.source)
     if recorded is None:
         return problems
-    return problems + _compared(source.source, on_disk, recorded)
-
-
-def _walked(directory: Path) -> list[tuple[str, Path]]:
-    """Every file under `directory`, as a POSIX relative path and a path.
-
-    `followlinks=False` so a symlinked directory is not descended into: the
-    link itself is reported by the caller and its contents never become the
-    pack's. `os.walk` rather than `rglob` because `rglob` follows directory
-    symlinks and offers no way to say otherwise.
-    """
-    found: list[tuple[str, Path]] = []
-    for parent, _, names in os.walk(directory, followlinks=False):
-        for name in sorted(names):
-            path = Path(parent) / name
-            found.append((path.relative_to(directory).as_posix(), path))
-    return sorted(found)
-
-
-def _selected(relative: str, source: ContentSource) -> bool:
-    """Whether `include` takes this file and `exclude` does not drop it."""
-    included = any(
-        globstar_regex(pattern).fullmatch(relative) for pattern in source.include
-    )
-    excluded = any(
-        globstar_regex(pattern).fullmatch(relative) for pattern in source.exclude
-    )
-    return included and not excluded
-
-
-def _address(source: str, relative: str) -> str:
-    """A file's path relative to the pack root, for reporting."""
-    return (PurePosixPath(source.strip("/")) / relative).as_posix()
-
-
-def _resolves_inside(path: Path, root: Path) -> bool:
-    """Whether `path` resolves under the pack root.
-
-    The zip-slip check of section 7: a declared source is validated as a
-    string by the model, and this is the half that only the filesystem can
-    answer.
-    """
-    return path.resolve().is_relative_to(root.resolve())
+    return problems + _compared(source.source, found.digests, recorded)
 
 
 def _recorded_digests(pack: Pack, section: str, source: str) -> dict[str, str] | None:
@@ -328,13 +263,13 @@ def _compared(
     for relative, digest in sorted(on_disk.items()):
         if relative not in recorded:
             problems.append(
-                PackProblem(kind="undigested", path=_address(source, relative))
+                PackProblem(kind="undigested", path=address_of(source, relative))
             )
         elif recorded[relative] != digest:
             problems.append(
                 PackProblem(
                     kind="digest-mismatch",
-                    path=_address(source, relative),
+                    path=address_of(source, relative),
                     recorded=recorded[relative],
                     actual=digest,
                 )
@@ -342,7 +277,7 @@ def _compared(
     for relative in sorted(recorded):
         if relative not in on_disk:
             problems.append(
-                PackProblem(kind="digest-absent", path=_address(source, relative))
+                PackProblem(kind="digest-absent", path=address_of(source, relative))
             )
     return problems
 
@@ -353,6 +288,9 @@ __all__ = [
     "ProblemKind",
     "RefusalKind",
     "VersionRefusal",
+    # Re-exported so a caller checking a digest has one import site whether
+    # it is validating, updating or installing.
     "content_digest",
     "validate_pack",
+    "version_refusal",
 ]

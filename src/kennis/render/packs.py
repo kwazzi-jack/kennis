@@ -66,10 +66,8 @@ def describe_update_needed(count: int) -> str:
     generated block was not rewritten - so saying it once above the list is
     better than repeating it on every line.
 
-    **It names no command.** `kennis pack update` is the fix and it is not
-    built yet, so printing it would print an instruction that fails - rule
-    4.4, and the same reason `words.remedies_for` withholds
-    `kennis corpus claim`. It joins this sentence when the command lands.
+    The command that fixes it - `kennis pack update` - is printed once
+    beside this line rather than on every finding, for the same reason.
     """
     if count == 1:
         return "1 file disagrees with the generated block"

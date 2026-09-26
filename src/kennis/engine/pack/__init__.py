@@ -10,6 +10,12 @@ milestone 7 is stated in terms of its models.
 
 from __future__ import annotations
 
+from kennis.engine.pack.content import (
+    SourceContent,
+    content_digest,
+    read_source,
+)
+from kennis.engine.pack.scaffold import DEFAULT_VERSION, SCHEMA_URL, scaffold_pack
 from kennis.engine.pack.schema import (
     SCHEMA_VERSION,
     ContentSource,
@@ -26,8 +32,19 @@ from kennis.engine.pack.schema import (
     schema_document,
     schema_path,
 )
+from kennis.engine.pack.update import GENERATED_MARKER, PackUpdate, update_pack
+from kennis.engine.pack.validate import (
+    PackProblem,
+    PackReport,
+    VersionRefusal,
+    validate_pack,
+    version_refusal,
+)
 
 __all__ = [
+    "DEFAULT_VERSION",
+    "GENERATED_MARKER",
+    "SCHEMA_URL",
     "SCHEMA_VERSION",
     "ContentSource",
     "CorpusSection",
@@ -39,7 +56,18 @@ __all__ = [
     "LiteratureEntry",
     "Pack",
     "PackIdentity",
+    "PackProblem",
+    "PackReport",
+    "PackUpdate",
+    "SourceContent",
+    "VersionRefusal",
+    "content_digest",
     "load_pack",
+    "read_source",
+    "scaffold_pack",
     "schema_document",
     "schema_path",
+    "update_pack",
+    "validate_pack",
+    "version_refusal",
 ]
