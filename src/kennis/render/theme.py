@@ -142,7 +142,17 @@ ROLES: Final[dict[str, Role]] = {
     "removed": Role(colour="red"),
     "changed": Role(colour="yellow"),
     "unchanged": Role(),
-    # The fallback for a marker character with no meaning assigned.
+    # No colour, for the same reason `unchanged` has none: kennis did not act
+    # on the item and nothing is wrong. What distinguishes the two is the
+    # character - `=` is present and identical, `>` was declined and is not
+    # here at all - not the colour, because neither wants the eye.
+    "skipped": Role(),
+    # The one outcome that means something went wrong, so the one that takes
+    # the error colour. Bold as well as red, because `removed` is already
+    # plain red and a failure must not read as a deletion.
+    "failed": Role(colour="red", bold=True),
+    # The fallback for a marker character with no meaning assigned. Nothing
+    # in `Outcome` reaches it any more; a test enforces that.
     "marker": Role(bold=True),
     # Fragments the message highlighter picks out of an ordinary line.
     "command": Role(colour="cyan", bold=True),

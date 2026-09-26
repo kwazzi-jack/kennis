@@ -14,6 +14,8 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from kennis.cli import display
+from kennis.cli.sink import marker_for
+from kennis.engine.events import Outcome
 
 
 @pytest.fixture(autouse=True)
@@ -94,9 +96,27 @@ def test_a_detail_is_indented_one_step_under_its_operation():
     )
 
 
-@pytest.mark.parametrize("marker", ["+", "-", "~", "="])
+@pytest.mark.parametrize("marker", ["+", "-", "~", "=", ">", "!"])
 def test_every_marker_sits_in_the_same_column(marker: str):
     assert capture(lambda: display.detail(marker, "a")) == f"  {marker} a\n"
+
+
+@pytest.mark.parametrize("outcome", list(Outcome), ids=lambda one: one.value)
+def test_every_outcome_has_a_marker_role_of_its_own(outcome: Outcome):
+    """Not the fallback. `skipped` and `failed` reached it for five
+    milestones, so a skipped item and a failed one rendered identically -
+    bold, no colour - and the only thing telling them apart was the
+    character. The parametrised test above had the same four markers as the
+    role map, so it agreed with the omission rather than catching it.
+    """
+    assert display.marker_role(marker_for(outcome)) != display.FALLBACK_MARKER_ROLE
+
+
+def test_a_marker_nobody_assigned_still_renders():
+    """The fallback is not dead code: `detail` takes a string, and a caller
+    may pass a character the outcome vocabulary does not contain."""
+    assert display.marker_role("?") == display.FALLBACK_MARKER_ROLE
+    assert capture(lambda: display.detail("?", "a")) == "  ? a\n"
 
 
 class TestRowsAreNotDetails:

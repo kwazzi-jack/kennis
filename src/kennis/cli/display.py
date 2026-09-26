@@ -419,7 +419,29 @@ def operation(
 
 # What each detail marker means, and so how it is coloured. `=` is unchanged
 # and gets no colour at all - it is the absence of news.
-_MARKER_ROLES = {"+": "added", "-": "removed", "~": "changed", "=": "unchanged"}
+_MARKER_ROLES = {
+    "+": "added",
+    "-": "removed",
+    "~": "changed",
+    "=": "unchanged",
+    ">": "skipped",
+    "!": "failed",
+}
+
+# The role a marker with no entry falls back to. Named so a test can say
+# "no outcome reaches the fallback" without reaching into the map.
+FALLBACK_MARKER_ROLE = "marker"
+
+
+def marker_role(marker: str) -> str:
+    """The theme role one detail marker is styled through.
+
+    Public because the interesting assertion about it is a negative one -
+    that every `Outcome`'s marker has a role of its own rather than the
+    fallback - and that is not checkable through rendered output, where a
+    role with no colour and the fallback differ only in weight.
+    """
+    return _MARKER_ROLES.get(marker, FALLBACK_MARKER_ROLE)
 
 
 def detail(marker: str, text: str) -> None:
@@ -440,7 +462,7 @@ def detail(marker: str, text: str) -> None:
     # Assembled rather than styled over a base: a `muted` base is `dim`, and
     # rich composes styles, so a green marker on top of it comes out dim green
     # - which is precisely the colour that was meant to stand out.
-    role = _MARKER_ROLES.get(marker, "marker")
+    role = marker_role(marker)
     line = Text.assemble(
         _DETAIL_INDENT,
         (marker, rich_style_name(role)),
