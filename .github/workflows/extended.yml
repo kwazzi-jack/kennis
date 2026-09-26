@@ -1,0 +1,80 @@
+# The tests the ordinary run deselects, on a schedule and on demand.
+#
+# `pytest`'s default here is `-m "not network and not slow"`, set in
+# pyproject, and that is right for a run that gates a push: one needs a host
+# to be up and the other needs a model download. But sixteen tests that CI
+# never runs are sixteen tests whose failure nobody would see - which is the
+# shape of concern #253, where a fresh runner found three defects the green
+# local suite had held for a milestone.
+#
+# So they run weekly, and on demand. A failure here is not a broken commit;
+# it is a host that moved, a model that changed, or a defect in a path the
+# fast suite cannot reach. It is read, not reverted.
+#
+# **Nothing here uploads a document to a third party.** The one test that
+# would - the hosted converter - skips without a key, and no key is provided
+# to this workflow. rules.md 4.5: sending a document to a third party is
+# never a default, and a scheduled job is the last place it should become
+# one.
+
+name: extended
+
+on:
+  schedule:
+    # Monday, early UTC. Weekly rather than nightly: these tests answer
+    # "has the world moved", and the world does not move nightly.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: extended-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  slow:
+    name: slow tests
+    runs-on: ubuntu-latest
+    # A real MinerU conversion downloads its models on a cold runner, and
+    # the scale tests build a corpus large enough to measure.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # A full version, not `@v10`: astral-sh/setup-uv publishes no moving
+      # major tag, so `@v10` resolves to nothing and the job fails at setup.
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv python install 3.12
+
+      # `--extra mineru` is the point of this job. Without it the real
+      # conversion test skips, and a job whose one interesting test silently
+      # skips reports nothing - which is worse than not running it.
+      - run: uv sync --frozen --extra mineru --python 3.12
+
+      - name: slow tests
+        run: uv run --no-sync --python 3.12 pytest -m slow -v --durations=10
+
+  network:
+    name: network tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv python install 3.12
+
+      - run: uv sync --frozen --python 3.12
+
+      # No credentials, deliberately. Every test here reaches a public host
+      # - arXiv, a Sphinx site, Hugging Face - and the one that would reach
+      # a paid service with a document of ours skips for want of a key.
+      - name: network tests
+        run: uv run --no-sync --python 3.12 pytest -m network -v --durations=10
