@@ -183,7 +183,16 @@ markers = [
 xfail_strict = true
 # An upstream deprecation becomes a failing test at the moment it appears,
 # rather than a runtime break later.
-filterwarnings = ["error"]
+filterwarnings = [
+  "error",
+  # `huggingface_hub` calls a deprecated `hf_xet` entry point while
+  # downloading a model, and an error here kills the download part-way and
+  # leaves the cache without `model_optimized.onnx`, so the next test fails
+  # loading a file that was never written. Only reachable on a cold cache,
+  # which is why it appeared first on CI and never here. Narrow on purpose:
+  # every other warning stays an error. Concern #284.
+  "ignore:hf_xet.download_files\\(\\) is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["src/kennis"]
