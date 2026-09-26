@@ -42,6 +42,47 @@ def a_pack_file(root: Path, body: str = HEADER) -> Path:
     return path
 
 
+def test_init_writes_a_file_named_for_the_pack(
+    run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    result = run.invoke(main, ["pack", "init", "--id", "boepie", "--name", "n"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "boepie.ken.yml").is_file()
+
+
+def test_init_refuses_an_existing_file_without_naming_a_command(
+    run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`PackInvalid` points at `kennis pack validate` by default, and
+    validating the file you just failed to overwrite answers a question
+    nobody asked. Found by running the command; rule 4.4 is about commands
+    that do not run, and this is one that runs and does not help."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "boepie.ken.yml").write_text("corpus: {}\n", encoding="utf-8")
+
+    result = run.invoke(main, ["pack", "init", "--id", "boepie", "--name", "n"])
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+    assert "kennis pack validate" not in result.output
+
+
+def test_init_then_validate_is_a_clean_round_trip(
+    run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The scaffold is the first pack file every provider has, so a scaffold
+    its own validator complains about would be the worst possible start."""
+    monkeypatch.chdir(tmp_path)
+    run.invoke(main, ["pack", "init", "--id", "boepie", "--name", "n"])
+
+    result = run.invoke(main, ["pack", "validate", "boepie.ken.yml"])
+
+    assert result.exit_code == 0, result.output
+
+
 def test_a_valid_pack_exits_zero_and_names_it(run: CliRunner, tmp_path: Path):
     result = run.invoke(main, ["pack", "validate", str(a_pack_file(tmp_path))])
 
@@ -83,13 +124,12 @@ def test_a_stale_digest_exits_non_zero_so_a_pipeline_stops(
     assert "notes/one.md" in result.output
 
 
-def test_a_digest_problem_does_not_name_a_command_that_does_not_exist(
+def test_a_digest_problem_names_the_command_that_fixes_it_once(
     run: CliRunner, tmp_path: Path
 ):
-    """Rule 4.4. `kennis pack update` is the fix and it is unit 4, so the
-    report says what happened and names nothing to type. This test changes
-    when the command lands; until then it is the thing stopping the report
-    printing an instruction that fails."""
+    """Rule 4.4, now satisfiable: `kennis pack update` exists. Printed once
+    beside the count rather than on each finding, because all three digest
+    findings have the same cause and the same fix. Concern #258."""
     notes = tmp_path / "notes"
     notes.mkdir()
     (notes / "one.md").write_text("Body.\n", encoding="utf-8")
@@ -106,7 +146,8 @@ def test_a_digest_problem_does_not_name_a_command_that_does_not_exist(
 
     result = run.invoke(main, ["pack", "validate", str(path)])
 
-    assert "kennis pack update" not in result.output
+    assert result.output.count("kennis pack update") == 1
+    assert str(path) in result.output
     assert "2 files disagree" in result.output
 
 
