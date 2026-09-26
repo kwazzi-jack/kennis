@@ -31,3 +31,8 @@ credentials.toml
 
 # The built documentation site. `mkdocs build` regenerates it.
 /site/
+
+# Coverage artefacts, written by `pytest --cov`.
+.coverage
+.coverage.*
+htmlcov/

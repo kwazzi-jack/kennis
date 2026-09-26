@@ -10,9 +10,9 @@ down the left edge and you have the order things happened in::
     Initialized corpus at ~/knowledge in 7ms
     Created 3 corpus directories in 0ms
       + /home/brian/.local/share/kennis/literature
-    Rebuilt literature index - 2 of 19 documents added in 1m11s
-    Registered kennis with claude, copilot
-      hint: run `kennis register --force`
+    Added 1 document to notes in 12ms
+      + Calibration runs in four-minute chunks
+      hint: run `kennis corpus index`
 
 **Indentation, not alignment.** Right-aligning verbs into a fixed column is
 uv's and cargo's convention, and it gives the payload one column at the cost
@@ -691,10 +691,10 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
 
     **On stderr, and transient.** The bar is progress, not output: it is
     erased when the step ends, leaving the `operation` line that summarises
-    it, and it never lands in a redirected file. `kennis sync > log.txt`
-    therefore gives clean report lines with no bar residue - which is not true
-    of a bar written to stdout, where every redraw is another set of escape
-    codes in the file.
+    it, and it never lands in a redirected file. So
+    `kennis corpus index > log.txt` gives clean report lines with no bar
+    residue - which is not true of a bar written to stdout, where every
+    redraw is another set of escape codes in the file.
 
     Yields a no-op when `progress_wanted()` is False, so a caller never has to
     branch on it.
@@ -762,11 +762,16 @@ _next_steps_wanted = True
 def following_steps(wanted: bool) -> Iterator[None]:
     """Suppress the next-step advice inside the block when `wanted` is False.
 
-    `corpus sync` closes by telling you to run `corpus index`. Inside
-    `kennis setup` that is advice to do what the next phase does anyway, and
-    twice over for two collections. Suppressing it here keeps the decision
-    with the command that knows it is a composite, rather than teaching four
-    sub-commands to ask whether anyone is above them.
+    A command that ends by naming the command to run next is right on its
+    own and wrong inside a composite that is about to run that command
+    itself - and wrong twice over when the composite drives two
+    collections. Suppressing it here keeps the decision with the command
+    that knows it is a composite, rather than teaching every sub-command
+    to ask whether anything is above it.
+
+    **Nothing calls this yet.** The composite commands it exists for are
+    the ones design section 9 lists beneath its verb table, and none of
+    them is built. Concern #268.
     """
     global _next_steps_wanted
     previous = _next_steps_wanted
