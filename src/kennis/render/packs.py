@@ -31,6 +31,38 @@ def describe_install(install: PackInstall) -> str:
     return f"{counted} installed"
 
 
+def describe_declarations(install: PackInstall) -> str | None:
+    """What the pack asked for that no file was copied for, or None.
+
+    **Declared, never added.** Literature is fetched and documentation is
+    crawled by a sync that does not exist yet, so a word implying the
+    papers are in the corpus would promise something untrue.
+    """
+    parts = []
+    if install.literature:
+        parts.append(count_of(install.literature, "paper"))
+    if install.docs:
+        parts.append(count_of(install.docs, "documentation site"))
+    if not parts:
+        return None
+    return f"{' and '.join(parts)} declared, not yet fetched"
+
+
+def describe_unselected(count: int) -> str:
+    """Files in a declared source that no `include` pattern matched.
+
+    Said out loud because the default is `**/*.md`, so a PDF or a `.csv`
+    an author dropped into the source is discarded by a pattern they may
+    never have written. A file an explicit `exclude:` removed is not
+    counted here: that one was intent.
+    """
+    # No pronoun. The first wording ended "so no digest was recorded for
+    # it", which reads as "5 files ... for it" - the same slip as "1 file
+    # disagree" earlier in this milestone. Avoiding the construction is
+    # more reliable than conditioning on the count twice in one sentence.
+    return f"{count_of(count, 'file')} matched no include pattern"
+
+
 def describe_verdict(report: PackReport) -> str:
     """What a clean check actually established.
 
@@ -123,10 +155,12 @@ def _short(digest: str | None) -> str:
 
 
 __all__ = [
+    "describe_declarations",
     "describe_install",
     "describe_problem",
     "describe_recorded",
     "describe_refusal",
+    "describe_unselected",
     "describe_update_needed",
     "describe_verdict",
     "remedy_for",
