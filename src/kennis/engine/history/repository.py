@@ -39,6 +39,10 @@ _GITIGNORE: Final = """\
 # vector once, so committing the cache would store them twice for a saving
 # that only helps the machine that built them.
 index/*/vectors/
+
+# The pack store: a cache of what each provider last handed kennis. Derived,
+# re-pushed by the provider's next run, and deliberately not history.
+packs/
 """
 
 _README: Final = """\

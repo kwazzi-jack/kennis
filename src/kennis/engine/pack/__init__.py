@@ -32,6 +32,14 @@ from kennis.engine.pack.schema import (
     schema_document,
     schema_path,
 )
+from kennis.engine.pack.store import (
+    PackInstall,
+    PackState,
+    install_pack,
+    pack_root,
+    packs_root,
+    read_state,
+)
 from kennis.engine.pack.update import GENERATED_MARKER, PackUpdate, update_pack
 from kennis.engine.pack.validate import (
     PackProblem,
@@ -56,14 +64,20 @@ __all__ = [
     "LiteratureEntry",
     "Pack",
     "PackIdentity",
+    "PackInstall",
     "PackProblem",
     "PackReport",
+    "PackState",
     "PackUpdate",
     "SourceContent",
     "VersionRefusal",
     "content_digest",
+    "install_pack",
     "load_pack",
+    "pack_root",
+    "packs_root",
     "read_source",
+    "read_state",
     "scaffold_pack",
     "schema_document",
     "schema_path",

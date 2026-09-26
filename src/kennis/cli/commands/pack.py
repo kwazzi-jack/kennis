@@ -14,12 +14,16 @@ from pathlib import Path
 import click
 
 from kennis.cli import display
+from kennis.cli.context import existing_corpus
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import reporting
+from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
+from kennis.engine.pack.store import install_pack
 from kennis.engine.pack.update import update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.render.packs import (
+    describe_install,
     describe_problem,
     describe_recorded,
     describe_refusal,
@@ -31,10 +35,51 @@ from kennis.render.words import count_of
 
 _DIGEST_KINDS = frozenset({"digest-mismatch", "digest-absent", "undigested"})
 
+# The operation verb and the detail marker for each install outcome. Layout
+# rather than wording, so it lives here and not in `render/`.
+_INSTALL_VERBS = {
+    "installed": "Installed",
+    "unchanged": "Unchanged",
+    "repaired": "Repaired",
+}
+_INSTALL_MARKERS = {"installed": "+", "unchanged": "=", "repaired": "~"}
+
 
 @click.group(name="pack", cls=KennisGroup)
 def pack_group() -> None:
     """Author and check a pack of knowledge."""
+
+
+@pack_group.command(name="add", cls=KennisCommand)
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+def add_command(path: Path) -> None:
+    """Install a pack into this machine's store.
+
+    **Meant to be called by the provider**, from its own sync command, on
+    every run: `boepie sync` ends by handing kennis the path to its own
+    `.ken.yml`. Calling it repeatedly is cheap - a pack whose file and
+    store both check out is recognised and nothing is rewritten.
+
+    No network, and nothing is materialised into the corpus yet: this
+    records what the provider declared. `corpus sync` and `context sync`
+    converge the documents with it, and neither is built.
+    """
+    context = existing_corpus()
+    with corpus_lock(context.corpus_root), reporting() as events:
+        install = install_pack(context.corpus_root, path, events=events)
+    display.operation(_INSTALL_VERBS[install.outcome], install.pack_id)
+    display.detail(_INSTALL_MARKERS[install.outcome], describe_install(install))
+    if install.outcome != "unchanged":
+        # No command named, and no backticks: `corpus sync` is what will
+        # materialise this and it is not built, so naming it would print an
+        # instruction that fails - rule 4.4. Said at all because "Installed"
+        # otherwise implies the documents are searchable, and they are not.
+        # Only when something changed: a provider calling this on every run
+        # does not need the same sentence each time.
+        display.guidance(
+            "the documents are not in the corpus yet; the command that "
+            "materialises them is not built"
+        )
 
 
 @pack_group.command(name="init", cls=KennisCommand)

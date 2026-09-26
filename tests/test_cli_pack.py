@@ -12,6 +12,7 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.validate import content_digest
 
 HEADER = """
@@ -28,12 +29,32 @@ pack:
 def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("KENNIS_LOG_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
     return tmp_path
 
 
 @pytest.fixture
 def run() -> CliRunner:
     return CliRunner()
+
+
+@pytest.fixture
+def corpus(run: CliRunner, isolated: Path) -> Path:
+    result = run.invoke(main, ["corpus", "init"])
+    assert result.exit_code == 0, result.output
+    return isolated / "corpus"
+
+
+def a_provider(root: Path, run: CliRunner) -> Path:
+    """A pack with content, updated, as a provider would hand it over."""
+    (root / "notes").mkdir(parents=True, exist_ok=True)
+    (root / "notes" / "conventions.md").write_text("Recipes.\n", encoding="utf-8")
+    path = root / "p.ken.yml"
+    path.write_text(
+        HEADER + "corpus:\n  notes:\n    - source: notes/\n", encoding="utf-8"
+    )
+    assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
+    return path
 
 
 def a_pack_file(root: Path, body: str = HEADER) -> Path:
@@ -212,3 +233,122 @@ def test_a_path_that_is_not_there_is_refused_by_the_argument(
     result = run.invoke(main, ["pack", "validate", str(tmp_path / "absent.ken.yml")])
 
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# `pack add`
+# ---------------------------------------------------------------------------
+
+
+def test_add_installs_a_pack_into_the_corpus_store(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    path = a_provider(tmp_path / "provider", run)
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert result.exit_code == 0, result.output
+    assert "Installed" in result.output
+    assert (corpus / "packs" / "boepie" / "notes" / "conventions.md").is_file()
+
+
+def test_add_without_a_corpus_names_the_command_that_makes_one(
+    run: CliRunner, isolated: Path
+):
+    """Checked before the engine is reached, so every command fails the same
+    way rather than each discovering it somewhere different."""
+    path = a_provider(isolated / "provider", run)
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert result.exit_code != 0
+    assert "kennis corpus init" in result.output
+
+
+def test_a_second_add_says_nothing_changed(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """A provider calls this on every run, so the common case is this one."""
+    del corpus
+    path = a_provider(tmp_path / "provider", run)
+    run.invoke(main, ["pack", "add", str(path)])
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert result.exit_code == 0, result.output
+    assert "Unchanged" in result.output
+
+
+def test_a_damaged_store_is_repaired_and_says_so(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """`Repaired` rather than `Installed`: "your provider shipped something
+    new" and "what was here was damaged" are different facts, and a reader
+    seeing the second twice has something to investigate."""
+    path = a_provider(tmp_path / "provider", run)
+    run.invoke(main, ["pack", "add", str(path)])
+    (corpus / "packs" / "boepie" / "notes" / "conventions.md").unlink()
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert "Repaired" in result.output
+    assert (corpus / "packs" / "boepie" / "notes" / "conventions.md").is_file()
+
+
+def test_add_does_not_name_a_command_that_does_not_exist(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """Rule 4.4 again. "Installed" implies the documents are searchable and
+    they are not, so the report says so - and `corpus sync`, which will
+    change that, is not built, so it is not named. This test changes when
+    it is."""
+    del corpus
+    path = a_provider(tmp_path / "provider", run)
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert "not in the corpus yet" in result.output
+    assert "corpus sync" not in result.output
+
+
+def test_the_reminder_is_not_repeated_on_an_unchanged_add(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    del corpus
+    path = a_provider(tmp_path / "provider", run)
+    run.invoke(main, ["pack", "add", str(path)])
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert "not in the corpus yet" not in result.output
+
+
+def test_a_pack_whose_digests_are_stale_installs_nothing(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """The installing side re-checks what `pack validate` checks, because
+    nothing makes a provider run it."""
+    path = a_provider(tmp_path / "provider", run)
+    (tmp_path / "provider" / "notes" / "conventions.md").write_text(
+        "Edited after the update.\n", encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert result.exit_code != 0
+    assert not (corpus / "packs" / "boepie").exists()
+
+
+def test_add_is_refused_while_the_corpus_is_locked(
+    run: CliRunner, corpus: Path, tmp_path: Path
+):
+    """`timeout=0`, so a second caller is told the corpus is busy rather
+    than blocking - which for an automated provider run means a failure it
+    can retry, not a hang nobody sees."""
+    path = a_provider(tmp_path / "provider", run)
+
+    with corpus_lock(corpus):
+        result = run.invoke(main, ["pack", "add", str(path)])
+
+    assert result.exit_code != 0
+    assert "another kennis command is using the corpus" in result.output
