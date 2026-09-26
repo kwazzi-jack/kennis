@@ -10,10 +10,11 @@ interface, and `-v` becomes the only way to find out what a command did.
 **The library logs; the application configures.** `kennis/__init__.py`
 installs a `NullHandler` and nothing else; `start_logging` is called by an
 entry point. This module sits at the top level rather than under `cli/`
-because `kennis serve` needs the same file, and a second front end reaching
-into the first is the coupling `render/` exists to avoid.
+because the MCP server will need the same file, and a second front end
+reaching into the first is the coupling `render/` exists to avoid.
 
-**stdout is never a sink.** Under `serve`, stdout is the JSON-RPC wire.
+**stdout is never a sink.** Under an MCP server, stdout is the JSON-RPC
+wire.
 boepie was burned by exactly this: a library's module-level console put 567
 bytes of INFO into the stream and the client answered `Invalid JSON: trailing
 characters at line 1 column 5`. Nothing here writes to stdout.
