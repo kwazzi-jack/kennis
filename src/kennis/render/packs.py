@@ -410,6 +410,31 @@ def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     )
 
 
+def describe_moved(moved: tuple[tuple[str, str], ...]) -> str:
+    """Files found somewhere other than where their pack declares them.
+
+    Said because a sync follows such a file instead of writing the
+    declared address again, which is quiet: the reader asked for
+    `conventions/naming.md` and it is not there. Naming both paths is
+    what lets them see that nothing is missing.
+
+    **Phrased for the standing arrangement, not for this run.** A moved
+    file is reported on every sync, including the runs where nothing was
+    written, so a sentence saying it *was updated* would be false on most
+    of them.
+    """
+    where = "; ".join(f"{address} is at {path}" for address, path in moved)
+    kept = (
+        "is kept in step where it is"
+        if len(moved) == 1
+        else "are kept in step where they are"
+    )
+    return (
+        f"{count_of(len(moved), 'file')} is not at the address its pack "
+        f"declares and {kept}: {where}"
+    )
+
+
 def describe_what_remove_cannot_reach() -> str:
     """The sentence `pack remove` closes with.
 
@@ -435,6 +460,7 @@ __all__ = [
     "describe_install",
     "describe_installed",
     "describe_lost_source",
+    "describe_moved",
     "describe_overlap",
     "describe_owner",
     "describe_problem",

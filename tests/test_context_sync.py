@@ -537,3 +537,165 @@ def test_a_pack_whose_content_is_gone_refuses_the_sync(
 
     assert raised.value.resolution == "kennis pack status"
     assert (bundle / "one.md").is_file()
+
+
+# ---------------------------------------------------------------------------
+# A file the user moved
+# ---------------------------------------------------------------------------
+#
+# A bundle file kennis wrote records the address it stands for, so the
+# sync finds it wherever the user has since put it. Without that, hiding
+# a pack's file - the documented way to keep something out of the index -
+# made the next sync write the declared address again and leave two
+# copies of the same content. Concern #247.
+
+
+def test_the_file_records_the_address_it_stands_for(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, group="reference")
+
+    sync_bundle(bundle, corpus)
+
+    source = header_of(bundle / "reference" / "one.md")["source"]
+    assert isinstance(source, dict)
+    assert source["address"] == "reference/one.md"
+
+
+def test_hiding_a_pack_file_does_not_produce_a_second_copy(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    """The defect itself: renaming to a dot-prefixed name is how a user
+    keeps a file out of the index, and it used to make the file invisible
+    to the sync rather than known to it."""
+    installed(corpus, tmp_path)
+    sync_bundle(bundle, corpus)
+    (bundle / "one.md").rename(bundle / ".one.md")
+
+    result = sync_bundle(bundle, corpus)
+
+    assert not (bundle / "one.md").exists()
+    assert result.counts == {"keep": 1}
+
+
+def test_a_hidden_pack_file_is_updated_where_it_now_sits(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, files={"content/one.md": "First.\n"})
+    sync_bundle(bundle, corpus)
+    (bundle / "one.md").rename(bundle / ".one.md")
+    installed(corpus, tmp_path, files={"content/one.md": "Second.\n"})
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.counts == {"rewrite": 1}
+    assert body_of(bundle / ".one.md") == "Second.\n"
+    assert not (bundle / "one.md").exists()
+
+
+def test_a_hidden_pack_file_the_user_edited_is_still_protected(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, files={"content/one.md": "First.\n"})
+    sync_bundle(bundle, corpus)
+    hidden = bundle / ".one.md"
+    (bundle / "one.md").rename(hidden)
+    hidden.write_text(hidden.read_text(encoding="utf-8") + "Mine.\n", encoding="utf-8")
+    installed(corpus, tmp_path, files={"content/one.md": "Second.\n"})
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.counts == {"edited": 1}
+    assert "Mine.\n" in hidden.read_text(encoding="utf-8")
+
+
+def test_a_hidden_pack_file_is_removed_when_the_pack_drops_it(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, files={"content/one.md": "One.\n"})
+    sync_bundle(bundle, corpus)
+    (bundle / "one.md").rename(bundle / ".one.md")
+    installed(corpus, tmp_path, files={"content/two.md": "Two.\n"})
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.counts == {"write": 1, "delete": 1}
+    assert not (bundle / ".one.md").exists()
+
+
+def test_a_renamed_pack_file_is_followed_rather_than_restored(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    """A rename and a hiding are the same act on the same kind of file,
+    so they get the same answer: the file is followed. The alternative -
+    writing the declared address back and deleting the rename - destroys
+    what the user did."""
+    installed(corpus, tmp_path)
+    sync_bundle(bundle, corpus)
+    (bundle / "one.md").rename(bundle / "renamed.md")
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.counts == {"keep": 1}
+    assert not (bundle / "one.md").exists()
+    assert (bundle / "renamed.md").is_file()
+
+
+def test_a_second_copy_of_a_pack_file_is_deleted_not_duplicated(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    """Two files recording one address. The declared path is the one
+    kept; the other is a pack-owned file at an address no pack declares,
+    which is the delete row, and it is reported as one."""
+    installed(corpus, tmp_path)
+    sync_bundle(bundle, corpus)
+    shutil.copyfile(bundle / "one.md", bundle / "copy.md")
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.counts == {"keep": 1, "delete": 1}
+    assert (bundle / "one.md").is_file()
+    assert not (bundle / "copy.md").exists()
+
+
+def test_a_pack_file_recording_no_address_is_keyed_by_its_path(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    """The fallback. A header kennis cannot read an address out of is
+    still a header naming an owner and two digests, and the file resolves
+    on its path as it always did."""
+    installed(corpus, tmp_path)
+    sync_bundle(bundle, corpus)
+    written = bundle / "one.md"
+    before = written.read_text(encoding="utf-8")
+    after = before.replace("  address: one.md\n", "")
+    assert after != before, "the address line to remove was not there"
+    written.write_text(after, encoding="utf-8")
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.counts == {"keep": 1}
+
+
+def test_a_file_that_moved_is_reported_with_where_it_now_is(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    """The sync follows a moved file silently otherwise, and the report
+    then names an address that is not on disk."""
+    installed(corpus, tmp_path, group="reference")
+    sync_bundle(bundle, corpus)
+    moved = bundle / "reference" / ".one.md"
+    (bundle / "reference" / "one.md").rename(moved)
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.moved == (("reference/one.md", "reference/.one.md"),)
+
+
+def test_a_file_where_its_pack_declares_it_is_not_reported_as_moved(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path)
+    sync_bundle(bundle, corpus)
+
+    assert sync_bundle(bundle, corpus).moved == ()

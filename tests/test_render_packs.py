@@ -45,6 +45,7 @@ from kennis.render.packs import (
     describe_install,
     describe_installed,
     describe_lost_source,
+    describe_moved,
     describe_overlap,
     describe_problem,
     describe_recorded,
@@ -652,3 +653,22 @@ def test_an_unfetched_declaration_is_named_and_not_counted_alone():
 
 def test_one_unfetched_declaration_takes_the_singular():
     assert describe_unfetched(("arxiv:1",)).startswith("1 declaration")
+
+
+def test_a_moved_file_is_named_with_both_paths():
+    """Both, because the declared address is how a pack refers to the
+    file and the path is where the reader will find it."""
+    said = describe_moved((("conventions/naming.md", "conventions/.naming.md"),))
+
+    assert "conventions/naming.md" in said
+    assert "conventions/.naming.md" in said
+
+
+def test_several_moved_files_are_counted_and_listed():
+    said = describe_moved(
+        (("a.md", ".a.md"), ("b.md", "kept/b.md")),
+    )
+
+    assert said.startswith("2 files")
+    assert "a.md is at .a.md" in said
+    assert "b.md is at kept/b.md" in said

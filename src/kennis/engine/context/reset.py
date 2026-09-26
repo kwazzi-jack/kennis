@@ -18,6 +18,11 @@ kennis-written and user-maintained, so deleting them would destroy edits a
 reset was never asked to touch. `init_bundle` restores a missing one on its
 own, which is the command for wanting them fresh.
 
+**A file the user hid is still removed if a pack owns it.** Renaming a
+file to a dot-prefixed name keeps it out of the index; it does not
+transfer ownership. Reading only the indexed files left pack content
+behind in a bundle the command reported as clean. Concern #247.
+
 **Ownership is read leniently and the asymmetry is deliberate.** A file with
 no frontmatter, or with a header that will not parse, counts as the user's.
 Keeping a pack's file costs a stale file that the next sync overwrites;
@@ -32,11 +37,22 @@ from pathlib import Path
 
 import yaml
 
-from kennis.engine.context.bundle import index_root_for
-from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.bundle import (
+    LANDING_FILENAME,
+    SKELETON_FILENAME,
+    index_root_for,
+)
+from kennis.engine.context.notes import bundle_files
 from kennis.engine.frontmatter import split_frontmatter
 
 USER_OWNER = "user"
+
+# Kennis wrote these and the user maintains them, so a reset leaves them
+# where they are. Excluded by name at any depth, because each directory
+# may carry its own template. They used to be excluded by side effect -
+# the narrower walk dropped every dot-prefixed path - and that stopped
+# being true when the walk widened to see files a user had hidden.
+SCAFFOLDING = frozenset({LANDING_FILENAME, SKELETON_FILENAME})
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +78,24 @@ def owned_by_kennis(path: Path) -> bool:
     return isinstance(owner, str) and owner != USER_OWNER
 
 
+def removable_documents(bundle: Path) -> list[Path]:
+    """Every document a reset would remove, in the order it removes them.
+
+    Separate from `reset_bundle` so that a caller wanting to *say* what
+    will go - a confirmation prompt - asks rather than restates. The
+    command line used to carry its own copy of this rule, and when the
+    engine's widened to see a file the user had hidden, the copy did not:
+    the prompt found nothing, the command returned before calling the
+    engine, and a reset that would have removed the file removed
+    nothing.
+    """
+    return [
+        path
+        for path in bundle_files(bundle)
+        if path.name not in SCAFFOLDING and owned_by_kennis(path)
+    ]
+
+
 def reset_bundle(bundle: Path) -> BundleReset:
     """Remove the index and every document kennis owns.
 
@@ -70,9 +104,7 @@ def reset_bundle(bundle: Path) -> BundleReset:
     """
     removed: list[str] = []
     emptied: set[Path] = set()
-    for path in bundle_documents(bundle):
-        if not owned_by_kennis(path):
-            continue
+    for path in removable_documents(bundle):
         removed.append(path.relative_to(bundle).as_posix())
         path.unlink()
         emptied.add(path.parent)
@@ -115,4 +147,11 @@ def _remove_tree(root: Path) -> None:
     root.rmdir()
 
 
-__all__ = ["USER_OWNER", "BundleReset", "owned_by_kennis", "reset_bundle"]
+__all__ = [
+    "SCAFFOLDING",
+    "USER_OWNER",
+    "BundleReset",
+    "owned_by_kennis",
+    "removable_documents",
+    "reset_bundle",
+]
