@@ -3,8 +3,7 @@
 **Two roles, told apart by their object** (design section 9). `init`,
 `update` and `validate` act on a `.ken.yml` at a path - authoring, which is
 what a provider does in its own release pipeline. `add`, `remove`, `list`
-and `status` act on the installed store - consuming. `validate` serves both,
-and it is the only one of them that exists yet.
+and `status` act on the installed store - consuming. `validate` serves both.
 """
 
 from __future__ import annotations
@@ -18,19 +17,34 @@ from kennis.cli.context import existing_corpus
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import reporting
 from kennis.engine.locking import corpus_lock
+from kennis.engine.pack.installed import (
+    InstalledPack,
+    PackListing,
+    list_installed,
+    overlaps_between,
+    remove_pack,
+)
 from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
 from kennis.engine.pack.store import install_pack
 from kennis.engine.pack.update import PackUpdate, update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.render.packs import (
+    describe_damage,
     describe_declarations,
     describe_install,
+    describe_installed,
+    describe_lost_source,
+    describe_overlap,
     describe_problem,
     describe_recorded,
     describe_refusal,
+    describe_removal,
+    describe_unreadable,
     describe_unselected,
     describe_update_needed,
     describe_verdict,
+    describe_what_remove_cannot_reach,
+    describe_when,
     remedy_for,
 )
 from kennis.render.words import count_of
@@ -75,16 +89,20 @@ def add_command(path: Path) -> None:
     if declared is not None:
         display.detail(">", declared)
     if install.outcome != "unchanged":
-        # No command named, and no backticks: `corpus sync` is what will
-        # materialise this and it is not built, so naming it would print an
-        # instruction that fails - rule 4.4. Said at all because "Installed"
-        # otherwise implies the documents are searchable, and they are not.
-        # Only when something changed: a provider calling this on every run
-        # does not need the same sentence each time.
+        # Said at all because "Installed" otherwise implies the content is
+        # searchable, and it is not: this records what the provider
+        # declared and a sync materialises it. Only when something
+        # changed - a provider calling this on every run does not need the
+        # same sentence each time.
+        #
+        # One command named and not two. `context sync` exists and runs as
+        # printed; the corpus half does not, so it is described rather
+        # than named. Rule 4.4.
         display.guidance(
-            "the documents are not in the corpus yet; the command that "
-            "materialises them is not built"
+            "nothing is materialised yet: run this in a project to apply "
+            "the pack's context content"
         )
+        display.next_step("kennis context sync")
 
 
 @pack_group.command(name="init", cls=KennisCommand)
@@ -233,6 +251,122 @@ def _say_what_was_checked(report: PackReport) -> None:
     # warning, because a pack that ships no content is not going wrong.
     marker = "+" if report.digests_checked else ">"
     display.detail(marker, describe_verdict(report))
+
+
+@pack_group.command(name="list", cls=KennisCommand)
+def list_command() -> None:
+    """Every pack installed on this machine.
+
+    The listing is the whole answer, so it is a listing and not a report:
+    the pack id leads, because it is the column you copy out of and hand
+    to `pack remove`.
+    """
+    context = existing_corpus()
+    listing = list_installed(context.corpus_root)
+    # Padded so the versions line up. Layout, not wording, so it is decided
+    # here: `corpus list` needs none of this because a surrogate id is fixed
+    # width, and a pack id is whatever the provider called itself.
+    width = max((len(one.state.pack_id) for one in listing.packs), default=0)
+    for installed in listing.packs:
+        display.row(installed.state.pack_id.ljust(width), describe_installed(installed))
+    if listing.unreadable:
+        _report_unreadable(listing)
+    if not listing.packs and not listing.unreadable:
+        display.note("no packs installed")
+
+
+def _report_unreadable(listing: PackListing) -> None:
+    """Directories under `packs/` that are not installed packs.
+
+    Named with the command that ends the state, not only reported.
+    Concern #244: a reader told something is wrong and not told what to
+    type has been sent round a loop. Removing is the only way out - there
+    is no state file to repair from, and `add` would rewrite the
+    directory without ever mentioning what was there.
+    """
+    display.note(describe_unreadable(listing.unreadable))
+    for name in listing.unreadable:
+        display.next_step(f"kennis pack remove {name}")
+
+
+@pack_group.command(name="status", cls=KennisCommand)
+def status_command() -> None:
+    """What each installed pack recorded, and where two of them collide.
+
+    **The overlaps are the reason this command exists.** Two packs
+    declaring the same paper or the same documentation project is resolved
+    silently, by whichever was installed first, and a resolution nobody is
+    told about is one nobody can correct. Reported here every run rather
+    than once, inside an automated provider run nobody reads.
+    """
+    context = existing_corpus()
+    listing = list_installed(context.corpus_root)
+    for installed in listing.packs:
+        display.operation(installed.state.pack_id, describe_installed(installed))
+        display.detail("=", describe_when(installed))
+        _report_damage(installed)
+    _report_overlaps(listing)
+    if listing.unreadable:
+        _report_unreadable(listing)
+    if not listing.packs and not listing.unreadable:
+        display.note("no packs installed")
+
+
+def _report_damage(installed: InstalledPack) -> None:
+    """A damaged pack, and the command that puts it back.
+
+    The store records where the pack came from, so when that path still
+    resolves the repair is one command. When it does not - a provider
+    uninstalled, a checkout deleted - there is nothing on this machine to
+    repair from and the only answer is the provider's own run, which
+    kennis cannot name because it is not a kennis command.
+    """
+    damage = describe_damage(installed)
+    if damage is None:
+        return
+    display.detail("!", damage)
+    source = Path(installed.state.source_path)
+    if source.is_file():
+        display.next_step(f"kennis pack add {source}")
+    else:
+        display.hint(describe_lost_source(installed))
+
+
+def _report_overlaps(listing: PackListing) -> None:
+    """Every item more than one installed pack declares.
+
+    Under its own heading rather than beneath one of the packs: an overlap
+    belongs to the pair, and filing it under either one would say it twice
+    or say it in the wrong place.
+    """
+    found = overlaps_between(listing.packs)
+    if not found:
+        return
+    display.operation("Shared", count_of(len(found), "item"))
+    for overlap in found:
+        display.detail("~", describe_overlap(overlap))
+
+
+@pack_group.command(name="remove", cls=KennisCommand)
+@click.argument("pack_id")
+def remove_command(pack_id: str) -> None:
+    """Drop a pack from this machine's store.
+
+    **It reaches the store and nothing else.** Documents already in the
+    corpus stay, and so does this pack's content in any project you have
+    checked out - kennis keeps no registry of your projects, so it cannot
+    reach them. They converge when each one is next synchronised.
+    """
+    context = existing_corpus()
+    with corpus_lock(context.corpus_root), reporting() as events:
+        removal = remove_pack(context.corpus_root, pack_id, events=events)
+    display.operation("Removed", removal.pack_id)
+    display.detail("-", describe_removal(removal))
+    display.guidance(describe_what_remove_cannot_reach())
+    # Named because the limit above is otherwise only a statement of
+    # helplessness: the user cannot be reached by kennis, and they can
+    # reach each project themselves.
+    display.next_step("kennis context sync")
 
 
 __all__ = ["pack_group", "validate_command"]

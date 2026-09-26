@@ -130,12 +130,12 @@ kennis context reset
 Removes the index and anything kennis owns, and keeps your own files. It
 asks first and names what will go; `-y` skips the question.
 
-**Today that is the index and nothing else.** Files kennis owns are files a
-pack applied, and there are no packs yet - everything `remember --context`
-writes is `owner: user`, and so is anything you wrote by hand, including a
-file with no frontmatter at all and one whose header kennis cannot read. The
-two mistakes do not cost the same: keeping a pack's file costs a stale file
-the next sync overwrites, and deleting yours costs your writing.
+Files kennis owns are the files a pack applied - the ones carrying
+`owner: pack:<id>`. Everything `remember --context` writes is `owner: user`,
+and so is anything you wrote by hand, including a file with no frontmatter at
+all and one whose header kennis cannot read. The two mistakes do not cost the
+same: keeping a pack's file costs a stale file the next sync overwrites, and
+deleting yours costs your writing.
 
 `LANDING.md`, `.skeleton.md`, `bundle.json` and `.gitignore` are left alone
 even though kennis wrote them, because you are expected to edit the first
@@ -144,6 +144,59 @@ two. `kennis context init` puts back any one of them you delete.
 There is no undo inside kennis. A bundle lives in your repository and kennis
 keeps no history of it, so `git checkout` is the way back - if you
 committed.
+
+## Apply a pack
+
+```
+kennis context sync
+```
+
+A **pack** is knowledge that arrives from outside, as data - see
+[Author a pack](author-a-pack.md). `kennis pack add` puts it in this
+machine's store; this command applies the context half of every installed
+pack to the project you are standing in.
+
+**Offline.** The content is already on this machine, so this copies and
+never fetches.
+
+Each file it writes carries `owner: pack:<id>`, which is what tells kennis's
+files from yours. Nothing you own is touched:
+
+| your file | what sync does |
+|---|---|
+| anything with `owner: user`, or no frontmatter | never touched, never mentioned |
+| a file with `owner: user` that a pack also declares | left alone and **reported every run** |
+| a pack's file you have edited in place | left alone and reported; your edit stays |
+| a pack's file you have not touched | rewritten when the provider ships a change |
+| a pack's file no pack declares any more | removed - unless you edited it |
+
+The second row is reported on every run rather than once. A pack wanting a
+file you own is a standing disagreement, not an event, and you are entitled
+to know about it each time.
+
+**An edit is never overwritten and never deleted.** If you open a
+pack-shipped note, fix an error and save it, kennis notices - it compares
+the body against the digest it recorded when it wrote the file - and leaves
+it alone from then on, saying so. To settle it, change `owner:` to `user` in
+that file: it becomes yours, and the pack stops asking.
+
+**A damaged pack stops the sync rather than emptying your bundle.** If a
+pack's store is missing content, or its stored declaration will not parse,
+kennis refuses and names the pack. It does not read "I cannot see what this
+pack ships" as "this pack ships nothing", because that reading deletes every
+file the pack owns. `kennis pack status` says what is wrong and how to
+repair it.
+
+Two things a pack may not do, both refused with the file named:
+
+- **ship a dot-prefixed file.** A dot-prefixed path is never indexed, so the
+  file would be copied and then invisible to search.
+- **write `LANDING.md`.** It is the entry point, and it is yours.
+
+`sync` does not index. It names `kennis context index` when it changed
+something, for the same reason `remember --context` does.
+
+**kennis does not commit**, here either.
 
 ## Search it
 

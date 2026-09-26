@@ -8,6 +8,7 @@ because no test ran a command.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -749,3 +750,186 @@ def test_a_corpus_method_of_hybrid_does_not_reach_the_bundle(
 
     assert result.exit_code == 0, result.output
     assert "no dense leg" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# `context sync`. Milestone 7 unit 7.
+# ---------------------------------------------------------------------------
+
+
+def a_context_pack(
+    root: Path, run: CliRunner, *, files: dict[str, str] | None = None
+) -> Path:
+    """A pack shipping context content, built and updated as a provider
+    would. The tree is rebuilt each call so a second one with fewer files
+    really ships fewer."""
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
+    for relative, text in (files or {"content/one.md": "One.\n"}).items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    path = root / "boepie.ken.yml"
+    path.write_text(
+        "kennis:\n  schema_version: 1\n"
+        'pack:\n  id: boepie\n  name: n\n  version: "1.0.0"\n'
+        "context:\n  - source: content/\n",
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
+    return path
+
+
+@pytest.fixture
+def synced(
+    workspace: Path, run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """A workspace with a bundle and a corpus holding one installed pack."""
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+    assert run.invoke(main, ["corpus", "init"]).exit_code == 0
+    assert run.invoke(main, ["context", "init"]).exit_code == 0
+    return workspace
+
+
+def test_sync_writes_the_packs_content_into_the_bundle(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert (synced / BUNDLE_DIRNAME / "one.md").is_file()
+    assert "added by boepie" in result.output
+
+
+def test_sync_names_the_index_command_when_something_changed(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    """The index is derived from these documents and sync did not rebuild
+    it, so a reader is told what to type. Concern #244."""
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert "kennis context index" in result.output
+
+
+def test_a_sync_that_changed_nothing_does_not_ask_for_an_index(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    """Advice to rebuild an index that is already current is advice to do
+    nothing, and it teaches a reader to ignore the line."""
+    del synced
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert "kennis context index" not in result.output
+
+
+def test_the_synced_content_is_searchable_after_indexing(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    """The crossing test: a document written by one path must be visible
+    to the indexer, which is the failure mode the plan singles out."""
+    del synced
+    path = a_context_pack(
+        tmp_path / "provider",
+        run,
+        files={"content/one.md": "Calibration runs in four-minute chunks.\n"},
+    )
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+
+    result = run.invoke(main, ["search", "four-minute chunks"])
+
+    assert result.exit_code == 0, result.output
+    assert ".context/one.md" in result.output
+
+
+def test_sync_reports_a_file_the_user_edited_without_changing_it(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    provider = tmp_path / "provider"
+    path = a_context_pack(provider, run, files={"content/one.md": "First.\n"})
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+    written = synced / BUNDLE_DIRNAME / "one.md"
+    written.write_text(
+        written.read_text().replace("First.", "Mine now."), encoding="utf-8"
+    )
+
+    path = a_context_pack(provider, run, files={"content/one.md": "Second.\n"})
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    result = run.invoke(main, ["context", "sync"])
+
+    assert "Mine now." in written.read_text()
+    assert "you edited this" in result.output
+    assert "owner: user" in result.output
+
+
+def test_sync_refuses_a_pack_that_declares_a_hidden_destination(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    del synced
+    path = a_context_pack(
+        tmp_path / "provider", run, files={"content/.hidden.md": "No.\n"}
+    )
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code != 0
+    assert ".hidden.md" in result.output
+
+
+def test_sync_with_no_packs_installed_says_so(synced: Path, run: CliRunner):
+    del synced
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "nothing declared" in result.output
+
+
+def test_sync_needs_a_corpus_to_read_the_store_from(
+    workspace: Path, run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The packs live in the corpus. Without one there is no store, and
+    the error names the command that makes one."""
+    del workspace
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+    assert run.invoke(main, ["context", "init"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code != 0
+    assert "kennis corpus init" in result.output
+
+
+def test_sync_makes_no_commit_in_the_users_repository(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    """The invariant every context command is held to: the bundle lives
+    in a repository kennis does not own."""
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+
+    log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=synced,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+    assert log.stdout.strip() == ""

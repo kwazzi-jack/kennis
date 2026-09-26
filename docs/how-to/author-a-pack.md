@@ -163,6 +163,11 @@ It does no network I/O: it copies what the pack declares into this
 machine's store at `<corpus>/packs/<id>/`, beside the declaration itself
 and a `state.json` recording what was applied.
 
+**Installing is not applying.** `pack add` records what a provider
+declared; `kennis context sync`, run inside a project, applies the context
+half of it to that project. See
+[Project knowledge](project-context.md#apply-a-pack).
+
 Calling it repeatedly is cheap. A second `add` of an unchanged pack reports
 `Unchanged` and rewrites nothing, which is why a provider can call it
 unconditionally.
@@ -193,3 +198,77 @@ corpus that predates the feature.
 `pack add` re-checks everything `pack validate` checks, including the
 digests, and installs nothing if any of it fails. `validate` is the
 provider's own check and nothing makes them run it.
+
+## See what is installed
+
+```
+kennis pack list
+```
+
+One line per pack: its id, its own version, and how many files the store
+holds for it. The id is the column you copy out of and hand to
+`kennis pack remove`.
+
+```
+kennis pack status
+```
+
+The same packs with more said about each one, and one thing `list` never
+reports: **which packs declare the same item, and which of them owns it.**
+
+```
+alpha 1.2.0, 2 files
+  = added 2026-09-26T16:25:58Z, last applied 2026-09-26T16:26:55Z
+beta 0.4.1, 1 file
+  = added 2026-09-26T16:25:59Z
+Shared 2 items
+  ~ documentation project 'stimela' is declared by alpha and beta; alpha
+    owns it, as the earliest installation
+  ~ note 'install/setup.md' is declared by alpha and beta; alpha owns it,
+    as the earliest installation
+```
+
+Two timestamps, because they answer different questions. The first is when
+the pack was first added and it never changes; the second is when the
+provider last handed it over. A pack showing only one has not been
+re-applied since it was installed.
+
+**The owner is the earliest installation, never the most recent.** A
+provider calls `pack add` on every run, so deciding by the most recent one
+would flip ownership back and forth and rewrite the same documents forever.
+The first timestamp is immutable for exactly this reason, so the answer is
+stable: re-adding a pack does not make it the owner of anything.
+
+Two packs shipping the same filename into different groups do not collide -
+`group:` is part of where a file lands, and so part of what makes two
+declarations the same item. Neither do a tree shipped to `corpus.notes` and
+the same tree shipped to `context`: they land in different places.
+
+`status` also reports two kinds of damage:
+
+| line | what it means | what to do |
+|---|---|---|
+| `the stored content does not match what was recorded` | files under `packs/<id>/` are missing or changed | `kennis pack add <path>`, which `status` names when the source file is still there |
+| `N directories in the store with no readable state` | a half-written install: a directory with no `state.json` that parses | `kennis pack remove <name>` |
+
+If the pack's source file is gone from this machine, `status` says so and
+names the path it was added from. There is nothing local to repair from
+then, and the answer is to run the provider that built it again.
+
+## Remove one
+
+```
+kennis pack remove boepie
+```
+
+Drops that pack from the store: its declaration, its copied content and its
+state file.
+
+**It reaches the store and nothing else.** Documents already in the corpus
+stay where they are, and so does this pack's content in any project you have
+checked out - kennis keeps no registry of your projects, so it cannot reach
+into them. Each of those converges when it is next synchronised.
+
+Removing a pack that was never installed fails rather than reporting
+success, because the realistic cause is a mistyped id and "removed" would
+say the thing you meant is gone.
