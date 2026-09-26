@@ -48,6 +48,12 @@ class SourceContent:
     digests: dict[str, str]
     escaping: tuple[str, ...]
     symlinks: tuple[str, ...]
+    # Files no `include` pattern matched. **Not** files an `exclude`
+    # removed: that was intent, and reporting it every run would be noise
+    # the useful case drowns in. This is the one that can be a mistake -
+    # the default `**/*.md` dropping a PDF the author meant to ship, with
+    # no word said about it. Concern #266.
+    unselected: tuple[str, ...]
 
 
 def content_digest(data: bytes) -> str:
@@ -73,15 +79,20 @@ def read_source(root: Path, source: ContentSource) -> SourceContent:
             digests={},
             escaping=(),
             symlinks=(),
+            unselected=(),
         )
 
     digests: dict[str, str] = {}
     escaping: list[str] = []
     symlinks: list[str] = []
+    unselected: list[str] = []
     for relative, path in _walked(directory):
-        if not _selected(relative, source):
-            continue
         address = address_of(source.source, relative)
+        if not _included(relative, source):
+            unselected.append(address)
+            continue
+        if _excluded(relative, source):
+            continue
         if path.is_symlink():
             target = escaping if not resolves_inside(path, root) else symlinks
             target.append(address)
@@ -96,6 +107,7 @@ def read_source(root: Path, source: ContentSource) -> SourceContent:
         digests=digests,
         escaping=tuple(escaping),
         symlinks=tuple(symlinks),
+        unselected=tuple(unselected),
     )
 
 
@@ -129,15 +141,23 @@ def _walked(directory: Path) -> list[tuple[str, Path]]:
     return sorted(found)
 
 
-def _selected(relative: str, source: ContentSource) -> bool:
-    """Whether `include` takes this file and `exclude` does not drop it."""
-    included = any(
+def _included(relative: str, source: ContentSource) -> bool:
+    """Whether any `include` pattern takes this file.
+
+    Asked separately from `_excluded` so the caller can tell the two
+    rejections apart: one is a pattern the author may not have thought
+    about, the other is one they wrote.
+    """
+    return any(
         globstar_regex(pattern).fullmatch(relative) for pattern in source.include
     )
-    excluded = any(
+
+
+def _excluded(relative: str, source: ContentSource) -> bool:
+    """Whether any `exclude` pattern drops this file."""
+    return any(
         globstar_regex(pattern).fullmatch(relative) for pattern in source.exclude
     )
-    return included and not excluded
 
 
 __all__ = [

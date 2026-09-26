@@ -105,11 +105,20 @@ class PackState:
 
 @dataclass(frozen=True, slots=True)
 class PackInstall:
-    """What `install_pack` did."""
+    """What `install_pack` did, and what the pack holds that it did not copy.
+
+    A pack that declares two papers and a documentation site copies nothing
+    and would otherwise report `0 files`, which reads as "nothing
+    happened". The declarations are counted here so the report can say what
+    the pack asked for - and say it as *declared*, never as added, because
+    nothing is fetched until a sync that does not exist yet.
+    """
 
     pack_id: str
     outcome: InstallOutcome
     files: int
+    literature: int
+    docs: int
 
 
 def packs_root(corpus_root: Path) -> Path:
@@ -186,11 +195,21 @@ def install_pack(
     outcome = _outcome_for(corpus_root, pack, digest, previous)
     if previous is not None and outcome == "unchanged":
         _reported(events, pack.pack.id, outcome, len(previous.files), started)
-        return PackInstall(pack.pack.id, outcome, len(previous.files))
+        return _install(pack, outcome, len(previous.files))
 
     files = _installed(corpus_root, path, pack, digest, previous)
     _reported(events, pack.pack.id, outcome, len(files), started)
-    return PackInstall(pack.pack.id, outcome, len(files))
+    return _install(pack, outcome, len(files))
+
+
+def _install(pack: Pack, outcome: InstallOutcome, files: int) -> PackInstall:
+    return PackInstall(
+        pack_id=pack.pack.id,
+        outcome=outcome,
+        files=files,
+        literature=len(pack.corpus.literature),
+        docs=len(pack.corpus.docs),
+    )
 
 
 def _outcome_for(

@@ -61,6 +61,11 @@ class PackUpdate:
     path: Path
     outcome: Literal["written", "unchanged"]
     files: int
+    # Files sitting in a declared source that no `include` pattern matched.
+    # Counted rather than dropped, because the default `**/*.md` silently
+    # discarding a PDF an author meant to ship is the shape of mistake
+    # nothing else here would catch. Concern #266.
+    unselected: int
 
 
 def update_pack(path: Path, *, events: EventSink | None = None) -> PackUpdate:
@@ -99,28 +104,50 @@ def update_pack(path: Path, *, events: EventSink | None = None) -> PackUpdate:
             resolution="uv tool upgrade kennis",
         )
 
-    content = _walked(path.parent, pack)
+    content, unselected = _walked(path.parent, pack)
     previous = pack.generated.content if pack.generated is not None else None
-    _reported(events, previous, content, started)
+    _reported(events, previous, content, unselected, started)
     if previous is not None and previous == content:
-        return PackUpdate(path=path, outcome="unchanged", files=_counted(content))
+        return PackUpdate(
+            path=path,
+            outcome="unchanged",
+            files=_counted(content),
+            unselected=len(unselected),
+        )
 
     path.write_text(_spliced(text, content), encoding="utf-8")
-    return PackUpdate(path=path, outcome="written", files=_counted(content))
+    return PackUpdate(
+        path=path,
+        outcome="written",
+        files=_counted(content),
+        unselected=len(unselected),
+    )
 
 
 def _reported(
     events: EventSink | None,
     previous: GeneratedContent | None,
     current: GeneratedContent,
+    unselected: list[str],
     started: float,
 ) -> None:
     """Every shipped file to the stream, with what happened to its digest."""
     if events is None:
         return
+    for address in sorted(unselected):
+        events.emit(
+            ItemFinished(
+                operation=OPERATION,
+                item=address,
+                outcome=Outcome.SKIPPED,
+                reason="no include pattern matches it",
+            )
+        )
     was = _flattened(previous) if previous is not None else {}
     now = _flattened(current)
-    counts: dict[Outcome, int] = {}
+    counts: dict[Outcome, int] = (
+        {Outcome.SKIPPED: len(unselected)} if unselected else {}
+    )
     for address in sorted(set(was) | set(now)):
         outcome = _outcome_for(address, was, now)
         counts[outcome] = counts.get(outcome, 0) + 1
@@ -159,17 +186,22 @@ def _flattened(content: GeneratedContent) -> dict[str, str]:
     }
 
 
-def _walked(root: Path, pack: Pack) -> GeneratedContent:
-    """Every declared source read, refusing anything that is not shippable."""
-    return GeneratedContent(
-        notes=[_entry(root, source) for source in pack.corpus.notes],
-        context=[_entry(root, source) for source in pack.context],
-    )
+def _walked(root: Path, pack: Pack) -> tuple[GeneratedContent, list[str]]:
+    """Every declared source read, with the files no pattern took.
+
+    Refuses anything that is not shippable on the way through: a missing
+    directory, or a file that escapes the pack root.
+    """
+    unselected: list[str] = []
+    notes = [_entry(root, source, unselected) for source in pack.corpus.notes]
+    context = [_entry(root, source, unselected) for source in pack.context]
+    return GeneratedContent(notes=notes, context=context), unselected
 
 
-def _entry(root: Path, source: ContentSource) -> GeneratedSource:
+def _entry(root: Path, source: ContentSource, unselected: list[str]) -> GeneratedSource:
     found = read_source(root, source)
     _refuse_unshippable(found)
+    unselected.extend(found.unselected)
     return GeneratedSource(source=source.source, files=found.digests)
 
 

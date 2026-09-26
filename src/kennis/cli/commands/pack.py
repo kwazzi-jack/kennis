@@ -20,13 +20,15 @@ from kennis.cli.sink import reporting
 from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
 from kennis.engine.pack.store import install_pack
-from kennis.engine.pack.update import update_pack
+from kennis.engine.pack.update import PackUpdate, update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.render.packs import (
+    describe_declarations,
     describe_install,
     describe_problem,
     describe_recorded,
     describe_refusal,
+    describe_unselected,
     describe_update_needed,
     describe_verdict,
     remedy_for,
@@ -69,6 +71,9 @@ def add_command(path: Path) -> None:
         install = install_pack(context.corpus_root, path, events=events)
     display.operation(_INSTALL_VERBS[install.outcome], install.pack_id)
     display.detail(_INSTALL_MARKERS[install.outcome], describe_install(install))
+    declared = describe_declarations(install)
+    if declared is not None:
+        display.detail(">", declared)
     if install.outcome != "unchanged":
         # No command named, and no backticks: `corpus sync` is what will
         # materialise this and it is not built, so naming it would print an
@@ -149,9 +154,22 @@ def update_command(path: Path) -> None:
     if result.outcome == "unchanged":
         display.operation("Unchanged", f"{path}")
         display.detail("=", describe_recorded(result))
+        _say_what_was_left(result)
         return
     display.operation("Updated", f"{path}")
     display.detail("+", describe_recorded(result))
+    _say_what_was_left(result)
+
+
+def _say_what_was_left(result: PackUpdate) -> None:
+    """Files in a declared source that no pattern took.
+
+    Reported on an unchanged run as well, because that is the run where it
+    matters most: an author who has just added a `.csv` to the source and
+    been told "Unchanged" has no other way to find out why.
+    """
+    if result.unselected:
+        display.detail(">", describe_unselected(result.unselected))
 
 
 @pack_group.command(name="validate", cls=KennisCommand)
