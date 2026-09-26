@@ -155,6 +155,15 @@ class AddOptions:
     # How many documents one converter run takes. Zero means one run for the
     # whole batch, which converts fastest and reports nothing until the end.
     batch_size: int = 8
+    # Who owns what this add writes. `user` for every add a person makes;
+    # `pack:<id>` only for `corpus sync`, which is materialising what a
+    # pack declared. It is here rather than a parameter on each writer
+    # because `AddOptions` is the channel every adder already takes.
+    owner: Owner = "user"
+    # The digest of the declaration this document is being written for,
+    # recorded so the next sync can tell a changed declaration from an
+    # unchanged one without refetching. Set only by `corpus sync`.
+    pack_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1021,6 +1030,8 @@ def _add_paper(
         citekey=citekey,
         identity=identity,
         group=_group_for(options, paper.group),
+        owner=options.owner,
+        pack_sha256=options.pack_sha256,
     )
     return AddOutcome(
         identifier=paper.identifier,
@@ -1298,6 +1309,8 @@ def _write_paper(
     citekey: str,
     identity: _Identity,
     group: str | None,
+    owner: Owner = "user",
+    pack_sha256: str | None = None,
 ) -> tuple[str, Path]:
     """Write one paper, keeping `record` current.
 
@@ -1329,7 +1342,7 @@ def _write_paper(
     frontmatter = LiteratureFrontmatter(
         id=document_id,
         title=title,
-        owner="user",
+        owner=owner,
         id_from=natural_key,
         source=Source(
             origin=converted.origin,
@@ -1337,6 +1350,7 @@ def _write_paper(
             format=converted.format,
             sha256=converted.sha256,
             original=converted.original_name,
+            pack_sha256=pack_sha256,
         ),
         bib=Bibliography(
             citekey=citekey,
@@ -1439,7 +1453,7 @@ def add_docs(
             if position and delay and page.html is None:
                 time.sleep(delay)
             sink.emit(ItemStarted(operation="add", item=page.identifier))
-            outcome = _add_page(collection, page, record, active)
+            outcome = _add_page(collection, page, record, active, options)
             outcomes.append(outcome)
             sink.emit(
                 ItemFinished(
@@ -1587,6 +1601,7 @@ def _add_page(
     page: _Page,
     record: Uniqueness,
     client: httpx.Client,
+    options: AddOptions,
 ) -> AddOutcome:
     """Fetch, convert and write one page, or say why it was not written."""
     natural_key = natural_key_for_docs(project=page.project, page=page.key)
@@ -1615,6 +1630,8 @@ def _add_page(
         converted=converted,
         title=title,
         natural_key=natural_key,
+        owner=options.owner,
+        pack_sha256=options.pack_sha256,
     )
     return AddOutcome(
         identifier=page.identifier,
@@ -1655,6 +1672,8 @@ def _write_page(
     converted: Converted,
     title: str,
     natural_key: str,
+    owner: Owner = "user",
+    pack_sha256: str | None = None,
 ) -> tuple[str, Path]:
     """Write one page, keeping `record` current.
 
@@ -1672,7 +1691,7 @@ def _write_page(
     frontmatter = DocsFrontmatter(
         id=document_id,
         title=title,
-        owner="user",
+        owner=owner,
         id_from=natural_key,
         source=Source(
             origin=converted.origin,
@@ -1680,6 +1699,7 @@ def _write_page(
             format=converted.format,
             sha256=converted.sha256,
             original=converted.original_name,
+            pack_sha256=pack_sha256,
         ),
         docs=DocsPage(
             project=page.project,

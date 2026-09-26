@@ -65,7 +65,11 @@ class Declaration:
     address: str
     pack_id: str
     digest: str
-    store_path: Path
+    # Where to read the content from, for a section the store holds.
+    # None for a declaration a fetch resolves - a paper or a
+    # documentation project - where the digest is of the declaration's
+    # own fields and there are no bytes until something is fetched.
+    store_path: Path | None
 
 
 @dataclass(frozen=True, slots=True)

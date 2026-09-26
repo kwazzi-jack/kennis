@@ -382,6 +382,20 @@ def describe_sync_summary(counts: dict[Verdict, int]) -> str:
     return ", ".join(named) if named else "nothing to change"
 
 
+def describe_unfetched(failed: tuple[str, ...]) -> str:
+    """Declarations whose fetch did not succeed, named.
+
+    Named rather than counted: which paper did not arrive is the whole
+    of what a reader needs, and the identifier is what they would search
+    for. Worded as a state rather than as an error, because the next run
+    tries again - nothing was written, so nothing has to be undone.
+    """
+    return (
+        f"{count_of(len(failed), 'declaration')} could not be fetched and "
+        f"will be tried again: {joined(sorted(failed))}"
+    )
+
+
 def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     """Declarations that lost to an earlier-installed pack.
 
@@ -429,6 +443,7 @@ __all__ = [
     "describe_removal",
     "describe_sync",
     "describe_sync_summary",
+    "describe_unfetched",
     "describe_unreadable",
     "describe_unselected",
     "describe_update_needed",

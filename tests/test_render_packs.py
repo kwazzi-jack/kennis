@@ -52,6 +52,7 @@ from kennis.render.packs import (
     describe_removal,
     describe_sync,
     describe_sync_summary,
+    describe_unfetched,
     describe_unreadable,
     describe_unselected,
     describe_update_needed,
@@ -637,3 +638,17 @@ def test_remove_says_what_it_could_not_reach():
     assert "corpus" in described
     assert "project" in described
     assert "nothing this pack supplied has been removed" in described
+
+
+def test_an_unfetched_declaration_is_named_and_not_counted_alone():
+    """Which paper did not arrive is the whole of what a reader needs,
+    and the identifier is what they would search for."""
+    described = describe_unfetched(("arxiv:2409.19750", "doi:10.1000/x"))
+
+    assert "arxiv:2409.19750" in described
+    assert "doi:10.1000/x" in described
+    assert "tried again" in described
+
+
+def test_one_unfetched_declaration_takes_the_singular():
+    assert describe_unfetched(("arxiv:1",)).startswith("1 declaration")

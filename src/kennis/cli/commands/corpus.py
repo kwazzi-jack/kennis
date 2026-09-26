@@ -64,6 +64,7 @@ from kennis.render.packs import (
     describe_owner,
     describe_sync,
     describe_sync_summary,
+    describe_unfetched,
 )
 from kennis.render.words import (
     conversion_cost,
@@ -503,19 +504,25 @@ def _report_add(report: AddReport) -> None:
 def sync_command() -> None:
     """Converge the corpus with every installed pack.
 
-    **Offline, and notes only, today.** A pack's note content is already
-    in this machine's store, put there by `kennis pack add`, so this
-    copies and never fetches. The papers and documentation sites a pack
-    declares are fetched by a later command that is not built.
+    Three sections, materialised three ways. A pack's **notes** are
+    already in this machine's store, put there by `kennis pack add`, so
+    they are copied. Its **papers** are fetched by identifier and its
+    **documentation sites** are crawled, so this command uses the
+    network - which `kennis pack add` deliberately does not.
 
     Nothing you own is touched. A document you have claimed is reported
     and left alone on every run, and so is a pack's document you have
-    edited in place.
+    edited in place. A paper that cannot be fetched is reported and
+    tried again next time, rather than stopping the run.
     """
     context = existing_corpus()
     with corpus_lock(context.corpus_root), reporting() as events:
         _undo_hand_deletions(context)
-        result = sync_corpus(context.corpus_root, events=events)
+        result = sync_corpus(
+            context.corpus_root,
+            events=events,
+            request_delay_seconds=context.settings.literature.request_delay,
+        )
         _commit(
             context,
             "sync",
@@ -543,6 +550,12 @@ def _report_what_a_sync_left(result: CorpusSync) -> None:
             )
     if result.deferred:
         display.note(describe_deferred(result.deferred))
+    if result.failed:
+        # A failure is not a verdict: the declaration still stands and
+        # the document is still absent, so the next run tries again.
+        # Named rather than counted, because which paper did not arrive
+        # is the whole of what a reader needs.
+        display.note(describe_unfetched(result.failed))
 
 
 @corpus_group.command(name="claim")

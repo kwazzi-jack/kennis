@@ -250,6 +250,9 @@ def _document(declaration: Declaration) -> str:
     its own header digests differently from the store copy and is
     rewritten on every run forever.
     """
+    # A content declaration always has one; only a paper or a
+    # documentation project, which a fetch resolves, does not.
+    assert declaration.store_path is not None
     content = declaration.store_path.read_text(encoding="utf-8")
     shipped, body = split_frontmatter(content)
     title = shipped.get("title") or Path(declaration.address).stem
