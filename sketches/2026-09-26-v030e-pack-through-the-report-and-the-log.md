@@ -78,3 +78,12 @@ marker `sink.marker_for` already gives a skipped item.
 `-`, `~` and `=` have colours. That is pre-existing - `Outcome.SKIPPED`
 already maps to `>` and every command printing a skipped item hits it -
 so changing it would restyle output beyond this milestone. Concern #261.
+
+**Postscript, after Brian asked why `>` is needed at all.** The answer is
+that `corpus add` reports declined inputs under it and no other marker
+describes that state truthfully - but looking properly showed the omission
+was twice the size I recorded: `!` had no role either, so a skipped item and
+a failed one rendered identically. Both roles exist now, and the concern
+that said "left alone deliberately" is superseded by #262. Worth noting that
+the thing that found this was a one-line question about a note I had written
+to close the subject.
