@@ -217,9 +217,42 @@ Writes the pack's `corpus.notes` content into the notes collection, as
 ordinary documents: they are searchable after `kennis corpus index`,
 readable with `kennis read`, and they appear in `kennis corpus list`.
 
-**Offline, and notes only.** The papers and documentation sites a pack
-declares are fetched by a command that is not built yet, so `pack add`
-reports them as declared rather than added.
+**A document kennis cannot read stops the sync.** One whose frontmatter
+does not validate - an `owner` from a vocabulary kennis does not know,
+for instance - is invisible to the resolution, so a sync that continued
+would read its declaration as unfetched and write a second copy. It
+refuses instead, names each one, and points at `kennis corpus status`.
+
+It also resolves the two things a pack **declares** rather than ships:
+
+| section | what sync does | key |
+|---|---|---|
+| `corpus.notes` | copies from the store | the destination address |
+| `corpus.literature` | fetches each paper | `arxiv_id`, else `doi`, else `bibcode` |
+| `corpus.docs` | crawls each site | `project` |
+
+So this command uses the network, which `kennis pack add` deliberately
+does not.
+
+**A paper is keyed on its identifier, never on its citekey.** Correcting
+`paperCubicalFast` to `kenyonCubicalFast2018` is therefore a *rename*:
+the citekey changes, the document, its identifier and its text do not,
+and nothing is downloaded again. Keying on the citekey would delete a
+paper and pull the identical one down a second time.
+
+The declaration is authoritative for the citekey and for nothing else.
+The title, authors and year come from the fetch where the fetch has
+them - arXiv knows the paper's own title better than a one-line
+declaration does - and the pack's values fill the gaps.
+
+**A project already crawled is not crawled again.** A crawl is hundreds
+of requests and a provider calls its sync on every run, so an unchanged
+declaration does nothing. Use `kennis corpus add --docs` to refresh a
+site deliberately.
+
+**A fetch that fails does not stop the run.** The declaration still
+stands and nothing was written, so the paper is named, the rest of the
+sync completes, and the next run tries again.
 
 Each document carries `owner: pack:<id>` and records the address it came
 from:
