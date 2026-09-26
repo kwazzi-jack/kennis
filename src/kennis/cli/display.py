@@ -428,6 +428,26 @@ _MARKER_ROLES = {
     "!": "failed",
 }
 
+# The detail marker for each sync verdict. Layout rather than wording, so
+# it lives here with the other markers and is shared by both destinations.
+# `>` is the skipped marker and both skips earn it: one file kennis would
+# have written and did not, one it was never asked to write.
+_SYNC_MARKERS = {
+    "write": "+",
+    "rewrite": "~",
+    "adopt": "~",
+    "delete": "-",
+    "keep": "=",
+    "edited": ">",
+    "yours": ">",
+}
+
+
+def sync_marker(verdict: str) -> str:
+    """The detail marker one sync verdict is shown with."""
+    return _SYNC_MARKERS[verdict]
+
+
 # The role a marker with no entry falls back to. Named so a test can say
 # "no outcome reaches the fallback" without reaching into the map.
 FALLBACK_MARKER_ROLE = "marker"

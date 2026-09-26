@@ -299,17 +299,16 @@ def test_add_does_not_name_a_command_that_does_not_exist(
     run: CliRunner, corpus: Path, tmp_path: Path
 ):
     """Rule 4.4 again. "Installed" implies the content is searchable and
-    it is not, so the report says so - and it names the one command that
-    changes that and exists. `corpus sync` does not exist yet, so it is
-    described rather than named; this test changes when it is built."""
+    it is not, so the report says so - and it names both commands that
+    change that, now that both exist and run as printed."""
     del corpus
     path = a_provider(tmp_path / "provider", run)
 
     result = run.invoke(main, ["pack", "add", str(path)])
 
     assert "nothing is materialised yet" in result.output
+    assert "kennis corpus sync" in result.output
     assert "kennis context sync" in result.output
-    assert "corpus sync" not in result.output
 
 
 def test_the_reminder_is_not_repeated_on_an_unchanged_add(
@@ -448,7 +447,8 @@ def test_remove_drops_the_pack_and_says_what_it_did_not_reach(
 
     assert result.exit_code == 0, result.output
     assert "Removed" in result.output
-    assert "untouched" in result.output
+    assert "nothing this pack supplied has been removed" in result.output
+    assert "kennis corpus sync" in result.output
     assert not (corpus / "packs" / "boepie").exists()
 
 

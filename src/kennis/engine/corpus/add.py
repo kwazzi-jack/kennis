@@ -72,6 +72,7 @@ from kennis.engine.corpus.schema import (
     DocsPage,
     LiteratureFrontmatter,
     NoteFrontmatter,
+    Owner,
     Source,
 )
 from kennis.engine.docs.discover import discover_pages
@@ -441,6 +442,8 @@ def write_note(
     converted: Converted,
     title: str,
     group: str | None,
+    owner: Owner = "user",
+    pack_sha256: str | None = None,
 ) -> tuple[str, Path]:
     """Write one converted source as a note, keeping `record` current.
 
@@ -458,13 +461,14 @@ def write_note(
     frontmatter = NoteFrontmatter(
         id=document_id,
         title=title,
-        owner="user",
+        owner=owner,
         source=Source(
             origin=converted.origin,
             via=converted.via,
             format=converted.format,
             sha256=converted.sha256,
             original=converted.original_name,
+            pack_sha256=pack_sha256,
         ),
     )
 

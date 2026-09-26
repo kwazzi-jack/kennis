@@ -162,29 +162,15 @@ def sync_command_for_context() -> None:
     context = existing_corpus()
     with reporting() as events:
         result = sync_bundle(bundle, context.corpus_root, events=events)
-    display.operation("Synchronised", describe_sync(result))
+    display.operation("Synchronised", describe_sync(result.counts))
     for action in result.actions:
-        display.detail(_SYNC_MARKERS[action.verdict], describe_action(action))
+        display.detail(display.sync_marker(action.verdict), describe_action(action))
     _report_what_was_left(result)
     if any(action.verdict in ACTING for action in result.actions):
         # The index is derived from these documents and this command did
         # not rebuild it, for the same reason `remember --context` does
         # not: indexing is a separate decision with its own cost.
         display.next_step("kennis context index")
-
-
-# The detail marker for each verdict. Layout rather than wording, so it
-# lives here. `>` is the skipped marker, and both skips earn it: one file
-# kennis would have written and did not, one it was never asked to.
-_SYNC_MARKERS: dict[str, str] = {
-    "write": "+",
-    "rewrite": "~",
-    "adopt": "~",
-    "delete": "-",
-    "keep": "=",
-    "edited": ">",
-    "yours": ">",
-}
 
 
 def _report_what_was_left(result: BundleSync) -> None:

@@ -35,6 +35,12 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, move_document
 from kennis.engine.corpus.layout import index_root, title_filename, unique_filename
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.corpus.sync import (
+    CorpusSync,
+    claim_document,
+    disown_document,
+    sync_corpus,
+)
 from kennis.engine.errors import KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
@@ -47,9 +53,18 @@ from kennis.engine.history.history import (
 from kennis.engine.history.outofband import detect_changes, restore_deletions
 from kennis.engine.history.repository import Repository, initialise_corpus
 from kennis.engine.locking import corpus_lock
+from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from
 from kennis.engine.rag.index import build_index, read_manifest
 from kennis.engine.rag.loaders import CollectionLoader
+from kennis.render.packs import (
+    describe_action,
+    describe_corpus_claim_needed,
+    describe_deferred,
+    describe_owner,
+    describe_sync,
+    describe_sync_summary,
+)
 from kennis.render.words import (
     conversion_cost,
     conversion_repairs,
@@ -482,6 +497,89 @@ def _report_add(report: AddReport) -> None:
         ]
         if named:
             display.details(marker_for(outcome), named)
+
+
+@corpus_group.command(name="sync")
+def sync_command() -> None:
+    """Converge the corpus with every installed pack.
+
+    **Offline, and notes only, today.** A pack's note content is already
+    in this machine's store, put there by `kennis pack add`, so this
+    copies and never fetches. The papers and documentation sites a pack
+    declares are fetched by a later command that is not built.
+
+    Nothing you own is touched. A document you have claimed is reported
+    and left alone on every run, and so is a pack's document you have
+    edited in place.
+    """
+    context = existing_corpus()
+    with corpus_lock(context.corpus_root), reporting() as events:
+        _undo_hand_deletions(context)
+        result = sync_corpus(context.corpus_root, events=events)
+        _commit(
+            context,
+            "sync",
+            scope="notes",
+            summary=describe_sync_summary(result.counts),
+        )
+    display.operation("Synchronised", describe_sync(result.counts, noun="document"))
+    for action in result.actions:
+        display.detail(display.sync_marker(action.verdict), describe_action(action))
+    _report_what_a_sync_left(result)
+    if any(action.verdict in ACTING for action in result.actions):
+        display.next_step("kennis corpus index")
+
+
+def _report_what_a_sync_left(result: CorpusSync) -> None:
+    """The two things a sync did not do, each said once above nothing."""
+    if result.edited:
+        display.guidance(describe_corpus_claim_needed(len(result.edited)))
+        # Named per document rather than with a placeholder: the handle
+        # is the only way to address a corpus document, and a reader sent
+        # to `corpus list` to find it has been given half an answer.
+        for document_id in result.edited:
+            display.next_step(
+                f"kennis corpus claim {document_id}", note="to keep that edit"
+            )
+    if result.deferred:
+        display.note(describe_deferred(result.deferred))
+
+
+@corpus_group.command(name="claim")
+@click.argument("handle")
+def claim_command(handle: str) -> None:
+    """Take ownership of a document a pack supplied.
+
+    The document stops being the pack's: no sync will rewrite it or
+    remove it again, and every run reports that a pack still declares it.
+    Its content, its identifier and every handle pointing at it are
+    unchanged.
+    """
+    context = existing_corpus()
+    with corpus_lock(context.corpus_root):
+        _undo_hand_deletions(context)
+        document = claim_document(context.corpus_root, handle)
+        _commit(context, "claim", scope="notes", summary=f"claimed {document.id}")
+    display.operation("Claimed", document.frontmatter.title)
+    display.detail("~", describe_owner(document))
+
+
+@corpus_group.command(name="disown")
+@click.argument("handle")
+def disown_command(handle: str) -> None:
+    """Hand a document back to the pack it came from.
+
+    The reverse of `kennis corpus claim`, and only for a document that a
+    pack supplied - there is nothing to hand a note you wrote back to.
+    The next sync may rewrite or remove it.
+    """
+    context = existing_corpus()
+    with corpus_lock(context.corpus_root):
+        _undo_hand_deletions(context)
+        document = disown_document(context.corpus_root, handle)
+        _commit(context, "disown", scope="notes", summary=f"disowned {document.id}")
+    display.operation("Disowned", document.frontmatter.title)
+    display.detail("~", describe_owner(document))
 
 
 # ---------------------------------------------------------------------------

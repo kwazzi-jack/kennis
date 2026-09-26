@@ -301,6 +301,35 @@ class DeclaredContent:
     deferred: tuple[tuple[str, str], ...]
 
 
+def refuse_damaged_packs(packs: tuple[InstalledPack, ...]) -> None:
+    """A damaged pack is not a pack that ships nothing. Section 5, step 2a.
+
+    **Every sync calls this before reading a union**, and it is here
+    rather than in either destination because the failure it prevents is
+    the same one twice: a store whose content is gone, or whose stored
+    declaration will not parse, declares nothing that can be read - so
+    every document the pack owns looks undeclared, takes the delete row,
+    and is removed, with the report saying `removed` and nothing naming
+    the cause.
+
+    "The store says N files and disk has 0" is corruption, never a
+    declaration that the pack now ships nothing. Refusing is an
+    acceptable outcome; proceeding to delete is not. Concern #274.
+    """
+    damaged = sorted(
+        one.state.pack_id
+        for one in packs
+        if not one.verified or one.declaration is None
+    )
+    if not damaged:
+        return
+    raise PackInvalid(
+        "the store is damaged for these packs, so nothing has been "
+        f"synchronised: {', '.join(damaged)}",
+        resolution="kennis pack status",
+    )
+
+
 def declared_content(
     corpus_root: Path, packs: tuple[InstalledPack, ...], section: ContentSectionName
 ) -> DeclaredContent:
@@ -395,5 +424,6 @@ __all__ = [
     "declared_content",
     "list_installed",
     "overlaps_between",
+    "refuse_damaged_packs",
     "remove_pack",
 ]

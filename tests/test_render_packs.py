@@ -18,7 +18,6 @@ from typing import Final, cast
 
 import pytest
 
-from kennis.engine.context.sync import BundleSync
 from kennis.engine.pack.installed import (
     InstalledPack,
     Overlap,
@@ -52,6 +51,7 @@ from kennis.render.packs import (
     describe_refusal,
     describe_removal,
     describe_sync,
+    describe_sync_summary,
     describe_unreadable,
     describe_unselected,
     describe_update_needed,
@@ -479,15 +479,15 @@ def test_the_overlap_says_why_that_pack_owns_it():
 # ---------------------------------------------------------------------------
 
 
-def a_sync(**counts: int) -> BundleSync:
-    """A sync result carrying only its counts, which is all the summary
-    line reads. Rebuilt as a `Verdict` map rather than passed through,
-    because `**kwargs` widens the key type to `str`."""
+def a_sync(**counts: int) -> dict[Verdict, int]:
+    """The counts a sync produced, which is all the summary line reads.
+    Rebuilt as a `Verdict` map rather than passed through, because
+    `**kwargs` widens the key type to `str`."""
     verdicts: dict[Verdict, int] = {}
     for name, count in counts.items():
         verdict: Verdict = cast(Verdict, name)
         verdicts[verdict] = count
-    return BundleSync(actions=(), counts=verdicts, deferred=())
+    return verdicts
 
 
 def test_a_sync_that_did_nothing_and_had_nothing_to_do_says_so():
@@ -514,6 +514,26 @@ def test_a_file_kennis_declined_to_write_is_not_reported_as_in_step():
 
 def test_a_bundle_where_everything_is_the_users_does_not_say_zero():
     assert describe_sync(a_sync(yours=2)) == "2 files left as yours"
+
+
+def test_the_corpus_counts_documents_rather_than_files():
+    """The same line for both destinations, and the noun is the whole of
+    the difference: a bundle holds files and a corpus holds documents."""
+    described = describe_sync(a_sync(write=2, keep=1), noun="document")
+
+    assert described == "2 documents changed, of 3"
+
+
+def test_the_commit_summary_names_only_what_changed():
+    """It lands in `corpus history`, where "3 keep" is the absence of
+    news and would make two different commits read the same."""
+    summary = describe_sync_summary(a_sync(write=2, keep=5, delete=1))
+
+    assert summary == "2 write, 1 delete"
+
+
+def test_a_commit_summary_for_a_sync_that_changed_nothing_still_reads():
+    assert describe_sync_summary(a_sync(keep=3)) == "nothing to change"
 
 
 def test_a_deferred_declaration_names_the_pack_that_lost():
@@ -609,7 +629,11 @@ def test_a_partial_install_is_not_reported_as_zero_files():
 
 
 def test_remove_says_what_it_could_not_reach():
+    """A user running `remove` will reasonably expect the content to be
+    gone, and it is not - not from the corpus and not from any project.
+    Both scopes are named, because each is reached by its own sync."""
     described = describe_what_remove_cannot_reach()
 
     assert "corpus" in described
-    assert "untouched" in described
+    assert "project" in described
+    assert "nothing this pack supplied has been removed" in described
