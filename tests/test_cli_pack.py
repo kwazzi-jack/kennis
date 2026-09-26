@@ -99,7 +99,8 @@ def test_a_pack_with_no_generated_block_says_no_digest_was_checked(
     pipeline runs this command to catch."""
     result = run.invoke(main, ["pack", "validate", str(a_pack_file(tmp_path))])
 
-    assert "no digest" in result.output
+    assert "no digest was checked" in result.output
+    assert "Checked" in result.output
 
 
 def test_a_stale_digest_exits_non_zero_so_a_pipeline_stops(

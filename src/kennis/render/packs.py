@@ -7,9 +7,33 @@ sentence could not rewrap it, group it, or say it differently. Concern #81.
 
 from __future__ import annotations
 
-from kennis.engine.pack.validate import PackProblem, VersionRefusal
+from kennis.engine.pack.update import PackUpdate
+from kennis.engine.pack.validate import PackProblem, PackReport, VersionRefusal
+from kennis.render.words import count_of
 
 _DIGEST_SHOWN = 12
+
+
+def describe_verdict(report: PackReport) -> str:
+    """What a clean check actually established.
+
+    **Two amounts of checking share one exit code.** A pack with no
+    `generated` block is valid and had no digest compared, and reporting
+    both as "valid" would use one word for two different assurances - which
+    matters most in a release pipeline, where a forgotten `pack update` is
+    exactly what this command is run to catch.
+    """
+    if report.digests_checked:
+        return "valid, and the digests agree with the content"
+    return "valid, and no digest was checked: there is no generated block"
+
+
+def describe_recorded(result: PackUpdate) -> str:
+    """What an update wrote, or found it did not need to write."""
+    counted = count_of(result.files, "file")
+    if result.outcome == "unchanged":
+        return f"{counted} already recorded, so the file is untouched"
+    return f"{counted} recorded"
 
 
 def describe_problem(problem: PackProblem) -> str:
@@ -83,7 +107,9 @@ def _short(digest: str | None) -> str:
 
 __all__ = [
     "describe_problem",
+    "describe_recorded",
     "describe_refusal",
     "describe_update_needed",
+    "describe_verdict",
     "remedy_for",
 ]
