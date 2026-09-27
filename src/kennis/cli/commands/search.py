@@ -19,7 +19,6 @@ from kennis.cli.group import KennisCommand
 from kennis.cli.resolve import resolve_document
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context import (
-    BUNDLE_DIRNAME,
     CONTEXT_COLLECTION,
     find_bundle,
     load_bundle_index,
@@ -30,7 +29,7 @@ from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import ContextNotFound, NothingToIndex, SearchUnavailable
 from kennis.engine.rag.embedding import resolve_host
 from kennis.engine.rag.index import LoadedIndex, load_index
-from kennis.engine.rag.models import Filter, SearchResult
+from kennis.engine.rag.models import Filter
 from kennis.engine.rag.search import (
     ChunkRange,
     Mode,
@@ -40,19 +39,19 @@ from kennis.engine.rag.search import (
 )
 from kennis.render.hits import (
     SCORE_STYLES,
-    Basis,
+    Hit,
+    ScoreStyle,
+    around,
     basis_for,
-    bundle_hit_handle,
-    hit_handle,
-    hit_headline,
-    raw_scores,
-    relevance,
-    relevance_phrase,
+    basis_phrase,
+    best_lexical,
+    rendered_hit,
+    score_style_for,
+    summary_of,
 )
 from kennis.render.words import (
     describe_document,
     describe_span,
-    snippet_of,
 )
 
 _MODES: Final[tuple[str, ...]] = get_args(Mode.__value__)
@@ -72,26 +71,6 @@ _EVERY_SCOPE: Final = "all"
 # that `--before`/`--after` can be told apart from an explicit value equal
 # to the default, which is what makes refusing them possible.
 _CONTEXT_DEFAULT: Final = 1
-
-
-@dataclass(frozen=True, slots=True)
-class _Hit:
-    """One result, which collection produced it, and on what scale.
-
-    The collection is carried alongside rather than read off the chunk,
-    because a merged list is three lists interleaved and a reader has to be
-    able to tell them apart without looking anything up.
-
-    `basis` travels with the hit rather than with the list because each
-    collection has its own index and so its own embedding model: a corpus
-    part-way through a model change can hold one index a relevance band is
-    calibrated for and one it is not. `None` is "this hit cannot be banded".
-    """
-
-    collection: str
-    result: SearchResult
-    basis: Basis | None
-    model: str | None
 
 
 def _scopes(
@@ -236,7 +215,7 @@ def search_command(
     # Insertion-ordered by `SCOPE_NAMES`, which is the order the report
     # prints. Fixed rather than ranked: ordering groups by their best hit
     # would put the cross-collection comparison back in through the layout.
-    groups: dict[str, list[_Hit]] = {}
+    groups: dict[str, list[Hit]] = {}
     for name in [scope for scope in SCOPE_NAMES if scope in selected]:
         index = _load(context, name, bundle=bundle, named=named)
         if index is None:
@@ -260,7 +239,7 @@ def search_command(
         model = index.binding.model.model if index.binding.model else None
         basis = basis_for(model, dense_ran=running != "bm25")
         found = [
-            _Hit(collection=name, result=result, basis=basis, model=model)
+            Hit(collection=name, result=result, basis=basis, model=model)
             for result in search(
                 index,
                 question,
@@ -296,7 +275,7 @@ def search_command(
 
 
 def _report(
-    groups: dict[str, list[_Hit]],
+    groups: dict[str, list[Hit]],
     searched: list[str],
     skipped: list[_Skipped],
     snippet: str,
@@ -325,29 +304,34 @@ def _report(
         return
 
     everything = [hit for hits in groups.values() for hit in hits]
-    style = _score_style(everything, scores)
-    display.operation("Found", _summary(groups))
+    style = _score_style(everything, _as_score_style(scores))
+    display.operation("Found", summary_of(groups))
     for name, hits in groups.items():
         display.info()
-        display.operation(name.capitalize(), _basis_phrase(hits, style))
+        display.operation(name.capitalize(), basis_phrase(hits, style))
         # Per group, which is what it wanted to be: the objection its old
         # docstring recorded - that a per-collection best makes every
         # collection's top hit "very high" - only bit while one column
         # served every collection. Each group now carries a line saying its
         # band is relative. Concern #231.
-        best = _best_lexical(hits)
+        best = best_lexical(hits)
         for rank, found in enumerate(hits, start=1):
-            display.hit(hit_headline(rank, found.result))
-            display.hit_detail(_hit_detail(found, style, best))
-            if snippet != "none":
-                display.body(
-                    snippet_of(found.result.chunk.text, full=snippet == "full"),
-                    indent="      ",
-                )
+            # Through `rendered_hit`, not by assembling the parts here.
+            # Sharing the pieces would let the two front ends put them
+            # together differently, which is the drift section 20's
+            # byte-identical rule exists to prevent - the command line
+            # decides styling and indentation and nothing else.
+            shown = rendered_hit(
+                found, rank=rank, style=style, best=best, snippet=snippet
+            )
+            display.hit(shown.headline)
+            display.hit_detail(shown.detail)
+            if shown.body is not None:
+                display.body(shown.body, indent="      ")
     _read_hint(everything)
 
 
-def _read_hint(hits: list[_Hit]) -> None:
+def _read_hint(hits: list[Hit]) -> None:
     """The one command the report ends with, or nothing.
 
     Once for the report, not per group and not per hit. Rule 4.4 - it runs
@@ -369,100 +353,27 @@ def _read_hint(hits: list[_Hit]) -> None:
     chunk = readable.result.chunk
     display.info()
     display.next_step(
-        f"kennis read {chunk.document_id} --chunks {_around(chunk.chunk_index)}",
+        f"kennis read {chunk.document_id} --chunks {around(chunk.chunk_index)}",
         note="to read one in context",
     )
 
 
-def _basis_phrase(hits: list[_Hit], style: str) -> str:
-    """What this group's relevance levels are a band of, or nothing.
+def _score_style(hits: list[Hit], asked: ScoreStyle) -> ScoreStyle:
+    """The score rendering that can actually be produced, and the note.
 
-    Empty when no level is being printed at all, so a `--scores raw` report
-    does not carry a heading explaining a column it does not have.
+    The decision is `score_style_for`, shared, because the MCP server
+    faces the same uncalibrated model. **Only the sentence is here**: a
+    command line says it above the report, and a tool would either fold
+    it into its payload or leave it out, so the choice does not belong
+    beside the decision.
     """
-    if style != "human":
-        return ""
-    bases = {hit.basis for hit in hits if hit.basis is not None}
-    if len(bases) != 1:
-        return ""
-    return relevance_phrase(bases.pop())
-
-
-def _around(chunk_index: int) -> str:
-    """The range that puts one chunk in context, as `--chunks` takes it.
-
-    The arithmetic `--before` and `--after` used to do, done once here so
-    that the printed command runs as printed (rule 4.4). `max(0, ...)` is
-    the part that matters: a hit at chunk 0 would otherwise print `-1:2`,
-    and `-1` is the document's *last* chunk - so the hint would send a
-    reader to the wrong end of it.
-    """
-    return f"{max(0, chunk_index - 1)}:{chunk_index + 2}"
-
-
-def _score_style(hits: list[_Hit], asked: str) -> str:
-    """The score rendering that can actually be produced.
-
-    `human` asks for a band, and a band needs a scale. A dense search on a
-    model kennis has never measured has none, so the request degrades to the
-    raw numbers and says so - the same choice `_fallback` makes about a
-    search mode, and for the same reason: refusing would be unhelpful and
-    substituting silently would have the reader trusting a measurement that
-    was never made.
-    """
-    if asked != "human" or any(found.basis is not None for found in hits):
-        return asked
-    display.note(
-        "no relevance band is calibrated for this embedding model, so these "
-        "are the raw scores"
-    )
-    return "raw"
-
-
-def _summary(groups: dict[str, list[_Hit]]) -> str:
-    """`5 in docs, 2 in notes`: how much came from where.
-
-    Which is the thing a grouped report can say and a merged one could not,
-    and it is why the groups need no ranking between them - a reader sees
-    the distribution before the first hit.
-
-    The basis is not here. It belongs to a group, and this line spans them.
-    """
-    return ", ".join(f"{len(hits)} in {name}" for name, hits in groups.items())
-
-
-def _best_lexical(hits: list[_Hit]) -> float:
-    """The best BM25 score in the list, which the lexical band is a fraction of.
-
-    Within one collection, which is the only place a BM25 score is
-    comparable. It used to be taken across all of them, because one column
-    served every collection and a per-collection best would have made each
-    collection's top hit "very high" with nothing to say so. The group
-    heading says so now. Concern #231.
-    """
-    return max(
-        (hit.result.bm25_score for hit in hits if hit.result.bm25_score is not None),
-        default=0.0,
-    )
-
-
-def _hit_detail(found: _Hit, style: str, best: float) -> str:
-    """The line under a hit: how well it matched, and how to reach it."""
-    handle = (
-        bundle_hit_handle(found.result, bundle_name=BUNDLE_DIRNAME)
-        if found.collection == CONTEXT_COLLECTION
-        else hit_handle(found.result)
-    )
-    if style == "none":
-        return handle
-    if style == "raw":
-        return f"{raw_scores(found.result)}  {handle}"
-    if found.basis is None:
-        return handle
-    level = relevance(found.result, basis=found.basis, model=found.model, best=best)
-    if level is None:
-        return handle
-    return f"relevance: {level}  {handle}"
+    style, degraded = score_style_for(hits, asked)
+    if degraded:
+        display.note(
+            "no relevance band is calibrated for this embedding model, so these "
+            "are the raw scores"
+        )
+    return style
 
 
 def _fallback(index: LoadedIndex, asked: str, name: str) -> Mode:
@@ -496,6 +407,18 @@ def _as_mode(asked: str) -> Mode:
     if asked not in _MODES:
         raise display.CliError(f"unknown search mode '{asked}'")
     return "bm25" if asked == "bm25" else "dense" if asked == "dense" else "hybrid"
+
+
+def _as_score_style(asked: str) -> ScoreStyle:
+    """`asked` as the shared renderer's own type.
+
+    The same narrowing `_as_mode` does and for the same reason: click's
+    `Choice` is built from `SCORE_STYLES`, so nothing else reaches here
+    except through a settings file that pydantic has already checked.
+    """
+    if asked not in SCORE_STYLES:
+        raise display.CliError(f"unknown score style '{asked}'")
+    return "raw" if asked == "raw" else "none" if asked == "none" else "human"
 
 
 def _filters(group: str | None) -> list[Filter] | None:

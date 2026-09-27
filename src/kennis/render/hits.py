@@ -24,9 +24,14 @@ The cuts are in `_COSINE_CUTS` with the run that produced them. Concerns
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Final, Literal
 
+from kennis.engine.context.bundle import BUNDLE_DIRNAME
+from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.rag.models import SearchResult
+from kennis.render.words import snippet_of
 
 type Relevance = Literal["very high", "high", "medium", "low", "very low"]
 type Basis = Literal["cosine", "lexical"]
@@ -203,3 +208,166 @@ __all__ = [
     "relevance",
     "relevance_phrase",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class Hit:
+    """One result, which collection produced it, and on what scale.
+
+    The collection is carried alongside rather than read off the chunk,
+    because a merged list is three lists interleaved and a reader has to
+    be able to tell them apart without looking anything up.
+
+    `basis` travels with the hit rather than with the list because each
+    collection has its own index and so its own embedding model: a corpus
+    part-way through a model change can hold one index a relevance band
+    is calibrated for and one it is not. `None` is "this hit cannot be
+    banded".
+    """
+
+    collection: str
+    result: SearchResult
+    basis: Basis | None
+    model: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedHit:
+    """One hit as text, in the three parts a reader sees.
+
+    **Three fields rather than one string, and that is the seam design
+    section 20 asks for.** The command line styles each part differently
+    and indents the body; the MCP server joins them. The *text* is
+    identical either way, which is what "the same bytes, one wearing
+    ANSI" has to mean once one front end has colour and the other has
+    none. A single joined string would force the command line to take
+    the server's layout, and three separately rendered strings would let
+    the two drift.
+
+    `body` is None when no snippet was asked for, which is a different
+    thing from an empty one.
+    """
+
+    headline: str
+    detail: str
+    body: str | None
+
+
+def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:
+    """The line under a hit: how well it matched, and how to reach it.
+
+    A context hit's handle is a path rather than an identifier, because
+    a bundle document lives in the user's own project and there is no
+    `read_context` to take a pair.
+    """
+    handle = (
+        bundle_hit_handle(hit.result, bundle_name=BUNDLE_DIRNAME)
+        if hit.collection == CONTEXT_COLLECTION
+        else hit_handle(hit.result)
+    )
+    if style == "none":
+        return handle
+    if style == "raw":
+        return f"{raw_scores(hit.result)}  {handle}"
+    if hit.basis is None:
+        return handle
+    level = relevance(hit.result, basis=hit.basis, model=hit.model, best=best)
+    if level is None:
+        return handle
+    return f"relevance: {level}  {handle}"
+
+
+def rendered_hit(
+    hit: Hit, *, rank: int, style: ScoreStyle, best: float, snippet: str
+) -> RenderedHit:
+    """One hit, whole, as both front ends show it.
+
+    The one place a hit becomes words. Section 20 calls this the
+    deliberate exception to every front end rendering for itself, and
+    says why it is worth the exception: the byte-identical property is
+    what makes `kennis search` output a faithful proxy for what an agent
+    sees, so a person debugging a retrieval problem at the terminal is
+    looking at the thing the model looked at.
+    """
+    return RenderedHit(
+        headline=hit_headline(rank, hit.result),
+        detail=hit_detail(hit, style=style, best=best),
+        body=(
+            None
+            if snippet == "none"
+            else snippet_of(hit.result.chunk.text, full=snippet == "full")
+        ),
+    )
+
+
+def basis_phrase(hits: Sequence[Hit], style: ScoreStyle) -> str:
+    """What this group's relevance levels are a band of, or nothing.
+
+    Empty when no level is being printed at all, so a report of raw
+    scores does not carry a heading explaining a column it does not
+    have, and empty when a group mixes two scales, because one sentence
+    cannot describe both.
+    """
+    if style != "human":
+        return ""
+    bases = {hit.basis for hit in hits if hit.basis is not None}
+    if len(bases) != 1:
+        return ""
+    return relevance_phrase(bases.pop())
+
+
+def best_lexical(hits: Sequence[Hit]) -> float:
+    """The best BM25 score in the list, which the lexical band is a fraction of.
+
+    Within one collection, which is the only place a BM25 score is
+    comparable. It used to be taken across all of them, because one
+    column served every collection and a per-collection best would have
+    made each collection's top hit "very high" with nothing to say so.
+    Concern #231.
+    """
+    return max(
+        (hit.result.bm25_score for hit in hits if hit.result.bm25_score is not None),
+        default=0.0,
+    )
+
+
+def summary_of(groups: Mapping[str, Sequence[Hit]]) -> str:
+    """`5 in docs, 2 in notes`: how much came from where.
+
+    Which is the thing a grouped report can say and a merged one could
+    not, and it is why the groups need no ranking between them - a
+    reader sees the distribution before the first hit.
+
+    The basis is not here. It belongs to a group, and this line spans
+    them.
+    """
+    return ", ".join(f"{len(hits)} in {name}" for name, hits in groups.items())
+
+
+def around(chunk_index: int) -> str:
+    """The range that puts one chunk in context, as `--chunks` takes it.
+
+    `max(0, ...)` is the part that matters: a hit at chunk 0 would
+    otherwise print `-1:2`, and `-1` is the document's *last* chunk - so
+    a printed command would send a reader to the wrong end of it.
+    """
+    return f"{max(0, chunk_index - 1)}:{chunk_index + 2}"
+
+
+def score_style_for(hits: Sequence[Hit], asked: ScoreStyle) -> tuple[ScoreStyle, bool]:
+    """The score rendering that can actually be produced, and whether it degraded.
+
+    `human` asks for a band, and a band needs a scale. A dense search on
+    a model kennis has never measured has none, so the request degrades
+    to the raw numbers - the same choice the search mode makes, and for
+    the same reason: refusing would be unhelpful and substituting
+    silently would have the reader trusting a measurement that was never
+    made.
+
+    **The saying-so is the caller's**, which is why the second value
+    exists. A command line prints a note; a tool may phrase it as part
+    of its payload or not at all, and neither should be decided here.
+    """
+    if asked != "human" or any(hit.basis is not None for hit in hits):
+        return asked, False
+    return "raw", True
