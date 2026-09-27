@@ -13,9 +13,9 @@ from pathlib import Path
 import click
 
 from kennis.cli import display
-from kennis.cli.context import existing_corpus
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import reporting
+from kennis.context import existing_corpus
 from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.installed import (
     InstalledPack,
@@ -31,6 +31,7 @@ from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.render.packs import (
     describe_damage,
     describe_declarations,
+    describe_holdings,
     describe_install,
     describe_installed,
     describe_lost_source,
@@ -264,8 +265,19 @@ def list_command() -> None:
     # here: `corpus list` needs none of this because a surrogate id is fixed
     # width, and a pack id is whatever the provider called itself.
     width = max((len(one.state.pack_id) for one in listing.packs), default=0)
-    for installed in listing.packs:
+    # Sorted the way `describe_holdings` sorts, so the two sequences line
+    # up. Section 11 makes these the same bytes the MCP server's
+    # instructions block carries, and a listing whose order differs from
+    # the block's would pair a pack with another's description.
+    ordered = sorted(listing.packs, key=lambda one: one.state.pack_id)
+    for installed, holding in zip(ordered, describe_holdings(ordered), strict=True):
         display.row(installed.state.pack_id.ljust(width), describe_installed(installed))
+        # Aligned under the version column, not at the row's own indent.
+        # At the same indent it reads as another pack id - a one-word
+        # pack name is indistinguishable from an id, which is exactly
+        # what running it showed. `row` with no identifier is the
+        # quiet-guarded way to print a dimmed continuation.
+        display.row("", " " * (width + 2) + holding)
     if listing.unreadable:
         _report_unreadable(listing)
     if not listing.packs and not listing.unreadable:

@@ -27,6 +27,7 @@ from kennis.cli.commands import (
     read_command,
     remember_command,
     search_command,
+    serve_command,
 )
 from kennis.cli.group import KennisGroup
 from kennis.logs import start_logging
@@ -60,6 +61,7 @@ main.add_command(pack_group)
 main.add_command(search_command)
 main.add_command(read_command)
 main.add_command(remember_command)
+main.add_command(serve_command)
 
 
 if __name__ == "__main__":

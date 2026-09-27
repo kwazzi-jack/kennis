@@ -42,6 +42,7 @@ from kennis.render.packs import (
     describe_damage,
     describe_declarations,
     describe_deferred,
+    describe_holdings,
     describe_install,
     describe_installed,
     describe_lost_source,
@@ -672,3 +673,71 @@ def test_several_moved_files_are_counted_and_listed():
     assert said.startswith("2 files")
     assert "a.md is at .a.md" in said
     assert "b.md is at kept/b.md" in said
+
+
+# ---------------------------------------------------------------------------
+# describe_holdings: what this installation holds, for a reader and a model
+# ---------------------------------------------------------------------------
+#
+# Design section 11: the generated half of the MCP server's `instructions=`
+# block names what this installation actually holds, from each pack's `name`
+# and `description`, and the same bytes appear in `kennis pack list`, so what
+# a user reads and what a model reads cannot drift.
+
+
+def holding(identifier: str, name: str, description: str | None) -> InstalledPack:
+    """The state's id as well as the declaration's, because the store is
+    keyed on the former and that is what the ordering reads."""
+    return InstalledPack(
+        state=a_state(pack_id=identifier),
+        declaration=Pack(
+            kennis=KennisHeader(schema_version=1),
+            pack=PackIdentity(
+                id=identifier, name=name, version="1.0.0", description=description
+            ),
+        ),
+        verified=True,
+    )
+
+
+def test_a_pack_is_named_and_described():
+    lines = describe_holdings(
+        (holding("boepie", "stimela pipelines", "Radio interferometry reduction."),)
+    )
+
+    assert lines == ("stimela pipelines - Radio interferometry reduction.",)
+
+
+def test_a_pack_with_no_description_is_named_alone():
+    """`description` is optional in the schema, and a dangling separator
+    with nothing after it reads as a truncation."""
+    lines = describe_holdings((holding("boepie", "stimela pipelines", None),))
+
+    assert lines == ("stimela pipelines",)
+
+
+def test_packs_are_listed_in_a_fixed_order():
+    """Two runs must produce the same bytes, or the shared-bytes property
+    between the block and `pack list` is only true one run at a time."""
+    first = holding("zeta", "Zeta", "Last by id.")
+    second = holding("alpha", "Alpha", "First by id.")
+
+    assert describe_holdings((first, second)) == describe_holdings((second, first))
+    assert describe_holdings((first, second))[0].startswith("Alpha")
+
+
+def test_no_packs_is_no_lines():
+    """The empty case is empty rather than a sentence, because the two
+    callers say different things about it: the block explains that the
+    installation is bare and the listing prints its own note."""
+    assert describe_holdings(()) == ()
+
+
+def test_a_pack_whose_declaration_will_not_parse_is_named_by_its_id():
+    """`declaration` is None when the copied `.ken.yml` will not parse,
+    which is corruption of a file kennis wrote. The pack is still
+    installed and still holds files, so omitting it would describe the
+    installation as smaller than it is."""
+    lines = describe_holdings((an_installed(declaration=None),))
+
+    assert lines == ("boepie",)

@@ -1,4 +1,11 @@
-"""What every command resolves before it does anything.
+"""What every front end resolves before it does anything.
+
+**Not under `cli/`, because it is not the command line's.** The MCP
+server resolves the same two answers - which settings are in force and
+where the corpus is - and a second front end importing a first to get
+them would make the command line privileged, which design section 20
+forbids. It sits beside `logs.py` for the same reason: neither is the
+engine and neither belongs to one interface.
 
 **Settings are read once, here, and passed down as values.** Nothing under
 `engine/` calls `load_settings`, which is concern #87's rule: an engine that
