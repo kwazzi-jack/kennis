@@ -94,11 +94,15 @@ dependencies = [
 # fastmcp is a real dependency that someone using kennis as a library, or only
 # from the terminal, has no use for.
 #
-# The one exact pin, and the exception to the floor rule above, because it is
-# the version boepie's MCP server is known to work against and the only thing
-# kennis will have to port that code against. 4.x is out; revisit the pin when
-# there is an MCP server here to test against it, not before.
-mcp = ["fastmcp==3.4.7"]
+# A floor like everything else. It was an exact pin at 3.4.7 while there was
+# no server here - the reason being that 3.4.7 is what boepie's server was
+# known to work against. kennis's server was written rather than ported, so
+# that reason was void before it was tested, and 4.0.10 passes the whole
+# suite including the nine tests that speak JSON-RPC to a real subprocess.
+# Concern #16.
+mcp = [
+    "fastmcp>=4.0.10,<5",
+]
 mineru = [
     "mineru[pipeline]>=3.4,<4",
 ]

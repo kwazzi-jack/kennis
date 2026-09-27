@@ -148,7 +148,13 @@ def hit_headline(rank: int, result: SearchResult) -> str:
     """
     chunk = result.chunk
     title = str(chunk.metadata.get("title") or chunk.document_id)
-    section = chunk.section if chunk.section != title else None
+    # Casefolded, because a title taken from a filename beside an H1
+    # written in prose case - `calibration` and `Calibration` - is the
+    # ordinary relationship between the two, not an odd one. A heading
+    # that differs from the title only in case carries nothing the title
+    # does not. Concern #296.
+    same = chunk.section is not None and chunk.section.casefold() == title.casefold()
+    section = None if same else chunk.section
     where = f" - {section}" if section else ""
     return f"[{rank}] {title}{where}"
 
