@@ -197,7 +197,17 @@ def test_the_tool_is_advertised(corpus: Path):
     assert isinstance(result, dict)
     tools = result["tools"]
     assert isinstance(tools, list)
-    assert "list_corpus" in {tool["name"] for tool in tools}
+    # Every tool, not just the first one written. A tool that exists and
+    # is never registered is invisible to an agent, and nothing else in
+    # the suite would notice: the in-process tests call the functions
+    # directly.
+    assert {tool["name"] for tool in tools} == {
+        "list_corpus",
+        "search_context",
+        "search_docs",
+        "search_literature",
+        "search_notes",
+    }
 
 
 def test_the_server_describes_itself_over_the_wire(corpus: Path):
