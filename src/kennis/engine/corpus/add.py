@@ -85,14 +85,18 @@ from kennis.engine.docs.sites import (
 from kennis.engine.errors import InputError, KennisError
 from kennis.engine.events import (
     Diagnostic,
+    DocumentSkipped,
     Event,
     EventSink,
     ItemFinished,
     ItemStarted,
+    MetadataUnavailable,
+    NoPagesDiscovered,
     OperationFinished,
     Outcome,
     Progress,
     Severity,
+    TitleDotStripped,
 )
 from kennis.engine.literature.citekeys import (
     derive_citekey,
@@ -420,11 +424,7 @@ def _add_one(
         sink.emit(
             Diagnostic(
                 severity=Severity.WARNING,
-                message=(
-                    f"title '{title}' looked like a dotfile name; the leading "
-                    f"dot was stripped from the filename so it stays visible "
-                    f"to search"
-                ),
+                detail=TitleDotStripped(title=title),
             )
         )
 
@@ -521,7 +521,7 @@ def _report_problems(record: Uniqueness, sink: EventSink) -> None:
         sink.emit(
             Diagnostic(
                 severity=Severity.WARNING,
-                message=f"{problem} - it was left alone",
+                detail=DocumentSkipped(problem=problem),
                 resolution="kennis corpus status",
             )
         )
@@ -987,11 +987,7 @@ def _add_paper(
         sink.emit(
             Diagnostic(
                 severity=Severity.WARNING,
-                message=(
-                    f"arXiv did not answer for {paper.identifier}, so its "
-                    f"metadata is missing and its citekey is derived from "
-                    f"the title alone"
-                ),
+                detail=MetadataUnavailable(identifier=paper.identifier),
             )
         )
     existing = _duplicate_identity(record, identity)
@@ -1564,16 +1560,15 @@ def _pages_of_site(
         # Otherwise the command prints `Added 0 documents` and exits 0, and
         # the four reasons that produces - an empty site, a prefix that
         # excluded everything, the wrong mode probed, a fetch that failed -
-        # are indistinguishable. The prefix is the surprising half: it is
-        # derived from the URL, so a link deeper than the documentation root
-        # silently narrows the search to that subdirectory.
-        beneath = f" under '{found.path_prefix}'" if found.path_prefix else ""
+        # are indistinguishable. The prefix is carried because it is the
+        # surprising one; why it surprises is said where it is worded.
         sink.emit(
             Diagnostic(
                 severity=Severity.WARNING,
-                message=(
-                    f"'{base_url}' produced no pages: {found.mode} discovery "
-                    f"found nothing{beneath}"
+                detail=NoPagesDiscovered(
+                    base_url=base_url,
+                    mode=str(found.mode),
+                    path_prefix=found.path_prefix or None,
                 ),
             )
         )

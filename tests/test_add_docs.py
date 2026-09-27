@@ -21,6 +21,7 @@ from kennis.engine.errors import InputError
 from kennis.engine.events import (
     Diagnostic,
     ItemFinished,
+    NoPagesDiscovered,
     Outcome,
     Progress,
     Recorder,
@@ -469,9 +470,9 @@ def test_a_site_with_no_pages_says_so(docs: Collection):
         if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
     ]
     assert warnings, "a site that produced nothing said nothing about it"
-    said = warnings[0].message
-    assert BASE in said
-    assert "no pages" in said
+    detail = warnings[0].detail
+    assert isinstance(detail, NoPagesDiscovered)
+    assert detail.base_url == BASE
 
 
 def test_the_warning_names_the_mode_and_the_prefix(docs: Collection):
@@ -488,13 +489,15 @@ def test_the_warning_names_the_mode_and_the_prefix(docs: Collection):
         events=events,
     )
 
-    said = next(
-        event.message
+    detail = next(
+        event.detail
         for event in events.events
         if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
     )
-    assert "sitemap" in said
-    assert "/en/latest/" in said
+    assert isinstance(detail, NoPagesDiscovered)
+    assert detail.mode == "sitemap"
+    assert detail.path_prefix is not None
+    assert "/en/latest/" in detail.path_prefix
 
 
 def test_a_site_that_yielded_pages_warns_about_nothing(docs: Collection):

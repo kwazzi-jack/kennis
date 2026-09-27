@@ -9,6 +9,8 @@ import pytest
 
 from kennis.engine.events import (
     Diagnostic,
+    DocumentSkipped,
+    FrontmatterUnreadable,
     ItemFinished,
     ItemStarted,
     OperationFinished,
@@ -104,11 +106,16 @@ def test_the_recorder_summarises_outcomes_by_item():
 
 def test_the_recorder_collects_diagnostics_whatever_their_severity():
     recorder = Recorder()
-    recorder.emit(Diagnostic(severity=Severity.WARNING, message="index is stale"))
+    recorder.emit(
+        Diagnostic(
+            severity=Severity.WARNING,
+            detail=DocumentSkipped(problem="notes/a.md: bad yaml"),
+        )
+    )
     recorder.emit(
         Diagnostic(
             severity=Severity.HINT,
-            message="rebuild it",
+            detail=FrontmatterUnreadable(path="notes/a.md"),
             resolution="kennis corpus index",
         )
     )

@@ -16,6 +16,7 @@ from kennis.cli import display, sink
 from kennis.cli.display import ProgressUpdate
 from kennis.engine.events import (
     Diagnostic,
+    DocumentUnsearchable,
     ItemFinished,
     ItemStarted,
     OperationFinished,
@@ -130,7 +131,7 @@ def test_a_diagnostic_is_shown_as_it_happens(
         shown.emit(
             Diagnostic(
                 severity=Severity.WARNING,
-                message="one document could not be read",
+                detail=DocumentUnsearchable(problem=None, path="notes/a.md"),
                 resolution="kennis corpus status",
             )
         )
