@@ -203,6 +203,10 @@ def test_the_tool_is_advertised(corpus: Path):
     # directly.
     assert {tool["name"] for tool in tools} == {
         "list_corpus",
+        "read_docs",
+        "read_literature",
+        "read_notes",
+        "remember",
         "search_context",
         "search_docs",
         "search_literature",

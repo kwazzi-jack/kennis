@@ -21,6 +21,7 @@ from kennis.cli.commands.context import require_bundle
 from kennis.cli.sink import reporting
 from kennis.context import existing_corpus
 from kennis.engine.context import remember_in_bundle
+from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import Outcome
 from kennis.engine.history.history import commit_summary
 from kennis.engine.history.repository import Repository
@@ -171,7 +172,7 @@ def _report(report: RememberReport) -> None:
         report.title + (f", {state}" if state else ""),
         elapsed=report.elapsed_seconds,
     )
-    display.detail("+", str(report.path))
+    display.detail("+", relative_to_corpus(report.path, existing_corpus().corpus_root))
     if report.index_outcome == "unindexed":
         display.next_step("kennis corpus index", note="to make it searchable")
 
