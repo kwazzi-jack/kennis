@@ -26,6 +26,7 @@ ENGINE_ROOT = SOURCE_ROOT / "kennis" / "engine"
 # one to the engine should fail here rather than at review.
 FORBIDDEN_BY_THE_ENGINE = (
     "kennis.cli",
+    "kennis.gui",
     "kennis.mcp",
     "kennis.render",
     "click",
@@ -41,6 +42,7 @@ FORBIDDEN_BY_THE_ENGINE = (
 # downstream of the first, the failure this separation exists to prevent.
 FORBIDDEN_BY_THE_RENDERER = (
     "kennis.cli",
+    "kennis.gui",
     "kennis.mcp",
     "click",
     "rich",
@@ -53,10 +55,25 @@ FORBIDDEN_BY_THE_RENDERER = (
 # do is import the other front end: two peers, neither privileged.
 FORBIDDEN_BY_THE_SERVER = (
     "kennis.cli",
+    "kennis.gui",
     "click",
     "rich",
     "rich_click",
     "prompt_toolkit",
+)
+
+# The graphical front end is the third peer. It may import its own
+# interface libraries - fastapi, uvicorn, jinja2, pywebview - and it
+# renders through `render/`. What it may not import is either of the
+# other two, for the same reason neither of them may import it.
+FORBIDDEN_BY_THE_INTERFACE = (
+    "kennis.cli",
+    "kennis.mcp",
+    "click",
+    "rich",
+    "rich_click",
+    "prompt_toolkit",
+    "fastmcp",
 )
 
 # Also refused to the engine at runtime, so that `import kennis.engine` is
@@ -81,6 +98,10 @@ def render_modules() -> list[Path]:
 
 def server_modules() -> list[Path]:
     return sorted((SOURCE_ROOT / "kennis" / "mcp").rglob("*.py"))
+
+
+def interface_modules() -> list[Path]:
+    return sorted((SOURCE_ROOT / "kennis" / "gui").rglob("*.py"))
 
 
 def module_name_of(path: Path) -> str:
@@ -224,6 +245,73 @@ import kennis.engine
 
 for module in pkgutil.walk_packages(kennis.engine.__path__, "kennis.engine."):
     importlib.import_module(module.name)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize("path", interface_modules(), ids=module_name_of)
+def test_interface_module_imports_no_other_front_end(path: Path):
+    """`gui/` is a peer of `cli/` and `mcp/`, not a client of either.
+
+    Written in unit 9a, before there was anything to get wrong. The
+    graphical front end needs what the other two need - where the
+    corpus is, what a hit looks like - and takes it from
+    `kennis.context` and `render/`. Reaching into `cli/` for a helper
+    is the easy mistake, and it would make the command line the real
+    kennis with two wrappers, which design section 20 says it is not.
+    """
+    imported = imported_modules(path)
+    violations = sorted(
+        name
+        for name in imported
+        for forbidden in FORBIDDEN_BY_THE_INTERFACE
+        if offends(name, forbidden)
+    )
+    assert not violations, f"{module_name_of(path)} imports {violations}"
+
+
+def test_the_command_line_builds_without_the_gui_extra():
+    """`kennis --help` works on an install that never asked for fastapi.
+
+    The same property `serve` has and for the same reason: `gui` is an
+    optional extra, so the deferred import inside `gui_command` is what
+    keeps every other command runnable - and a deferred import is
+    exactly the kind of thing that gets tidied to the top of a module.
+    """
+    program = """
+import sys
+
+BLOCKED = {"fastapi", "uvicorn", "webview", "starlette"}
+
+
+class Refuse:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.partition(".")[0] in BLOCKED:
+            raise ImportError("the gui extra is not installed")
+        return None
+
+
+sys.meta_path.insert(0, Refuse())
+
+from click.testing import CliRunner
+
+from kennis.cli.__main__ import main
+
+helped = CliRunner().invoke(main, ["--help"])
+assert helped.exit_code == 0, helped.output
+assert "gui" in helped.output, helped.output
+
+opened = CliRunner().invoke(main, ["gui"])
+assert opened.exit_code != 0
+assert isinstance(opened.exception, ImportError), opened.exception
 """
     completed = subprocess.run(
         [sys.executable, "-c", program],

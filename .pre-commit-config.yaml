@@ -35,11 +35,19 @@ repos:
 
       # The ASCII rule cannot be expressed as a ruff rule - RUF001 catches
       # ambiguous unicode, not all of it - so it stays the grep.
+      #
+      # `exclude` covers vendored third-party assets and nothing else. The
+      # rule exists so kennis's *own* files stay ASCII - no em dashes, no
+      # curly quotes drifting in through a paste - and a vendored library is
+      # text kennis quotes rather than composes, which is already a stated
+      # exception to the neighbouring rule about phrasing. KaTeX maps Unicode
+      # mathematical symbols and cannot be anything else. Concern #308.
       - id: ascii-only
         name: ascii only
         entry: sh scripts/check_ascii.sh
         language: system
         types: [text]
+        exclude: ^src/kennis/gui/static/vendor/
 
       # CLAUDE.md forbids a silenced type error, and nothing was enforcing it:
       # ruff has no rule for it and mypy runs against `src` only, so one sat

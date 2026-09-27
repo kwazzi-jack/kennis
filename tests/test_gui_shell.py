@@ -1,0 +1,167 @@
+"""The graphical front end's shell: the token, the theme, the peer rule.
+
+Unit 9a builds nothing a user would call a feature. It builds the four
+things that are expensive to add afterwards, and three of them are
+testable here.
+
+**The token is the one that must be right the first time.** The server
+listens on the loopback interface, and loopback is not private on a
+shared machine - any other process, and any other user account on the
+same host, can reach 127.0.0.1. Brian works on cluster login nodes.
+Retrofitting authentication onto a working interface is the change
+that gets deferred, so it is tested before there is anything to
+protect. Concern #309.
+
+The window itself is not tested. `pywebview` resolves its backend
+inside `start()`, which blocks until the window closes, and there is
+no honest way to exercise that from a test process. Saying so is
+better than a test that passes without touching it.
+"""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from kennis.gui.app import build_app
+from kennis.gui.serve import ANY_PORT, HOST
+from kennis.gui.theme import CSS_COLOURS, css_variables
+from kennis.render.theme import ANSI_COLOURS, ROLES
+
+TOKEN = "a-test-token"
+
+
+@pytest.fixture
+def client() -> TestClient:
+    """A client that does *not* follow redirects or carry the token.
+
+    Both defaults matter: a test that silently followed a redirect to a
+    login page would report 200 for a request that was refused.
+    """
+    return TestClient(build_app(TOKEN), follow_redirects=False)
+
+
+# ---------------------------------------------------------------------------
+# The token
+# ---------------------------------------------------------------------------
+
+
+def test_a_request_without_the_token_is_refused(client: TestClient):
+    assert client.get("/").status_code == 401
+
+
+def test_a_request_with_the_wrong_token_is_refused(client: TestClient):
+    assert client.get("/", params={"token": "not-it"}).status_code == 401
+
+
+def test_the_token_admits_and_is_remembered(client: TestClient):
+    """It arrives once in the URL and is held in a cookie afterwards, so
+    it is not on every subsequent request line."""
+    first = client.get("/", params={"token": TOKEN})
+
+    assert first.status_code == 200
+    assert client.get("/").status_code == 200
+
+
+def test_every_route_is_guarded_not_just_the_page(client: TestClient):
+    """The check is middleware rather than a decorator per route,
+    because a route added in unit 9c must not be able to forget it.
+
+    A static asset is the case that would be missed: it is not written
+    by hand, so it is not where anyone looks for a guard.
+    """
+    for path in ("/", "/static/kennis.css", "/does-not-exist"):
+        assert client.get(path).status_code == 401, path
+
+
+def test_the_guard_does_not_redirect_to_somewhere_unguarded(client: TestClient):
+    """A refusal that redirects is a refusal a client follows."""
+    refused = client.get("/")
+
+    assert refused.status_code == 401
+    assert "location" not in {key.lower() for key in refused.headers}
+
+
+# ---------------------------------------------------------------------------
+# The theme
+# ---------------------------------------------------------------------------
+
+
+def test_every_semantic_role_becomes_a_css_variable():
+    """Exhaustive over the registry, so adding a role and not styling it
+    fails here rather than rendering as unstyled text.
+
+    The same property that makes `render/diagnostics.py`'s match worth
+    having: the check is against the source of truth, not a list
+    written beside it.
+    """
+    emitted = css_variables()
+
+    for name in ROLES:
+        assert f"--role-{name}:" in emitted, name
+
+
+def test_the_adapter_transliterates_and_does_not_choose():
+    """`render/theme.py` declares the palette and this adapts it. A
+    colour chosen here is the drift the roles exist to prevent.
+
+    So the property is not "the value is a colour" but "the value is
+    *this role's* colour, spelled the way CSS spells it" - which a
+    wrong-but-plausible mapping fails and a rule about colours in
+    general would not.
+    """
+    emitted = dict(_variables_of(css_variables()))
+
+    for name, role in ROLES.items():
+        expected = CSS_COLOURS[role.colour] if role.colour else "inherit"
+        assert emitted[f"--role-{name}"] == expected, name
+
+
+def test_every_ansi_colour_the_registry_may_name_has_a_css_name():
+    """The registry's colour set is the source of truth. A colour added
+    there with no name here would emit `bright_black` or similar into a
+    stylesheet, which no browser understands - so the text renders
+    unstyled and nothing says a colour was lost."""
+    assert not set(ANSI_COLOURS) - set(CSS_COLOURS)
+
+
+def _variables_of(block: str) -> list[tuple[str, str]]:
+    """`--name: value;` lines, as pairs."""
+    pairs: list[tuple[str, str]] = []
+    for line in block.splitlines():
+        if "--role-" not in line:
+            continue
+        name, value = line.split(":", 1)
+        pairs.append((name.strip(), value.strip().rstrip(";")))
+    return pairs
+
+
+def test_the_stylesheet_is_served_and_carries_the_variables(client: TestClient):
+    client.get("/", params={"token": TOKEN})
+
+    served = client.get("/static/kennis.css")
+
+    assert served.status_code == 200
+    assert "--role-error:" in served.text
+
+
+# ---------------------------------------------------------------------------
+# Where it listens
+# ---------------------------------------------------------------------------
+
+
+def test_the_interface_binds_loopback_and_lets_the_kernel_pick_a_port():
+    """Two constants, asserted rather than trusted.
+
+    `0.0.0.0` would put a personal corpus on the network, and a fixed
+    port makes the interface both collision-prone and predictable to
+    find on a shared machine. Neither is a mistake anyone makes
+    deliberately; both are one character from correct.
+
+    This checks the constants, not the socket. Binding for real would
+    mean starting the server, and the honest note is that this catches
+    the edit rather than proving the bind - which is still worth
+    having, because the edit is the failure that happens.
+    """
+    assert HOST == "127.0.0.1"
+    assert ANY_PORT == 0
