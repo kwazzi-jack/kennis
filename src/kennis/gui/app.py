@@ -23,12 +23,29 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
+from kennis.context import existing_corpus
+from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.errors import KennisError
+from kennis.gui import words
+from kennis.gui.pages import shown_document, shown_hits
 from kennis.gui.theme import stylesheet
+from kennis.retrieval import search_scope
+
+_HERE: Final = Path(__file__).parent
+_TEMPLATES: Final = Jinja2Templates(directory=str(_HERE / "templates"))
+
+# The scopes a person may search, in the order they are offered. The
+# bundle last because it is the one that is not always there.
+SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION)
 
 # The name the cookie is held under. Prefixed because it is kennis's
 # and a browser may be holding cookies for other things served from
@@ -82,37 +99,115 @@ def build_app(token: str) -> FastAPI:
             )
         return answer
 
+    # Mounted, not routed one file at a time. The guard above is
+    # application middleware, so it runs for a mounted app too - which
+    # is the case a per-route decorator would have missed, and the one
+    # nobody would have thought to check.
+    app.mount(
+        "/static/vendor",
+        StaticFiles(directory=str(_HERE / "static" / "vendor")),
+        name="vendor",
+    )
+
     @app.get("/static/kennis.css")
     async def serve_stylesheet() -> PlainTextResponse:
         return PlainTextResponse(stylesheet(), media_type="text/css")
 
+    @app.get("/static/typeset.js")
+    async def serve_typeset() -> PlainTextResponse:
+        return PlainTextResponse(
+            (_HERE / "static" / "typeset.js").read_text(encoding="utf-8"),
+            media_type="text/javascript",
+        )
+
     @app.get("/")
-    async def serve_page() -> HTMLResponse:
-        return HTMLResponse(_PAGE)
+    async def serve_search(
+        request: Request, q: str = "", scope: str = "notes"
+    ) -> HTMLResponse:
+        return _TEMPLATES.TemplateResponse(
+            request, "search.html", _hits_context(q, scope)
+        )
+
+    @app.get("/hits")
+    async def serve_hits(
+        request: Request, q: str = "", scope: str = "notes"
+    ) -> HTMLResponse:
+        # The partial htmx swaps in. The same context as the page, so
+        # a first load and a keystroke cannot disagree about what a
+        # result looks like.
+        return _TEMPLATES.TemplateResponse(
+            request, "hits.html", _hits_context(q, scope)
+        )
+
+    @app.get("/document/{collection}/{document_id}")
+    async def serve_document(
+        request: Request, collection: str, document_id: str, images: str = ""
+    ) -> HTMLResponse:
+        load_remote = images == "on"
+        try:
+            document = shown_document(
+                existing_corpus().corpus_root,
+                collection,
+                document_id,
+                load_remote_images=load_remote,
+            )
+        except KennisError as error:
+            return _problem(request, error)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "document.html",
+            {
+                "document": document,
+                "load_remote_images": load_remote,
+                "blocked_note": words.IMAGES_BLOCKED,
+                "blocked_action": words.LOAD_IMAGES,
+            },
+        )
 
     return app
 
 
-# The shell of a page. Unit 9a serves one static document on purpose:
-# what it exists to prove is the process shape, the guard and the
-# theme, and a page with features in it would make a failure ambiguous.
-_PAGE: Final = """\
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kennis</title>
-<link rel="stylesheet" href="/static/kennis.css">
-</head>
-<body>
-<main>
-<h1>kennis</h1>
-<p class="role-muted">The interface is running. Nothing is wired to it yet.</p>
-</main>
-</body>
-</html>
-"""
+def _hits_context(question: str, scope: str) -> dict[str, object]:
+    """What a search page and its partial both need.
+
+    A failure becomes fields rather than an exception: a search box
+    whose scope has no index should say so above the box the person is
+    still typing in, not replace the page with an error.
+    """
+    context: dict[str, object] = {
+        "question": question,
+        "scope": scope,
+        "scopes": SCOPES,
+        "hits": [],
+        "nothing": words.NOTHING_FOUND,
+        "problem": None,
+        "resolution": None,
+    }
+    if not question:
+        return context
+    if scope not in SCOPES:
+        context["problem"] = words.unknown_scope(scope, SCOPES)
+        return context
+    try:
+        context["hits"] = shown_hits(search_scope(scope, question))
+    except KennisError as error:
+        context["problem"] = str(error)
+        context["resolution"] = error.resolution
+    return context
+
+
+def _problem(request: Request, error: KennisError) -> HTMLResponse:
+    """A domain failure as a page.
+
+    Design section 20: the engine raises, and each front end turns it
+    into what that front end has - an exit code, a tool error, or this.
+    """
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "problem.html",
+        {"problem": str(error), "resolution": error.resolution},
+        status_code=404,
+    )
 
 
 __all__ = ["COOKIE_NAME", "build_app", "new_token"]

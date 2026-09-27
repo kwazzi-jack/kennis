@@ -1,0 +1,15 @@
+{% if problem %}
+<p class="role-warning">{{ problem }}</p>
+{% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
+{% elif question and not hits %}
+<p class="role-muted">{{ nothing }}</p>
+{% endif %}
+<ol class="hits">
+{% for hit in hits %}
+  <li>
+    <a class="role-operation" href="/document/{{ hit.collection }}/{{ hit.document_id }}">{{ hit.headline }}</a>
+    <p class="role-muted detail">{{ hit.detail }}</p>
+    {% if hit.body %}<p class="body">{{ hit.body }}</p>{% endif %}
+  </li>
+{% endfor %}
+</ol>
