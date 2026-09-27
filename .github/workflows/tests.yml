@@ -51,7 +51,13 @@ jobs:
 
       # `--frozen` so the lockfile is used as committed. A resolution that
       # drifts in CI tests an environment nobody has.
-      - run: uv sync --frozen --python ${{ matrix.python }}
+      # `--extra mcp` because `src/kennis/mcp/` imports fastmcp and mypy
+      # checks all of `src`. Without it the type check fails on a module
+      # whose dependency the job chose not to install, which is a gap in
+      # the job rather than in the code. The `mcp` extra stays optional
+      # for a user: `test_engine_imports_without_the_interface_libraries`
+      # proves `import kennis.engine` works without it.
+      - run: uv sync --frozen --extra mcp --python ${{ matrix.python }}
 
       # `--python` on each run as well as on the sync: without it `uv run`
       # reads `.python-version`, which says 3.12, and warns that the

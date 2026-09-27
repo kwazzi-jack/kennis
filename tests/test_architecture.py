@@ -236,6 +236,55 @@ for module in pkgutil.walk_packages(kennis.engine.__path__, "kennis.engine."):
     assert completed.returncode == 0, completed.stderr
 
 
+def test_the_command_line_builds_without_the_mcp_extra():
+    """`kennis --help` works on an install that never asked for fastmcp.
+
+    `mcp` is an optional extra, so someone who installed kennis to use
+    it from the terminal or as a library has no fastmcp - and every
+    command but `serve` must still run. The mechanism is that
+    `serve_command` imports the server inside its body rather than at
+    module scope, which is invisible to the static walk and is exactly
+    the kind of thing that gets "tidied" into a top-level import.
+
+    `serve` itself is expected to fail there, and fail with an
+    ImportError naming fastmcp rather than with something obscure.
+    """
+    program = """
+import sys
+
+
+class Refuse:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.partition(".")[0] == "fastmcp":
+            raise ImportError("fastmcp is not installed")
+        return None
+
+
+sys.meta_path.insert(0, Refuse())
+
+from click.testing import CliRunner
+
+from kennis.cli.__main__ import main
+
+helped = CliRunner().invoke(main, ["--help"])
+assert helped.exit_code == 0, helped.output
+assert "serve" in helped.output, helped.output
+
+served = CliRunner().invoke(main, ["serve"])
+assert served.exit_code != 0
+assert isinstance(served.exception, ImportError), served.exception
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
 def text_files() -> list[Path]:
     found = [
         path

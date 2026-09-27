@@ -52,7 +52,10 @@ jobs:
       # `--extra mineru` is the point of this job. Without it the real
       # conversion test skips, and a job whose one interesting test silently
       # skips reports nothing - which is worse than not running it.
-      - run: uv sync --frozen --extra mineru --python 3.12
+      # `--extra mcp` too: the slow set includes the MCP server's
+      # subprocess tests, and a job whose subject silently skips reports
+      # nothing - the reason this workflow syncs mineru as well.
+      - run: uv sync --frozen --extra mineru --extra mcp --python 3.12
 
       - name: slow tests
         run: uv run --no-sync --python 3.12 pytest -m slow -v --durations=10
