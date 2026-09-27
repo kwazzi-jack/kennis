@@ -44,7 +44,9 @@ installation actually has.
 
 A `search_*` tool returns ranked hits, each with a score, a source and a
 bounded snippet. It is a coordinate, not an answer. When a snippet is
-on-topic but cut off, follow up with the matching `read_*` tool.
+on-topic but cut off, follow up with the matching `read_*` tool. A
+`read_*` tool takes a list of requests, so follow up several hits in one
+call rather than one at a time.
 
 `search_context` is the exception: it returns file locations in the
 user's own repository, which you open with your native file tools.
@@ -52,6 +54,14 @@ user's own repository, which you open with your native file tools.
 Call `list_corpus` when you need to know what a collection *contains*
 rather than what matches a query - which docs projects exist before
 filtering a search by one, or whether a paper is held at all.
+
+## Writing
+
+`remember` is the only tool here that changes anything. What it writes
+is durable: it goes into the user's corpus or into this project's
+`.context/` bundle, is committed, and comes back in searches long after
+this conversation. Use it for what the user has decided, corrected or
+asked to be kept - not for working state, and not without their say-so.
 
 ## Handles
 

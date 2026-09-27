@@ -587,6 +587,35 @@ def test_both_kinds_of_read_split_the_streams_the_same_way(
         assert handle in result.stderr
 
 
+def test_both_kinds_of_read_name_the_document_the_same_way(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """One path convention, whichever read produced the line.
+
+    A whole-document read built its provenance from `Document.md_path`,
+    which is absolute, and a chunk read from the index's `source_path`,
+    which is relative to the corpus root. Two addressing conventions for
+    one corpus, in two answers from one command. Concern #299.
+
+    The assertion is agreement rather than "the path is relative": only
+    agreement is the property, and it cannot be satisfied by one side
+    alone.
+    """
+    indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
+    handle = identifier_of(next((corpus / "notes").rglob("*.md")))
+
+    whole = run.invoke(main, ["read", handle])
+    passage = run.invoke(main, ["read", handle, "--chunks", "0"])
+
+    assert whole.exit_code == 0, whole.output
+    assert passage.exit_code == 0, passage.output
+    # The span line ends with its chunk range, so the path is compared
+    # by the one field rather than by the whole line.
+    assert "notes/rivers.md" in whole.stderr
+    assert "notes/rivers.md" in passage.stderr
+    assert str(corpus) not in whole.stderr
+
+
 def test_an_option_that_does_not_apply_is_refused_rather_than_ignored(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):

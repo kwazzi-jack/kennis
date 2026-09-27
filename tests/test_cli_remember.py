@@ -153,9 +153,22 @@ def test_the_title_can_be_given(corpus: Path, run: CliRunner):
 
 
 def test_the_report_says_where_it_went(corpus: Path, run: CliRunner):
+    """And says it the way the rest of kennis addresses a document:
+    relative to the corpus root. Concern #299 and #300 - this report was
+    the second place printing an absolute path, and unit 8c did not look
+    at it.
+
+    Whitespace is collapsed out of both sides before comparing. A long
+    temporary path wraps across terminal lines, and a substring check
+    against the unwrapped form would pass on exactly the output it
+    exists to reject.
+    """
     result = run.invoke(main, ["remember", "The pipeline runs on 16 cores."])
 
     assert "Remembered" in result.output
+    flattened = "".join(result.output.split())
+    assert "notes/Thepipelinerunson16cores.md" in flattened
+    assert "".join(str(corpus).split()) not in flattened
 
 
 def test_an_unindexed_corpus_is_told_what_makes_the_note_findable(

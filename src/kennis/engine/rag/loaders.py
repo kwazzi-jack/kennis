@@ -19,6 +19,7 @@ from typing import Protocol
 
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document as CorpusDocument
+from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import (
     Diagnostic,
     DocumentUnsearchable,
@@ -94,22 +95,13 @@ class CollectionLoader:
         )
 
     def _relative(self, path: Path) -> str:
-        """`path` relative to the corpus root, with forward slashes.
+        """`path` as the corpus addresses it.
 
-        Relative because an absolute path makes every chunk in the index
-        point at nothing the moment the corpus is moved, cloned to another
-        machine or restored from a backup, while the documents themselves are
-        fine. Forward slashes because it is stored and compared as text, so
-        it must not depend on which platform wrote the index.
-
-        A path outside the corpus root cannot be made relative to it and is
-        returned as it stands: that is not a case kennis can produce, and
-        inventing a path would be worse than recording the true one.
+        The rule itself lives in `layout.relative_to_corpus`, because a
+        rendered provenance line quotes this same form and the two must
+        not be able to drift apart. Concern #299.
         """
-        try:
-            return path.relative_to(self._collection.root).as_posix()
-        except ValueError:
-            return path.as_posix()
+        return relative_to_corpus(path, self._collection.root)
 
     def _group_of(self, held: CorpusDocument) -> str:
         """The group this document sits in, as a path below the collection.

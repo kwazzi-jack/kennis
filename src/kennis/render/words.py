@@ -17,9 +17,11 @@ here.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Final
 
 from kennis.engine.corpus.document import Document
+from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import OutOfBandChange
@@ -160,17 +162,24 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
     return f"the {collection} index is in step"
 
 
-def describe_document(collection: str, document: Document) -> str:
+def describe_document(collection: str, document: Document, corpus_root: Path) -> str:
     """Which document a whole-document read answered with.
 
     The title, the identifier and the path, because the three answer
     different questions: what it is, what to type to reach it again, and
-    where the bytes are. No chunk range, because there is no span - this is
-    the document, all of it.
+    where in the corpus it sits. No chunk range, because there is no span -
+    this is the document, all of it.
+
+    **The path is relative to the corpus root**, which is why the root is
+    an argument: `Document.md_path` is absolute because the document was
+    found by walking the filesystem, while the index records the same file
+    relatively. Rendering both forms addressed one corpus two ways, in two
+    answers from one command, and sent the user's account name to whoever
+    was reading. Concern #299.
     """
     return (
         f"[{collection}] {document.frontmatter.title}  "
-        f"({document.id})  {document.md_path}"
+        f"({document.id})  {relative_to_corpus(document.md_path, corpus_root)}"
     )
 
 

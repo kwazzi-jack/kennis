@@ -522,7 +522,11 @@ def _read_document(
     same split `config show` makes.
     """
     found, document = resolve_document(context, handle, collection)
-    display.operation("Read", describe_document(found.name, document), stderr=True)
+    display.operation(
+        "Read",
+        describe_document(found.name, document, context.corpus_root),
+        stderr=True,
+    )
     text = (
         document.md_path.read_text(encoding="utf-8") if frontmatter else document.body
     )

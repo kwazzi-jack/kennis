@@ -58,6 +58,34 @@ def default_corpus_root() -> Path:
     return Path(user_data_dir("kennis"))
 
 
+def relative_to_corpus(path: Path, corpus_root: Path) -> str:
+    """`path` as the corpus addresses it: relative to the root, forward
+    slashes.
+
+    One function rather than one per caller, because the index stores
+    this form and a rendered provenance line quotes it, and two copies
+    that agree today are two copies. Concern #299.
+
+    Relative because an absolute path stops being true the moment the
+    corpus is moved, cloned to another machine or restored from a backup,
+    while the documents themselves are fine - and because a rendered line
+    goes to places the corpus does not, including a model provider, where
+    the leading `/home/<name>` says something about the user that the
+    document's address does not need to.
+
+    Forward slashes because the stored form is compared as text and must
+    not depend on which platform wrote it.
+
+    A path outside the corpus root cannot be made relative to it and is
+    returned as it stands: that is not a case kennis can produce, and
+    inventing a path would be worse than showing the true one.
+    """
+    try:
+        return path.relative_to(corpus_root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def index_root(corpus_root: Path) -> Path:
     """Where the built indexes live: one directory per collection beneath it.
 
