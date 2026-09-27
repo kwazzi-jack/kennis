@@ -12,11 +12,15 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.layout import relative_to_corpus
+from kennis.gui import words
+from kennis.holdings import Holding
 from kennis.render.hits import (
     Hit,
     ScoreStyle,
@@ -117,4 +121,80 @@ def _refers_remotely(markdown: str) -> bool:
     return "](http://" in markdown or "](https://" in markdown
 
 
-__all__ = ["ShownDocument", "ShownHit", "shown_document", "shown_hits"]
+__all__ = [
+    "ShownDocument",
+    "ShownEntry",
+    "ShownHit",
+    "ShownRow",
+    "shown_document",
+    "shown_groups",
+    "shown_hits",
+    "shown_rows",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ShownRow:
+    """One collection, as a table row."""
+
+    collection: str
+    count: str
+    index: str
+    is_current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ShownEntry:
+    """One document in a listing: what to show and what to link to."""
+
+    title: str
+    document_id: str
+
+
+def shown_rows(held: Sequence[Holding]) -> list[ShownRow]:
+    """Every collection, phrased for a table."""
+    return [
+        ShownRow(
+            collection=holding.collection,
+            count=words.describe_count(holding),
+            index=words.describe_holding(holding),
+            is_current=holding.is_current,
+        )
+        for holding in held
+    ]
+
+
+def shown_groups(
+    corpus_root: Path, collection: str
+) -> tuple[list[tuple[str, list[ShownEntry]]], int]:
+    """A collection's documents by group, and how many could not be read.
+
+    Grouped by the directory a document sits in, which is what the
+    corpus layout means by a group - `corpus tree` shows the same
+    shape. The ungrouped ones come first under an empty name, because
+    a collection with no groups should not lead with a heading.
+    """
+    contents = Collection(root=corpus_root, name=collection).contents()
+    grouped: dict[str, list[ShownEntry]] = {}
+    for document in sorted(contents.documents, key=_sort_key):
+        grouped.setdefault(_group_of(corpus_root, collection, document), []).append(
+            ShownEntry(title=document.frontmatter.title, document_id=document.id)
+        )
+    ordered = sorted(grouped.items(), key=lambda pair: (pair[0] != "", pair[0]))
+    return ordered, len(contents.unreadable)
+
+
+def _sort_key(document: Document) -> str:
+    return document.frontmatter.title.casefold()
+
+
+def _group_of(corpus_root: Path, collection: str, document: Document) -> str:
+    """The directory below the collection that this document sits in.
+
+    The wrapper is the anchor for a wrapped document, because its own
+    directory *is* the document rather than a group - the same rule
+    the index loader follows.
+    """
+    anchor = document.wrapper_dir or document.md_path
+    relative = anchor.relative_to(corpus_root / collection)
+    return relative.parent.as_posix() if relative.parent.name else ""

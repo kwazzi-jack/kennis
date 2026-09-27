@@ -337,3 +337,135 @@ def test_a_hit_carries_the_same_text_as_the_command_line(
     assert headlines, printed.output
     for headline in headlines:
         assert headline in served.text, headline
+
+
+# ---------------------------------------------------------------------------
+# Browsing what is held
+# ---------------------------------------------------------------------------
+
+
+def test_the_holdings_page_lists_every_collection(corpus: Path, client: TestClient):
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    page = client.get("/held")
+
+    assert page.status_code == 200
+    for name in ("notes", "literature", "docs"):
+        assert f"/collection/{name}" in page.text
+    assert "1 document" in page.text
+
+
+def test_a_collection_never_indexed_is_not_called_stale(
+    corpus: Path, client: TestClient
+):
+    """Two different states. Telling a fresh corpus its index is stale
+    sends someone to rebuild an index that does not exist."""
+    admitted(client)
+
+    page = client.get("/held")
+
+    assert "never indexed" in page.text
+    assert "stale" not in page.text
+
+
+def test_a_collection_lists_its_documents_with_links(corpus: Path, client: TestClient):
+    identifier = a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    page = client.get("/collection/notes")
+
+    assert page.status_code == 200
+    assert "calibration" in page.text
+    assert f"/document/notes/{identifier}" in page.text
+
+
+def test_documents_in_a_group_are_shown_under_it(corpus: Path, client: TestClient):
+    CliRunner().invoke(
+        main, ["remember", "--group", "decisions", "--title", "Solver", "Use NNLS."]
+    )
+    admitted(client)
+
+    page = client.get("/collection/notes")
+
+    assert "decisions" in page.text
+    assert "Solver" in page.text
+
+
+def test_an_unknown_collection_is_a_page_and_not_a_traceback(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+
+    page = client.get("/collection/notez")
+
+    assert page.status_code == 404
+    assert "notez" in page.text
+
+
+# ---------------------------------------------------------------------------
+# The view that goes stale
+# ---------------------------------------------------------------------------
+
+
+def test_a_page_carries_the_revision_it_was_drawn_at(corpus: Path, client: TestClient):
+    """Concern #311. A window open for an hour is showing counts that
+    were true when it drew them, and the corpus is a git repository
+    whose head moves on every write - so the head is the page's
+    timestamp in the only unit that matters."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    page = client.get("/held")
+    current = client.get("/revision").json()["revision"]
+
+    assert current
+    assert f'data-revision="{current}"' in page.text
+
+
+def test_the_revision_changes_when_a_terminal_writes(corpus: Path, client: TestClient):
+    """The mechanism is only worth having if it actually moves."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+    before = client.get("/revision").json()["revision"]
+
+    a_note(corpus, "imaging", "Deconvolution.")
+
+    assert client.get("/revision").json()["revision"] != before
+
+
+def test_the_revision_is_not_readable_without_the_token(
+    corpus: Path, client: TestClient
+):
+    """It says whether the corpus changed and when, which is not much
+    but is not nothing, and a route added after the guard was written
+    is exactly what middleware exists to cover."""
+    assert client.get("/revision").status_code == 401
+
+
+def test_a_script_cannot_be_fetched_from_outside_the_static_directory(
+    corpus: Path, client: TestClient
+):
+    """`name` is matched against what is there rather than joined into
+    a path, so a traversal names nothing."""
+    admitted(client)
+
+    assert client.get("/static/typeset.js").status_code == 200
+    assert client.get("/static/..%2f..%2fapp.js").status_code in (307, 404)
+
+
+def test_a_listing_says_when_it_left_documents_out(corpus: Path, client: TestClient):
+    """The other half of `CollectionContents`, on the page. A listing
+    that silently omits a broken document tells the reader the corpus
+    is smaller than it is."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    broken = corpus / "corpus" / "notes" / "broken.md"
+    broken.write_text("---\nnot: valid\n---\n\nText.\n", encoding="utf-8")
+    admitted(client)
+
+    listing = client.get("/collection/notes")
+    summary = client.get("/held")
+
+    assert "could not be read" in listing.text
+    assert "kennis corpus status" in listing.text
+    assert "1 unreadable" in summary.text
