@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}kennis - what is held{% endblock %}
+{% block main %}
+<h1>What is held</h1>
+{% if empty %}<p class="role-muted">{{ nothing_held }}</p>{% endif %}
+<table class="holdings">
+  <thead><tr><th>collection</th><th>documents</th><th>index</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td><a href="/collection/{{ row.collection }}">{{ row.collection }}</a></td>
+      <td>{{ row.count }}</td>
+      <td class="{% if row.is_current %}role-unchanged{% else %}role-warning{% endif %}">{{ row.index }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Packs</h2>
+{% if packs %}
+<ul class="packs">{% for line in packs %}<li>{{ line }}</li>{% endfor %}</ul>
+{% else %}
+<p class="role-muted">{{ no_packs }}</p>
+{% endif %}
+{% endblock %}

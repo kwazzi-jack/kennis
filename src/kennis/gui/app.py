@@ -31,13 +31,20 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from kennis.context import existing_corpus
+from kennis.context import Context, existing_corpus
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import KennisError
+from kennis.engine.errors import KennisError, UnknownCollection
 from kennis.gui import words
-from kennis.gui.pages import shown_document, shown_hits
+from kennis.gui.pages import (
+    shown_document,
+    shown_groups,
+    shown_hits,
+    shown_rows,
+)
 from kennis.gui.theme import stylesheet
+from kennis.holdings import holdings, installed_packs, revision
+from kennis.render.packs import describe_holdings
 from kennis.retrieval import search_scope
 
 _HERE: Final = Path(__file__).parent
@@ -113,11 +120,18 @@ def build_app(token: str) -> FastAPI:
     async def serve_stylesheet() -> PlainTextResponse:
         return PlainTextResponse(stylesheet(), media_type="text/css")
 
-    @app.get("/static/typeset.js")
-    async def serve_typeset() -> PlainTextResponse:
+    @app.get("/static/{name}.js")
+    async def serve_script(name: str) -> PlainTextResponse:
+        # The interface's own scripts, as opposed to the vendored ones
+        # under `/static/vendor`. `name` is matched against what is
+        # actually there rather than joined into a path, so no request
+        # can walk out of this directory.
+        available = {path.stem: path for path in (_HERE / "static").glob("*.js")}
+        found = available.get(name)
+        if found is None:
+            return PlainTextResponse("", status_code=404)
         return PlainTextResponse(
-            (_HERE / "static" / "typeset.js").read_text(encoding="utf-8"),
-            media_type="text/javascript",
+            found.read_text(encoding="utf-8"), media_type="text/javascript"
         )
 
     @app.get("/")
@@ -138,6 +152,51 @@ def build_app(token: str) -> FastAPI:
         return _TEMPLATES.TemplateResponse(
             request, "hits.html", _hits_context(q, scope)
         )
+
+    @app.get("/held")
+    async def serve_holdings(request: Request) -> HTMLResponse:
+        context = existing_corpus()
+        held = holdings(context)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "holdings.html",
+            {
+                "rows": shown_rows(held),
+                "empty": not any(holding.documents for holding in held),
+                "packs": describe_holdings(installed_packs(context)),
+                "nothing_held": words.NOTHING_HELD,
+                "no_packs": words.NO_PACKS,
+                **_frame(context),
+            },
+        )
+
+    @app.get("/collection/{collection}")
+    async def serve_collection(request: Request, collection: str) -> HTMLResponse:
+        context = existing_corpus()
+        if collection not in COLLECTION_NAMES:
+            return _problem(
+                request, UnknownCollection(words.unknown_scope(collection, SCOPES))
+            )
+        groups, unreadable = shown_groups(context.corpus_root, collection)
+        held = next(h for h in holdings(context) if h.collection == collection)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "collection.html",
+            {
+                "collection": collection,
+                "groups": groups,
+                "summary": words.describe_count(held),
+                "unreadable": words.unreadable_note(unreadable),
+                **_frame(context),
+            },
+        )
+
+    @app.get("/revision")
+    async def serve_revision() -> JSONResponse:
+        # Answered on demand, never pushed. One `git rev-parse`, which
+        # is cheap enough to ask when a window regains focus and far
+        # too expensive to poll. Concern #311.
+        return JSONResponse({"revision": revision(existing_corpus())})
 
     @app.get("/document/{collection}/{document_id}")
     async def serve_document(
@@ -167,6 +226,19 @@ def build_app(token: str) -> FastAPI:
     return app
 
 
+def _frame(context: Context) -> dict[str, object]:
+    """What every page carries regardless of what it shows.
+
+    The revision is the page's own timestamp, in the only unit that
+    matters here: a commit the corpus was at when this was drawn. The
+    message travels with it so the script does not compose words.
+    """
+    return {
+        "revision": revision(context) or "",
+        "corpus_changed": words.CORPUS_CHANGED,
+    }
+
+
 def _hits_context(question: str, scope: str) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -175,6 +247,7 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
     still typing in, not replace the page with an error.
     """
     context: dict[str, object] = {
+        **_frame(existing_corpus()),
         "question": question,
         "scope": scope,
         "scopes": SCOPES,
