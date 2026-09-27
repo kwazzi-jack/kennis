@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from kennis.cli.context import Context
+from kennis.context import Context
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.schema import COLLECTION_NAMES

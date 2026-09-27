@@ -20,10 +20,10 @@ from typing import Final
 import click
 
 from kennis.cli import display
-from kennis.cli.context import Context, existing_corpus, resolve_context
 from kennis.cli.group import KennisGroup
 from kennis.cli.resolve import resolve_document
 from kennis.cli.sink import marker_for, reporting
+from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.corpus.add import (
     AddOptions,
     AddReport,

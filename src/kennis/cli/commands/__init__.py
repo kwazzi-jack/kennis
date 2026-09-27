@@ -8,6 +8,7 @@ from kennis.cli.commands.corpus import corpus_group
 from kennis.cli.commands.pack import pack_group
 from kennis.cli.commands.remember import remember_command
 from kennis.cli.commands.search import read_command, search_command
+from kennis.cli.commands.serve import serve_command
 
 __all__ = [
     "config_group",
@@ -17,4 +18,5 @@ __all__ = [
     "read_command",
     "remember_command",
     "search_command",
+    "serve_command",
 ]

@@ -15,9 +15,9 @@ from typing import Final, get_args
 import click
 
 from kennis.cli import display
-from kennis.cli.context import Context, existing_corpus, resolve_context
 from kennis.cli.group import KennisCommand
 from kennis.cli.resolve import resolve_document
+from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context import (
     BUNDLE_DIRNAME,
     CONTEXT_COLLECTION,

@@ -474,3 +474,66 @@ def test_remove_refuses_while_another_command_holds_the_corpus(
 
     assert result.exit_code != 0
     assert "another kennis command is using the corpus" in result.output
+
+
+def test_list_prints_the_same_holdings_line_the_mcp_block_does(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """Design section 11: what a user reads about their own machine and
+    what a model is told about it are the same bytes, so they cannot
+    drift. Both sides call `describe_holdings`."""
+    root = isolated / "provider"
+    (root / "notes").mkdir(parents=True, exist_ok=True)
+    (root / "notes" / "conventions.md").write_text("Recipes.\n", encoding="utf-8")
+    path = root / "p.ken.yml"
+    path.write_text(
+        "kennis:\n  schema_version: 1\n"
+        'pack:\n  id: boepie\n  name: "stimela pipelines"\n'
+        '  version: "0.1.0"\n  description: "Radio interferometry reduction."\n'
+        "corpus:\n  notes:\n    - source: notes/\n",
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "stimela pipelines - Radio interferometry reduction." in result.output
+
+
+def test_list_still_leads_with_the_id_and_the_version(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """The description is added beside what was there, not instead of it:
+    the id is the column a reader copies out of and hands to `pack
+    remove`, and the version answers how much of it there is."""
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "list"])
+
+    assert "boepie" in result.output
+    assert "0.1.0" in result.output
+    assert "1 file" in result.output
+
+
+def test_the_holdings_line_is_indented_past_the_id_column(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """A one-word pack name at the id column's indent is indistinguishable
+    from another pack id, which is what running the command showed and no
+    assertion about content could have."""
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    lines = [
+        line
+        for line in run.invoke(main, ["pack", "list"]).output.splitlines()
+        if line.strip()
+    ]
+
+    identifier_line = next(line for line in lines if "boepie" in line)
+    holding_line = next(line for line in lines if "stimela pipelines" in line)
+    leading = len(holding_line) - len(holding_line.lstrip())
+    assert leading > len(identifier_line) - len(identifier_line.lstrip())

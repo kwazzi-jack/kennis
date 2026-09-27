@@ -48,6 +48,17 @@ FORBIDDEN_BY_THE_RENDERER = (
     "prompt_toolkit",
 )
 
+# The MCP server is a front end, so it may import an interface library of
+# its own - `fastmcp` - and it renders through `render/`. What it may not
+# do is import the other front end: two peers, neither privileged.
+FORBIDDEN_BY_THE_SERVER = (
+    "kennis.cli",
+    "click",
+    "rich",
+    "rich_click",
+    "prompt_toolkit",
+)
+
 # Also refused to the engine at runtime, so that `import kennis.engine` is
 # proven to work for a caller who installed kennis without the `mcp` extra.
 BLOCKED_AT_RUNTIME = (*FORBIDDEN_BY_THE_ENGINE[2:], "fastmcp")
@@ -66,6 +77,10 @@ def engine_modules() -> list[Path]:
 
 def render_modules() -> list[Path]:
     return sorted((SOURCE_ROOT / "kennis" / "render").rglob("*.py"))
+
+
+def server_modules() -> list[Path]:
+    return sorted((SOURCE_ROOT / "kennis" / "mcp").rglob("*.py"))
 
 
 def module_name_of(path: Path) -> str:
@@ -150,6 +165,32 @@ def test_render_module_imports_no_interface(path: Path):
         name
         for name in imported
         for forbidden in FORBIDDEN_BY_THE_RENDERER
+        if offends(name, forbidden)
+    )
+    assert not violations, f"{module_name_of(path)} imports {violations}"
+
+
+def test_the_server_has_modules_to_check():
+    """A walk over an empty tree passes for the wrong reason."""
+    assert server_modules()
+
+
+@pytest.mark.parametrize("path", server_modules(), ids=module_name_of)
+def test_server_module_imports_no_other_front_end(path: Path):
+    """The two front ends are peers, and neither may reach for the other.
+
+    The MCP server needs the same things a command needs - where the
+    corpus is, what a hit looks like - and it gets them from `kennis
+    .context` and `render/`, not by importing `cli/`. If it imported the
+    command line the command line would be the real kennis and this
+    would be a wrapper, which is exactly what design section 20 says no
+    front end is.
+    """
+    imported = imported_modules(path)
+    violations = sorted(
+        name
+        for name in imported
+        for forbidden in FORBIDDEN_BY_THE_SERVER
         if offends(name, forbidden)
     )
     assert not violations, f"{module_name_of(path)} imports {violations}"

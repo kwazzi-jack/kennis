@@ -13,9 +13,9 @@ from pathlib import Path
 import click
 
 from kennis.cli import display
-from kennis.cli.context import existing_corpus
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import reporting
+from kennis.context import existing_corpus
 from kennis.engine.context import (
     CONTEXT_COLLECTION,
     LANDING_FILENAME,

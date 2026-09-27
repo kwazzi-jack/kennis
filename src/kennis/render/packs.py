@@ -7,6 +7,8 @@ sentence could not rewrap it, group it, or say it differently. Concern #81.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.pack.installed import InstalledPack, Overlap, PackRemoval
@@ -177,6 +179,38 @@ def describe_installed(installed: InstalledPack) -> str:
     """One pack in a listing: what it is, and how much of it there is."""
     state = installed.state
     return f"{state.pack_version}, {count_of(len(state.files), 'file')}"
+
+
+def describe_holdings(packs: Sequence[InstalledPack]) -> tuple[str, ...]:
+    """What this installation holds, one line per pack.
+
+    **Design section 11, and the shared-bytes property is the point.**
+    These lines are the generated half of the MCP server's `instructions=`
+    block, and they are also what `kennis pack list` prints, so what a
+    user reads about their own machine and what a model is told about it
+    cannot drift apart.
+
+    Ordered by pack id rather than by install time, because the two
+    callers must produce the same bytes on every run and a listing whose
+    order depends on when things were added does not.
+
+    A pack whose declaration will not parse is named by its id alone. It
+    is still installed and still holds files, so leaving it out would
+    describe the installation as smaller than it is - and the id is the
+    one fact the store has without the declaration.
+    """
+    lines: list[str] = []
+    for installed in sorted(packs, key=lambda one: one.state.pack_id):
+        declaration = installed.declaration
+        if declaration is None:
+            lines.append(installed.state.pack_id)
+            continue
+        identity = declaration.pack
+        if identity.description:
+            lines.append(f"{identity.name} - {identity.description}")
+        else:
+            lines.append(identity.name)
+    return tuple(lines)
 
 
 def describe_when(installed: InstalledPack) -> str:
@@ -457,6 +491,7 @@ __all__ = [
     "describe_damage",
     "describe_declarations",
     "describe_deferred",
+    "describe_holdings",
     "describe_install",
     "describe_installed",
     "describe_lost_source",

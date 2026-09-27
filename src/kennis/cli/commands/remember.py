@@ -18,8 +18,8 @@ import click
 
 from kennis.cli import display
 from kennis.cli.commands.context import require_bundle
-from kennis.cli.context import existing_corpus
 from kennis.cli.sink import reporting
+from kennis.context import existing_corpus
 from kennis.engine.context import remember_in_bundle
 from kennis.engine.events import Outcome
 from kennis.engine.history.history import commit_summary
