@@ -23,17 +23,9 @@ from kennis.context import existing_corpus
 from kennis.engine.context import remember_in_bundle
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import Outcome
-from kennis.engine.history.history import commit_summary
-from kennis.engine.history.repository import Repository
-from kennis.engine.locking import corpus_lock
-from kennis.engine.rag.binding import binding_from
-from kennis.engine.remember import (
-    INLINE_ORIGIN,
-    RememberOptions,
-    RememberReport,
-    remember,
-)
+from kennis.engine.remember import INLINE_ORIGIN, RememberReport
 from kennis.render.words import index_state
+from kennis.writing import write_note
 
 
 @click.command(name="remember")
@@ -76,25 +68,14 @@ def remember_command(
     if to_context:
         _remember_in_context(body, title=title, group=group, no_index=no_index)
         return
-    context = existing_corpus()
-    binding = binding_from(context.settings.chunking, context.settings.embedding)
-
-    with corpus_lock(context.corpus_root), reporting() as events:
-        report = remember(
-            context.corpus_root,
+    with reporting() as events:
+        report = write_note(
             body,
-            binding=binding,
-            options=RememberOptions(title=title, group=group),
+            title=title,
+            group=group,
             origin=origin,
             index=not no_index,
-            embed_batch_size=context.settings.embedding.batch_size,
-            repository=Repository(context.corpus_root),
             events=events,
-        )
-        Repository(context.corpus_root).commit(
-            "remember",
-            scope="notes",
-            summary=commit_summary({"documents": 1}),
         )
 
     _report(report)

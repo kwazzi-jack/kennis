@@ -33,10 +33,12 @@ from fastapi.templating import Jinja2Templates
 
 from kennis.context import Context, existing_corpus
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import KennisError, UnknownCollection
+from kennis.engine.errors import CorpusBusy, KennisError, UnknownCollection
 from kennis.gui import words
 from kennis.gui.pages import (
+    ShownOutcome,
     shown_document,
     shown_groups,
     shown_hits,
@@ -46,6 +48,7 @@ from kennis.gui.theme import stylesheet
 from kennis.holdings import holdings, installed_packs, revision
 from kennis.render.packs import describe_holdings
 from kennis.retrieval import search_scope
+from kennis.writing import write_context_note, write_note
 
 _HERE: Final = Path(__file__).parent
 _TEMPLATES: Final = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -191,6 +194,38 @@ def build_app(token: str) -> FastAPI:
             },
         )
 
+    @app.get("/remember")
+    async def serve_remember_form(request: Request) -> HTMLResponse:
+        return _TEMPLATES.TemplateResponse(
+            request, "remember.html", _remember_context(None)
+        )
+
+    @app.post("/remember")
+    async def accept_remembered(request: Request) -> HTMLResponse:
+        """Write a note, and answer with the outcome alone.
+
+        **POST, not GET.** A GET that writes is a GET something will
+        follow - a prefetcher, a link checker, a restored history
+        entry - and each of those would write a note nobody asked
+        for.
+
+        Cross-site protection is the token cookie's `samesite=strict`:
+        a form on another site cannot make the browser send it, so
+        such a request arrives without the token and the guard in
+        `require_token` refuses it before this runs.
+        """
+        form = await request.form()
+        text_given = str(form.get("text") or "")
+        title = str(form.get("title") or "") or None
+        group = str(form.get("group") or "") or None
+        to_context = str(form.get("target") or "notes") == "context"
+        outcome = _remembered(
+            text_given, title=title, group=group, to_context=to_context
+        )
+        return _TEMPLATES.TemplateResponse(
+            request, "outcome.html", {"outcome": outcome}
+        )
+
     @app.get("/revision")
     async def serve_revision() -> JSONResponse:
         # Answered on demand, never pushed. One `git rev-parse`, which
@@ -224,6 +259,48 @@ def build_app(token: str) -> FastAPI:
         )
 
     return app
+
+
+def _remember_context(outcome: ShownOutcome | None) -> dict[str, object]:
+    """What the writing page needs, with or without an answer yet."""
+    return {
+        "outcome": outcome,
+        "preamble": words.REMEMBER_PREAMBLE,
+        "placeholder": words.REMEMBER_PLACEHOLDER,
+        "title_hint": words.TITLE_HINT,
+        "group_hint": words.GROUP_HINT,
+        "action": words.REMEMBER_ACTION,
+        **_frame(existing_corpus()),
+    }
+
+
+def _remembered(
+    text: str, *, title: str | None, group: str | None, to_context: bool
+) -> ShownOutcome:
+    """Write, and turn whatever happened into something to show.
+
+    Every domain failure becomes an outcome rather than a page: the
+    text the person typed is still in the box, and replacing the page
+    would lose it. `CorpusBusy` is the case that makes this matter -
+    a `corpus index` running in a terminal refuses this write, and it
+    is worth retrying rather than worth an error page.
+    """
+    if not text.strip():
+        return ShownOutcome(message=words.NOTHING_TO_REMEMBER, role="role-warning")
+    try:
+        if to_context:
+            note, bundle_name = write_context_note(text, title=title, group=group)
+            return words.describe_written_to_bundle(note, bundle_name)
+        report = write_note(text, title=title, group=group)
+        return words.describe_written(
+            report, relative_to_corpus(report.path, existing_corpus().corpus_root)
+        )
+    except CorpusBusy:
+        return ShownOutcome(message=words.CORPUS_BUSY, role="role-warning")
+    except KennisError as error:
+        return ShownOutcome(
+            message=str(error), role="role-error", resolution=error.resolution
+        )
 
 
 def _frame(context: Context) -> dict[str, object]:

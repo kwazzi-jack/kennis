@@ -1,0 +1,5 @@
+{% if outcome %}
+<p class="{{ outcome.role }}">{{ outcome.message }}</p>
+{% if outcome.where %}<p class="role-muted">{{ outcome.where }}</p>{% endif %}
+{% if outcome.resolution %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
+{% endif %}

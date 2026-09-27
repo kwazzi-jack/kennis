@@ -30,18 +30,11 @@ from __future__ import annotations
 from typing import Final
 
 from kennis.context import existing_corpus
-from kennis.engine.context.bundle import find_bundle
-from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.corpus.layout import relative_to_corpus
-from kennis.engine.errors import ContextNotFound, InputError
+from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
-from kennis.engine.history.history import commit_summary
-from kennis.engine.history.repository import Repository
-from kennis.engine.locking import corpus_lock
-from kennis.engine.rag.binding import binding_from
-from kennis.engine.remember import RememberOptions
-from kennis.engine.remember import remember as remember_in_notes
 from kennis.render.words import index_state
+from kennis.writing import write_context_note, write_note
 
 # The longest note this tool will write. Neither front end had a cap
 # before, and the command line does not need one: a person typing prose
@@ -97,32 +90,15 @@ def remember(
 
 
 def _into_notes(body: str, *, title: str | None, group: str | None) -> str:
-    """The corpus path: lock, write, index, commit.
+    """The corpus path, and what to say about what it did.
 
-    The same order every mutating command uses, and the same one
-    `cli/commands/remember.py` writes. The lock has `timeout=0`, so a
-    corpus another process is writing answers `CorpusBusy` rather than
-    holding the tool call open.
+    The sequence - lock, write, index, commit - is
+    `kennis.writing.write_note`, shared with the graphical front end
+    because it is identical in both and neither owns it. What is left
+    here is the wording, which is this front end's.
     """
-    context = existing_corpus()
-    binding = binding_from(context.settings.chunking, context.settings.embedding)
-    with corpus_lock(context.corpus_root):
-        report = remember_in_notes(
-            context.corpus_root,
-            body,
-            binding=binding,
-            options=RememberOptions(title=title, group=group),
-            embed_batch_size=context.settings.embedding.batch_size,
-            repository=Repository(context.corpus_root),
-        )
-        if report.outcome is not Outcome.UNCHANGED:
-            Repository(context.corpus_root).commit(
-                "remember",
-                scope="notes",
-                summary=commit_summary({"documents": 1}),
-            )
-
-    where = relative_to_corpus(report.path, context.corpus_root)
+    report = write_note(body, title=title, group=group)
+    where = relative_to_corpus(report.path, existing_corpus().corpus_root)
     if report.outcome is Outcome.UNCHANGED:
         return f"already remembered: {report.title}  ({report.document_id})  {where}"
     # `unindexed` needs a command rather than a clause: the note is
@@ -145,22 +121,17 @@ def _into_notes(body: str, *, title: str | None, group: str | None) -> str:
 def _into_bundle(body: str, *, title: str | None, group: str | None) -> str:
     """The bundle path: no corpus, no lock, no commit.
 
-    `find_bundle` reads the working directory at call time rather than
-    at import, which matters here more than anywhere: a long-lived
-    server's working directory is wherever its client launched it, and
-    a project's bundle may be created after the server starts.
+    `kennis.writing.write_context_note` raises `ContextNotFound` when
+    there is no bundle here rather than falling back to notes.
     """
-    bundle = find_bundle()
-    if bundle is None:
-        raise ContextNotFound
-    note = remember_in_bundle(bundle, body, title=title, group=group)
+    note, bundle_name = write_context_note(body, title=title, group=group)
     verb = (
         "already in this project" if note.outcome is Outcome.UNCHANGED else "remembered"
     )
     # Prefixed with the bundle's own directory name rather than left
     # bundle-relative, because `decisions/Solver choice.md` does not say
     # which of the two places `remember` writes to it landed in.
-    return f"{verb}: {note.title}  {bundle.name}/{note.relative_path}"
+    return f"{verb}: {note.title}  {bundle_name}/{note.relative_path}"
 
 
 __all__ = ["remember"]

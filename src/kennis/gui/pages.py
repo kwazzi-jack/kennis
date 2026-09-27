@@ -125,6 +125,7 @@ __all__ = [
     "ShownDocument",
     "ShownEntry",
     "ShownHit",
+    "ShownOutcome",
     "ShownRow",
     "shown_document",
     "shown_groups",
@@ -198,3 +199,19 @@ def _group_of(corpus_root: Path, collection: str, document: Document) -> str:
     anchor = document.wrapper_dir or document.md_path
     relative = anchor.relative_to(corpus_root / collection)
     return relative.parent.as_posix() if relative.parent.name else ""
+
+
+@dataclass(frozen=True, slots=True)
+class ShownOutcome:
+    """What became of a write, in the pieces a page arranges.
+
+    `role` is a semantic role name from `render/theme.py`, so the
+    template applies a class and decides nothing: whether a repeated
+    note is good news or a warning is a judgement, and judgements do
+    not belong in markup.
+    """
+
+    message: str
+    role: str
+    where: str | None = None
+    resolution: str | None = None
