@@ -22,23 +22,14 @@ an index that was never built tells the caller something false.
 
 from __future__ import annotations
 
-from kennis.context import Context, existing_corpus, resolve_context
-from kennis.engine.context.bundle import find_bundle
-from kennis.engine.context.index import CONTEXT_COLLECTION, load_bundle_index
-from kennis.engine.corpus.layout import index_root
-from kennis.engine.errors import ContextNotFound
-from kennis.engine.rag.embedding import resolve_host
-from kennis.engine.rag.index import LoadedIndex, load_index
-from kennis.engine.rag.models import Filter
-from kennis.engine.rag.search import Mode, search
+from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.render.hits import (
-    Hit,
     ScoreStyle,
-    basis_for,
     best_lexical,
     rendered_hit,
     score_style_for,
 )
+from kennis.retrieval import search_scope
 
 # What a tool answers with when a scope holds nothing for this question.
 # A sentence rather than an empty string: an agent handed "" cannot tell
@@ -106,33 +97,15 @@ def search_context(question: str, top_k: int = 5) -> str:
 def _searched(collection: str, question: str, top_k: int) -> str:
     """One scope, searched and rendered.
 
-    Raises `ContextNotFound` when `search_context` is called outside a
-    project, and `NothingToIndex` when the named scope has no index -
-    both carry the command that resolves them, and fastmcp turns the
-    exception into a tool error the agent can read.
+    The searching is `kennis.retrieval.search_scope`, shared with the
+    graphical front end - it answers "where is the index and which
+    mode can it run", which is not a question either front end owns.
+    What is left here is the rendering, which is.
+
+    Its exceptions carry the command that resolves them, and fastmcp
+    turns them into a tool error the agent can read.
     """
-    context = (
-        resolve_context() if collection == CONTEXT_COLLECTION else existing_corpus()
-    )
-    index = _index_for(context, collection)
-    model = index.binding.model.model if index.binding.model else None
-    running = _mode_for(context, index, collection)
-    results = search(
-        index,
-        question,
-        top_k=max(1, min(top_k, 20)),
-        filters=_no_filters(),
-        mode=running,
-        host=resolve_host(
-            index.binding.model.kind if index.binding.model else "",
-            context.settings.embedding.base_url or None,
-        ),
-    )
-    basis = basis_for(model, dense_ran=running != "bm25")
-    hits = [
-        Hit(collection=collection, result=result, basis=basis, model=model)
-        for result in results
-    ]
+    hits = search_scope(collection, question, top_k)
     if not hits:
         return _NOTHING
     # The degraded flag is dropped rather than printed. A command line
@@ -153,44 +126,6 @@ def _searched(collection: str, question: str, top_k: int) -> str:
             lines.append(f"  {shown.body}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
-
-
-def _index_for(context: Context, collection: str) -> LoadedIndex:
-    if collection == CONTEXT_COLLECTION:
-        bundle = find_bundle()
-        if bundle is None:
-            raise ContextNotFound
-        return load_bundle_index(bundle)
-    return load_index(index_root(context.corpus_root), collection)
-
-
-def _mode_for(context: Context, index: LoadedIndex, collection: str) -> Mode:
-    """The mode this index can actually run.
-
-    A bundle has its own setting, because a dense bundle index costs
-    what `retrieval.context_method` exists to avoid. Either way an index
-    with no vectors runs lexically rather than failing: a fresh install
-    may have no embedding backend at all.
-    """
-    asked = (
-        context.settings.retrieval.context_method
-        if collection == CONTEXT_COLLECTION
-        else context.settings.retrieval.corpus_method
-    )
-    if index.matrix is None:
-        return "bm25"
-    return "bm25" if asked == "bm25" else "dense" if asked == "dense" else "hybrid"
-
-
-def _no_filters() -> list[Filter] | None:
-    """No metadata predicates, for now.
-
-    `--group` and `--project` narrow a command-line search. The tool
-    equivalent is worth having and is not in this unit: an agent that
-    cannot narrow calls `list_corpus` first, which is the flow the
-    instructions block already describes.
-    """
-    return None
 
 
 __all__ = [

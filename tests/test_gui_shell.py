@@ -20,9 +20,15 @@ better than a test that passes without touching it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
+from kennis.cli.__main__ import main
+from kennis.context import existing_corpus
+from kennis.engine.corpus.collection import Collection
 from kennis.gui.app import build_app
 from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
@@ -165,3 +171,169 @@ def test_the_interface_binds_loopback_and_lets_the_kernel_pick_a_port():
     """
     assert HOST == "127.0.0.1"
     assert ANY_PORT == 0
+
+
+# ---------------------------------------------------------------------------
+# Searching and reading
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("KENNIS_LOG_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+    run = CliRunner()
+    assert run.invoke(main, ["corpus", "init"]).exit_code == 0
+    return tmp_path
+
+
+def a_note(tmp_path: Path, name: str, body: str) -> str:
+    run = CliRunner()
+    source = tmp_path / "sources" / f"{name}.md"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
+    assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    return next(d.id for d in held.documents if d.frontmatter.title == name)
+
+
+def admitted(app_client: TestClient) -> TestClient:
+    assert app_client.get("/", params={"token": TOKEN}).status_code == 200
+    return app_client
+
+
+def test_a_search_finds_and_links_to_the_document(corpus: Path, client: TestClient):
+    identifier = a_note(corpus, "calibration", "Antenna gains drift on long tracks.")
+    admitted(client)
+
+    found = client.get("/hits", params={"q": "antenna gains", "scope": "notes"})
+
+    assert found.status_code == 200
+    assert "calibration" in found.text
+    assert f"/document/notes/{identifier}" in found.text
+
+
+def test_a_search_that_matches_nothing_says_so(corpus: Path, client: TestClient):
+    a_note(corpus, "calibration", "Antenna gains drift on long tracks.")
+    admitted(client)
+
+    found = client.get("/hits", params={"q": "zzzznotaword", "scope": "notes"})
+
+    assert "No passages matched." in found.text
+
+
+def test_a_scope_with_no_index_reports_the_command_that_builds_one(
+    corpus: Path, client: TestClient
+):
+    """A failure becomes fields on the page the person is still typing
+    in, not a replaced page - and it names the command, as every other
+    front end does."""
+    admitted(client)
+
+    found = client.get("/hits", params={"q": "anything", "scope": "literature"})
+
+    assert found.status_code == 200
+    assert "kennis corpus index" in found.text
+
+
+def test_a_mistyped_scope_is_named_rather_than_answered_emptily(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+
+    found = client.get("/hits", params={"q": "anything", "scope": "notez"})
+
+    # The quotes around the name are escaped by the template, so the
+    # assertion is on the parts escaping does not touch. Asserting the
+    # exact sentence would fail on correct output.
+    assert "no scope called" in found.text
+    assert "notez" in found.text
+    assert "No passages matched." not in found.text
+
+
+def test_a_document_is_rendered_as_html(corpus: Path, client: TestClient):
+    identifier = a_note(corpus, "calibration", "Gains **drift** on long tracks.")
+    admitted(client)
+
+    page = client.get(f"/document/notes/{identifier}")
+
+    assert page.status_code == 200
+    assert "<strong>drift</strong>" in page.text
+
+
+def test_a_document_that_is_not_there_is_a_page_and_not_a_traceback(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+
+    page = client.get("/document/notes/notarealid")
+
+    assert page.status_code == 404
+    assert "notarealid" in page.text
+    assert "kennis corpus list" in page.text
+
+
+def test_a_remote_figure_is_withheld_until_it_is_asked_for(
+    corpus: Path, client: TestClient
+):
+    """The privacy rule reaching the page: reading a paper must not
+    tell its publisher, and the control appears only because there is
+    something to load."""
+    identifier = a_note(
+        corpus, "paper", "![Refer to caption](https://arxiv.org/html/2409.1/Fig1.png)"
+    )
+    admitted(client)
+
+    withheld = client.get(f"/document/notes/{identifier}")
+    loaded = client.get(f"/document/notes/{identifier}", params={"images": "on"})
+
+    assert "<img" not in withheld.text
+    assert "arxiv.org" in withheld.text
+    assert "Load them" in withheld.text
+    assert "<img" in loaded.text
+
+
+def test_the_vendored_assets_are_served_and_guarded(corpus: Path, client: TestClient):
+    """Mounted rather than routed one file at a time, which is exactly
+    the case a per-route guard would have missed."""
+    assert client.get("/static/vendor/katex.min.css").status_code == 401
+
+    admitted(client)
+    served = client.get("/static/vendor/katex.min.css")
+
+    assert served.status_code == 200
+    assert "katex" in served.text.lower()
+
+
+def test_a_hit_carries_the_same_text_as_the_command_line(
+    corpus: Path, client: TestClient
+):
+    """Design section 20's exception, now with a third caller.
+
+    The interface arranges a hit into elements, but the words inside
+    them are `render/hits.py`'s and not its own. Compared as **whole
+    lines**, for #297's reason: asserting that the page merely mentions
+    the query passes for a page that composed its own headline, and an
+    injection proved exactly that.
+    """
+    a_note(corpus, "calibration", "Calibration solves for antenna gains.")
+    a_note(corpus, "baking", "A recipe for sourdough bread at home.")
+    admitted(client)
+
+    printed = CliRunner().invoke(
+        main, ["search", "antenna gains", "--collection", "notes", "--snippet", "none"]
+    )
+    assert printed.exit_code == 0, printed.output
+    served = client.get("/hits", params={"q": "antenna gains", "scope": "notes"})
+
+    headlines = [
+        line.strip()
+        for line in printed.output.splitlines()
+        if line.strip().startswith("[")
+    ]
+    assert headlines, printed.output
+    for headline in headlines:
+        assert headline in served.text, headline

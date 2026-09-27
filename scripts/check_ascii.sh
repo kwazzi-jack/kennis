@@ -14,12 +14,12 @@ if [ "$#" -eq 0 ]; then
     echo "check_ascii: nothing to check" >&2
     exit 0
 fi
-# `--exclude-dir=vendor` is the directory-walk half of the same exemption
-# the pre-commit hook states by path: vendored third-party assets are text
-# kennis quotes rather than composes, and KaTeX is Unicode by its nature.
-# Pre-commit passes files one at a time and so needs `exclude:`; CI passes
-# directories and so needs this. Concern #308.
-if grep -rInP --exclude-dir=__pycache__ --exclude-dir=vendor '[^\x00-\x7F]' "$@"; then
+# Vendored third-party assets are checked like everything else. They were
+# expected to need an exemption and measurably do not - a minifier writes
+# Unicode as `\uXXXX` escapes, and `-I` already skips the binary fonts. So
+# a vendored file that *is* non-ASCII stops a commit, which is the right
+# outcome: it makes that a decision rather than a default. Concern #313.
+if grep -rInP --exclude-dir=__pycache__ '[^\x00-\x7F]' "$@"; then
     echo "error: non-ASCII bytes above" >&2
     exit 1
 fi

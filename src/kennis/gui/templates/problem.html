@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}kennis{% endblock %}
+{% block main %}
+<p class="role-error">{{ problem }}</p>
+{% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
+{% endblock %}
