@@ -469,3 +469,155 @@ def test_a_listing_says_when_it_left_documents_out(corpus: Path, client: TestCli
     assert "could not be read" in listing.text
     assert "kennis corpus status" in listing.text
     assert "1 unreadable" in summary.text
+
+
+# ---------------------------------------------------------------------------
+# Writing
+# ---------------------------------------------------------------------------
+
+
+def test_a_note_written_from_the_page_reaches_the_corpus(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+
+    answer = client.post("/remember", data={"text": "Use NNLS for the solver."})
+
+    assert answer.status_code == 200
+    assert "Remembered" in answer.text
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    assert any("NNLS" in d.body for d in held.documents)
+
+
+def test_the_write_is_committed(corpus: Path, client: TestClient):
+    """The corpus is kennis's own repository. A write that never
+    reaches git is one `corpus history` cannot show."""
+    import subprocess
+
+    def commits() -> int:
+        done = subprocess.run(
+            ["git", "rev-list", "--count", "--all"],
+            cwd=corpus / "corpus",
+            capture_output=True,
+            text=True,
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+        return int(done.stdout.strip())
+
+    admitted(client)
+    before = commits()
+
+    client.post("/remember", data={"text": "Phase-only first, then amplitude."})
+
+    assert commits() == before + 1
+
+
+def test_writing_is_refused_without_the_token(corpus: Path, client: TestClient):
+    """A write is exactly the request the guard exists for, and a POST
+    route added after the middleware was written is what middleware
+    exists to cover."""
+    answer = client.post("/remember", data={"text": "Should not be written."})
+
+    assert answer.status_code == 401
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    assert not held.documents
+
+
+def test_the_cookie_is_not_sent_across_sites(corpus: Path, client: TestClient):
+    """Cross-site protection here is `samesite=strict` on the token
+    cookie, set in unit 9a for a different reason. It is asserted
+    rather than commented because protection that falls out of
+    something else is the kind that gets removed.
+    """
+    admitted(client)
+
+    setting = client.get("/", params={"token": TOKEN}).headers.get("set-cookie", "")
+
+    assert "samesite=strict" in setting.lower()
+    assert "httponly" in setting.lower()
+
+
+def test_writing_nothing_is_refused_by_the_page_not_by_the_engine(
+    corpus: Path, client: TestClient
+):
+    """Both refuse empty text and they say nearly the same words, so
+    asserting the words proves nothing about which one acted - the
+    first version of this test passed with the page's own guard
+    removed.
+
+    The difference is what they offer next. The engine's refusal
+    carries `kennis remember --help`, which is a command-line answer
+    to someone looking at a textarea, so the page answers first and
+    offers no command.
+    """
+    admitted(client)
+
+    answer = client.post("/remember", data={"text": "   \n  "})
+
+    assert "nothing to remember" in answer.text.lower()
+    assert "role-warning" in answer.text
+    assert "kennis remember" not in answer.text
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    assert not held.documents
+
+
+def test_a_get_cannot_write(corpus: Path, client: TestClient):
+    """The writing route is POST only. A GET that writes is a GET
+    something will follow - a prefetcher, a link checker, a restored
+    history entry - and each would write a note nobody asked for."""
+    admitted(client)
+
+    form = client.get("/remember", params={"text": "Written by a prefetcher."})
+
+    assert form.status_code == 200
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    assert not held.documents
+
+
+def test_saying_the_same_thing_twice_is_reported_as_already_known(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+    client.post("/remember", data={"text": "Weighting is Briggs with robust zero."})
+
+    again = client.post(
+        "/remember", data={"text": "Weighting is Briggs with robust zero."}
+    )
+
+    assert "already remembered" in again.text.lower()
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    assert len(held.documents) == 1
+
+
+def test_a_busy_corpus_is_a_state_to_retry_from(corpus: Path, client: TestClient):
+    """The lock is `timeout=0`, so a `corpus index` in a terminal
+    refuses this write. Losing what someone typed is worse than making
+    them press the button again, so it is an outcome and not an error
+    page. Concern #167 is about this lock."""
+    from kennis.engine.locking import corpus_lock
+
+    admitted(client)
+
+    with corpus_lock(corpus / "corpus"):
+        answer = client.post("/remember", data={"text": "Written while busy."})
+
+    assert answer.status_code == 200
+    assert "busy" in answer.text.lower()
+
+
+def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(
+    corpus: Path, client: TestClient
+):
+    """Recording a project decision somewhere machine-global and
+    reporting success is worse than not recording it."""
+    admitted(client)
+
+    answer = client.post(
+        "/remember",
+        data={"text": "This project images in 2 GHz sub-bands.", "target": "context"},
+    )
+
+    assert "context" in answer.text.lower()
+    held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
+    assert not held.documents

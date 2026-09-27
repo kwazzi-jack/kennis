@@ -10,8 +10,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from kennis.engine.context.notes import BundleNote
+from kennis.engine.events import Outcome
+from kennis.engine.remember import RememberReport
+from kennis.gui.pages import ShownOutcome
 from kennis.holdings import Holding
-from kennis.render.words import count_of, describe_freshness, joined
+from kennis.render.words import (
+    count_of,
+    describe_freshness,
+    index_state,
+    joined,
+)
 
 NOTHING_FOUND = "No passages matched."
 
@@ -29,6 +38,79 @@ CORPUS_CHANGED = "The corpus has changed since this page was drawn. Reload to se
 NOTHING_HELD = "This corpus holds no documents yet."
 
 NO_PACKS = "No packs are installed."
+
+REMEMBER_PREAMBLE = (
+    "What is written here is kept. A note goes into the machine-global "
+    "corpus and is committed to its history; a project note goes into "
+    "this repository's .context/ bundle and is not committed, so it is "
+    "yours to commit with the project."
+)
+
+REMEMBER_PLACEHOLDER = "Something worth having again in six months"
+
+TITLE_HINT = "Title (optional - the first line is used otherwise)"
+
+GROUP_HINT = "Group (optional subdirectory)"
+
+REMEMBER_ACTION = "Remember"
+
+NOTHING_TO_REMEMBER = "There is nothing to remember - no text was given."
+
+CORPUS_BUSY = (
+    "The corpus is busy - another kennis command is using it. Your text is "
+    "still here; try again in a moment."
+)
+
+
+def describe_written(report: RememberReport, where: str) -> ShownOutcome:
+    """What one note written into the corpus came to.
+
+    An unchanged outcome is not a failure and not a success worth
+    celebrating: the thing is already known, which is why it wears the
+    role that carries no colour.
+    """
+    if report.outcome is Outcome.UNCHANGED:
+        return ShownOutcome(
+            message=f"Already remembered: {report.title}",
+            role="role-unchanged",
+            where=where,
+        )
+    if report.index_outcome == "unindexed":
+        return ShownOutcome(
+            message=f"Remembered: {report.title}",
+            role="role-operation",
+            where=where,
+            # The note is written and is not findable, and nothing on
+            # this page can change that - so it is a command, not a
+            # clause appended to the good news.
+            resolution="kennis corpus index",
+        )
+    state = index_state(report.index_outcome, report.chunk_count)
+    suffix = f" - {state}" if state else ""
+    return ShownOutcome(
+        message=f"Remembered: {report.title}{suffix}",
+        role="role-operation",
+        where=where,
+    )
+
+
+def describe_written_to_bundle(note: BundleNote, bundle_name: str) -> ShownOutcome:
+    """The same for a bundle note.
+
+    Prefixed with the bundle's directory name, because
+    `decisions/Solver choice.md` does not say which of the two places
+    `remember` writes to it landed in.
+    """
+    already = note.outcome is Outcome.UNCHANGED
+    return ShownOutcome(
+        message=(
+            f"Already in this project: {note.title}"
+            if already
+            else f"Remembered in this project: {note.title}"
+        ),
+        role="role-unchanged" if already else "role-operation",
+        where=f"{bundle_name}/{note.relative_path}",
+    )
 
 
 def describe_holding(holding: Holding) -> str:
@@ -83,15 +165,24 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
 
 
 __all__ = [
+    "CORPUS_BUSY",
     "CORPUS_CHANGED",
+    "GROUP_HINT",
     "IMAGES_BLOCKED",
     "LOAD_IMAGES",
     "NEVER_INDEXED",
     "NOTHING_FOUND",
     "NOTHING_HELD",
+    "NOTHING_TO_REMEMBER",
     "NO_PACKS",
+    "REMEMBER_ACTION",
+    "REMEMBER_PLACEHOLDER",
+    "REMEMBER_PREAMBLE",
+    "TITLE_HINT",
     "describe_count",
     "describe_holding",
+    "describe_written",
+    "describe_written_to_bundle",
     "unknown_scope",
     "unreadable_note",
 ]

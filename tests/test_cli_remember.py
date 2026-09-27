@@ -200,3 +200,26 @@ def test_a_remembered_note_is_searchable_without_a_second_command(
     found = run.invoke(main, ["search", "ionospheric screens", "--mode", "bm25"])
     assert found.exit_code == 0, found.output
     assert "onospheric" in found.output
+
+
+def test_an_unchanged_note_does_not_sweep_up_unrelated_changes(
+    corpus: Path, run: CliRunner
+):
+    """The real reason `write_note` skips the commit when nothing was
+    written, and the only thing that guard does.
+
+    `Repository.commit` already declines a clean tree, so an empty
+    commit was never the risk. But it stages with `git add --all .`,
+    so committing on a repeated note would record whatever else is in
+    the corpus - a file someone dropped in - under a message saying
+    the user remembered something.
+    """
+    assert run.invoke(main, ["remember", "A thing worth keeping."]).exit_code == 0
+    stray = corpus / "notes" / "dropped-in.md"
+    stray.write_text("Not written by kennis.\n", encoding="utf-8")
+    before = Repository(corpus).head()
+
+    assert run.invoke(main, ["remember", "A thing worth keeping."]).exit_code == 0
+
+    assert Repository(corpus).head() == before
+    assert not Repository(corpus).is_clean()
