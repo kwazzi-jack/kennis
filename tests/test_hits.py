@@ -81,6 +81,28 @@ def test_a_headline_does_not_repeat_the_title_as_its_section():
     assert hit_headline(1, a_hit(section="Rivers")).count("Rivers") == 1
 
 
+def test_a_headline_does_not_repeat_a_title_that_differs_only_by_case():
+    """`calibration - Calibration` was the real output: a title taken
+    from a filename beside an H1 written in prose case, which is the
+    ordinary relationship between the two rather than an odd one.
+
+    A heading that differs from the title only in case carries nothing
+    the title does not, so there is nothing to lose by suppressing it.
+    Concern #296.
+    """
+    headline = hit_headline(1, a_hit(title="calibration", section="Calibration"))
+
+    assert headline == "[1] calibration"
+
+
+def test_a_headline_keeps_a_section_that_differs_by_more_than_case():
+    """The other side of the comparison, so the test above cannot pass
+    by suppressing every section."""
+    headline = hit_headline(1, a_hit(title="calibration", section="Calibration notes"))
+
+    assert "Calibration notes" in headline
+
+
 def test_a_handle_carries_what_read_takes():
     """`kennis read <id> --chunk <n>`, so both have to be on the line."""
     handle = hit_handle(a_hit(document_id="abc1234567", chunk_index=4))
