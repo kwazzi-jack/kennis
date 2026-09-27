@@ -25,16 +25,33 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
-      # Every version runs even when one fails, so a 3.14-only break is
-      # visible as exactly that rather than hidden behind a 3.12 failure.
+      # Every combination runs even when one fails, so a Windows-only or
+      # 3.14-only break is visible as exactly that rather than hidden
+      # behind another job's failure.
       fail-fast: false
       matrix:
-        # The floor and the ceiling of `requires-python`. 3.13 is skipped
-        # deliberately: it is between two versions that are both tested, and
-        # a third full run buys little against the minutes it costs.
+        # Three platforms because milestone 9's whole justification for a
+        # web interface over PySide6 was that it works on all three, and
+        # until now nothing here had ever run on two of them. Concern #310.
+        #
+        # Not the full cross product. Every platform is covered once and
+        # every Python once, which is four jobs rather than six: a
+        # Windows-specific break and a 3.14-specific break are different
+        # things, and running both Pythons on all three platforms buys a
+        # third way of finding the same two.
+        #
+        # 3.12 and 3.14 are the floor and ceiling of `requires-python`.
+        # 3.13 is skipped deliberately - it sits between two versions that
+        # are both tested.
+        os: [ubuntu-latest]
         python: ["3.12", "3.14"]
+        include:
+          - os: macos-latest
+            python: "3.12"
+          - os: windows-latest
+            python: "3.12"
     steps:
       - uses: actions/checkout@v7
 
@@ -57,7 +74,7 @@ jobs:
       # the job rather than in the code. The `mcp` extra stays optional
       # for a user: `test_engine_imports_without_the_interface_libraries`
       # proves `import kennis.engine` works without it.
-      - run: uv sync --frozen --extra mcp --python ${{ matrix.python }}
+      - run: uv sync --frozen --extra mcp --extra gui --python ${{ matrix.python }}
 
       # `--python` on each run as well as on the sync: without it `uv run`
       # reads `.python-version`, which says 3.12, and warns that the

@@ -106,6 +106,13 @@ mcp = [
 mineru = [
     "mineru[pipeline]>=3.4,<4",
 ]
+gui = [
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "markdown-it-py>=3",
+    "pywebview>=6.2,<7",
+    "uvicorn>=0.30",
+]
 
 [project.scripts]
 kennis = "kennis.cli.__main__:main"
@@ -196,6 +203,12 @@ filterwarnings = [
   # which is why it appeared first on CI and never here. Narrow on purpose:
   # every other warning stays an error. Concern #284.
   "ignore:hf_xet.download_files\\(\\) is deprecated:DeprecationWarning",
+  # `starlette.testclient` reads `anyio.abc.BlockingPortal`, an alias anyio
+  # itself deprecated, at import time - so importing `TestClient` at all is
+  # an error without this and the graphical front end cannot be tested.
+  # Neither package is kennis's, and a version bump of either removes it.
+  # Narrow on purpose, as above.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
