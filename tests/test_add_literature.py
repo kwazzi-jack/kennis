@@ -20,7 +20,13 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.converters import ConversionBatch
 from kennis.engine.corpus.ids import derive_id
 from kennis.engine.corpus.schema import LiteratureFrontmatter
-from kennis.engine.events import Diagnostic, Outcome, Recorder, Severity
+from kennis.engine.events import (
+    Diagnostic,
+    MetadataUnavailable,
+    Outcome,
+    Recorder,
+    Severity,
+)
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -1011,12 +1017,14 @@ def test_a_failed_metadata_lookup_is_reported(papers: Collection):
     )
 
     warnings = [
-        event.message
+        event.detail
         for event in events.events
         if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
     ]
-    assert any("2101.11270" in message for message in warnings), warnings
-    assert any("citekey" in message or "metadata" in message for message in warnings)
+    # The identifier as the caller gave it, prefix and all. The old
+    # assertion matched a substring of a sentence and so could not tell
+    # `2101.11270` from `arXiv:2101.11270`; this says which it is.
+    assert MetadataUnavailable(identifier="arXiv:2101.11270") in warnings, warnings
 
 
 def test_metadata_that_arrives_is_not_warned_about(papers: Collection):

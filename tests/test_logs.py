@@ -13,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.events import Diagnostic, ItemFinished, Outcome, Severity
+from kennis.engine.events import (
+    Diagnostic,
+    DocumentSkipped,
+    FrontmatterUnreadable,
+    ItemFinished,
+    Outcome,
+    Severity,
+)
 from kennis.logs import LogSink, log_path, start_logging, stop_logging
 
 
@@ -111,7 +118,12 @@ def test_the_reason_is_logged_not_just_the_outcome(isolated: Path):
 def test_a_diagnostic_is_logged_at_its_severity(isolated: Path):
     start_logging()
 
-    LogSink().emit(Diagnostic(severity=Severity.ERROR, message="something is wrong"))
+    LogSink().emit(
+        Diagnostic(
+            severity=Severity.ERROR,
+            detail=DocumentSkipped(problem="notes/a.md: bad yaml"),
+        )
+    )
 
     assert "ERROR" in written(isolated)
 
@@ -120,7 +132,12 @@ def test_the_sink_works_before_logging_is_started(isolated: Path):
     """A caller that never started logging must not crash on its first
     event - the sink is installed by the front end, and a library used
     directly has none."""
-    LogSink().emit(Diagnostic(severity=Severity.WARNING, message="fine"))
+    LogSink().emit(
+        Diagnostic(
+            severity=Severity.WARNING,
+            detail=FrontmatterUnreadable(path="notes/a.md"),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,12 @@ from typing import Protocol
 
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document as CorpusDocument
-from kennis.engine.events import Diagnostic, EventSink, Severity
+from kennis.engine.events import (
+    Diagnostic,
+    DocumentUnsearchable,
+    EventSink,
+    Severity,
+)
 from kennis.engine.rag.models import Document, Metadata
 
 
@@ -57,10 +62,9 @@ class CollectionLoader:
                 events.emit(
                     Diagnostic(
                         severity=Severity.WARNING,
-                        message=(
-                            f"{facts.problem}: this document will not be searchable"
-                            if facts.problem
-                            else f"{facts.md_path} could not be read"
+                        detail=DocumentUnsearchable(
+                            problem=facts.problem,
+                            path=str(facts.md_path),
                         ),
                         resolution="kennis corpus status",
                     )

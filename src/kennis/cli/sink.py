@@ -39,6 +39,7 @@ from kennis.engine.events import (
 )
 from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.logs import LogSink
+from kennis.render.diagnostics import describe_diagnostic
 from kennis.render.words import fetching_model, progress_label
 
 # The column glyph each outcome prints under. Layout rather than wording, so
@@ -122,13 +123,14 @@ class DisplaySink:
         on; holding it until the report would put it after the operation it
         is about, which is where a reader has stopped looking.
         """
+        said = describe_diagnostic(event.detail)
         match event.severity:
             case Severity.ERROR:
-                display.failure(event.message)
+                display.failure(said)
             case Severity.WARNING:
-                display.note(event.message)
+                display.note(said)
             case Severity.HINT:
-                display.hint(event.message)
+                display.hint(said)
         if event.resolution:
             display.hint(event.resolution)
 

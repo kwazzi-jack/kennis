@@ -28,7 +28,12 @@ import yaml
 from kennis.engine.context.bundle import index_root_for
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.errors import NothingToIndex
-from kennis.engine.events import Diagnostic, EventSink, Severity
+from kennis.engine.events import (
+    Diagnostic,
+    EventSink,
+    FrontmatterUnreadable,
+    Severity,
+)
 from kennis.engine.frontmatter import Frontmatter, split_frontmatter
 from kennis.engine.rag.binding import Binding
 from kennis.engine.rag.chunking import ChunkParameters
@@ -120,10 +125,7 @@ class BundleLoader:
             events.emit(
                 Diagnostic(
                     severity=Severity.WARNING,
-                    message=(
-                        f"{relative} opens with a frontmatter block that could "
-                        "not be read; it is indexed without its metadata"
-                    ),
+                    detail=FrontmatterUnreadable(path=str(relative)),
                     resolution="kennis context status",
                 )
             )

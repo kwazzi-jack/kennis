@@ -25,7 +25,12 @@ from kennis.engine.context import (
     remember_in_bundle,
 )
 from kennis.engine.errors import NothingToIndex
-from kennis.engine.events import Diagnostic, Recorder, Severity
+from kennis.engine.events import (
+    Diagnostic,
+    FrontmatterUnreadable,
+    Recorder,
+    Severity,
+)
 from kennis.engine.rag.chunking import ChunkParameters
 from kennis.engine.rag.index import load_index, read_manifest
 from kennis.engine.rag.search import search
@@ -130,7 +135,9 @@ def test_frontmatter_that_does_not_parse_is_reported_and_the_body_kept(bundle: P
         if event.severity is Severity.WARNING
     ]
     assert len(warnings) == 1
-    assert "broken.md" in warnings[0].message
+    detail = warnings[0].detail
+    assert isinstance(detail, FrontmatterUnreadable)
+    assert "broken.md" in detail.path
 
 
 # ---------------------------------------------------------------------------

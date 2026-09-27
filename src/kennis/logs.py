@@ -43,6 +43,7 @@ from kennis.engine.events import (
     Progress,
     Severity,
 )
+from kennis.render.diagnostics import describe_diagnostic
 
 _LOGGER_NAME: Final = "kennis"
 _LOG_FILE: Final = "kennis.log"
@@ -160,10 +161,14 @@ class LogSink:
                     event.total if event.total is not None else "?",
                 )
             case Diagnostic():
+                # The code and the sentence. The code is what a reader
+                # greps for across runs, and the sentence is what tells
+                # them what it meant without opening the source.
                 self._logger.log(
                     _SEVERITY_LEVELS.get(event.severity, logging.INFO),
-                    "%s%s",
-                    event.message,
+                    "%s: %s%s",
+                    type(event.detail).code,
+                    describe_diagnostic(event.detail),
                     f" [{event.resolution}]" if event.resolution else "",
                 )
             case OperationFinished():

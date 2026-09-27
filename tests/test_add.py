@@ -18,12 +18,14 @@ from kennis.engine.corpus.converters import ConversionBatch
 from kennis.engine.errors import InputError
 from kennis.engine.events import (
     Diagnostic,
+    DocumentSkipped,
     ItemFinished,
     ItemStarted,
     OperationFinished,
     Outcome,
     Progress,
     Recorder,
+    TitleDotStripped,
 )
 
 
@@ -574,7 +576,7 @@ def test_a_dotfile_title_is_reported_as_a_diagnostic(notes: Collection, tmp_path
 
     diagnostics = recorder.events_of_type(Diagnostic)
     assert len(diagnostics) == 1
-    assert "dot" in diagnostics[0].message
+    assert diagnostics[0].detail == TitleDotStripped(title=".bashrc")
 
 
 def test_a_dotted_source_filename_is_reported_the_same_way(
@@ -590,7 +592,7 @@ def test_a_dotted_source_filename_is_reported_the_same_way(
 
     diagnostics = recorder.events_of_type(Diagnostic)
     assert len(diagnostics) == 1
-    assert "dot" in diagnostics[0].message
+    assert diagnostics[0].detail == TitleDotStripped(title=".bashrc")
 
 
 def test_an_add_that_went_smoothly_produces_no_diagnostics(
@@ -662,7 +664,9 @@ def test_an_unreadable_document_is_reported_rather_than_passed_over(
 
     diagnostics = recorder.events_of_type(Diagnostic)
     assert len(diagnostics) == 1
-    assert broken.name in diagnostics[0].message
+    detail = diagnostics[0].detail
+    assert isinstance(detail, DocumentSkipped)
+    assert broken.name in detail.problem
 
 
 def test_an_unreadable_document_still_reserves_its_identifier(
