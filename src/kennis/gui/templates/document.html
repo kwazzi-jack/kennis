@@ -10,6 +10,9 @@
     <a class="role-command" href="?images=on">{{ blocked_action }}</a>
   </p>
   {% endif %}
+  {% if mark_withheld %}
+  <p class="role-warning">{{ mark_withheld }}</p>
+  {% endif %}
   {{ document.body_html | safe }}
 </article>
 {% endblock %}

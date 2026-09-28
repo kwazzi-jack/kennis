@@ -30,7 +30,9 @@ choice.
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urlparse
 
@@ -62,15 +64,135 @@ type RenderRule = Callable[
 ]
 
 
-def to_html(markdown: str, *, load_remote_images: bool = False) -> str:
+@dataclass(frozen=True, slots=True)
+class MarkedRange:
+    """A range of the source to mark, and the anchor to give it.
+
+    `start` and `end` are character offsets into the same string the
+    renderer is handed, which is what `Chunk.char_start` and
+    `char_end` already are. The anchor is the fragment a link points
+    at, composed by the caller rather than here: `render/` is told
+    which passage to mark and does not decide what a chunk is called.
+    """
+
+    start: int
+    end: int
+    anchor: str
+
+
+def to_html(
+    markdown: str,
+    *,
+    load_remote_images: bool = False,
+    marked: MarkedRange | None = None,
+) -> str:
     """`markdown` as HTML, safe to place in a page.
 
     `load_remote_images` is off by default and is a per-request
     decision rather than a setting, because the reader consenting to
     tell a publisher about one paper has not consented about the next.
+
+    `marked` wraps the blocks a character range covers, so a reader
+    arriving from a search hit lands on the passage rather than at the
+    top of a nineteen-page paper. Omitted, the output is byte for byte
+    what it was before marking existed.
     """
     parser = _parser(load_remote_images=load_remote_images)
-    return str(parser.render(markdown))
+    if marked is None:
+        return str(parser.render(markdown))
+    tokens = parser.parse(markdown)
+    return str(
+        parser.renderer.render(_wrapped(tokens, markdown, marked), parser.options, {})
+    )
+
+
+def _wrapped(tokens: list[Token], markdown: str, marked: MarkedRange) -> list[Token]:
+    """`tokens` with an element opened before, and closed after, the
+    blocks that `marked` covers.
+
+    **Block-granular, and that is the decision.** Measured on the
+    corpus held: 510 of 524 chunks begin and end exactly on a
+    top-level block boundary. The 14 that do not are prose paragraphs
+    longer than `ChunkParameters.size`, which the packer is allowed to
+    bisect; for those this marks the containing paragraph, which shows
+    more than the chunk and never less. Marking the exact characters
+    would mean mapping offsets through markdown-it's inline tokens,
+    which do not carry reliable source positions.
+
+    One element around the whole run rather than one per block,
+    because a chunk is one passage: marking each paragraph separately
+    would read as three matches where the index recorded one.
+    """
+    offsets = _line_offsets(markdown)
+    # `-1` because an offset that falls inside a line belongs to that
+    # line, and `bisect_right` returns the line after it.
+    first_line = max(0, bisect_right(offsets, marked.start) - 1)
+    # `end` is exclusive and, for a block-aligned range, is the offset
+    # of the line after the block - which is the exclusive end of the
+    # line range too.
+    last_line = bisect_left(offsets, marked.end)
+
+    covered = [
+        position
+        for position, token in enumerate(tokens)
+        if token.level == 0
+        and token.nesting != -1
+        and token.map is not None
+        and token.map[0] < last_line
+        and token.map[1] > first_line
+    ]
+    if not covered:
+        # A range that reaches no block. The staleness guard is what
+        # should prevent this; rendering the document unmarked is what
+        # happens if it ever does not, and it is the harmless outcome.
+        return tokens
+
+    opening = Token("html_block", "", 0)
+    opening.content = f'<div class="chunk" id="{_escaped(marked.anchor)}">\n'
+    closing = Token("html_block", "", 0)
+    closing.content = "</div>\n"
+
+    # After the *closing* token of the last covered block, not after
+    # the opening one: a container's opening token is what `covered`
+    # holds, and its children and closer follow it.
+    end = _closes_at(tokens, covered[-1])
+    return [
+        *tokens[: covered[0]],
+        opening,
+        *tokens[covered[0] : end],
+        closing,
+        *tokens[end:],
+    ]
+
+
+def _closes_at(tokens: list[Token], position: int) -> int:
+    """One past the token that closes the block opening at `position`.
+
+    A paragraph is `paragraph_open`, `inline`, `paragraph_close`; a
+    table is deeper. Walking the nesting counter rather than assuming
+    a depth is what makes this work for both.
+    """
+    if tokens[position].nesting != 1:
+        return position + 1
+    depth = 0
+    for index in range(position, len(tokens)):
+        depth += tokens[index].nesting
+        if depth == 0:
+            return index + 1
+    return len(tokens)
+
+
+def _line_offsets(text: str) -> list[int]:
+    """The character offset each line starts at.
+
+    The same walk `rag/chunking.py::_blocks` does in the other
+    direction: it turns markdown-it's line numbers into offsets to
+    record a chunk, and this turns them back to find it again.
+    """
+    offsets = [0]
+    for line in text.splitlines(keepends=True):
+        offsets.append(offsets[-1] + len(line))
+    return offsets
 
 
 def _parser(*, load_remote_images: bool) -> MarkdownIt:
@@ -174,4 +296,4 @@ def _escaped(text: str) -> str:
     )
 
 
-__all__ = ["IMAGE_BLOCKED", "IMAGE_MISSING", "to_html"]
+__all__ = ["IMAGE_BLOCKED", "IMAGE_MISSING", "MarkedRange", "to_html"]

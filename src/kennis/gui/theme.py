@@ -108,6 +108,21 @@ body {
 main { max-width: 60rem; margin: 0 auto; padding: 1.5rem; }
 
 code, pre { font-family: ui-monospace, monospace; }
+
+/* The passage a search hit pointed at. A rule in the margin rather
+   than a background wash: the mark has to be findable at a glance
+   while a paper is scrolled, and a wash behind body text competes
+   with the text for the eight colours available here.
+
+   `scroll-margin-top` is what makes the fragment land correctly -
+   without it the browser puts the anchor at the very top of the
+   viewport, where the header sits over it. */
+.chunk {
+  border-left: 3px solid var(--role-hint);
+  padding-left: 1rem;
+  margin-left: -1rem;
+  scroll-margin-top: 2rem;
+}
 """
 
 

@@ -90,6 +90,12 @@ STILL_RUNNING = "This is still running."
 
 NOTHING_TO_SHOW = "That operation reported nothing."
 
+MARK_WITHHELD = (
+    "This document has changed since the index was built, so the passage "
+    "the search matched can no longer be placed in it. Rebuild the index "
+    "to see it marked again."
+)
+
 IMAGES_BLOCKED = (
     "This document refers to figures held elsewhere. They were not fetched, "
     "because requesting one tells the site which document is being read."
@@ -239,6 +245,7 @@ __all__ = [
     "GROUP_HINT",
     "IMAGES_BLOCKED",
     "LOAD_IMAGES",
+    "MARK_WITHHELD",
     "NEVER_INDEXED",
     "NOTHING_FOUND",
     "NOTHING_HELD",
