@@ -2,4 +2,8 @@
 <p class="{{ outcome.role }}">{{ outcome.message }}</p>
 {% if outcome.where %}<p class="role-muted">{{ outcome.where }}</p>{% endif %}
 {% if outcome.resolution %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
+{% if outcome.clears %}
+<textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}"
+          hx-swap-oob="true"></textarea>
+{% endif %}
 {% endif %}

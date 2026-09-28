@@ -4,7 +4,7 @@
 <h1>Remember</h1>
 <p class="role-muted">{{ preamble }}</p>
 <form hx-post="/remember" hx-target="#outcome" hx-swap="innerHTML">
-  <textarea name="text" rows="6" placeholder="{{ placeholder }}" autofocus></textarea>
+  <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}" autofocus></textarea>
   <div class="fields">
     <input type="text" name="title" placeholder="{{ title_hint }}">
     <input type="text" name="group" placeholder="{{ group_hint }}">

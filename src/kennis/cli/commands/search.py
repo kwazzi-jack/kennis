@@ -8,8 +8,7 @@ the truth is "never indexed" is the failure this exists to prevent.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
+from collections.abc import Sequence
 from typing import Final, get_args
 
 import click
@@ -17,17 +16,13 @@ import click
 from kennis.cli import display
 from kennis.cli.group import KennisCommand
 from kennis.cli.resolve import resolve_document
-from kennis.context import Context, existing_corpus, resolve_context
+from kennis.context import Context, existing_corpus
 from kennis.engine.context import (
     CONTEXT_COLLECTION,
-    find_bundle,
-    load_bundle_index,
 )
-from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import ContextNotFound, NothingToIndex, SearchUnavailable
-from kennis.engine.rag.embedding import resolve_host
+from kennis.engine.errors import SearchUnavailable
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Filter
 from kennis.engine.rag.search import (
@@ -35,14 +30,12 @@ from kennis.engine.rag.search import (
     Mode,
     parse_chunk_range,
     read_span,
-    search,
 )
 from kennis.render.hits import (
     SCORE_STYLES,
     Hit,
     ScoreStyle,
     around,
-    basis_for,
     basis_phrase,
     best_lexical,
     rendered_hit,
@@ -51,7 +44,16 @@ from kennis.render.hits import (
 )
 from kennis.render.words import (
     describe_document,
+    describe_lexical_fallback,
+    describe_skipped,
     describe_span,
+)
+from kennis.retrieval import (
+    EVERY_SCOPE,
+    SCOPE_NAMES,
+    Skipped,
+    Sweep,
+    sweep,
 )
 
 _MODES: Final[tuple[str, ...]] = get_args(Mode.__value__)
@@ -63,9 +65,7 @@ _MODES: Final[tuple[str, ...]] = get_args(Mode.__value__)
 # scale to rank on; this is not that. How specific a scope is - one project
 # against the whole machine - is a fact about where knowledge lives, and a
 # person asking a question inside a project is asking about that project.
-SCOPE_NAMES: Final[tuple[str, ...]] = (CONTEXT_COLLECTION, *COLLECTION_NAMES)
 
-_EVERY_SCOPE: Final = "all"
 
 # How many chunks either side of the anchor a passage carries. Named so
 # that `--before`/`--after` can be told apart from an explicit value equal
@@ -89,10 +89,10 @@ def _scopes(
     asked = [part.strip() for part in value.split(",") if part.strip()]
     if not asked:
         raise click.BadParameter("name at least one scope, or 'all'")
-    if _EVERY_SCOPE in asked:
+    if EVERY_SCOPE in asked:
         if len(asked) > 1:
             raise click.BadParameter(
-                f"'{_EVERY_SCOPE}' already means every scope; "
+                f"'{EVERY_SCOPE}' already means every scope; "
                 "drop it or name the scopes you want"
             )
         return SCOPE_NAMES
@@ -100,27 +100,9 @@ def _scopes(
     if unknown:
         raise click.BadParameter(
             f"unknown scope {', '.join(repr(name) for name in unknown)} - "
-            f"choose from {', '.join((*SCOPE_NAMES, _EVERY_SCOPE))}"
+            f"choose from {', '.join((*SCOPE_NAMES, EVERY_SCOPE))}"
         )
     return tuple(name for name in SCOPE_NAMES if name in asked)
-
-
-@dataclass(frozen=True, slots=True)
-class _Skipped:
-    """A scope that was not searched, and what would change that.
-
-    The reason is carried rather than derived from the name, because one
-    name has two reasons with two different commands behind them. A corpus
-    collection may be unindexed or may have no corpus at all; a bundle may
-    be unindexed or may not exist in this directory. Printing
-    `kennis corpus index` for a machine with no corpus gives the reader a
-    command that fails - which is rule 4.4's failure in its weaker form,
-    a line that runs and does not do what it said.
-    """
-
-    name: str
-    reason: str
-    resolution: str
 
 
 @click.command(name="search", cls=KennisCommand)
@@ -129,11 +111,11 @@ class _Skipped:
     "--collection",
     "selected",
     metavar="SCOPES",
-    default=_EVERY_SCOPE,
+    default=EVERY_SCOPE,
     show_default=True,
     callback=_scopes,
     help="Comma-separated scopes to search: "
-    + ", ".join((*SCOPE_NAMES, _EVERY_SCOPE))
+    + ", ".join((*SCOPE_NAMES, EVERY_SCOPE))
     + ". 'context' is this project's bundle.",
 )
 @click.option("-k", "--top-k", type=int, default=None, help="How many hits to show.")
@@ -192,95 +174,27 @@ def search_command(
     """
     if group is not None and project is not None:
         raise display.CliError("--project is an alias for --group; pass one of them.")
-    # The corpus is required only if a corpus scope was selected. A bundle
-    # belongs to one project and a corpus is machine-global, so searching a
-    # project on a machine that has never run `corpus init` is ordinary.
+    # A scope the reader named is a promise; one swept into is not.
+    # Not inferred from the count inside the sweep, because "fewer
+    # than all" and "asked for by name" are different facts that
+    # happen to coincide here.
     named = len(selected) < len(SCOPE_NAMES)
-    wants_corpus = any(name in COLLECTION_NAMES for name in selected)
-    # Required only when a corpus scope was *named*. Under a sweep a missing
-    # corpus is the same kind of absence as a missing index - not part of
-    # the answer - which is what lets `kennis search` work inside a project
-    # on a machine that has never run `corpus init`.
-    context = existing_corpus() if wants_corpus and named else resolve_context()
-    corpus_exists = (context.corpus_root / ".git").is_dir()
-    filters = _filters(group if group is not None else project)
-    wanted = top_k or context.settings.retrieval.default_top_k
 
-    # Resolved once rather than per scope: the walk is the same answer every
-    # time within one command, and the report needs to know whether there
-    # was a bundle at all to choose what to say about a skipped context.
-    bundle = find_bundle()
-    searched: list[str] = []
-    skipped: list[_Skipped] = []
-    # Insertion-ordered by `SCOPE_NAMES`, which is the order the report
-    # prints. Fixed rather than ranked: ordering groups by their best hit
-    # would put the cross-collection comparison back in through the layout.
-    groups: dict[str, list[Hit]] = {}
-    for name in [scope for scope in SCOPE_NAMES if scope in selected]:
-        index = _load(context, name, bundle=bundle, named=named)
-        if index is None:
-            unsearched = _why_skipped(
-                name, context=context, corpus_exists=corpus_exists, bundle=bundle
-            )
-            if unsearched is not None:
-                skipped.append(unsearched)
-            continue
-        searched.append(name)
-        # Per scope, not once for the report. A bundle's method is its own
-        # setting with its own default, because a dense bundle index costs
-        # what `retrieval.context_method` exists to avoid. An explicit
-        # `--mode` overrides both.
-        asked = mode or (
-            context.settings.retrieval.context_method
-            if name == CONTEXT_COLLECTION
-            else context.settings.retrieval.corpus_method
-        )
-        running = _fallback(index, asked, name)
-        model = index.binding.model.model if index.binding.model else None
-        basis = basis_for(model, dense_ran=running != "bm25")
-        found = [
-            Hit(collection=name, result=result, basis=basis, model=model)
-            for result in search(
-                index,
-                question,
-                top_k=wanted,
-                filters=filters,
-                mode=running,
-                # The address, from the configuration in force now. It is
-                # not in the stored binding, because it is not part of what
-                # the vectors are. Concern #210.
-                host=resolve_host(
-                    index.binding.model.kind if index.binding.model else "",
-                    context.settings.embedding.base_url or None,
-                ),
-            )
-        ]
-        # `top_k` per collection, not across them: each group is a complete
-        # answer from its source rather than a truncated share of a blend.
-        # No slice here - `search` is asked for `wanted` and returns at most
-        # that, so one would be dead code. An injection proved it was.
-        if found:
-            groups[name] = found
+    found = sweep(
+        question,
+        scopes=selected,
+        named=named,
+        top_k=top_k,
+        filters=_filters(group if group is not None else project),
+        mode=mode,
+    )
+    for name in found.degraded:
+        display.note(describe_lexical_fallback(name))
 
-    if not searched:
-        raise _nothing_to_search(skipped, corpus_exists=corpus_exists)
-
-    # Not sorted across collections, and that is the point. A fused score is
-    # `sum 1/(k+rank)` over the legs that ranked a chunk, so a hybrid
-    # collection contributes two terms where a lexical-only one contributes
-    # one and scores double for the same rank - on a real corpus every
-    # dual-leg hit in the candidate window beat every single-leg hit, always.
-    # Concern #229. Each group keeps its own ranking instead.
-    _report(groups, searched, skipped, snippet, scores)
+    _report(found, snippet, scores)
 
 
-def _report(
-    groups: dict[str, list[Hit]],
-    searched: list[str],
-    skipped: list[_Skipped],
-    snippet: str,
-    scores: str,
-) -> None:
+def _report(found: Sweep, snippet: str, scores: str) -> None:
     """One group per collection, each with its own ranking and its own scale.
 
     Not one merged list. There is no common quality scale between
@@ -289,17 +203,18 @@ def _report(
     is biased by leg count besides (#229). Grouping states what kennis knows:
     it ranks within a collection, and across them it only presents.
     """
-    # Grouped by reason rather than one line per scope. On a corpus with
-    # only notes indexed, a warning per collection is two thirds of the
-    # output before the answer, and the reader learns the same thing from
-    # one - but two scopes skipped for different reasons need different
-    # commands, so the grouping is by reason and not simply by count.
-    for reason, names in _by_reason(skipped).items():
-        display.note(f"not searched, {reason[0]}: {', '.join(names)}")
-        display.next_step(reason[1])
+    # Grouped by the command they share rather than one line per scope.
+    # On a corpus with only notes indexed, a warning per collection is two
+    # thirds of the output before the answer, and the reader learns the
+    # same thing from one - but two scopes needing different commands need
+    # different lines, which is why the grouping is by resolution.
+    for resolution, names in _by_resolution(found.skipped).items():
+        display.note(describe_skipped(names))
+        display.next_step(resolution)
 
+    groups = found.groups
     if not groups:
-        display.operation("Searched", ", ".join(searched))
+        display.operation("Searched", ", ".join(found.searched))
         display.note("no matching passages")
         return
 
@@ -315,20 +230,49 @@ def _report(
         # served every collection. Each group now carries a line saying its
         # band is relative. Concern #231.
         best = best_lexical(hits)
-        for rank, found in enumerate(hits, start=1):
+        for rank, hit in enumerate(hits, start=1):
             # Through `rendered_hit`, not by assembling the parts here.
             # Sharing the pieces would let the two front ends put them
             # together differently, which is the drift section 20's
             # byte-identical rule exists to prevent - the command line
             # decides styling and indentation and nothing else.
             shown = rendered_hit(
-                found, rank=rank, style=style, best=best, snippet=snippet
+                hit, rank=rank, style=style, best=best, snippet=snippet
             )
             display.hit(shown.headline)
             display.hit_detail(shown.detail)
             if shown.body is not None:
                 display.body(shown.body, indent="      ")
     _read_hint(everything)
+
+
+def _by_resolution(skipped: Sequence[Skipped]) -> dict[str, list[str]]:
+    """The skipped scopes grouped by one command that covers them all.
+
+    Insertion-ordered, so the scopes appear in `SCOPE_NAMES` order and
+    the report does not reshuffle itself as the corpus changes.
+
+    Here rather than in `retrieval`: it is a decision about how this
+    report reads. A page lists skipped scopes one per row with each
+    one's own command, and the sweep should not have chosen for it.
+
+    **Two or more corpus collections collapse onto `kennis corpus
+    index`**, which builds all of them, rather than onto a line each
+    naming `--collection <name>`. Grouping by `Skipped.resolution`
+    alone could never merge anything, because every collection's
+    resolution names itself - which is what the extraction lost and
+    the old fixture could not see, having only ever one scope to
+    skip. Concern #341.
+    """
+    corpus_scopes = [
+        scope.name for scope in skipped if scope.name != CONTEXT_COLLECTION
+    ]
+    grouped: dict[str, list[str]] = {}
+    for scope in skipped:
+        shared = scope.name != CONTEXT_COLLECTION and len(corpus_scopes) > 1
+        resolution = "kennis corpus index" if shared else scope.resolution
+        grouped.setdefault(resolution, []).append(scope.name)
+    return grouped
 
 
 def _read_hint(hits: list[Hit]) -> None:
@@ -374,39 +318,6 @@ def _score_style(hits: list[Hit], asked: ScoreStyle) -> ScoreStyle:
             "are the raw scores"
         )
     return style
-
-
-def _fallback(index: LoadedIndex, asked: str, name: str) -> Mode:
-    """The mode this index can actually run, saying so when it is not the one
-    asked for.
-
-    Refusing would be wrong: a fresh install may have no embedding backend at
-    all, and requiring `--mode bm25` on every search is a flag people alias
-    away. A silent downgrade would be worse - it would have them comparing
-    result quality against a dense index they do not have.
-    """
-    if index.matrix is not None or asked == "bm25":
-        return _as_mode(asked)
-    # No exception for context any more, and the exception it used to have
-    # is what `retrieval.context_method` removed. A bundle asks `bm25` by
-    # default, which short-circuits above without a word; reaching here for
-    # a bundle means someone set the method to hybrid or dense and the index
-    # has no dense leg, which is exactly the news this line carries.
-    display.note(f"the {name} index has no dense leg, so this ran as a lexical search")
-    return "bm25"
-
-
-def _as_mode(asked: str) -> Mode:
-    """`asked` as the engine's own type.
-
-    A cast in effect, and narrow on purpose: click's `Choice` is built from
-    `Mode`'s own members, so the only way here with anything else is a
-    settings file, which pydantic has already validated against the same
-    three values.
-    """
-    if asked not in _MODES:
-        raise display.CliError(f"unknown search mode '{asked}'")
-    return "bm25" if asked == "bm25" else "dense" if asked == "dense" else "hybrid"
 
 
 def _as_score_style(asked: str) -> ScoreStyle:
@@ -573,114 +484,3 @@ def _index_of(context: Context, name: str) -> LoadedIndex:
     `kennis corpus index` as its resolution, so nothing is added here.
     """
     return load_index(index_root(context.corpus_root), name)
-
-
-def _nothing_to_search(
-    skipped: list[_Skipped], *, corpus_exists: bool
-) -> NothingToIndex:
-    """The refusal when no scope could be searched, naming a real command.
-
-    **The first skipped scope's own command**, and `skipped` is in
-    `SCOPE_NAMES` order, so a project with an unindexed bundle is told
-    `kennis context index` rather than something about the corpus. That is
-    the ordinary state of a fresh clone - the bundle's index is gitignored
-    (#248), so the documents arrive and the index does not - which makes it
-    the first thing many readers will ever see from this command.
-
-    An empty `skipped` means nothing exists to index: every scope was
-    dropped for not being there at all, which `_why_skipped` reports as
-    None. Then the command is the one that creates something.
-    """
-    if skipped:
-        first = skipped[0]
-        return NothingToIndex(
-            "nothing that could be searched has an index yet",
-            resolution=first.resolution,
-        )
-    if not corpus_exists:
-        # `kennis corpus index` would fail with "no corpus found", which is
-        # a second error to read rather than an answer.
-        return NothingToIndex(
-            "there is nothing to search: no corpus on this machine, and no "
-            "context bundle in this directory",
-            resolution="kennis corpus init",
-        )
-    return NothingToIndex(
-        "there is nothing to search: the corpus is empty",
-        resolution="kennis corpus add --help",
-    )
-
-
-def _why_skipped(
-    name: str, *, context: Context, corpus_exists: bool, bundle: Path | None
-) -> _Skipped | None:
-    """Why this scope was not searched, or None when it is not worth saying.
-
-    Two kinds of absence, and only one of them is news.
-
-    **A store that exists and has not been indexed is reported**, because
-    the reader has one and may well believe it was searched - which is the
-    failure this whole check exists to prevent.
-
-    **A store that does not exist, or holds nothing, is not.** Most searches
-    are run outside any project, so warning that there is no bundle here
-    would put a line about a feature the reader is not using above every
-    answer; a machine with no corpus is told so by the refusal when nothing
-    at all could be searched; and an empty collection is skipped by
-    `kennis corpus index` itself, so naming that command would leave the
-    same warning on the next search. Nobody believes a store they have never
-    filled was searched.
-    """
-    if name == CONTEXT_COLLECTION:
-        if bundle is None:
-            return None
-        return _Skipped(name, "no index yet", "kennis context index")
-    if not corpus_exists:
-        return None
-    if not Collection(root=context.corpus_root, name=name).contents().documents:
-        # An empty collection is the same kind of absence one directory
-        # down. `kennis corpus index` skips a collection with no documents,
-        # so naming it here would print a command that runs, changes
-        # nothing, and leaves the same warning on the next search.
-        return None
-    return _Skipped(name, "no index yet", "kennis corpus index")
-
-
-def _by_reason(skipped: list[_Skipped]) -> dict[tuple[str, str], list[str]]:
-    """The skipped scopes grouped by the reason and command they share.
-
-    Insertion-ordered, so the reasons appear in scope order and the report
-    does not reshuffle itself as the corpus changes.
-    """
-    grouped: dict[tuple[str, str], list[str]] = {}
-    for scope in skipped:
-        grouped.setdefault((scope.reason, scope.resolution), []).append(scope.name)
-    return grouped
-
-
-def _load(
-    context: Context, name: str, *, bundle: Path | None, named: bool
-) -> LoadedIndex | None:
-    """One scope's index, or None when there is none and that is allowed.
-
-    A missing index is fatal for a scope the user named and ordinary for one
-    they did not. Anything else - an unreadable index, a binding that cannot
-    be parsed - propagates either way, because silently dropping a scope the
-    user believes was searched is the same failure as answering "no hits"
-    for one that was never built.
-
-    For context there are two ways to have nothing: no bundle governs this
-    directory at all, and a bundle that has never been indexed. Both are
-    absences of the same kind here, and they carry different resolutions,
-    which is why each raises its own error rather than a shared one.
-    """
-    try:
-        if name == CONTEXT_COLLECTION:
-            if bundle is None:
-                raise ContextNotFound
-            return load_bundle_index(bundle)
-        return load_index(index_root(context.corpus_root), name)
-    except (NothingToIndex, ContextNotFound):
-        if named:
-            raise
-        return None

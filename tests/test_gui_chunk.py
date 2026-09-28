@@ -40,8 +40,11 @@ from kennis.engine.rag.index import load_index
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_bundle_document
 from kennis.gui.words import MARK_WITHHELD
+from kennis.retrieval import EVERY_SCOPE
 
 TOKEN = "a-test-token"
+
+TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
 
 # Long enough to be several chunks at the real chunk size
 # (`ChunkParameters.size` is 1500 characters), so that the passage a
@@ -89,8 +92,14 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def a_long_note(tmp_path: Path, name: str) -> str:
-    """A note of several paragraphs, added and indexed."""
+def a_long_note(tmp_path: Path, name: str, *, index: bool = True) -> str:
+    """A note of several paragraphs, added and (by default) indexed.
+
+    `index=False` is for the tests that need a collection holding
+    documents and no index, which is the state a skipped scope is
+    in - `corpus index` with no `--collection` builds all three, so
+    the default arrangement leaves nothing to skip.
+    """
     run = CliRunner()
     source = tmp_path / "sources" / f"{name}.md"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -98,9 +107,12 @@ def a_long_note(tmp_path: Path, name: str) -> str:
         f"# {name}\n\n" + "\n\n".join(_PARAGRAPHS) + "\n", encoding="utf-8"
     )
     assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
-    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    if index:
+        assert run.invoke(main, ["corpus", "index"]).exit_code == 0
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     identifier = next(d.id for d in held.documents if d.frontmatter.title == name)
+    if not index:
+        return identifier
 
     # The sample has to chunk, or every assertion about chunk 1 below
     # would be an assertion about a chunk that does not exist, and
@@ -156,7 +168,8 @@ def test_the_link_names_the_chunk_the_hit_reported(corpus: Path, client: TestCli
     assert reported is not None, "the detail line must state the chunk"
     number = reported.group(1) or reported.group(2)
     assert int(number) > 0, "the match must not be in the first chunk"
-    assert f"?chunk={number}#chunk-{number}" in found.text
+    assert f"?chunk={number}&amp;q=" in found.text
+    assert f"#chunk-{number}" in found.text
 
 
 # ---------------------------------------------------------------------------
@@ -497,3 +510,183 @@ def test_a_stale_bundle_index_withholds_the_mark_and_says_why(
 
     assert 'class="chunk"' not in after.text
     assert MARK_WITHHELD in after.text
+
+
+# ---------------------------------------------------------------------------
+# The search flow
+# ---------------------------------------------------------------------------
+#
+# Driving the interface rather than reading it found six defects, and
+# these hold the fixes. The first is the one that made it feel
+# clunky: search, open a hit, press Back, and the results were gone,
+# because the query never entered the address.
+
+
+def test_the_search_is_in_the_address(corpus: Path, client: TestClient):
+    """A reload, a Back and a shared link all reconstruct the page
+    from `q` and `scope`, so none of them needs client state. Before
+    this the URL stayed `/?token=...` whatever was searched."""
+    a_long_note(corpus, "calibration")
+    admitted(client)
+
+    page = client.get("/", params={"q": "bandpass", "scope": "notes"})
+
+    assert page.status_code == 200
+    assert "Paragraph" in page.text
+    assert 'name="q"' in page.text and 'value="bandpass"' in page.text
+
+
+def test_a_live_search_pushes_the_page_url_not_the_fragment_url(
+    corpus: Path, client: TestClient
+):
+    """`hx-push-url="true"` pushes the URL that was *fetched*, which
+    is `/hits` - a fragment with no page around it. Back and reload
+    then rendered a bare list of results on a blank document. The
+    server names the address instead.
+
+    Found by walking the interface; the suite could not see it,
+    because every test asked for a page and got one."""
+    a_long_note(corpus, "calibration")
+    admitted(client)
+
+    partial = client.get("/hits", params={"q": "bandpass", "scope": "notes"})
+
+    assert partial.headers["HX-Push-Url"] == "/?q=bandpass&scope=notes"
+
+
+def test_the_page_re_runs_the_search_when_the_scope_changes(
+    corpus: Path, client: TestClient
+):
+    """`hx-trigger` listened to the text input only, so picking a new
+    scope left the previous scope's results on screen under the new
+    label - which is worse than showing nothing."""
+    search = (TEMPLATES_DIR / "search.html").read_text(encoding="utf-8")
+
+    assert "select[name=scope]" in search
+
+
+def test_the_search_box_is_focused_on_arrival(corpus: Path, client: TestClient):
+    """`autofocus` was on the element and `document.activeElement`
+    was `body`, so a reader had to click before typing. Asserted on
+    the attribute and on the script that backs it up, because the
+    attribute alone demonstrably did not do it."""
+    admitted(client)
+
+    page = client.get("/")
+
+    assert "autofocus" in page.text
+    assert "focus.js" in page.text
+
+
+def test_everywhere_is_a_scope_and_it_is_the_default(corpus: Path, client: TestClient):
+    """`kennis search` sweeps all four. The window defaulted to
+    notes, so a reader looking for a paper from a cold start was
+    answered nothing until they knew to change a dropdown."""
+    a_long_note(corpus, "calibration")
+    admitted(client)
+
+    page = client.get("/")
+
+    assert EVERY_SCOPE in page.text
+    assert f'value="{EVERY_SCOPE}" selected' in page.text
+
+
+def test_a_sweep_reports_every_collection_that_answered(
+    corpus: Path, client: TestClient
+):
+    a_long_note(corpus, "calibration")
+    admitted(client)
+
+    page = client.get("/", params={"q": "bandpass", "scope": EVERY_SCOPE})
+
+    assert "Notes" in page.text
+    assert "Paragraph" in page.text
+
+
+def test_a_sweep_names_the_scopes_it_could_not_search(corpus: Path, client: TestClient):
+    """The same promise the command line makes: a reader must not
+    believe a store was searched when it was not."""
+    run = CliRunner()
+    source = corpus / "sources" / "unindexed.md"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# doc\n\nSome documentation text.\n", encoding="utf-8")
+    assert (
+        run.invoke(
+            main, ["corpus", "add", "-d", str(source), "--project", "stimela"]
+        ).exit_code
+        == 0
+    )
+    # Not the indexing helper: `corpus index` with no `--collection`
+    # builds all three, which would leave nothing to skip and make
+    # this test pass for the wrong reason.
+    a_long_note(corpus, "calibration", index=False)
+    assert run.invoke(main, ["corpus", "index", "--collection", "notes"]).exit_code == 0
+    admitted(client)
+
+    page = client.get("/", params={"q": "bandpass", "scope": EVERY_SCOPE})
+
+    assert "docs" in page.text
+    assert "kennis corpus index --collection docs" in page.text
+
+
+def test_a_document_links_back_to_its_collection(corpus: Path, client: TestClient):
+    """The document page's only links were the figures control and
+    the citations in the text. There was no way back to anything."""
+    identifier = a_long_note(corpus, "calibration")
+    admitted(client)
+
+    page = client.get(f"/document/notes/{identifier}")
+
+    assert "/collection/notes" in page.text
+
+
+def test_a_document_reached_from_a_search_links_back_to_it(
+    corpus: Path, client: TestClient
+):
+    """Back works now that the search is in the address, but a
+    reader who arrived by following three hits should not have to
+    press it three times."""
+    identifier = a_long_note(corpus, "calibration")
+    admitted(client)
+
+    page = client.get(
+        f"/document/notes/{identifier}", params={"chunk": "1", "q": "bandpass"}
+    )
+
+    assert "q=bandpass" in page.text
+
+
+def test_a_hit_carries_the_query_into_the_document(corpus: Path, client: TestClient):
+    a_long_note(corpus, "calibration")
+    admitted(client)
+
+    found = client.get("/hits", params={"q": "bandpass", "scope": "notes"})
+
+    assert "q=bandpass" in found.text
+
+
+def test_writing_a_note_clears_the_form(corpus: Path, client: TestClient):
+    """The outcome was swapped in and the textarea left alone, so
+    pressing the button twice wrote the note twice. A refusal leaves
+    the text, because that is the text the reader would have to type
+    again."""
+    admitted(client)
+
+    written = client.post(
+        "/remember", data={"text": "Something worth keeping.", "target": "notes"}
+    )
+
+    assert written.status_code == 200
+    # An out-of-band swap, so the *server* decides. A client rule
+    # keyed on a 200 would empty the box after a refusal too, which
+    # is the text the reader would then have to retype.
+    assert 'hx-swap-oob="true"' in written.text
+
+
+def test_a_refused_write_keeps_the_text(corpus: Path, client: TestClient):
+    admitted(client)
+
+    refused = client.post("/remember", data={"text": "   ", "target": "notes"})
+
+    assert refused.status_code == 200
+    assert "hx-swap-oob" not in refused.text

@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ document.title }}{% endblock %}
 {% block main %}
+<nav class="back">
+  {% if question %}
+  <a href="/?q={{ question | urlencode }}">{{ back_to_search }}</a>
+  {% endif %}
+  <a href="/collection/{{ document.collection }}">{{ document.collection }}</a>
+</nav>
 <article>
   <h1>{{ document.title }}</h1>
   <p class="provenance">
