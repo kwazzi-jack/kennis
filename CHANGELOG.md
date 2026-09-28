@@ -1,3 +1,36 @@
+## v0.5.0 (2026-09-28)
+
+### Feat
+
+- **gui**: manage the corpus from the interface, with progress and repairs
+- **engine**: make a refusal a typed value and separate its remedy
+- **gui**: write notes from the interface and share the write sequence
+- **gui**: browse collections, index freshness and packs
+- **gui**: search the four scopes and render a document as html
+- **gui**: add kennis gui, a token-guarded local interface and the theme adapter
+- **mcp**: add the read and remember tools, and relative document paths
+- **mcp**: add the four search tools and share hit rendering with the cli
+- **mcp**: add kennis serve, the generated instructions block and list_corpus
+- **corpus**: fetch the papers and documentation sites a pack declares
+- **corpus**: add kennis corpus sync, claim and disown for pack notes
+- **pack**: add kennis context sync, pack list, pack status and pack remove
+- **pack**: add kennis pack add and the pack store
+- **pack**: report pack operations through the event stream
+- **pack**: add kennis pack init and kennis pack update
+- **pack**: add kennis pack validate
+- **pack**: add the ken.yml schema and its published json schema
+
+### Fix
+
+- **gui**: drop pywebview's backend probe tracebacks and explain the browser fallback
+- **context**: follow a pack file the user hid rather than duplicating it
+- **pack**: report files no include matched and declarations that ship nothing
+- **display**: give the skipped and failed markers their own theme roles
+
+### Refactor
+
+- **events**: name the diagnostic condition and phrase it in render
+
 ## v0.2.0 (2026-09-25)
 
 ### Feat
