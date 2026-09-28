@@ -62,6 +62,7 @@ from kennis.engine.pack.installed import (
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
 from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, Pack
+from kennis.engine.refusals import Quoted
 from kennis.engine.remember import title_for
 
 OPERATION = "corpus-sync"
@@ -811,7 +812,7 @@ def _reported(
                 operation=OPERATION,
                 item=action.address,
                 outcome=outcome,
-                reason=action.verdict,
+                refusal=Quoted(action.verdict),
             )
         )
     events.emit(

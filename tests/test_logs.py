@@ -21,7 +21,9 @@ from kennis.engine.events import (
     Outcome,
     Severity,
 )
+from kennis.engine.refusals import NothingConverted, UnsupportedFormat
 from kennis.logs import LogSink, log_path, start_logging, stop_logging
+from kennis.render.refusals import describe_refusal
 
 
 @pytest.fixture(autouse=True)
@@ -91,7 +93,7 @@ def test_every_event_reaches_the_log(isolated: Path):
                 operation="add",
                 item=f"paper{number}.pdf",
                 outcome=Outcome.SKIPPED,
-                reason="not a supported format",
+                refusal=UnsupportedFormat(suffix=".zip"),
             )
         )
 
@@ -100,7 +102,10 @@ def test_every_event_reaches_the_log(isolated: Path):
         assert f"paper{number}.pdf" in contents
 
 
-def test_the_reason_is_logged_not_just_the_outcome(isolated: Path):
+def test_the_refusal_is_logged_not_just_the_outcome(isolated: Path):
+    """The sentence, not the code. A code alone sends the reader to the
+    source to find out what it meant, which is the opposite of what the
+    log is for."""
     start_logging()
 
     LogSink().emit(
@@ -108,11 +113,13 @@ def test_the_reason_is_logged_not_just_the_outcome(isolated: Path):
             operation="add",
             item="one.pdf",
             outcome=Outcome.FAILED,
-            reason="the converter produced nothing",
+            refusal=NothingConverted(name="one.pdf"),
         )
     )
 
-    assert "the converter produced nothing" in written(isolated)
+    contents = written(isolated)
+    assert describe_refusal(NothingConverted(name="one.pdf")) in contents
+    assert "no markdown was produced" in contents
 
 
 def test_a_diagnostic_is_logged_at_its_severity(isolated: Path):

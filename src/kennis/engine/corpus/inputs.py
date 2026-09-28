@@ -37,6 +37,7 @@ from typing import Final, Literal
 from kennis.engine._glob import globstar_regex, looks_like_pattern
 from kennis.engine.corpus.intake import is_supported_suffix
 from kennis.engine.errors import InputError
+from kennis.engine.refusals import Refusal, SymlinkSkipped, UnsupportedFormat
 
 # Directory names never worth walking into. Dot-prefixed names are skipped
 # separately and by rule; these are the ones that are neither hidden nor
@@ -94,7 +95,7 @@ class SkippedInput:
     """
 
     identifier: str
-    reason: str
+    refusal: Refusal
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,13 +244,17 @@ def _walk_directory(
         for name in sorted(filenames):
             path = here / name
             if path.is_symlink():
-                skipped.append(SkippedInput(identifier=str(path), reason="symlink"))
+                skipped.append(
+                    SkippedInput(identifier=str(path), refusal=SymlinkSkipped())
+                )
                 continue
             if not is_supported_suffix(path, extra_file_types):
                 skipped.append(
                     SkippedInput(
                         identifier=str(path),
-                        reason=f"unsupported file type '{path.suffix or path.name}'",
+                        refusal=UnsupportedFormat(
+                            suffix=path.suffix or path.name,
+                        ),
                     )
                 )
                 continue

@@ -24,6 +24,7 @@ from kennis.engine.events import (
     Progress,
     Severity,
 )
+from kennis.engine.refusals import SameContent
 
 
 class RecordingBar:
@@ -154,7 +155,7 @@ def test_item_events_are_the_logs_alone(
                 operation="add",
                 item="trees.md",
                 outcome=Outcome.SKIPPED,
-                reason="already in the corpus",
+                refusal=SameContent(document_id="aaaaaaaaaa"),
             )
         )
 

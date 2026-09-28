@@ -26,6 +26,7 @@ from kennis.cli.sink import marker_for, reporting
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.corpus.add import (
     AddOptions,
+    AddOutcome,
     AddReport,
     add_docs,
     add_literature,
@@ -66,6 +67,7 @@ from kennis.render.packs import (
     describe_sync_summary,
     describe_unfetched,
 )
+from kennis.render.refusals import describe_refusal, remedies_for_refusal
 from kennis.render.words import (
     conversion_cost,
     conversion_repairs,
@@ -491,13 +493,43 @@ def _report_add(report: AddReport) -> None:
         elapsed=report.elapsed_seconds,
     )
     for outcome in Outcome:
-        named = [
-            item.title or item.identifier
-            for item in report.outcomes
-            if item.outcome is outcome
-        ]
+        named = [_named(item) for item in report.outcomes if item.outcome is outcome]
         if named:
             display.details(marker_for(outcome), named)
+    _report_remedies(report)
+
+
+def _named(item: AddOutcome) -> str:
+    """One detail line: what it was, and for a failure, why not.
+
+    Only failures carry their reason. A `+` line that also explained
+    itself would be noise, and an `=` line saying "identical content is
+    already in this collection" repeats what the marker already means.
+    A failure is the case where the name alone tells the user nothing
+    they can act on - until now the reason went only to the log, which
+    is the wrong place for one refused paper even if it is the right
+    one for three hundred refused pages. Concern #322.
+    """
+    name = item.title or item.identifier
+    if item.outcome is not Outcome.FAILED or item.refusal is None:
+        return name
+    return f"{name} - {describe_refusal(item.refusal)}"
+
+
+def _report_remedies(report: AddReport) -> None:
+    """The commands that would resolve the failures, each one once.
+
+    Below the items rather than beside them: two papers refused the same
+    way share a remedy, and printing it twice invites the user to run it
+    twice.
+    """
+    commands: dict[str, None] = {}
+    for item in report.outcomes:
+        if item.outcome is Outcome.FAILED and item.refusal is not None:
+            for command in remedies_for_refusal(item.refusal):
+                commands.setdefault(command, None)
+    for command in commands:
+        display.hint(command)
 
 
 @corpus_group.command(name="sync")

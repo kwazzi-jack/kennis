@@ -41,6 +41,7 @@ from kennis.engine.pack.installed import (
     refuse_damaged_packs,
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
+from kennis.engine.refusals import Quoted
 
 OPERATION = "context-sync"
 
@@ -357,7 +358,7 @@ def _reported(
                 operation=OPERATION,
                 item=action.address,
                 outcome=outcome,
-                reason=action.verdict,
+                refusal=Quoted(action.verdict),
             )
         )
     events.emit(

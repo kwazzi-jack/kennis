@@ -14,6 +14,7 @@ import pytest
 
 from kennis.engine.corpus.inputs import resolve_inputs
 from kennis.engine.errors import InputError
+from kennis.engine.refusals import SymlinkSkipped, UnsupportedFormat
 
 
 def make_file(path: Path, text: str = "x") -> Path:
@@ -187,7 +188,7 @@ def test_a_walk_declines_a_file_it_cannot_convert_and_says_so(tmp_path: Path):
 
     assert [Path(item.identifier).name for item in resolved.items] == ["a.md"]
     assert [Path(skip.identifier).name for skip in resolved.skipped] == ["binary.so"]
-    assert "unsupported" in resolved.skipped[0].reason
+    assert resolved.skipped[0].refusal == UnsupportedFormat(suffix=".so")
 
 
 def test_a_walk_declines_a_file_with_no_extension(tmp_path: Path):
@@ -259,7 +260,7 @@ def test_a_walk_skips_a_symlinked_file(tmp_path: Path):
     resolved = resolve_inputs([str(inside)])
 
     assert [Path(item.identifier).name for item in resolved.items] == ["a.md"]
-    assert resolved.skipped[0].reason == "symlink"
+    assert resolved.skipped[0].refusal == SymlinkSkipped()
 
 
 def test_a_walk_skips_a_symlinked_directory(tmp_path: Path):

@@ -22,6 +22,8 @@ from kennis.engine.events import (
 from kennis.engine.pack.scaffold import scaffold_pack
 from kennis.engine.pack.update import update_pack
 from kennis.engine.pack.validate import validate_pack
+from kennis.engine.refusals import Quoted
+from kennis.render.refusals import describe_refusal
 
 HEADER = """
 kennis:
@@ -151,8 +153,8 @@ def test_validate_reports_each_problem_as_its_kind_not_as_a_sentence(
     validate_pack(a_pack(tmp_path), events=events)
 
     assert events.outcomes() == {"notes/": Outcome.FAILED}
-    reasons = [event.reason for event in events.events_of_type(ItemFinished)]
-    assert reasons == ["source-missing"]
+    refused = [event.refusal for event in events.events_of_type(ItemFinished)]
+    assert refused == [Quoted("source-missing")]
 
 
 def test_validate_reports_a_refusal_against_the_file_itself(tmp_path: Path):
@@ -165,8 +167,8 @@ def test_validate_reports_a_refusal_against_the_file_itself(tmp_path: Path):
 
     finished = events.events_of_type(ItemFinished)
     assert finished[0].item == str(path)
-    assert finished[0].reason is not None
-    assert "schema-too-new" in finished[0].reason
+    assert finished[0].refusal is not None
+    assert "schema-too-new" in describe_refusal(finished[0].refusal)
 
 
 def test_a_clean_validate_reports_the_operation_and_no_items(tmp_path: Path):

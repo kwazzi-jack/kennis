@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar, Protocol
 
+from kennis.engine.refusals import Refusal
+
 
 class Outcome(Enum):
     """What became of one item.
@@ -71,15 +73,21 @@ class ItemStarted:
 class ItemFinished:
     """Work on one item ended, with an outcome and optionally why.
 
-    The reason is what the log keeps and the report usually drops: the report
-    says a fetch skipped fifteen documents, the log says which fifteen and why
-    each one.
+    The refusal is what the log keeps and the report usually drops: the
+    report says a fetch skipped fifteen documents, the log says which
+    fifteen and why each one. `kennis corpus add` is the exception and
+    prints its failures, because one refused paper is not fifteen.
+
+    `refusal` is typed rather than a sentence for the reason
+    `Diagnostic.detail` is - the engine names the condition and carries
+    its facts, and `render/refusals.py` chooses the words. A caller whose
+    reason is genuinely a name produced elsewhere wraps it in `Quoted`.
     """
 
     operation: str
     item: str
     outcome: Outcome
-    reason: str | None = None
+    refusal: Refusal | None = None
 
 
 @dataclass(frozen=True, slots=True)

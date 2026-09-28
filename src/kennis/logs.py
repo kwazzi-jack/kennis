@@ -44,6 +44,7 @@ from kennis.engine.events import (
     Severity,
 )
 from kennis.render.diagnostics import describe_diagnostic
+from kennis.render.refusals import describe_refusal
 
 _LOGGER_NAME: Final = "kennis"
 _LOG_FILE: Final = "kennis.log"
@@ -146,12 +147,20 @@ class LogSink:
             case ItemStarted():
                 self._logger.debug("%s started: %s", event.operation, event.item)
             case ItemFinished():
+                # The refusal's own words, chosen in `render/`. The log
+                # renders rather than storing a code, for the same
+                # reason a diagnostic does: a code alone sends the
+                # reader to the source to find out what it meant.
                 self._logger.info(
                     "%s %s: %s%s",
                     event.operation,
                     event.outcome.value,
                     event.item,
-                    f" ({event.reason})" if event.reason else "",
+                    (
+                        f" ({describe_refusal(event.refusal)})"
+                        if event.refusal is not None
+                        else ""
+                    ),
                 )
             case Progress():
                 self._logger.debug(

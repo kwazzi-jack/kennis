@@ -108,6 +108,56 @@ def test_add_writes_the_document_and_reports_it(
     assert "trees" in output
 
 
+def test_a_refused_add_says_why_and_not_only_which(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Until unit 9e the reason went only to the log. A report that names
+    a refused paper and stops tells the user nothing they can act on,
+    and the log is the wrong place to learn that a single add failed -
+    right though it is for three hundred refused pages."""
+    source = a_source(tmp_path, "paper.md")
+
+    result = run.invoke(main, ["corpus", "add", "-l", str(source)])
+
+    assert result.exit_code == 0, result.output
+    # Collapsed, because a long tmp_path wraps the line and a substring
+    # check against the raw output would pass or fail by terminal width.
+    shown = " ".join(result.output.split())
+    assert "no bibliographic identity" in shown
+    assert "paper" in shown
+
+
+def test_a_refused_add_offers_the_command_that_resolves_it(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """The remedy is printed on its own line rather than inside the
+    sentence, and it runs exactly as written - which is the property
+    that lets a graphical interface make it a button."""
+    source = a_source(tmp_path, "paper.md")
+
+    result = run.invoke(main, ["corpus", "add", "-l", str(source)])
+    shown = " ".join(result.output.split())
+
+    assert f"kennis corpus add -n {source}" in shown
+    assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    assert only_document(corpus).is_file()
+
+
+def test_an_ordinary_add_does_not_explain_itself(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Only failures carry their reason. A `+` line that also said
+    "added" would be noise, and an `=` line saying "identical content is
+    already in this collection" repeats what the marker means."""
+    source = a_source(tmp_path, "trees.md")
+    added(run, source)
+
+    repeated = added(run, source)
+
+    assert "identical content" not in repeated
+    assert "hint:" not in repeated
+
+
 def test_add_commits_what_it_wrote(corpus: Path, run: CliRunner, tmp_path: Path):
     """Milestone 4 built `Repository.commit` and nothing has called it from a
     user action until now. A corpus whose documents are not committed has no

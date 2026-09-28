@@ -19,6 +19,8 @@ import pytest
 from kennis.engine.corpus.add import AddOptions, add_literature, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.events import Outcome
+from kennis.engine.refusals import NoIdentity
+from kennis.render.refusals import describe_refusal
 
 PDF_BYTES = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n%%EOF\n"
 HTML_PAGE = (
@@ -151,7 +153,9 @@ def test_a_served_pdf_without_the_converter_says_which_converter(
     )
 
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
-    assert "mineru" in str(report.outcomes[0].reason).lower()
+    refusal = report.outcomes[0].refusal
+    assert refusal is not None
+    assert "mineru" in describe_refusal(refusal).lower()
     assert notes.contents().documents == []
 
 
@@ -176,7 +180,9 @@ def test_a_url_serving_something_unconvertible_is_refused(notes: Collection):
     )
 
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
-    assert "zip" in str(report.outcomes[0].reason).lower()
+    refusal = report.outcomes[0].refusal
+    assert refusal is not None
+    assert "zip" in describe_refusal(refusal).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -212,9 +218,7 @@ def test_literature_refuses_a_url_with_no_identity(papers: Collection):
     )
 
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
-    reason = str(report.outcomes[0].reason)
-    assert "identity" in reason or "identifier" in reason
-    assert "not an existing file" not in reason
+    assert report.outcomes[0].refusal == NoIdentity(named="https://example.com/paper")
 
 
 # ---------------------------------------------------------------------------
