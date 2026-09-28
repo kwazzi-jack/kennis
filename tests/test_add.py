@@ -27,6 +27,7 @@ from kennis.engine.events import (
     Recorder,
     TitleDotStripped,
 )
+from kennis.engine.refusals import NothingConverted, SameContent
 
 
 class CountingConverter:
@@ -218,7 +219,7 @@ def test_the_second_add_reports_a_duplicate_rather_than_failing(
     outcome = report.outcomes[0]
     assert outcome.outcome is Outcome.UNCHANGED
     assert outcome.document_id == notes.contents().documents[0].id
-    assert outcome.reason
+    assert outcome.refusal == SameContent(document_id=outcome.document_id)
 
 
 def test_a_duplicate_is_detected_before_any_conversion_runs(
@@ -282,7 +283,9 @@ def test_a_converter_failure_fails_only_its_own_document(
     by_identifier = {outcome.identifier: outcome for outcome in report.outcomes}
     assert by_identifier[str(good)].outcome is Outcome.ADDED
     assert by_identifier[str(bad)].outcome is Outcome.FAILED
-    assert by_identifier[str(bad)].reason
+    assert by_identifier[str(bad)].refusal == NothingConverted(
+        name="doomed.pdf", problem="one document was unreadable"
+    )
     assert len(notes.contents().documents) == 1
 
 

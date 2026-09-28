@@ -19,6 +19,7 @@ from kennis.engine.events import (
     Recorder,
     Severity,
 )
+from kennis.engine.refusals import UnsupportedFormat
 
 EVENT_TYPES = (ItemStarted, ItemFinished, Progress, Diagnostic, OperationFinished)
 
@@ -31,22 +32,25 @@ def test_every_event_is_a_frozen_dataclass(event_type: type[object]):
     assert getattr(event_type, "__dataclass_params__").frozen  # noqa: B009
 
 
-def test_an_item_outcome_carries_a_reason():
+def test_an_item_outcome_carries_a_refusal():
+    """Typed rather than a sentence, for the reason `Diagnostic.detail`
+    is: the engine names the condition and `render/` chooses the
+    words."""
     event = ItemFinished(
         operation="index",
         item="welman2024",
         outcome=Outcome.SKIPPED,
-        reason="no text layer",
+        refusal=UnsupportedFormat(suffix=".zip"),
     )
 
     assert event.outcome is Outcome.SKIPPED
-    assert event.reason == "no text layer"
+    assert event.refusal == UnsupportedFormat(suffix=".zip")
 
 
-def test_an_item_outcome_needs_no_reason():
+def test_an_item_outcome_needs_no_refusal():
     event = ItemFinished(operation="index", item="welman2024", outcome=Outcome.ADDED)
 
-    assert event.reason is None
+    assert event.refusal is None
 
 
 def test_outcomes_are_the_vocabulary_the_report_uses():

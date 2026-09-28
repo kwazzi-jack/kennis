@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from shlex import quote
 
 import httpx
 import pytest
@@ -22,11 +23,21 @@ from kennis.engine.corpus.ids import derive_id
 from kennis.engine.corpus.schema import LiteratureFrontmatter
 from kennis.engine.events import (
     Diagnostic,
+    ItemFinished,
     MetadataUnavailable,
     Outcome,
     Recorder,
     Severity,
 )
+from kennis.engine.refusals import (
+    AmbiguousIdentity,
+    BibliographyIncomplete,
+    NoArxivText,
+    NoIdentity,
+    NoPublisherText,
+    NotAnInput,
+)
+from kennis.render.refusals import describe_refusal, remedies_for_refusal
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -489,8 +500,9 @@ def test_two_candidates_of_one_kind_are_refused_rather_than_guessed_between(
     )
 
     assert report.outcomes[0].outcome is Outcome.FAILED
-    assert "2409.19750" in (report.outcomes[0].reason or "")
-    assert "1101.1764" in (report.outcomes[0].reason or "")
+    assert report.outcomes[0].refusal == AmbiguousIdentity(
+        named=str(path), kind="arxiv", values=("2409.19750", "1101.1764")
+    )
 
 
 def test_an_identifier_supplied_by_hand_settles_an_ambiguous_page(
@@ -548,11 +560,16 @@ def test_the_refusal_names_both_ways_forward(papers: Collection, tmp_path: Path)
         converter=FrontPageConverter(),
         arxiv=arxiv_client(),
     )
-    reason = report.outcomes[0].reason or ""
+    refusal = report.outcomes[0].refusal
 
-    assert "--identifier" in reason
-    assert "corpus add -n" in reason
-    assert str(path) in reason
+    assert refusal == NoIdentity(named=str(path))
+    assert "--identifier" in describe_refusal(refusal)
+    # The command is *beside* the sentence rather than inside it, so a
+    # front end that cannot offer a terminal command can still show the
+    # sentence. Unit 9e.
+    assert remedies_for_refusal(refusal) == (
+        f"kennis corpus add -n {quote(str(path))}",
+    )
 
 
 def test_a_refusal_costs_only_its_own_document(papers: Collection, tmp_path: Path):
@@ -646,8 +663,10 @@ def test_a_paper_arxiv_will_not_render_is_refused_not_stubbed(papers: Collection
 
     assert papers.contents().documents == []
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
-    assert "rendering" in str(report.outcomes[0].reason)
-    assert "supply the document" in str(report.outcomes[0].reason).lower()
+    refusal = report.outcomes[0].refusal
+    assert isinstance(refusal, NoArxivText)
+    assert refusal.arxiv_id == "2409.19750"
+    assert "supply the document" in describe_refusal(refusal).lower()
 
 
 def test_a_doi_is_not_answered_with_a_preprint(papers: Collection):
@@ -687,9 +706,13 @@ def test_a_doi_refused_for_no_text_names_the_pdf_and_not_notes(papers: Collectio
         papers, ["10.1093/mnras/stab1234"], arxiv=no_preprint_client()
     )
 
-    reason = str(report.outcomes[0].reason)
-    assert "-n" not in reason
-    assert "--identifier" in reason or "supply" in reason.lower()
+    refusal = report.outcomes[0].refusal
+    assert refusal == NoPublisherText(kind="doi", value="10.1093/mnras/stab1234")
+    # No identity means `add it as a note`; no text means supply the
+    # document, because the paper's identity was established perfectly
+    # well and notes would be the wrong collection for it.
+    assert remedies_for_refusal(refusal) == ()
+    assert "supply" in describe_refusal(refusal).lower()
 
 
 def test_a_markdown_paper_does_not_need_the_pdf_converter(
@@ -804,11 +827,13 @@ def test_a_paper_added_without_its_text_says_why(papers: Collection):
 
     outcome = report.outcomes[0]
     assert outcome.outcome is Outcome.FAILED
-    assert outcome.reason is not None
+    refusal = outcome.refusal
+    assert isinstance(refusal, NoArxivText)
     # Still the distinction the old stub could not make: a throttled batch
-    # and a batch of papers nobody preprinted now fail identically unless the
-    # reason says which.
-    assert "406" in outcome.reason
+    # and a batch of papers nobody preprinted now fail identically unless
+    # what arXiv said is carried.
+    assert refusal.declined is not None
+    assert "406" in refusal.declined
 
 
 def test_a_paper_with_its_text_reports_no_complaint(papers: Collection):
@@ -819,7 +844,7 @@ def test_a_paper_with_its_text_reports_no_complaint(papers: Collection):
         arxiv=arxiv_client(),
     )
 
-    assert report.outcomes[0].reason is None
+    assert report.outcomes[0].refusal is None
 
 
 # ---------------------------------------------------------------------------
@@ -882,6 +907,23 @@ def test_one_entry_without_a_document_refuses_the_whole_bibliography(
     )
 
 
+def test_an_argument_refused_before_the_loop_still_reaches_the_log(
+    papers: Collection, tmp_path: Path
+):
+    """The log records what the report omits, not less than it. An
+    identifier that names nothing is settled before the per-paper loop
+    runs, and so emitted nothing at all until unit 9e went looking at a
+    real run's log. Concern #323.
+    """
+    events = Recorder()
+
+    add_literature(papers, ["welman2024"], events=events)
+
+    finished = events.events_of_type(ItemFinished)
+    assert [event.item for event in finished] == ["welman2024"]
+    assert finished[0].refusal == NotAnInput(identifier="welman2024")
+
+
 def test_the_refusal_names_every_entry_that_cannot_work(
     papers: Collection, tmp_path: Path
 ):
@@ -894,8 +936,8 @@ def test_the_refusal_names_every_entry_that_cannot_work(
 
     report = add_literature(papers, [str(bib)], arxiv=no_preprint_client())
 
-    reported = " ".join(str(outcome.reason) for outcome in report.outcomes)
-    assert "one" in reported and "two" in reported
+    refused = {outcome.refusal for outcome in report.outcomes}
+    assert refused == {BibliographyIncomplete(name=bib.name, citekeys=("one", "two"))}
 
 
 def test_an_entry_with_an_arxiv_identifier_needs_no_file(

@@ -40,6 +40,7 @@ from kennis.engine.pack.schema import (
     Pack,
     load_pack,
 )
+from kennis.engine.refusals import Quoted
 
 type ProblemKind = Literal[
     "overlapping-sources",
@@ -176,7 +177,7 @@ def _reported(
                 operation=OPERATION,
                 item=problem.path,
                 outcome=Outcome.FAILED,
-                reason=problem.kind,
+                refusal=Quoted(problem.kind),
             )
         )
     if refusal is not None:
@@ -185,7 +186,7 @@ def _reported(
                 operation=OPERATION,
                 item=str(path),
                 outcome=Outcome.FAILED,
-                reason=f"{refusal.kind}: needs {refusal.required}",
+                refusal=Quoted(f"{refusal.kind}: needs {refusal.required}"),
             )
         )
     failed = len(problems) + (1 if refusal is not None else 0)

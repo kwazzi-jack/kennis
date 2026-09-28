@@ -113,6 +113,20 @@ from kennis.engine.literature.identifiers import (
     parse_bibtex_file,
 )
 from kennis.engine.literature.metadata import lookup_arxiv_metadata
+from kennis.engine.refusals import (
+    AmbiguousIdentity,
+    BibliographyIncomplete,
+    NoArxivText,
+    NoIdentity,
+    NoPublisherText,
+    NotAnInput,
+    NothingConverted,
+    Quoted,
+    Refusal,
+    SameContent,
+    SamePage,
+    SamePaper,
+)
 
 # Identifies kennis to a documentation host, so the traffic can be
 # attributed and, if a site wishes, blocked.
@@ -185,7 +199,10 @@ class AddOutcome:
     document_id: str | None = None
     title: str | None = None
     path: Path | None = None
-    reason: str | None = None
+    # Why, as data. A sentence built here could not be restyled, offered
+    # as a button, or turned into a form with the missing field already
+    # filled; `render/refusals.py` has the words. Concern #321.
+    refusal: Refusal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,7 +373,7 @@ def add_notes(
                 operation="add",
                 item=item.identifier,
                 outcome=outcome.outcome,
-                reason=outcome.reason,
+                refusal=outcome.refusal,
             )
         )
 
@@ -395,7 +412,7 @@ def _add_one(
         converted = _convert(identifier, options, plan, client)
     except KennisError as error:
         return AddOutcome(
-            identifier=identifier, outcome=Outcome.FAILED, reason=str(error)
+            identifier=identifier, outcome=Outcome.FAILED, refusal=Quoted(str(error))
         )
 
     existing = duplicate_of(record, converted)
@@ -405,7 +422,7 @@ def _add_one(
             outcome=Outcome.UNCHANGED,
             document_id=existing,
             title=record.titles.get(existing),
-            reason="identical content is already in this collection",
+            refusal=SameContent(document_id=existing),
         )
 
     # The name the file had comes before the heading inside it. A note is
@@ -535,7 +552,7 @@ def _skipped(resolved: ResolvedInputs, sink: EventSink) -> list[AddOutcome]:
             AddOutcome(
                 identifier=skip.identifier,
                 outcome=Outcome.SKIPPED,
-                reason=skip.reason,
+                refusal=skip.refusal,
             )
         )
         sink.emit(
@@ -543,7 +560,7 @@ def _skipped(resolved: ResolvedInputs, sink: EventSink) -> list[AddOutcome]:
                 operation="add",
                 item=skip.identifier,
                 outcome=Outcome.SKIPPED,
-                reason=skip.reason,
+                refusal=skip.refusal,
             )
         )
     return outcomes
@@ -611,7 +628,7 @@ def _plan_binaries(
             outcome=Outcome.UNCHANGED,
             document_id=existing,
             title=record.titles.get(existing),
-            reason="identical content is already in this collection",
+            refusal=SameContent(document_id=existing),
         )
     if not pending:
         return plan
@@ -630,7 +647,9 @@ def _plan_binaries(
                 plan.settled[path] = AddOutcome(
                     identifier=str(path),
                     outcome=Outcome.FAILED,
-                    reason=_nothing_produced(path, batch.failure_reason),
+                    refusal=NothingConverted(
+                        name=path.name, problem=batch.failure_reason
+                    ),
                 )
                 continue
             plan.converted[path] = convert_local_file(
@@ -674,15 +693,6 @@ def _conversion_runs(paths: Sequence[Path], size: int) -> Iterator[Sequence[Path
         return
     for start in range(0, len(paths), size):
         yield paths[start : start + size]
-
-
-def _nothing_produced(path: Path, reason: str | None) -> str:
-    if reason:
-        return f"could not convert '{path.name}': {reason}"
-    return (
-        f"no markdown was produced for '{path.name}'. "
-        f"The file may be empty, encrypted, or an unsupported variant."
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -746,6 +756,21 @@ def add_literature(
 
     papers, refused = _papers_of(resolved)
     outcomes.extend(refused)
+    # Emitted here rather than inside `_papers_of`, which stays pure.
+    # Without this an argument refused before the loop - a bibliography
+    # with no documents, an identifier that names nothing - reached the
+    # report and never the log, which inverts the asymmetry the stream
+    # exists for: the log records what the report *omits*, not less than
+    # it. Found by reading a real run's log. Concern #323.
+    for refusal in refused:
+        sink.emit(
+            ItemFinished(
+                operation="add",
+                item=refusal.identifier,
+                outcome=refusal.outcome,
+                refusal=refusal.refusal,
+            )
+        )
     plan = _plan_binaries(
         # Filtered to the formats that actually need converting, as the notes
         # path does. Passing every local path sent a markdown paper - or one
@@ -773,7 +798,7 @@ def add_literature(
                 operation="add",
                 item=paper.identifier,
                 outcome=outcome.outcome,
-                reason=outcome.reason,
+                refusal=outcome.refusal,
             )
         )
 
@@ -849,10 +874,7 @@ def _papers_of(resolved: ResolvedInputs) -> tuple[list[_Paper], list[AddOutcome]
             AddOutcome(
                 identifier=item.identifier,
                 outcome=Outcome.FAILED,
-                reason=(
-                    f"'{item.identifier}' is not an existing file, a URL, an "
-                    f"arXiv identifier, a DOI or an ADS bibcode"
-                ),
+                refusal=NotAnInput(identifier=item.identifier),
             )
         )
     return papers, refused
@@ -901,17 +923,9 @@ def _refuse_bibliography(
     worked are reported too, so the count in the report matches the
     bibliography rather than only its broken part.
     """
-    named = ", ".join(textless)
-    # Counted here rather than through `render.count_of`: nothing under
-    # `engine/` may import `render/`, and an architecture test enforces it.
-    how_many = f"{len(textless)} {'entry' if len(textless) == 1 else 'entries'}"
-    reason = (
-        f"{how_many} of '{path.name}' name no document and no arXiv "
-        f"identifier ({named}), so nothing from it was added. Give each one "
-        f"a `file =` field, or remove it."
-    )
+    refusal = BibliographyIncomplete(name=path.name, citekeys=tuple(textless))
     return [
-        AddOutcome(identifier=entry.identifier, outcome=Outcome.FAILED, reason=reason)
+        AddOutcome(identifier=entry.identifier, outcome=Outcome.FAILED, refusal=refusal)
         for entry in entries
     ]
 
@@ -974,7 +988,7 @@ def _add_paper(
         return AddOutcome(
             identifier=paper.identifier,
             outcome=Outcome.FAILED,
-            reason=_no_identity_reason(paper, ambiguous),
+            refusal=_unidentified(paper, ambiguous),
         )
 
     identity = _enrich(chosen, paper.entry, arxiv)
@@ -997,7 +1011,7 @@ def _add_paper(
             outcome=Outcome.UNCHANGED,
             document_id=existing,
             title=record.titles.get(existing),
-            reason="this paper is already in this collection",
+            refusal=SamePaper(document_id=existing),
         )
 
     converted, _ = _converted_for(paper, identity, options, plan, arxiv, client)
@@ -1011,7 +1025,7 @@ def _add_paper(
             outcome=Outcome.UNCHANGED,
             document_id=by_checksum,
             title=record.titles.get(by_checksum),
-            reason="identical content is already in this collection",
+            refusal=SameContent(document_id=by_checksum),
         )
 
     title = (
@@ -1066,28 +1080,23 @@ def _choose_identity(
     return of_kind[0], []
 
 
-def _no_identity_reason(paper: _Paper, ambiguous: list[PaperIdentifier]) -> str:
-    """Why a paper cannot enter literature, and the two ways out.
+def _unidentified(
+    paper: _Paper, ambiguous: list[PaperIdentifier]
+) -> NoIdentity | AmbiguousIdentity:
+    """Which of the two ways a paper can lack a single identity.
 
-    Notes is a real answer here, not a consolation prize: notes have no
-    natural key *by design*, so a document with no bibliographic identity is
-    exactly what that collection is for.
+    Both carry `named` - the path where there is one, the identifier
+    otherwise - because both remedies act on the document itself, and a
+    front end offering one should not have to work out what to call it.
     """
-    named = paper.path or paper.identifier
+    named = str(paper.path or paper.identifier)
     if ambiguous:
-        offered = ", ".join(found.value for found in ambiguous)
-        return (
-            f"its first page offers more than one {ambiguous[0].kind} identifier "
-            f"({offered}) and kennis cannot tell which names the paper. Settle "
-            f"it with --identifier, or add it as a note instead: "
-            f"kennis corpus add -n '{named}'"
+        return AmbiguousIdentity(
+            named=named,
+            kind=ambiguous[0].kind,
+            values=tuple(found.value for found in ambiguous),
         )
-    return (
-        f"no arXiv id, DOI or ADS bibcode found on its first page, so it has "
-        f"no bibliographic identity and cannot go to literature. Supply one "
-        f"with --identifier, or add it as a note instead: "
-        f"kennis corpus add -n '{named}'"
-    )
+    return NoIdentity(named=named)
 
 
 def _enrich(
@@ -1182,7 +1191,7 @@ def _converted_for(
                 AddOutcome(
                     identifier=paper.identifier,
                     outcome=Outcome.FAILED,
-                    reason=str(error),
+                    refusal=Quoted(str(error)),
                 ),
                 None,
             )
@@ -1214,7 +1223,7 @@ def _converted_for(
             AddOutcome(
                 identifier=paper.identifier,
                 outcome=Outcome.FAILED,
-                reason=_no_text_reason(paper, identity, fetched),
+                refusal=_textless(paper, identity, fetched),
             ),
             None,
         )
@@ -1231,36 +1240,34 @@ def _converted_for(
     except KennisError as error:
         return (
             AddOutcome(
-                identifier=paper.identifier, outcome=Outcome.FAILED, reason=str(error)
+                identifier=paper.identifier,
+                outcome=Outcome.FAILED,
+                refusal=Quoted(str(error)),
             ),
             None,
         )
 
 
-def _no_text_reason(
+def _textless(
     paper: _Paper, identity: _Identity, fetched: PaperText | None
-) -> str:
-    """Why this paper has no body, and what would give it one.
+) -> NoPublisherText | NoArxivText:
+    """Why this paper has no body, as one of two distinct refusals.
 
-    Deliberately not the wording of `_no_identity_reason`. That one means
-    kennis does not know *what* the paper is and notes is the honest home for
-    it; this one means the paper is identified perfectly well and its text is
+    Deliberately not `NoIdentity`. That one means kennis does not know
+    *what* the paper is and notes is the honest home for it; these two
+    mean the paper is identified perfectly well and its text is
     elsewhere. Offering notes here would file a known paper in the wrong
-    collection.
+    collection, which is why neither of these carries that remedy.
     """
-    named = paper.path or paper.identifier
     if identity.arxiv_id is None:
-        kind = "a DOI" if identity.doi else "an ADS bibcode"
-        return (
-            f"{kind} names a publisher's copy, which kennis cannot fetch. "
-            f"Supply the document: kennis corpus add -l <file> "
-            f"--identifier '{identity.doi or identity.bibcode}'"
+        return NoPublisherText(
+            kind="doi" if identity.doi else "bibcode",
+            value=str(identity.doi or identity.bibcode),
         )
-    declined = f" ({fetched.reason})" if fetched is not None and fetched.reason else ""
-    return (
-        f"arXiv has no rendering of '{named}' to fetch{declined}. Supply the "
-        f"document: kennis corpus add -l <file> --identifier "
-        f"'{identity.arxiv_id}'"
+    return NoArxivText(
+        named=str(paper.path or paper.identifier),
+        arxiv_id=identity.arxiv_id,
+        declined=fetched.reason if fetched is not None else None,
     )
 
 
@@ -1456,7 +1463,7 @@ def add_docs(
                     operation="add",
                     item=page.identifier,
                     outcome=outcome.outcome,
-                    reason=outcome.reason,
+                    refusal=outcome.refusal,
                 )
             )
             # The display sink draws its bar from `Progress` alone, by
@@ -1607,14 +1614,16 @@ def _add_page(
             outcome=Outcome.UNCHANGED,
             document_id=existing,
             title=record.titles.get(existing),
-            reason=f"already held as {page.project}/{page.key}",
+            refusal=SamePage(project=page.project, key=page.key),
         )
 
     try:
         converted = _converted_page(page, client)
     except KennisError as error:
         return AddOutcome(
-            identifier=page.identifier, outcome=Outcome.FAILED, reason=str(error)
+            identifier=page.identifier,
+            outcome=Outcome.FAILED,
+            refusal=Quoted(str(error)),
         )
 
     title = converted.suggested_title or page.key
