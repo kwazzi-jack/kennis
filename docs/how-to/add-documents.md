@@ -4,7 +4,7 @@
 exactly one collection. There is no "add to all three" - where a document
 belongs is a decision, not a default.
 
-```
+```text
 kennis corpus add <sources>... --collection <literature|docs|notes>
 ```
 

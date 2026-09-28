@@ -20,16 +20,20 @@ uv run --group docs mkdocs build      # into site/
 
 ## Status
 
-Pre-release, and nothing has been published. Two scopes of knowledge are
-built and tested:
+Pre-release, and nothing has been published. Built and tested:
 
 - **the corpus**, machine-global, with git-backed history, BM25 and dense
-  retrieval over it, and the command line (v0.1);
+  retrieval over it, and the command line;
 - **the context bundle**, one per project, committed with it, with its own
-  lexical index and searched alongside the corpus (v0.2).
+  lexical index and searched alongside the corpus;
+- **packs**, the format a provider supplies domain content in, and the two
+  sync commands that converge each scope with what is installed;
+- **the MCP server**, `kennis serve`, nine tools over stdio, with its
+  description of this machine generated from the installed packs;
+- **the graphical interface**, `kennis gui`, serving on loopback with a
+  per-run token, in a native window where the platform provides one.
 
-An MCP server and the pack format for supplying domain content come after
-that.
+Cross-machine synchronisation and any packaged application come after that.
 
 **The on-disk format may still change without a migration.** Every
 frontmatter model refuses an unknown key rather than ignoring it, so a corpus

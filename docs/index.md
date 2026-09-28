@@ -60,13 +60,24 @@ is padded or re-wrapped.
 - **Looking up an option?**
   [Commands](reference/cli.md), generated from the code.
 
+- **Not at a terminal?**
+  [The graphical interface](how-to/the-interface.md) does the same work in
+  a window.
+
+- **Wiring up an agent?**
+  [Serve an agent](how-to/serve-an-agent.md) - MCP over stdio, nine tools.
+
 </div>
 
 ## Status
 
-Version 0.1.1. The corpus, search and the command line are built. Packs, the
-per-workspace context bundle, and the MCP server are not - they are planned
-for 0.2.0 and later.
+Built and usable: the corpus, search, the command line, the per-project
+context bundle, packs, the [MCP server](how-to/serve-an-agent.md) and the
+[graphical interface](how-to/the-interface.md).
+
+Not built: cross-machine synchronisation, and any packaged application.
+`kennis serve` and `kennis gui` are each an extra rather than a base
+dependency, so install `kennis[mcp]` or `kennis[gui]` for them.
 
 This is experimental software under active development. It keeps no
 backwards-compatibility shims: when something is reworked, the old path is

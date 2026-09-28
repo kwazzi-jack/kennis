@@ -79,7 +79,7 @@ vocabulary, or when you do not want a model download at all.
 for `BAAI/bge-small-en-v1.5`, 768 for `nomic-embed-text`.
 
 !!! warning "Not currently validated"
-    As of 0.1.1 kennis does not check this against the model. The model
+    kennis does not check this against the model. The model
     decides the real width regardless, so a wrong value does not corrupt
     your vectors or your search results - but it is recorded in the index's
     `binding.json` as though it were true, and because it forms part of the

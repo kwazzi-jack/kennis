@@ -95,6 +95,8 @@ nav:
       - Choose an embedding backend: how-to/embedding-backends.md
       - Keep credentials out of the config: how-to/credentials.md
       - Inspect and recover: how-to/history.md
+      - Serve an agent: how-to/serve-an-agent.md
+      - The graphical interface: how-to/the-interface.md
   - Explanation:
       - How retrieval works: explanation/retrieval.md
       - What a document is: explanation/documents.md
