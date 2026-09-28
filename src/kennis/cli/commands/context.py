@@ -29,12 +29,13 @@ from kennis.engine.context import (
     reset_bundle,
     workspace_root,
 )
-from kennis.engine.context.sync import BundleSync, sync_bundle
+from kennis.engine.context.sync import BundleSync
 from kennis.engine.errors import ContextNotFound
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from, chunk_parameters
 from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.settings import Settings, load_settings
+from kennis.operations import synchronise_bundle
 from kennis.render.packs import (
     describe_action,
     describe_claim_needed,
@@ -161,7 +162,7 @@ def sync_command_for_context() -> None:
     bundle = require_bundle()
     context = existing_corpus()
     with reporting() as events:
-        result = sync_bundle(bundle, context.corpus_root, events=events)
+        result = synchronise_bundle(bundle, context, events=events)
     display.operation("Synchronised", describe_sync(result.counts))
     for action in result.actions:
         display.detail(display.sync_marker(action.verdict), describe_action(action))

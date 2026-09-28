@@ -38,7 +38,7 @@ from kennis.engine.events import (
     Severity,
 )
 from kennis.engine.rag.embedding import FETCH_MODEL
-from kennis.logs import LogSink
+from kennis.logs import FanOut, LogSink
 from kennis.render.diagnostics import describe_diagnostic
 from kennis.render.words import fetching_model, progress_label
 
@@ -138,25 +138,6 @@ class DisplaySink:
         self._stack.close()
         self._stack = contextlib.ExitStack()
         self._advance = None
-
-
-class FanOut:
-    """Every event to every subscriber, in the order they were given.
-
-    A sink that raises would otherwise take the command down with it, so the
-    display's failure to draw must not stop the log from recording - the log
-    is what the failure would be diagnosed from.
-    """
-
-    def __init__(self, *sinks: object) -> None:
-        self._sinks = sinks
-
-    def emit(self, event: Event) -> None:
-        for sink in self._sinks:
-            emit = getattr(sink, "emit", None)
-            if emit is None:
-                continue
-            emit(event)
 
 
 @contextlib.contextmanager

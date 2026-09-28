@@ -13,14 +13,23 @@ change a word and a change of wording cannot need a template edit.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from kennis.engine.context.sync import BundleSync
+from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.layout import relative_to_corpus
+from kennis.engine.corpus.sync import CorpusSync
+from kennis.engine.events import Outcome
+from kennis.engine.pack.resolve import ACTING
+from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
+from kennis.gui.repairs import Repair, repairs_for
+from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import Holding
+from kennis.operations import IndexBuild
 from kennis.render.hits import (
     Hit,
     ScoreStyle,
@@ -29,6 +38,16 @@ from kennis.render.hits import (
     score_style_for,
 )
 from kennis.render.html import to_html
+from kennis.render.packs import (
+    describe_action,
+    describe_corpus_claim_needed,
+    describe_declarations,
+    describe_deferred,
+    describe_install,
+    describe_sync,
+    describe_unfetched,
+)
+from kennis.render.refusals import describe_refusal, remedies_for_refusal
 
 # Bands rather than raw fused scores, as the other two front ends use:
 # a fused score is a function of rank and says nothing an ordered list
@@ -215,3 +234,176 @@ class ShownOutcome:
     role: str
     where: str | None = None
     resolution: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ShownItem:
+    """One item an operation touched, and why where there is a why.
+
+    `repairs` is empty except on a refusal the interface can actually
+    act on. An offer that cannot work is worse than none, so a paper
+    whose text sits behind a publisher gets the sentence alone.
+    """
+
+    marker: str
+    name: str
+    outcome: str
+    detail: str | None = None
+    remedies: tuple[str, ...] = ()
+    repairs: tuple[Repair, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ShownJob:
+    """What a finished operation amounts to, in the pieces a page lays out.
+
+    One shape for four operations. They differ in what `headline` says
+    and in which items they produce, and not in how a reader reads
+    them - a list of things that happened under a line saying how many.
+    """
+
+    headline: str
+    items: tuple[ShownItem, ...] = ()
+    notes: tuple[str, ...] = ()
+    next_steps: tuple[str, ...] = ()
+    role: str = "role-added"
+
+
+def shown_add(report: AddReport) -> ShownJob:
+    """An add, with a repair beneath every refusal that has one."""
+    items = tuple(_shown_outcome(outcome) for outcome in report.outcomes)
+    added = report.counts.get(Outcome.ADDED, 0)
+    return ShownJob(
+        headline=words.added_headline(added, report),
+        items=items,
+        # A sentence rather than `kennis corpus index`, because the
+        # control that would run it is on this same page. Printing the
+        # command beside its own button asks the reader to leave the
+        # interface to do what the interface does.
+        notes=(words.NOT_SEARCHABLE_YET,) if added else (),
+        role="role-added" if added else "role-muted",
+    )
+
+
+def _shown_outcome(outcome: AddOutcome) -> ShownItem:
+    """One item of an add, with its way out where it has one.
+
+    **A form or a command, never both.** `remedies_for_refusal` returns
+    a command for exactly the refusals `repairs_for` can build a form
+    from, so showing both puts a terminal command beside a button that
+    does the same thing - which asks the reader to leave the interface
+    to do what the interface does. The command is what is left for a
+    refusal this interface cannot act on, and there it is all there is.
+    """
+    shown = ShownItem(
+        marker=MARKERS[outcome.outcome],
+        name=outcome.title or outcome.identifier,
+        outcome=outcome.outcome.value,
+    )
+    if outcome.outcome is not Outcome.FAILED or outcome.refusal is None:
+        return shown
+    repairs = repairs_for(outcome.refusal)
+    return replace(
+        shown,
+        detail=describe_refusal(outcome.refusal),
+        repairs=repairs,
+        remedies=() if repairs else remedies_for_refusal(outcome.refusal),
+    )
+
+
+def shown_index(built: IndexBuild) -> ShownJob:
+    """An index build, one line per collection that had anything in it."""
+    return ShownJob(
+        headline=words.indexed_headline(built),
+        items=tuple(
+            ShownItem(
+                marker="+",
+                name=index.collection,
+                outcome="added",
+                detail=words.describe_built(index),
+            )
+            for index in built.built
+        ),
+        notes=() if built.built else (words.NOTHING_TO_INDEX,),
+        role="role-added" if built.built else "role-muted",
+    )
+
+
+def shown_corpus_sync(result: CorpusSync) -> ShownJob:
+    """A corpus sync, with the two things it deliberately did not do."""
+    notes: list[str] = []
+    steps: list[str] = []
+    if result.edited:
+        notes.append(describe_corpus_claim_needed(len(result.edited)))
+        steps.extend(f"kennis corpus claim {held}" for held in result.edited)
+    if result.failed:
+        notes.append(describe_unfetched(result.failed))
+    if result.deferred:
+        notes.append(describe_deferred(result.deferred))
+    acted = any(action.verdict in ACTING for action in result.actions)
+    if acted:
+        notes.append(words.NOT_SEARCHABLE_YET)
+    return ShownJob(
+        headline=describe_sync(result.counts, noun="document"),
+        role="role-added" if acted else "role-muted",
+        items=tuple(
+            ShownItem(
+                marker=SYNC_MARKERS.get(action.verdict, ">"),
+                name=action.address,
+                outcome=action.verdict,
+                detail=describe_action(action),
+            )
+            for action in result.actions
+        ),
+        notes=tuple(notes),
+        next_steps=tuple(steps),
+    )
+
+
+def shown_bundle_sync(result: BundleSync) -> ShownJob:
+    """A context sync. No commit happened and the page has to say so."""
+    notes: list[str] = [words.BUNDLE_NOT_COMMITTED]
+    if result.deferred:
+        notes.append(describe_deferred(result.deferred))
+    acted = any(action.verdict in ACTING for action in result.actions)
+    return ShownJob(
+        headline=describe_sync(result.counts),
+        role="role-added" if acted else "role-muted",
+        items=tuple(
+            ShownItem(
+                marker=SYNC_MARKERS.get(action.verdict, ">"),
+                name=action.address,
+                outcome=action.verdict,
+                detail=describe_action(action),
+            )
+            for action in result.actions
+        ),
+        notes=tuple(notes),
+        # `kennis context index` stays a command, unlike the corpus
+        # one: this interface has no control that indexes a bundle, so
+        # the terminal really is where that is done.
+        next_steps=("kennis context index",) if acted else (),
+    )
+
+
+def shown_install(install: PackInstall) -> ShownJob:
+    """A pack install, and the fact that nothing is searchable yet.
+
+    Said because "Installed" otherwise implies the content is in the
+    corpus, and it is not: this records what the provider declared and
+    a sync materialises it.
+    """
+    declared = describe_declarations(install)
+    return ShownJob(
+        headline=f"{install.outcome} {install.pack_id}",
+        items=(
+            ShownItem(
+                marker="+",
+                name=install.pack_id,
+                outcome=install.outcome,
+                detail=describe_install(install),
+            ),
+        ),
+        notes=((declared,) if declared else ()) + (words.NOTHING_MATERIALISED,),
+        next_steps=("kennis corpus sync", "kennis context sync"),
+    )

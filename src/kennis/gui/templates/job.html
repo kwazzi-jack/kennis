@@ -1,0 +1,8 @@
+{% if problem %}<p class="role-warning">{{ problem }}</p>{% endif %}
+<div class="job" data-job="{{ job_id }}" data-kind="{{ kind }}">
+  <progress class="job-bar" hidden></progress>
+  <p class="job-step role-muted"></p>
+  <ul class="job-lines"></ul>
+  <div class="job-outcome"></div>
+</div>
+<script defer src="/static/progress.js"></script>

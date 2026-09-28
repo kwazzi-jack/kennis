@@ -1,0 +1,27 @@
+<p class="{{ shown.role }}">{{ shown.headline }}</p>
+{% if shown.items %}
+<ul class="items">
+  {% for item in shown.items %}
+  <li class="role-{{ item.outcome }}">
+    <span class="marker">{{ item.marker }}</span> {{ item.name }}
+    {% if item.detail %}<span class="role-muted">- {{ item.detail }}</span>{% endif %}
+    {% for remedy in item.remedies %}
+    <p class="role-command">{{ remedy }}</p>
+    {% endfor %}
+    {% for repair in item.repairs %}
+    <form class="repair" hx-post="/manage/add" hx-target="#job" hx-swap="innerHTML">
+      <input type="hidden" name="identifiers" value="{{ repair.identifiers }}">
+      <input type="hidden" name="collection" value="{{ repair.collection }}">
+      {% for choice in repair.choices %}
+      <label><input type="radio" name="identifier" value="{{ choice }}"
+        {% if loop.first %}checked{% endif %}> {{ choice }}</label>
+      {% endfor %}
+      <button type="submit">{{ repair.label }}</button>
+    </form>
+    {% endfor %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% for note in shown.notes %}<p class="role-muted">{{ note }}</p>{% endfor %}
+{% for step in shown.next_steps %}<p class="role-command">{{ step }}</p>{% endfor %}
