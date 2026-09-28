@@ -33,7 +33,7 @@ from kennis.context import existing_corpus
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
-from kennis.render.words import index_state
+from kennis.render.words import index_state, needs_an_index
 from kennis.writing import write_context_note, write_note
 
 # The longest note this tool will write. Neither front end had a cap
@@ -106,10 +106,19 @@ def _into_notes(body: str, *, title: str | None, group: str | None) -> str:
     # this tool changes that. The state word is dropped in that case
     # rather than printed as well - "[not indexed]" on one line and
     # "it is not searchable yet" on the next is one fact twice.
-    if report.index_outcome == "unindexed":
+    if needs_an_index(report.index_outcome):
+        # Two reasons, one remedy, and the distinction is worth the
+        # extra clause: "there is no index" is a thing the user has
+        # never done, and "one is being rebuilt" is a thing that will
+        # have finished by the time they read this.
+        why = (
+            "the notes collection has no index"
+            if report.index_outcome == "unindexed"
+            else "another process was rebuilding the index"
+        )
         return (
             f"remembered: {report.title}  ({report.document_id})  {where}\n"
-            "It is not searchable yet - the notes collection has no index. "
+            f"It is not searchable yet - {why}. "
             "Ask the user to run `kennis corpus index`."
         )
     state = index_state(report.index_outcome, report.chunk_count)

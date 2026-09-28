@@ -74,8 +74,10 @@ from kennis.render.words import (
     conversion_cost,
     conversion_repairs,
     count_of,
+    describe_busy_indexes,
     describe_change,
     describe_freshness,
+    describe_uncommitted_build,
     remedies_for,
 )
 
@@ -812,9 +814,18 @@ def index_command(collection: str | None) -> None:
             elapsed=index.elapsed_seconds,
         )
 
-    if result.documents == 0:
+    if result.busy:
+        # Before the emptiness note, and instead of it: a build that
+        # reached no collection reports zero documents, and "nothing to
+        # index" at a corpus that is full is a false statement rather
+        # than an unhelpful one. Concern #331.
+        display.note(describe_busy_indexes(result.busy))
+        display.next_step("kennis corpus index", note="when it has finished")
+    elif result.documents == 0:
         display.note("nothing to index")
         display.next_step("kennis corpus add --help", note="to see what it takes")
+    if not result.committed:
+        display.guidance(describe_uncommitted_build())
 
 
 # ---------------------------------------------------------------------------

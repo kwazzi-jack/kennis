@@ -43,6 +43,13 @@ index/*/vectors/
 # The pack store: a cache of what each provider last handed kennis. Derived,
 # re-pushed by the provider's next run, and deliberately not history.
 packs/
+
+# The directories an atomic index swap is staging or retiring. They exist
+# for the length of one build and are never part of a commit - and a commit
+# made by another process during a build would otherwise stage a
+# half-written index, because `commit` stages with `git add --all .`.
+index/*/.*.staging-*/
+index/*/.*.retiring-*/
 """
 
 _README: Final = """\

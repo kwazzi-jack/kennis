@@ -49,6 +49,7 @@ from kennis.engine.events import (
     Progress,
 )
 from kennis.engine.history.repository import Repository
+from kennis.engine.locking import index_lock
 from kennis.engine.rag.binding import Binding, document_digest
 from kennis.engine.rag.bm25 import Bm25Index
 from kennis.engine.rag.cache import VectorCache
@@ -137,6 +138,19 @@ def build_index(
     recorded as what this index was built from. Left out - by a test, or by
     a caller indexing something that is not a corpus - the manifest records
     no commit and freshness reads as unverifiable rather than as fresh.
+
+    **Takes this collection's index lock**, raising `IndexBusy` when
+    another process is already rebuilding it. Here rather than in each
+    caller: design section 16 asks for the lock "held across build,
+    swap and `latest.json`", and three callers each remembering to
+    take it is three chances to forget. Concern #167.
+
+    **Taken after the emptiness refusal, not before.** Everything
+    ahead of that is reading - the loader and the chunker touch
+    nothing - and taking the lock first would create
+    `index/<collection>/` to hold the lock file, so a refused build of
+    an empty collection would leave the scaffold of an index behind.
+    A test says it must not, and it was right to.
     """
     started_at = time.monotonic()
     collection_root = index_root / loader.name
@@ -155,6 +169,42 @@ def build_index(
     chunks = [chunk for _, _, produced in chunked for chunk in produced]
     _refuse_if_empty(loader.name, documents, chunks)
 
+    with index_lock(index_root, loader.name):
+        return _publish(
+            loader,
+            chunked=chunked,
+            chunks=chunks,
+            documents=documents,
+            collection_root=collection_root,
+            binding=binding,
+            embedder=embedder,
+            events=events,
+            embed_batch_size=embed_batch_size,
+            repository=repository,
+            started_at=started_at,
+        )
+
+
+def _publish(
+    loader: Loader,
+    *,
+    chunked: list[tuple[Document, str, list[Chunk]]],
+    chunks: list[Chunk],
+    documents: Sequence[Document],
+    collection_root: Path,
+    binding: Binding,
+    embedder: Embedder | None,
+    events: EventSink | None,
+    embed_batch_size: int,
+    repository: Repository | None,
+    started_at: float,
+) -> BuildReport:
+    """Everything that writes, with this collection's index lock held.
+
+    The vector cache is inside the lock as well as the swap: it is a
+    directory two concurrent builds would write to at once, and it is
+    the reason the lock cannot be narrowed to the swap alone.
+    """
     cache = VectorCache(root=collection_root / _CACHE_DIR, binding=binding)
     matrix, embedded = _vectors_for(
         chunked, binding, cache, embedder, embed_batch_size, events

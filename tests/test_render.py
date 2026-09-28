@@ -19,6 +19,7 @@ from kennis.render.words import (
     describe_change,
     describe_freshness,
     index_state,
+    needs_an_index,
     progress_label,
     remedies_for,
     snippet_of,
@@ -357,6 +358,28 @@ def test_indexing_that_was_switched_off_says_nothing():
     """The caller asked for no indexing, so reporting that it did not happen
     is telling them what they just typed."""
     assert index_state("skipped", 0) == ""
+
+
+def test_a_deferred_rebuild_says_it_is_someone_elses_and_not_absent():
+    """Two different facts with the same consequence. "There is no index" is
+    something the user has never done; "one is being rebuilt" will have
+    finished by the time they read the line, and rerunning is enough. The
+    chain of `if`s this replaced swallowed the second into the first.
+    Concern #167."""
+    deferred = index_state("deferred", 0)
+
+    assert deferred != index_state("unindexed", 0)
+    assert "rebuilding" in deferred
+
+
+def test_both_ways_of_not_being_indexed_ask_for_the_same_command():
+    """A front end asks `needs_an_index` rather than listing the values it
+    has to care about, which is how `deferred` would otherwise have been
+    missed in three places."""
+    assert needs_an_index("unindexed")
+    assert needs_an_index("deferred")
+    assert not needs_an_index("indexed")
+    assert not needs_an_index("skipped")
 
 
 # ---------------------------------------------------------------------------

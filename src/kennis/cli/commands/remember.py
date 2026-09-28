@@ -24,7 +24,7 @@ from kennis.engine.context import remember_in_bundle
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import Outcome
 from kennis.engine.remember import INLINE_ORIGIN, RememberReport
-from kennis.render.words import index_state
+from kennis.render.words import index_state, needs_an_index
 from kennis.writing import write_note
 
 
@@ -154,7 +154,7 @@ def _report(report: RememberReport) -> None:
         elapsed=report.elapsed_seconds,
     )
     display.detail("+", relative_to_corpus(report.path, existing_corpus().corpus_root))
-    if report.index_outcome == "unindexed":
+    if needs_an_index(report.index_outcome):
         display.next_step("kennis corpus index", note="to make it searchable")
 
 
