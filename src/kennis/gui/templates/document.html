@@ -3,7 +3,11 @@
 {% block main %}
 <article>
   <h1>{{ document.title }}</h1>
-  <p class="role-muted">{{ document.collection }} &middot; {{ document.document_id }} &middot; {{ document.path }}</p>
+  <p class="provenance">
+    <span>{{ document.collection }}</span>
+    <span>{{ document.document_id }}</span>
+    <span>{{ document.path }}</span>
+  </p>
   {% if document.has_blocked_images and not load_remote_images %}
   <p class="role-warning">
     {{ blocked_note }}

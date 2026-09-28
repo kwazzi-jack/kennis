@@ -61,6 +61,7 @@ from kennis.gui.pages import (
     ShownJob,
     ShownOutcome,
     shown_add,
+    shown_basis,
     shown_bundle_document,
     shown_bundle_sync,
     shown_corpus_sync,
@@ -659,6 +660,7 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
         "scope": scope,
         "scopes": SCOPES,
         "hits": [],
+        "basis": "",
         "nothing": words.NOTHING_FOUND,
         "problem": None,
         "resolution": None,
@@ -669,7 +671,9 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
         context["problem"] = words.unknown_scope(scope, SCOPES)
         return context
     try:
-        context["hits"] = shown_hits(search_scope(scope, question))
+        found = search_scope(scope, question)
+        context["hits"] = shown_hits(found)
+        context["basis"] = shown_basis(found, scope)
     except KennisError as error:
         context["problem"] = str(error)
         context["resolution"] = error.resolution
