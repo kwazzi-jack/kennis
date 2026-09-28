@@ -40,6 +40,7 @@ from kennis.operations import IndexBuild
 from kennis.render.hits import (
     Hit,
     ScoreStyle,
+    basis_phrase,
     best_lexical,
     rendered_hit,
     score_style_for,
@@ -110,6 +111,30 @@ def shown_hits(hits: list[Hit]) -> list[ShownHit]:
             )
         )
     return shown
+
+
+def shown_basis(hits: list[Hit], collection: str) -> str:
+    """What this group's relevance levels are a band of.
+
+    `kennis search` prints this above each group and the window
+    printed nothing, so a reader saw "low" five times with nothing
+    saying what low was relative to. **Relevance is never shown
+    without its scale**: the two bands mean genuinely different
+    things - an absolute cosine against measured cuts, or a position
+    relative to this query's own best lexical hit - and a level
+    without its basis is a number with no units.
+
+    `render/hits.py::basis_phrase` composes the phrase and already
+    returns nothing when the group mixes two scales or prints no
+    level at all. Only the subject is added here, because the
+    command line's report has a margin to carry it and a page does
+    not.
+    """
+    if not hits:
+        return ""
+    style, _ = score_style_for(hits, _STYLE)
+    phrase = basis_phrase(hits, style)
+    return f"{collection.capitalize()} {phrase}" if phrase else ""
 
 
 def _href(collection: str, document_id: str, chunk_index: int) -> str:
@@ -244,6 +269,7 @@ __all__ = [
     "ShownHit",
     "ShownOutcome",
     "ShownRow",
+    "shown_basis",
     "shown_bundle_document",
     "shown_document",
     "shown_groups",

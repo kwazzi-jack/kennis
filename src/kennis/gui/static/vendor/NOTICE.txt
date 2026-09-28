@@ -1,0 +1,49 @@
+Third-party assets vendored into the kennis interface.
+
+Vendored rather than fetched from a CDN, for the reason the rest of
+the interface is built the way it is: a request to a CDN tells
+somebody else that this machine opened kennis, and which page. The
+interface binds to loopback and reaches nothing.
+
+Each entry names what it is, the version held, where it came from,
+and its licence. A licence that requires its text to accompany the
+distribution has that text beside this file; 0BSD does not require
+one, so htmx has an entry here and no file.
+
+----------------------------------------------------------------------
+
+KaTeX 0.16.22
+  Maths typesetting.
+  katex.min.js, katex-auto-render.min.js, katex.min.css,
+  fonts/KaTeX_*.woff2
+  https://github.com/KaTeX/KaTeX
+  MIT. Full text in LICENSE-KaTeX.txt.
+
+htmx 2.0.4
+  Partial page updates without a build step.
+  htmx.min.js
+  https://github.com/bigskysoftware/htmx
+  Zero-Clause BSD (0BSD), which imposes no condition on
+  redistribution, so no licence file is carried.
+
+Source Serif 4 (v14 as served by Google Fonts)
+  The text face the reading column is set in. Two variable files,
+  roman and italic, latin subset.
+  fonts/SourceSerif4-Roman.woff2, fonts/SourceSerif4-Italic.woff2
+  https://github.com/adobe-fonts/source-serif
+  Retrieved from https://fonts.gstatic.com/s/sourceserif4/v14/
+  SIL Open Font License 1.1. Full text in LICENSE-SourceSerif4.txt,
+  as distributed with these binaries by Google Fonts.
+
+----------------------------------------------------------------------
+
+Everything here is checked by scripts/check_ascii.sh like the rest of
+the tree, with no exemption. Concern #313 explains why: an exemption
+built for vendored assets turned out to exclude nothing, because a
+minifier writes Unicode as \uXXXX escapes and the fonts are binary.
+A vendored text file that is non-ASCII therefore stops a commit,
+which makes carrying it a decision. That happened once, and the
+answer was not an exemption: Adobe's own LICENSE.md writes a curly
+quote in "Reserved Font Name", and the licence Google Fonts
+distributes with these exact binaries is the canonical OFL text with
+an ASCII copyright line. Concern #335.

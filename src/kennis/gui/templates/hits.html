@@ -4,6 +4,7 @@
 {% elif question and not hits %}
 <p class="role-muted">{{ nothing }}</p>
 {% endif %}
+{% if basis %}<p class="basis">{{ basis }}</p>{% endif %}
 <ol class="hits">
 {% for hit in hits %}
   <li>
