@@ -154,10 +154,16 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
         # Deliberately not "stale". Incomplete is not wrong: between a
         # `corpus add` and the `corpus index` that follows it, the index
         # holds nothing false, it holds less.
+        #
+        # **Not "in step, with 1 document not yet indexed"**, which is
+        # what this said and reads as a contradiction: in step is what
+        # a reader understands as synchronised. The distinction from
+        # stale is kept and stated as what it is - a gap rather than an
+        # error. Concern #345.
         return (
-            f"the {collection} index is in step, with "
+            f"the {collection} index is missing "
             + count_of(freshness.added, "document")
-            + " not yet indexed"
+            + "; nothing in it is out of date"
         )
     return f"the {collection} index is in step"
 

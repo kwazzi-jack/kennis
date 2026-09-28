@@ -272,15 +272,34 @@ def test_indexing_can_be_switched_off(corpus: Path, tmp_path: Path):
     assert read_manifest(corpus / "index", "notes") == before
 
 
-def test_the_report_counts_what_the_rebuilt_index_holds(corpus: Path, tmp_path: Path):
-    """The whole collection, not the one note. What a caller wants to say
-    afterwards is how big the index now is, and a per-note count would be the
-    number 1 every time."""
+def test_the_report_counts_the_note_and_not_the_collection(
+    corpus: Path, tmp_path: Path
+):
+    """This reverses what the test here used to assert, and the
+    reversal is the point.
+
+    It read: "the whole collection, not the one note. What a caller
+    wants to say afterwards is how big the index now is." No caller
+    ever said that. `index_state` is the only reader of this field
+    and it puts the number directly after the note's own title, so
+    "Remembered: A thing worth keeping - indexed, 4 chunks" told the
+    reader their one sentence had become four chunks. Measured:
+    three one-sentence notes in a row reported 2, 3 and 4.
+
+    `BuildReport.chunk_count` still means the collection, which is
+    right where `kennis corpus index` reports one. Concern #344."""
     indexed_corpus(corpus, tmp_path)
+    # Two notes already there, so the collection's total differs from
+    # the note's. Without this the two numbers agree at 1 and the
+    # test passes for either meaning - which the first version did.
+    remember(corpus, "An earlier note about antenna gains.", binding=LEXICAL)
+    remember(corpus, "Another earlier note, about the solver.", binding=LEXICAL)
+    collection_chunks = len(load_index(corpus / "index", "notes").chunks)
+    assert collection_chunks > 1, "otherwise the two numbers agree by accident"
 
     report = remember(corpus, "A thing worth keeping.", binding=LEXICAL)
 
-    assert report.chunk_count == len(load_index(corpus / "index", "notes").chunks)
+    assert report.chunk_count == 1
 
 
 def test_a_sentence_does_not_carry_its_full_stop_into_the_title(corpus: Path):

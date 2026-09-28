@@ -30,6 +30,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.events import Outcome
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
+from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.logs import log_path, start_logging, stop_logging
@@ -225,7 +226,9 @@ def test_an_added_document_is_told_it_is_not_searchable_yet(
     )
     shown = finished(client, job_of(started.text))
 
-    assert "not searchable until the index is rebuilt" in shown
+    # Against the constant, not a literal: a reword should not
+    # break a test whose point is that the note is there.
+    assert words.NOT_SEARCHABLE_YET in shown
     assert "kennis corpus index" not in shown
 
 
@@ -387,7 +390,7 @@ def test_a_second_operation_is_refused_and_says_which_is_running(
         },
     )
 
-    assert "One operation runs at a time" in second.text
+    assert words.BUSY_WITH_ANOTHER in second.text
     assert job_of(second.text) == running.id
     holding.set()
 

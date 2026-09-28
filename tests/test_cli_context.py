@@ -496,14 +496,14 @@ def test_context_status_counts_what_was_written_since_the_build(
 ):
     """`remember --context` does not index, so this is the ordinary state of
     a bundle rather than a brief window - which is why the count has to be
-    on the line rather than implied by 'in step'."""
+    on the line rather than implied by 'in step'. Concern #345."""
     assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
     assert run.invoke(main, ["context", "index"]).exit_code == 0
     assert run.invoke(main, ["remember", "--context", "Per scan."]).exit_code == 0
 
     result = run.invoke(main, ["context", "status"])
 
-    assert "1 document not yet indexed" in result.output
+    assert "is missing 1 document" in result.output
     assert "kennis context index" in result.output
 
 

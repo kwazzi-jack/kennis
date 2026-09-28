@@ -235,9 +235,13 @@ def test_status_names_the_command_that_refreshes_a_stale_index(
 def test_status_names_the_command_when_documents_are_not_yet_indexed(
     run: CliRunner, isolated: Path
 ):
-    """`in step, with 1 document not yet indexed` is not a fault - the index
-    holds less rather than something false - but it is still something to
-    act on, so it carries the command and is not printed as good news."""
+    """A missing document is not a fault - the index holds less
+    rather than something false - but it is still something to act
+    on, so it carries the command and is not printed as good news.
+
+    The sentence used to say "in step, with 1 document not yet
+    indexed", which reads as a contradiction: in step is what a
+    reader understands as synchronised. Concern #345."""
     initialised(run)
     assert (
         run.invoke(main, ["corpus", "add", "-n", str(a_source(isolated))]).exit_code
@@ -254,7 +258,8 @@ def test_status_names_the_command_when_documents_are_not_yet_indexed(
     result = run.invoke(main, ["corpus", "status"])
 
     assert result.exit_code == 0, result.output
-    assert "not yet indexed" in result.output
+    assert "is missing 1 document" in result.output
+    assert "nothing in it is out of date" in result.output
     assert "kennis corpus index" in result.output
 
 

@@ -159,6 +159,7 @@ def remember(
     outcome, chunks = _index(
         collection,
         corpus_root,
+        document_id=document_id,
         binding=binding,
         wanted=index,
         embed_batch_size=embed_batch_size,
@@ -180,6 +181,7 @@ def _index(
     collection: Collection,
     corpus_root: Path,
     *,
+    document_id: str,
     binding: Binding,
     wanted: bool,
     embed_batch_size: int,
@@ -215,7 +217,11 @@ def _index(
         # is acceptable; waiting for it, or refusing the write, are
         # both worse. Concern #167.
         return "deferred", 0
-    return "indexed", report.chunk_count
+    # **This note's chunks, not the collection's.** A rebuild indexes
+    # everything, so `report.chunk_count` grows with the corpus: three
+    # one-sentence notes written in a row reported 2, 3 and 4 chunks,
+    # each of them one chunk long. Concern #344.
+    return "indexed", report.chunks_by_document.get(document_id, 0)
 
 
 def title_for(body: str) -> str:
