@@ -1,12 +1,16 @@
 {% if problem %}
 <p class="role-warning">{{ problem }}</p>
 {% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
-{% elif question and not hits %}
+{% elif question and not groups %}
 <p class="role-muted">{{ nothing }}</p>
 {% endif %}
-{% if basis %}<p class="basis">{{ basis }}</p>{% endif %}
+{% for skip in skips %}
+<p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
+{% endfor %}
+{% for group in groups %}
+{% if group.basis %}<p class="basis">{{ group.basis }}</p>{% endif %}
 <ol class="hits">
-{% for hit in hits %}
+{% for hit in group.hits %}
   <li>
     <a class="role-operation" href="{{ hit.href }}">{{ hit.headline }}</a>
     <p class="role-muted detail">{{ hit.detail }}</p>
@@ -14,3 +18,4 @@
   </li>
 {% endfor %}
 </ol>
+{% endfor %}

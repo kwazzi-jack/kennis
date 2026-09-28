@@ -57,6 +57,7 @@ from kennis.render.packs import (
 )
 from kennis.render.refusals import describe_refusal, remedies_for_refusal
 from kennis.render.words import describe_busy_indexes, describe_uncommitted_build
+from kennis.retrieval import Sweep
 
 # Bands rather than raw fused scores, as the other two front ends use:
 # a fused score is a function of rank and says nothing an ordered list
@@ -87,7 +88,7 @@ class ShownHit:
     href: str
 
 
-def shown_hits(hits: list[Hit]) -> list[ShownHit]:
+def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
     """Every hit, rendered once, in rank order."""
     if not hits:
         return []
@@ -107,10 +108,60 @@ def shown_hits(hits: list[Hit]) -> list[ShownHit]:
                     hit.collection,
                     hit.result.chunk.document_id,
                     hit.result.chunk.chunk_index,
+                    question,
                 ),
             )
         )
     return shown
+
+
+@dataclass(frozen=True, slots=True)
+class ShownGroup:
+    """One collection's answer, with the scale its bands are on.
+
+    A group per collection and never one merged list, which is the
+    same rule the command line follows for the same reason: there is
+    no common quality scale between collections indexed differently,
+    so any single ordering is a policy presented as a measurement.
+    """
+
+    collection: str
+    basis: str
+    hits: list[ShownHit]
+
+
+@dataclass(frozen=True, slots=True)
+class ShownSkip:
+    """A scope that was not searched, and the command that fixes it."""
+
+    names: str
+    resolution: str
+
+
+def shown_groups_of(found: Sweep, question: str) -> list[ShownGroup]:
+    """A sweep, in the pieces a page arranges."""
+    return [
+        ShownGroup(
+            collection=name,
+            basis=shown_basis(hits, name),
+            hits=shown_hits(hits, question=question),
+        )
+        for name, hits in found.groups.items()
+    ]
+
+
+def shown_skips(found: Sweep) -> list[ShownSkip]:
+    """The scopes a sweep did not reach, one row each.
+
+    One per scope rather than grouped by command, which is where the
+    page and the command line differ deliberately: a margin can only
+    carry one line, and a list has a row to spare. The words are
+    `render/`'s either way.
+    """
+    return [
+        ShownSkip(names=entry.name, resolution=entry.resolution)
+        for entry in found.skipped
+    ]
 
 
 def shown_basis(hits: list[Hit], collection: str) -> str:
@@ -137,7 +188,9 @@ def shown_basis(hits: list[Hit], collection: str) -> str:
     return f"{collection.capitalize()} {phrase}" if phrase else ""
 
 
-def _href(collection: str, document_id: str, chunk_index: int) -> str:
+def _href(
+    collection: str, document_id: str, chunk_index: int, question: str = ""
+) -> str:
     """Where a hit leads, and it is not one route for all four scopes.
 
     A bundle document is not in the corpus, so `/document/context/...`
@@ -149,7 +202,12 @@ def _href(collection: str, document_id: str, chunk_index: int) -> str:
     what the browser scrolls to. Neither alone is enough - a fragment
     never reaches the server, and a query string moves nothing.
     """
-    tail = f"?chunk={chunk_index}#chunk-{chunk_index}"
+    # The query rides along so the document can offer a way back to
+    # the results. Back works now that the search is in the address,
+    # but a reader three hits deep should not have to press it three
+    # times.
+    asked = f"&q={quote(question)}" if question else ""
+    tail = f"?chunk={chunk_index}{asked}#chunk-{chunk_index}"
     if collection == CONTEXT_COLLECTION:
         return f"/bundle/{quote(document_id)}{tail}"
     return f"/document/{quote(collection)}/{quote(document_id)}{tail}"
@@ -266,15 +324,19 @@ def _refers_remotely(markdown: str) -> bool:
 __all__ = [
     "ShownDocument",
     "ShownEntry",
+    "ShownGroup",
     "ShownHit",
     "ShownOutcome",
     "ShownRow",
+    "ShownSkip",
     "shown_basis",
     "shown_bundle_document",
     "shown_document",
     "shown_groups",
+    "shown_groups_of",
     "shown_hits",
     "shown_rows",
+    "shown_skips",
 ]
 
 
@@ -359,6 +421,11 @@ class ShownOutcome:
     role: str
     where: str | None = None
     resolution: str | None = None
+    # Whether the form that produced this should empty itself.
+    # A write that happened leaves stale text behind, and pressing
+    # the button again writes it twice; a write that was refused
+    # leaves text the reader would otherwise have to type again.
+    clears: bool = False
 
 
 @dataclass(frozen=True, slots=True)

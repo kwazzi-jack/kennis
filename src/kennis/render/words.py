@@ -290,6 +290,31 @@ def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
             return "not indexed - another process is rebuilding it"
 
 
+def describe_skipped(names: Sequence[str]) -> str:
+    """Which scopes a search did not reach, and why.
+
+    One line for every scope sharing a remedy, not one per scope: on
+    a corpus with only notes indexed, a warning per collection is two
+    thirds of the output before the answer, and a reader learns the
+    same thing from one. The grouping is the caller's, because two
+    scopes skipped with different commands need different lines.
+
+    The sentence lives here and not on `retrieval.Skipped`, which
+    carries the scope and the command as fields. Concern #81.
+    """
+    return f"not searched, no index yet: {', '.join(names)}"
+
+
+def describe_lexical_fallback(collection: str) -> str:
+    """A scope that ran lexically although more was asked of it.
+
+    Said rather than silently downgraded: a reader comparing result
+    quality needs to know they are not comparing against the dense
+    index they think they configured.
+    """
+    return f"the {collection} index has no dense leg, so this ran as a lexical search"
+
+
 def describe_busy_indexes(collections: Sequence[str]) -> str:
     """Which indexes another process was already rebuilding.
 

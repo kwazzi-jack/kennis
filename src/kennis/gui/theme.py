@@ -286,6 +286,31 @@ a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
 .hits a:hover, .hits a:focus-visible { text-decoration: underline; }
 .hits .body { color: var(--role-muted); }
 
+/* A scope the sweep could not reach, and the command that fixes it.
+   One row per scope rather than the command line's one line per
+   command: a list has a row to spare where a margin does not. */
+.skipped {
+  font-family: var(--gutter);
+  font-size: 0.75rem;
+  margin: 0.4rem 0 0;
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* Back to the results, and to the collection. A document reached
+   from a search had no way to anything: its only links were the
+   figures control and the citations in its own text. */
+.back {
+  font-family: var(--gutter);
+  font-size: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  margin: 0 0 1.5rem;
+}
+
+.back a { color: var(--role-muted); }
+.back a:hover { color: var(--ink); }
+
 /* The scale a group's bands are measured on. Relevance is never
    shown without it. */
 .basis {

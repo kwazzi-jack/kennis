@@ -30,6 +30,16 @@ from kennis.render.words import (
 
 NOTHING_FOUND = "No passages matched."
 
+SEARCH_HINT = "Search everything kennis holds"
+
+SEARCH_ACTION = "Search"
+
+SCOPE_LABEL = "Where to look"
+
+EVERYWHERE_LABEL = "everywhere"
+
+BACK_TO_SEARCH = "back to the results"
+
 NOTHING_TO_INDEX = "There is nothing to index yet."
 
 BUNDLE_NOT_COMMITTED = (
@@ -146,6 +156,10 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
             message=f"Already remembered: {report.title}",
             role="role-unchanged",
             where=where,
+            # Nothing was written, and the text in the box is the
+            # duplicate that was refused - keeping it would invite
+            # the reader to press the button again.
+            clears=True,
         )
     if needs_an_index(report.index_outcome):
         state = index_state(report.index_outcome, report.chunk_count)
@@ -153,6 +167,7 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
             message=f"Remembered: {report.title} - {state}",
             role="role-operation",
             where=where,
+            clears=True,
             # The note is written and is not findable, and nothing on
             # this page can change that - so it is a command, not a
             # clause appended to the good news. The Index section on
@@ -166,6 +181,7 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
         message=f"Remembered: {report.title}{suffix}",
         role="role-operation",
         where=where,
+        clears=True,
     )
 
 
@@ -185,6 +201,7 @@ def describe_written_to_bundle(note: BundleNote, bundle_name: str) -> ShownOutco
         ),
         role="role-unchanged" if already else "role-operation",
         where=f"{bundle_name}/{note.relative_path}",
+        clears=True,
     )
 
 
@@ -240,6 +257,7 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
 
 
 __all__ = [
+    "BACK_TO_SEARCH",
     "CORPUS_BUSY",
     "CORPUS_CHANGED",
     "GROUP_HINT",

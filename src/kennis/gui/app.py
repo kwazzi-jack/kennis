@@ -25,6 +25,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Final
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request, Response
 from fastapi.datastructures import FormData
@@ -61,16 +62,16 @@ from kennis.gui.pages import (
     ShownJob,
     ShownOutcome,
     shown_add,
-    shown_basis,
     shown_bundle_document,
     shown_bundle_sync,
     shown_corpus_sync,
     shown_document,
     shown_groups,
-    shown_hits,
+    shown_groups_of,
     shown_index,
     shown_install,
     shown_rows,
+    shown_skips,
 )
 from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
@@ -85,7 +86,7 @@ from kennis.operations import (
 )
 from kennis.render.html import MarkedRange
 from kennis.render.packs import describe_holdings
-from kennis.retrieval import chunk_range, search_scope
+from kennis.retrieval import EVERY_SCOPE, SCOPE_NAMES, chunk_range, sweep
 from kennis.writing import write_context_note, write_note
 
 _HERE: Final = Path(__file__).parent
@@ -181,7 +182,7 @@ def build_app(token: str) -> FastAPI:
 
     @app.get("/")
     async def serve_search(
-        request: Request, q: str = "", scope: str = "notes"
+        request: Request, q: str = "", scope: str = EVERY_SCOPE
     ) -> HTMLResponse:
         return _TEMPLATES.TemplateResponse(
             request, "search.html", _hits_context(q, scope)
@@ -189,14 +190,21 @@ def build_app(token: str) -> FastAPI:
 
     @app.get("/hits")
     async def serve_hits(
-        request: Request, q: str = "", scope: str = "notes"
+        request: Request, q: str = "", scope: str = EVERY_SCOPE
     ) -> HTMLResponse:
         # The partial htmx swaps in. The same context as the page, so
         # a first load and a keystroke cannot disagree about what a
         # result looks like.
-        return _TEMPLATES.TemplateResponse(
+        answer = _TEMPLATES.TemplateResponse(
             request, "hits.html", _hits_context(q, scope)
         )
+        # **The address the reader should end up at, not the one that
+        # was fetched.** `hx-push-url="true"` pushes the request URL,
+        # which is this route - so Back and reload rendered the bare
+        # fragment with no page around it. Found by walking the
+        # interface, not by the suite. Concern #340.
+        answer.headers["HX-Push-Url"] = f"/?q={quote(q)}&scope={quote(scope)}"
+        return answer
 
     @app.get("/held")
     async def serve_holdings(request: Request) -> HTMLResponse:
@@ -282,6 +290,7 @@ def build_app(token: str) -> FastAPI:
         document_id: str,
         images: str = "",
         chunk: str = "",
+        q: str = "",
     ) -> HTMLResponse:
         load_remote = images == "on"
         context = existing_corpus()
@@ -305,6 +314,8 @@ def build_app(token: str) -> FastAPI:
                 "blocked_note": words.IMAGES_BLOCKED,
                 "blocked_action": words.LOAD_IMAGES,
                 "mark_withheld": words.MARK_WITHHELD if withheld else None,
+                "question": q,
+                "back_to_search": words.BACK_TO_SEARCH,
             },
         )
 
@@ -339,6 +350,7 @@ def build_app(token: str) -> FastAPI:
         relative_path: str,
         images: str = "",
         chunk: str = "",
+        q: str = "",
     ) -> HTMLResponse:
         """One note out of this project's bundle.
 
@@ -371,6 +383,8 @@ def build_app(token: str) -> FastAPI:
                 "blocked_note": words.IMAGES_BLOCKED,
                 "blocked_action": words.LOAD_IMAGES,
                 "mark_withheld": words.MARK_WITHHELD if withheld else None,
+                "question": q,
+                "back_to_search": words.BACK_TO_SEARCH,
             },
         )
 
@@ -653,27 +667,39 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
     A failure becomes fields rather than an exception: a search box
     whose scope has no index should say so above the box the person is
     still typing in, not replace the page with an error.
+
+    **Every scope by default**, through the same sweep the command
+    line runs. Searching one collection at a time and defaulting to
+    notes meant a reader looking for a paper from a cold start was
+    answered nothing at all until they knew to change a dropdown.
+    Concern #314 is what made one sweep possible.
     """
     context: dict[str, object] = {
         **_frame(existing_corpus()),
         "question": question,
         "scope": scope,
         "scopes": SCOPES,
-        "hits": [],
-        "basis": "",
+        "everywhere": EVERY_SCOPE,
+        "everywhere_label": words.EVERYWHERE_LABEL,
+        "search_hint": words.SEARCH_HINT,
+        "search_action": words.SEARCH_ACTION,
+        "scope_label": words.SCOPE_LABEL,
+        "groups": [],
+        "skips": [],
         "nothing": words.NOTHING_FOUND,
         "problem": None,
         "resolution": None,
     }
     if not question:
         return context
-    if scope not in SCOPES:
+    if scope not in SCOPES and scope != EVERY_SCOPE:
         context["problem"] = words.unknown_scope(scope, SCOPES)
         return context
+    asked = SCOPE_NAMES if scope == EVERY_SCOPE else (scope,)
     try:
-        found = search_scope(scope, question)
-        context["hits"] = shown_hits(found)
-        context["basis"] = shown_basis(found, scope)
+        found = sweep(question, scopes=asked, named=scope != EVERY_SCOPE)
+        context["groups"] = shown_groups_of(found, question)
+        context["skips"] = shown_skips(found)
     except KennisError as error:
         context["problem"] = str(error)
         context["resolution"] = error.resolution
