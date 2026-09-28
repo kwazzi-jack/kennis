@@ -13,7 +13,7 @@ be the one that waits for whatever is stuck.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -40,31 +40,33 @@ from kennis.engine.corpus.sync import (
     CorpusSync,
     claim_document,
     disown_document,
-    sync_corpus,
 )
 from kennis.engine.errors import KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.history import (
-    commit_summary,
     outcome_summary,
     read_history,
     restore_document,
 )
-from kennis.engine.history.outofband import detect_changes, restore_deletions
+from kennis.engine.history.outofband import OutOfBandChange, detect_changes
 from kennis.engine.history.repository import Repository, initialise_corpus
 from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from
-from kennis.engine.rag.index import build_index, read_manifest
-from kennis.engine.rag.loaders import CollectionLoader
+from kennis.engine.rag.index import read_manifest
+from kennis.operations import (
+    add_documents,
+    build_indexes,
+    restore_hand_deletions,
+    synchronise_corpus,
+)
 from kennis.render.packs import (
     describe_action,
     describe_corpus_claim_needed,
     describe_deferred,
     describe_owner,
     describe_sync,
-    describe_sync_summary,
     describe_unfetched,
 )
 from kennis.render.refusals import describe_refusal, remedies_for_refusal
@@ -175,29 +177,19 @@ def status_command() -> None:
 
 
 def _undo_hand_deletions(context: Context) -> None:
-    """Put back anything deleted outside kennis, before this command writes.
+    """Restore anything deleted outside kennis, and say what came back.
 
-    design.md, "Changes made outside kennis": **a deletion is restored rather
-    than honoured**. An out-of-band delete carries no record of intent, and
-    treating an accident as an instruction is the more expensive mistake -
-    restoring costs an annoying extra command, honouring costs a document.
-    `corpus remove` exists and says what it means.
-
-    Here rather than in `status`, which reports and never writes. So the
-    restore happens at the start of every command that already holds the lock
-    and is about to commit. Without it the deletion is not merely unnoticed:
-    the next `_commit` stages it, and the accident becomes history. Concern
-    #128.
-
-    Must be called **inside** the lock and **before** the operation, so that
+    The sequence itself is `operations.restore_hand_deletions`, shared
+    with the graphical interface; this is the command line's voice over
+    it. Called **inside** the lock and **before** the operation, so that
     the command's own commit carries a tree the deletion never touched.
+    Concern #128.
     """
-    repository = Repository(context.corpus_root)
-    restored = [
-        change
-        for change in restore_deletions(repository, detect_changes(repository))
-        if change.restored
-    ]
+    _report_restored(restore_hand_deletions(context))
+
+
+def _report_restored(restored: Sequence[OutOfBandChange]) -> None:
+    """What a restore put back, or nothing at all when it put back nothing."""
     if not restored:
         return
     display.operation("Restored", count_of(len(restored), "document"))
@@ -395,14 +387,18 @@ def add_command(
         extra_file_types=(),
     )
 
-    target = Collection(root=context.corpus_root, name=destination)
-    with corpus_lock(context.corpus_root), reporting() as events:
-        _undo_hand_deletions(context)
-        report = _ADDERS[destination](target, identifiers, options, events=events)
-        _commit(
-            context, "add", scope=destination, summary=outcome_summary(report.counts)
+    restored: list[OutOfBandChange] = []
+    with reporting() as events:
+        report = add_documents(
+            context,
+            destination,
+            identifiers,
+            options,
+            events=events,
+            restored=restored,
         )
 
+    _report_restored(restored)
     _report_add(report)
 
 
@@ -548,19 +544,10 @@ def sync_command() -> None:
     tried again next time, rather than stopping the run.
     """
     context = existing_corpus()
-    with corpus_lock(context.corpus_root), reporting() as events:
-        _undo_hand_deletions(context)
-        result = sync_corpus(
-            context.corpus_root,
-            events=events,
-            request_delay_seconds=context.settings.literature.request_delay,
-        )
-        _commit(
-            context,
-            "sync",
-            scope="notes",
-            summary=describe_sync_summary(result.counts),
-        )
+    restored: list[OutOfBandChange] = []
+    with reporting() as events:
+        result = synchronise_corpus(context, events=events, restored=restored)
+    _report_restored(restored)
     display.operation("Synchronised", describe_sync(result.counts, noun="document"))
     for action in result.actions:
         display.detail(display.sync_marker(action.verdict), describe_action(action))
@@ -812,46 +799,20 @@ def index_command(collection: str | None) -> None:
         else "lexical search only, with no embedding backend"
     )
 
-    repository = Repository(context.corpus_root)
-    root = index_root(context.corpus_root)
-    documents = 0
-    chunks = 0
-    with corpus_lock(context.corpus_root), reporting() as events:
-        _undo_hand_deletions(context)
-        for name in [collection] if collection else list(COLLECTION_NAMES):
-            target = Collection(root=context.corpus_root, name=name)
-            # Skipped rather than attempted: `build_index` refuses an empty
-            # collection by design, and two of the three are empty on most
-            # corpora. Asking for all of them must not fail on that account.
-            if not target.contents().documents:
-                continue
-            report = build_index(
-                CollectionLoader(target),
-                index_root=root,
-                binding=binding,
-                events=events,
-                embed_batch_size=context.settings.embedding.batch_size,
-                repository=repository,
-            )
-            documents += report.document_count
-            chunks += report.chunk_count
-            display.operation(
-                "Indexed",
-                f"{count_of(report.document_count, 'document')} as "
-                f"{count_of(report.chunk_count, 'chunk')} in {name}",
-                elapsed=report.elapsed_seconds,
-            )
-        # One commit for one user action, with what it actually built in the
-        # subject: `index(corpus): 2 documents, 2 chunks` rather than a tally
-        # of outcomes, which an index has none of.
-        _commit(
-            context,
-            "index",
-            scope=collection or "corpus",
-            summary=commit_summary({"documents": documents, "chunks": chunks}),
+    restored: list[OutOfBandChange] = []
+    with reporting() as events:
+        result = build_indexes(context, collection, events=events, restored=restored)
+
+    _report_restored(restored)
+    for index in result.built:
+        display.operation(
+            "Indexed",
+            f"{count_of(index.documents, 'document')} as "
+            f"{count_of(index.chunks, 'chunk')} in {index.collection}",
+            elapsed=index.elapsed_seconds,
         )
 
-    if documents == 0:
+    if result.documents == 0:
         display.note("nothing to index")
         display.next_step("kennis corpus add --help", note="to see what it takes")
 

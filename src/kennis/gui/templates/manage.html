@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}kennis - manage{% endblock %}
+{% block main %}
+<h1>Manage</h1>
+
+<section>
+  <h2>Add</h2>
+  <p class="role-muted">{{ add_preamble }}</p>
+  <form hx-post="/manage/add" hx-target="#job" hx-swap="innerHTML">
+    <textarea name="identifiers" rows="4" autofocus></textarea>
+    <div class="fields">
+      {% for name in collections %}
+      <label><input type="radio" name="collection" value="{{ name }}"
+        {% if loop.first %}checked{% endif %}> {{ name }}</label>
+      {% endfor %}
+    </div>
+    <div class="fields">
+      <input type="text" name="title" placeholder="title">
+      <input type="text" name="group" placeholder="group">
+      <input type="text" name="identifier" placeholder="arXiv id, DOI or bibcode">
+      <input type="text" name="citekey" placeholder="citekey">
+      <input type="text" name="project" placeholder="docs project">
+    </div>
+    <button type="submit">{{ add_action }}</button>
+  </form>
+</section>
+
+<section>
+  <h2>Index</h2>
+  <p class="role-muted">{{ index_preamble }}</p>
+  <form hx-post="/manage/index" hx-target="#job" hx-swap="innerHTML">
+    <div class="fields">
+      <label><input type="radio" name="collection" value="" checked> every collection</label>
+      {% for name in collections %}
+      <label><input type="radio" name="collection" value="{{ name }}"> {{ name }}</label>
+      {% endfor %}
+    </div>
+    <button type="submit">{{ index_action }}</button>
+  </form>
+</section>
+
+<section>
+  <h2>Synchronise</h2>
+  <p class="role-muted">{{ sync_preamble }}</p>
+  <form hx-post="/manage/sync" hx-target="#job" hx-swap="innerHTML">
+    <button type="submit">Synchronise the corpus</button>
+  </form>
+  <form hx-post="/manage/context-sync" hx-target="#job" hx-swap="innerHTML">
+    <button type="submit">Synchronise this project</button>
+  </form>
+</section>
+
+<section>
+  <h2>Packs</h2>
+  <p class="role-muted">{{ pack_preamble }}</p>
+  <form hx-post="/manage/pack" hx-target="#job" hx-swap="innerHTML">
+    <input type="text" name="path" placeholder="/path/to/pack.ken.yml">
+    <button type="submit">{{ pack_action }}</button>
+  </form>
+</section>
+
+<div id="job"></div>
+{% endblock %}

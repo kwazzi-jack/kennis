@@ -27,25 +27,58 @@ from pathlib import Path
 from typing import Final
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.datastructures import FormData
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from kennis.context import Context, existing_corpus
+from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.sync import BundleSync
+from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusBusy, KennisError, UnknownCollection
+from kennis.engine.corpus.sync import CorpusSync
+from kennis.engine.errors import (
+    ContextNotFound,
+    CorpusBusy,
+    KennisError,
+    UnknownCollection,
+)
+from kennis.engine.events import EventSink
+from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
+from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
+    ShownJob,
     ShownOutcome,
+    shown_add,
+    shown_bundle_sync,
+    shown_corpus_sync,
     shown_document,
     shown_groups,
     shown_hits,
+    shown_index,
+    shown_install,
     shown_rows,
 )
+from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
 from kennis.holdings import holdings, installed_packs, revision
+from kennis.operations import (
+    IndexBuild,
+    add_documents,
+    build_indexes,
+    install_a_pack,
+    synchronise_bundle,
+    synchronise_corpus,
+)
 from kennis.render.packs import describe_holdings
 from kennis.retrieval import search_scope
 from kennis.writing import write_context_note, write_note
@@ -83,6 +116,10 @@ def build_app(token: str) -> FastAPI:
     differently in one process is a value a test can set at all.
     """
     app = FastAPI(title="kennis", docs_url=None, redoc_url=None)
+    # On the application rather than in a module-level variable, so a
+    # test builds its own and two applications in one process do not
+    # share a job list.
+    app.state.jobs = Jobs()
 
     @app.middleware("http")
     async def require_token(
@@ -258,6 +295,168 @@ def build_app(token: str) -> FastAPI:
             },
         )
 
+    def _started(
+        request: Request, kind: str, work: Callable[[EventSink], object]
+    ) -> HTMLResponse:
+        """Hand the work to a thread and answer with the panel watching it.
+
+        A second operation is refused rather than queued, and says so:
+        the corpus lock would refuse it anyway with `timeout=0`, so the
+        limit is honest, and dropping a click in silence is not.
+        """
+        try:
+            job = app.state.jobs.start(kind, work)
+        except AlreadyRunning as busy:
+            return _TEMPLATES.TemplateResponse(
+                request,
+                "job.html",
+                {
+                    "job_id": busy.running,
+                    "kind": kind,
+                    "problem": words.BUSY_WITH_ANOTHER,
+                },
+            )
+        return _TEMPLATES.TemplateResponse(
+            request, "job.html", {"job_id": job.id, "kind": job.kind}
+        )
+
+    @app.get("/manage")
+    async def serve_manage(request: Request) -> HTMLResponse:
+        return _TEMPLATES.TemplateResponse(request, "manage.html", _manage_context())
+
+    @app.post("/manage/add")
+    async def start_add(request: Request) -> HTMLResponse:
+        """Start an add and answer with somewhere to watch it.
+
+        Answers at once rather than when the work is done: one PDF is
+        twenty seconds of MinerU and a documentation crawl is minutes,
+        and a POST that returns at the end is a browser that appears to
+        have hung.
+        """
+        form = await request.form()
+        identifiers = _lines(str(form.get("identifiers") or ""))
+        destination = str(form.get("collection") or "notes")
+        if not identifiers:
+            return _refused(request, words.NOTHING_TO_ADD)
+        if destination not in COLLECTION_NAMES:
+            return _refused(request, words.unknown_collection(destination))
+        context = existing_corpus()
+        options = _add_options(context, form)
+        return _started(
+            request,
+            "add",
+            lambda events: add_documents(
+                context, destination, identifiers, options, events=events
+            ),
+        )
+
+    @app.post("/manage/index")
+    async def start_index(request: Request) -> HTMLResponse:
+        form = await request.form()
+        chosen = str(form.get("collection") or "")
+        collection = chosen if chosen in COLLECTION_NAMES else None
+        context = existing_corpus()
+        return _started(
+            request,
+            "index",
+            lambda events: build_indexes(context, collection, events=events),
+        )
+
+    @app.post("/manage/sync")
+    async def start_corpus_sync(request: Request) -> HTMLResponse:
+        context = existing_corpus()
+        return _started(
+            request, "sync", lambda events: synchronise_corpus(context, events=events)
+        )
+
+    @app.post("/manage/context-sync")
+    async def start_bundle_sync(request: Request) -> HTMLResponse:
+        context = existing_corpus()
+        bundle = find_bundle()
+        if bundle is None:
+            # `ContextNotFound` carries the command that makes one,
+            # which is the whole point of the errors carrying their
+            # own resolution: the advice was chosen where the problem
+            # is known.
+            refusal = ContextNotFound()
+            return _refused(request, str(refusal), resolution=refusal.resolution)
+        return _started(
+            request,
+            "context-sync",
+            lambda events: synchronise_bundle(bundle, context, events=events),
+        )
+
+    @app.post("/manage/pack")
+    async def start_pack_install(request: Request) -> HTMLResponse:
+        form = await request.form()
+        given = str(form.get("path") or "").strip()
+        path = Path(given).expanduser()
+        if not given or not path.is_file():
+            return _refused(request, words.no_such_pack(given))
+        context = existing_corpus()
+        return _started(
+            request, "pack", lambda events: install_a_pack(context, path, events=events)
+        )
+
+    @app.get("/job/{job_id}")
+    async def serve_job(request: Request, job_id: str) -> HTMLResponse:
+        job = app.state.jobs.get(job_id)
+        if job is None:
+            return _refused(request, words.NO_SUCH_JOB)
+        return _TEMPLATES.TemplateResponse(
+            request, "job.html", {"job_id": job.id, "kind": job.kind}
+        )
+
+    @app.get("/job/{job_id}/events")
+    async def serve_job_events(job_id: str) -> StreamingResponse:
+        """This job's events, pushed until the operation ends.
+
+        A sync generator on purpose: Starlette runs one in a thread, so
+        the blocking `queue.get` inside it never touches the event
+        loop, and the alternative is bridging a thread-safe queue into
+        asyncio for no gain.
+        """
+        jobs: Jobs = app.state.jobs
+        job = jobs.get(job_id)
+        if job is None:
+            return StreamingResponse(
+                iter([sent_event({"kind": "closed", "text": words.NO_SUCH_JOB})]),
+                media_type="text/event-stream",
+            )
+        return StreamingResponse(
+            as_stream(iter(jobs.stream(job)), {"kind": "closed"}),
+            media_type="text/event-stream",
+            # Without this a proxy or a browser may hold the response
+            # until it is complete, which is the one thing a progress
+            # stream must not allow.
+            headers={"cache-control": "no-store", "x-accel-buffering": "no"},
+        )
+
+    @app.get("/job/{job_id}/outcome")
+    async def serve_job_outcome(request: Request, job_id: str) -> HTMLResponse:
+        """What the job amounted to, fetched once its stream has closed.
+
+        Rendered here rather than assembled by the script, so every
+        word on the page was chosen in Python - including the repair
+        forms, which are built from 9e's typed refusals.
+        """
+        job = app.state.jobs.get(job_id)
+        if job is None:
+            return _refused(request, words.NO_SUCH_JOB)
+        if not job.done.is_set():
+            return _refused(request, words.STILL_RUNNING)
+        if job.error is not None:
+            return _refused(
+                request,
+                words.CORPUS_BUSY_RETRY
+                if isinstance(job.error, CorpusBusy)
+                else str(job.error),
+                resolution=job.error.resolution,
+            )
+        return _TEMPLATES.TemplateResponse(
+            request, "job-outcome.html", {"shown": _shown_result(job)}
+        )
+
     return app
 
 
@@ -361,3 +560,97 @@ def _problem(request: Request, error: KennisError) -> HTMLResponse:
 
 
 __all__ = ["COOKIE_NAME", "build_app", "new_token"]
+
+
+def _lines(given: str) -> list[str]:
+    """One identifier per line, blank lines ignored.
+
+    A textarea rather than a single field because a batch is the
+    ordinary case - a folder of papers arrives as a list - and because
+    a space-separated field cannot hold a path with a space in it.
+    """
+    return [line.strip() for line in given.splitlines() if line.strip()]
+
+
+def _add_options(context: Context, form: FormData) -> AddOptions:
+    """The engine's options, from the form and the settings behind it.
+
+    The settings supply what the form does not ask: a default group, a
+    conversion batch size and the politeness delay are configuration
+    rather than per-add decisions, and putting them on the page would
+    invite changing them per add.
+    """
+    identifier = str(form.get("identifier") or "") or None
+    return AddOptions(
+        title=str(form.get("title") or "") or None,
+        group=str(form.get("group") or "")
+        or context.settings.corpus.default_group
+        or None,
+        keep_original=context.settings.corpus.keep_original,
+        identifier=identifier,
+        citekey=str(form.get("citekey") or "") or None,
+        project=str(form.get("project") or "") or None,
+        batch_size=context.settings.conversion.batch_size,
+        request_delay_seconds=context.settings.literature.request_delay,
+        extra_file_types=(),
+    )
+
+
+def _shown_result(job: Job) -> ShownJob:
+    """One finished job as the shape a page lays out.
+
+    The `match` is on the report's type rather than on `job.kind`,
+    because the type is what decides which renderer is correct and a
+    string that disagreed with it would be a wrong page rather than an
+    error.
+    """
+    match job.result:
+        case AddReport():
+            return shown_add(job.result)
+        case IndexBuild():
+            return shown_index(job.result)
+        case CorpusSync():
+            return shown_corpus_sync(job.result)
+        case BundleSync():
+            return shown_bundle_sync(job.result)
+        case PackInstall():
+            return shown_install(job.result)
+        case _:
+            return ShownJob(headline=words.NOTHING_TO_SHOW, role="role-muted")
+
+
+def _refused(
+    request: Request, problem: str, *, resolution: str | None = None
+) -> HTMLResponse:
+    """A refusal inside the panel, not as a page.
+
+    The form the person filled in is still on the page behind this, and
+    replacing the page would lose what they typed. `CorpusBusy` is the
+    case that makes it matter: something else is writing, nothing was
+    changed, and the answer is to try again in a moment.
+    """
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "outcome.html",
+        {
+            "outcome": ShownOutcome(
+                message=problem, role="role-warning", resolution=resolution
+            )
+        },
+    )
+
+
+def _manage_context() -> dict[str, object]:
+    """What the management page needs before anything has been asked."""
+    context = existing_corpus()
+    return {
+        "collections": COLLECTION_NAMES,
+        "add_preamble": words.ADD_PREAMBLE,
+        "add_action": words.ADD_ACTION,
+        "index_preamble": words.INDEX_PREAMBLE,
+        "index_action": words.INDEX_ACTION,
+        "sync_preamble": words.SYNC_PREAMBLE,
+        "pack_preamble": words.PACK_PREAMBLE,
+        "pack_action": words.PACK_ACTION,
+        **_frame(context),
+    }

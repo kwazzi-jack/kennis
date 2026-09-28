@@ -25,9 +25,9 @@ from kennis.engine.pack.installed import (
     remove_pack,
 )
 from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
-from kennis.engine.pack.store import install_pack
 from kennis.engine.pack.update import PackUpdate, update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
+from kennis.operations import install_a_pack
 from kennis.render.packs import (
     describe_damage,
     describe_declarations,
@@ -82,8 +82,8 @@ def add_command(path: Path) -> None:
     converge the documents with it, and neither is built.
     """
     context = existing_corpus()
-    with corpus_lock(context.corpus_root), reporting() as events:
-        install = install_pack(context.corpus_root, path, events=events)
+    with reporting() as events:
+        install = install_a_pack(context, path, events=events)
     display.operation(_INSTALL_VERBS[install.outcome], install.pack_id)
     display.detail(_INSTALL_MARKERS[install.outcome], describe_install(install))
     declared = describe_declarations(install)

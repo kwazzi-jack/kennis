@@ -410,3 +410,19 @@ def test_the_typing_marker_is_there_to_be_shipped():
     assert (SOURCE_ROOT / "kennis" / "py.typed").is_file()
     classifiers = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert "Typing :: Typed" in classifiers
+
+
+def test_a_test_does_not_run_in_the_repository():
+    """The working directory is a test's, not Brian's.
+
+    `find_bundle` walks **up from the working directory**, and under
+    `pytest` that directory is this checkout unless something changes
+    it. A test that ran `kennis context init` therefore created
+    `.context/` in the repository, and every later test that wrote to
+    a bundle found it and wrote a note into the working tree. That
+    happened. The autouse `somewhere_else` fixture in `conftest.py`
+    prevents it, and this is what fails if it is removed. Concern
+    #325.
+    """
+    assert Path.cwd() != PROJECT_ROOT
+    assert not (PROJECT_ROOT / ".context").exists()

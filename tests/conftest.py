@@ -67,6 +67,24 @@ def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
 
 
+@pytest.fixture(autouse=True)
+def somewhere_else(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test runs in the repository's own working directory.
+
+    `find_bundle` walks **up from the working directory**, and under
+    `pytest` that directory is this checkout. So a test that ran
+    `kennis context init` created `.context/` in the repository, and
+    every later test that wrote to a bundle then found it and wrote a
+    note into Brian's working tree. That happened, in the session that
+    added this. Concern #325.
+
+    Autouse for the same reason `offline_embedding` is: the safe case
+    is the default, and a test that wants a particular directory
+    chdirs itself, which runs after this and wins.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Put a fake `mineru` first on PATH and return the log it writes."""

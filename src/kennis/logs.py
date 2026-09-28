@@ -128,6 +128,32 @@ def stop_logging() -> None:
     _installed = None
 
 
+class FanOut:
+    """Every event to every subscriber, in the order they were given.
+
+    Here rather than in a front end because two of them need it: the
+    command line fans out to a display and the log, and the graphical
+    interface fans out to a browser and the log. `cli/` and `gui/` are
+    peers and neither may import the other, so what both need lives
+    outside both - which is the rule that put `LogSink` here too.
+    Concern #326.
+
+    A sink that raises would otherwise take the operation down with
+    it, so the display's failure to draw must not stop the log from
+    recording - the log is what the failure would be diagnosed from.
+    """
+
+    def __init__(self, *sinks: object) -> None:
+        self._sinks = sinks
+
+    def emit(self, event: Event) -> None:
+        for sink in self._sinks:
+            emit = getattr(sink, "emit", None)
+            if emit is None:
+                continue
+            emit(event)
+
+
 class LogSink:
     """An `EventSink` that writes **every** event to the log.
 

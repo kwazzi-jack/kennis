@@ -11,11 +11,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from kennis.engine.context.notes import BundleNote
+from kennis.engine.corpus.add import AddReport
+from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.events import Outcome
 from kennis.engine.remember import RememberReport
 from kennis.gui.pages import ShownOutcome
 from kennis.holdings import Holding
+from kennis.operations import BuiltIndex, IndexBuild
 from kennis.render.words import (
+    conversion_cost,
+    conversion_repairs,
     count_of,
     describe_freshness,
     index_state,
@@ -23,6 +28,66 @@ from kennis.render.words import (
 )
 
 NOTHING_FOUND = "No passages matched."
+
+NOTHING_TO_INDEX = "There is nothing to index yet."
+
+BUNDLE_NOT_COMMITTED = (
+    "kennis did not commit: the bundle is in your repository, so this "
+    "change is yours to commit with the project."
+)
+
+NOTHING_MATERIALISED = (
+    "Nothing is materialised yet. A sync converges each scope with what "
+    "every installed pack declares."
+)
+
+BUSY_WITH_ANOTHER = "One operation runs at a time, and one is running now."
+
+CORPUS_BUSY_RETRY = (
+    "The corpus is busy - something else is writing to it. Nothing was "
+    "changed, so this can be tried again."
+)
+
+NOTHING_TO_ADD = "Name at least one file, directory or URL."
+
+ADD_PREAMBLE = (
+    "A file, a directory, a URL, or - for literature - an arXiv "
+    "identifier, DOI or ADS bibcode. One per line."
+)
+
+ADD_ACTION = "Add"
+
+INDEX_PREAMBLE = (
+    "Building an index reads every document in a collection. With a dense "
+    "backend configured it downloads a model the first time, which is why "
+    "the first run is the slow one."
+)
+
+INDEX_ACTION = "Build the index"
+
+SYNC_PREAMBLE = (
+    "A corpus sync fetches what every installed pack declares, so it uses "
+    "the network. A project sync copies from this machine's store and does "
+    "not."
+)
+
+PACK_PREAMBLE = (
+    "The path to a pack's .ken.yml. Installing records what the provider "
+    "declared; nothing reaches a collection until a sync."
+)
+
+PACK_ACTION = "Install"
+
+NOT_SEARCHABLE_YET = (
+    "This is not searchable until the index is rebuilt, which the Index "
+    "section above does."
+)
+
+NO_SUCH_JOB = "That operation is not one this interface is running."
+
+STILL_RUNNING = "This is still running."
+
+NOTHING_TO_SHOW = "That operation reported nothing."
 
 IMAGES_BLOCKED = (
     "This document refers to figures held elsewhere. They were not fetched, "
@@ -186,3 +251,65 @@ __all__ = [
     "unknown_scope",
     "unreadable_note",
 ]
+
+
+def added_headline(added: int, report: AddReport) -> str:
+    """The line above an add's items.
+
+    The cost and the repairs ride on it rather than each taking a line
+    of their own: both are properties of what just happened, and a
+    separate line would give a free local conversion a blank where a
+    number used to be.
+    """
+    priced = conversion_cost(report.cost_cents)
+    repaired = conversion_repairs(report.repairs)
+    return (
+        f"Added {count_of(added, 'document')}"
+        + (f", {priced}" if priced else "")
+        + (f", {repaired}" if repaired else "")
+    )
+
+
+def indexed_headline(built: IndexBuild) -> str:
+    """What an index build amounts to, across every collection it touched."""
+    if not built.built:
+        return "Indexed nothing"
+    return (
+        f"Indexed {count_of(built.documents, 'document')} as "
+        f"{count_of(built.chunks, 'chunk')}"
+    )
+
+
+def describe_built(index: BuiltIndex) -> str:
+    """One collection's share of a build."""
+    return (
+        f"{count_of(index.documents, 'document')} as {count_of(index.chunks, 'chunk')}"
+    )
+
+
+def describe_backend(built: IndexBuild) -> str:
+    """Which backend a build used, named before the wait it explains.
+
+    A dense build downloads a model on a machine that has never run
+    one, and a long pause needs its explanation already on screen
+    rather than afterwards.
+    """
+    if built.model_kind is None or built.model_name is None:
+        return "lexical search only, with no embedding backend"
+    return f"{built.model_kind} {built.model_name}"
+
+
+def unknown_collection(asked: str) -> str:
+    """A collection that is not one of the three, named back."""
+    return f"'{asked}' is not a collection. There are {joined(COLLECTION_NAMES)}."
+
+
+def no_such_pack(given: str) -> str:
+    """A pack path that names no file.
+
+    The path is quoted back because a typo is the likely cause and a
+    reader cannot see one they cannot see.
+    """
+    if not given:
+        return "Name the path to a pack's .ken.yml."
+    return f"'{given}' is not a file."
