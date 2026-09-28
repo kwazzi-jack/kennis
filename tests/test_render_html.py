@@ -19,7 +19,14 @@ Measured on the three papers actually held, not assumed:
 
 from __future__ import annotations
 
-from kennis.render.html import IMAGE_BLOCKED, IMAGE_MISSING, to_html
+from kennis.engine.rag.chunking import ChunkParameters, chunk_document
+from kennis.engine.rag.models import Document as RagDocument
+from kennis.render.html import (
+    IMAGE_BLOCKED,
+    IMAGE_MISSING,
+    MarkedRange,
+    to_html,
+)
 
 # ---------------------------------------------------------------------------
 # Maths
@@ -142,3 +149,179 @@ def test_raw_html_in_a_document_is_not_passed_through():
 
     assert "<script>" not in rendered
     assert "plain text" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Marking one chunk
+# ---------------------------------------------------------------------------
+#
+# A search hit names a chunk, and the reader should open at it rather
+# than at the top of a 19-page paper. `Chunk` already carries
+# `char_start` and `char_end`, so the range exists; what this section
+# covers is turning a range of the *markdown* into a range of the
+# rendered elements.
+#
+# The marking is block-granular. Measured on the corpus actually held:
+# 510 of 524 chunks begin and end exactly on a top-level block
+# boundary, and the 14 that do not are prose paragraphs longer than
+# `ChunkParameters.size`, which `_pack` is allowed to bisect. For
+# those the mark covers the containing paragraph - a superset of the
+# chunk, never a subset.
+
+_THREE_BLOCKS = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n"
+
+
+def test_no_range_renders_exactly_as_before():
+    """The marking is opt-in. A reader who asked for no chunk gets the
+    document byte for byte as it rendered before this existed."""
+    assert to_html(_THREE_BLOCKS, marked=None) == to_html(_THREE_BLOCKS)
+
+
+def test_the_marked_block_carries_the_anchor():
+    start = _THREE_BLOCKS.index("Second")
+    end = _THREE_BLOCKS.index("Third")
+
+    rendered = to_html(
+        _THREE_BLOCKS, marked=MarkedRange(start=start, end=end, anchor="chunk-1")
+    )
+
+    assert 'id="chunk-1"' in rendered
+    # The anchor opens before the marked paragraph and closes after
+    # it, so the marked text falls inside the element that carries it.
+    marked = rendered[rendered.index('id="chunk-1"') :]
+    assert "Second paragraph." in marked[: marked.index("</div>")]
+
+
+def test_blocks_outside_the_range_are_not_marked():
+    start = _THREE_BLOCKS.index("Second")
+    end = _THREE_BLOCKS.index("Third")
+
+    rendered = to_html(
+        _THREE_BLOCKS, marked=MarkedRange(start=start, end=end, anchor="chunk-1")
+    )
+
+    before, _, rest = rendered.partition('id="chunk-1"')
+    inside, _, after = rest.partition("</div>")
+    assert "First paragraph." in before
+    assert "Third paragraph." in after
+    assert "First" not in inside and "Third" not in inside
+
+
+def test_a_range_over_several_blocks_is_one_mark_and_not_several():
+    """One chunk is one passage. Marking each paragraph separately
+    would read as three matches where the index recorded one."""
+    start = _THREE_BLOCKS.index("First")
+    end = len(_THREE_BLOCKS)
+
+    rendered = to_html(
+        _THREE_BLOCKS, marked=MarkedRange(start=start, end=end, anchor="chunk-0")
+    )
+
+    assert rendered.count('id="chunk-0"') == 1
+    assert rendered.count('class="chunk"') == 1
+
+
+def test_a_range_beginning_mid_block_marks_the_whole_block():
+    """The 2.7% case, asserted as a superset rather than avoided.
+
+    `_pack` bisects a prose paragraph longer than `size`, so a chunk
+    can begin part-way through one. Marking the containing paragraph
+    shows more than the chunk and never less; marking only the exact
+    characters would need reliable inline source offsets, which
+    markdown-it does not provide."""
+    start = _THREE_BLOCKS.index("paragraph", _THREE_BLOCKS.index("Second"))
+    end = _THREE_BLOCKS.index("Third")
+
+    rendered = to_html(
+        _THREE_BLOCKS, marked=MarkedRange(start=start, end=end, anchor="chunk-1")
+    )
+
+    marked = rendered[rendered.index('id="chunk-1"') :]
+    inside = marked[: marked.index("</div>")]
+    assert "Second paragraph." in inside
+
+
+def test_marking_does_not_disturb_the_maths():
+    """The mark wraps blocks and must not re-parse their contents:
+    `dollarmath` protects `$x*y*z$`, and a marked document is still a
+    document."""
+    source = "before\n\nmass $x*y*z$ here\n\nafter\n"
+    start = source.index("mass")
+    end = source.index("after")
+
+    rendered = to_html(
+        source, marked=MarkedRange(start=start, end=end, anchor="chunk-1")
+    )
+
+    assert "<em>" not in rendered
+    assert "x*y*z" in rendered
+
+
+def test_marking_does_not_let_raw_html_through():
+    """The wrapper is emitted by kennis; the document's own HTML is
+    still refused. A marked document is not a more trusting one."""
+    source = "plain\n\n<script>alert(1)</script>\n\nmore\n"
+    start = source.index("<script>")
+    end = source.index("more")
+
+    rendered = to_html(
+        source, marked=MarkedRange(start=start, end=end, anchor="chunk-1")
+    )
+
+    assert "<script>" not in rendered
+    assert 'id="chunk-1"' in rendered
+
+
+def test_a_range_past_the_end_of_the_document_marks_nothing():
+    """Defensive rather than theoretical: the range comes from an
+    index, and an index can be behind the document it describes. The
+    staleness guard is the real answer, and this is what happens if it
+    ever fails to fire."""
+    rendered = to_html(
+        _THREE_BLOCKS, marked=MarkedRange(start=10_000, end=20_000, anchor="chunk-9")
+    )
+
+    assert 'id="chunk-9"' not in rendered
+    assert "First paragraph." in rendered
+
+
+# ---------------------------------------------------------------------------
+# The two sides address the same string
+# ---------------------------------------------------------------------------
+
+
+def test_the_chunker_and_the_reader_address_the_same_text():
+    """The load-bearing agreement, asserted rather than assumed.
+
+    The reader renders `Document.body`; the chunker chunks
+    `rag.Document.text`, which `rag/loaders.py` fills from `held.body`.
+    Were a loader ever to index the file including its frontmatter,
+    every offset would be long by the length of that block and the
+    mark would sit confidently on the wrong paragraph - wrong by a
+    plausible amount, which is the hardest kind to notice.
+
+    Asserting that the marked text *is* the chunk's text checks both
+    halves at once: that the offsets mean what the renderer thinks,
+    and that the two modules measure from the same origin."""
+    body = "\n\n".join(f"Paragraph number {number}." for number in range(12)) + "\n"
+    document = RagDocument(
+        id="d", collection="notes", text=body, source_path="d.md", metadata={}
+    )
+
+    chunks = chunk_document(
+        document, collection="notes", parameters=ChunkParameters(size=120, overlap=0)
+    )
+    assert len(chunks) > 2, "the sample must produce several chunks to be a test"
+
+    chunk = chunks[1]
+    rendered = to_html(
+        body,
+        marked=MarkedRange(
+            start=chunk.char_start, end=chunk.char_end, anchor="chunk-1"
+        ),
+    )
+    inside = rendered[rendered.index('id="chunk-1"') :].partition("</div>")[0]
+
+    for sentence in chunk.text.split("\n\n"):
+        if sentence.strip():
+            assert sentence.strip() in inside

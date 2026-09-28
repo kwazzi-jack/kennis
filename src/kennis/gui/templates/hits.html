@@ -7,7 +7,7 @@
 <ol class="hits">
 {% for hit in hits %}
   <li>
-    <a class="role-operation" href="/document/{{ hit.collection }}/{{ hit.document_id }}">{{ hit.headline }}</a>
+    <a class="role-operation" href="{{ hit.href }}">{{ hit.headline }}</a>
     <p class="role-muted detail">{{ hit.detail }}</p>
     {% if hit.body %}<p class="body">{{ hit.body }}</p>{% endif %}
   </li>

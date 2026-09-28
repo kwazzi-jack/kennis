@@ -18,7 +18,7 @@ from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION, load_bundle_index
 from kennis.engine.corpus.layout import index_root
-from kennis.engine.errors import ContextNotFound
+from kennis.engine.errors import ContextNotFound, KennisError
 from kennis.engine.rag.embedding import resolve_host
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.search import Mode, search
@@ -98,4 +98,42 @@ def mode_for(context: Context, index: LoadedIndex, collection: str) -> Mode:
     return "bm25" if asked == "bm25" else "dense" if asked == "dense" else "hybrid"
 
 
-__all__ = ["MAX_TOP_K", "context_for", "index_for", "mode_for", "search_scope"]
+def chunk_range(
+    context: Context, collection: str, document_id: str, chunk_index: int
+) -> tuple[int, int] | None:
+    """Where one chunk of one document starts and ends, in characters.
+
+    `Chunk` records `char_start` and `char_end` when the index is
+    built, so this is a lookup and not a computation - which is why
+    a reader can mark a passage exactly without re-chunking anything.
+
+    `None` rather than an exception for every way of not finding it:
+    an absent index, an unindexed document and a chunk number typed
+    into a query string are three different situations with one
+    answer for the caller, which is to show the document unmarked.
+    The reader must not lose the page over the mark.
+
+    Here rather than in a front end because it is the same question
+    #292's other two were: every front end that shows a document
+    beside a search result will ask it, and none of them owns it.
+    """
+    if chunk_index < 0:
+        return None
+    try:
+        index = index_for(context, collection)
+    except KennisError:
+        return None
+    for chunk in index.chunks:
+        if chunk.document_id == document_id and chunk.chunk_index == chunk_index:
+            return (chunk.char_start, chunk.char_end)
+    return None
+
+
+__all__ = [
+    "MAX_TOP_K",
+    "chunk_range",
+    "context_for",
+    "index_for",
+    "mode_for",
+    "search_scope",
+]
