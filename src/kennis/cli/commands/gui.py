@@ -41,7 +41,16 @@ def gui_command(browser_only: bool) -> None:
         display.detail("+", url)
         display.guidance("The token is in the address and lasts for this run only.")
 
-    run(announce, browser_only=browser_only)
+    def no_window() -> None:
+        # Not a warning: nothing is wrong and nothing failed. The
+        # interface is open, in the place the platform allowed.
+        display.guidance(
+            "No window backend is available here, so this opened in a "
+            "browser instead. A native window on Linux needs GTK or Qt "
+            "bindings for Python."
+        )
+
+    run(announce, browser_only=browser_only, on_no_window=no_window)
 
 
 __all__ = ["gui_command"]

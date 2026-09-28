@@ -17,6 +17,7 @@ from pywebview's own internals.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import webbrowser
@@ -40,7 +41,12 @@ ANY_PORT: Final = 0
 _WINDOW_TITLE: Final = "kennis"
 
 
-def run(on_ready: Callable[[str], None], *, browser_only: bool = False) -> None:
+def run(
+    on_ready: Callable[[str], None],
+    *,
+    browser_only: bool = False,
+    on_no_window: Callable[[], None] | None = None,
+) -> None:
     """Serve until the window closes or the user interrupts.
 
     `on_ready` is handed the address **before** this blocks, and that
@@ -51,8 +57,12 @@ def run(on_ready: Callable[[str], None], *, browser_only: bool = False) -> None:
     `webbrowser.open` may silently fail, that address is the only way
     back in.
 
-    This module is not a front end's voice, so it hands the address
-    over and the command decides what is said about it.
+    `on_no_window` is called when a native window was wanted and the
+    platform could not provide one, before the browser is opened. A
+    browser tab appearing where a window was asked for needs saying.
+
+    This module is not a front end's voice, so it hands both over and
+    the command decides what is said about them.
     """
     token = new_token()
     server = uvicorn.Server(
@@ -73,7 +83,16 @@ def run(on_ready: Callable[[str], None], *, browser_only: bool = False) -> None:
     on_ready(url)
 
     try:
-        if browser_only or not _shown_in_a_window(url):
+        if browser_only:
+            webbrowser.open(url)
+            _wait_until_interrupted()
+        elif not _shown_in_a_window(url):
+            # A window was wanted and could not be had. Said out loud,
+            # because the alternative is a browser tab appearing with
+            # no explanation of why it is not the window that was
+            # asked for.
+            if on_no_window is not None:
+                on_no_window()
             webbrowser.open(url)
             _wait_until_interrupted()
     finally:
@@ -99,6 +118,26 @@ def _port_of(server: uvicorn.Server, timeout: float = 10.0) -> int:
     raise RuntimeError("the interface did not start listening")
 
 
+class _DropsBackendProbes(logging.Filter):
+    """Drops pywebview's report that a backend could not be loaded.
+
+    On Linux with neither GTK nor Qt bindings installed, pywebview
+    logs a full traceback per backend it tried - `ModuleNotFoundError:
+    No module named 'gi'`, then the same for `qtpy` - before raising.
+    kennis handles that condition and opens a browser instead, so two
+    tracebacks make a handled fallback read as a crash.
+
+    **A filter on the message, not a silenced logger.** Silencing
+    `pywebview` for the duration would also hide anything that goes
+    wrong while a window that *did* open is running, which is the case
+    a person would actually need to see. This drops the two records
+    that are noise and passes everything else through.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "cannot be loaded" not in record.getMessage()
+
+
 def _shown_in_a_window(url: str) -> bool:
     """True if a native window was opened and has now been closed.
 
@@ -114,11 +153,15 @@ def _shown_in_a_window(url: str) -> bool:
         import webview
     except ImportError:
         return False
+    quiet = _DropsBackendProbes()
+    logging.getLogger("pywebview").addFilter(quiet)
     try:
         webview.create_window(_WINDOW_TITLE, url)
         webview.start()
     except Exception:
         return False
+    finally:
+        logging.getLogger("pywebview").removeFilter(quiet)
     return True
 
 
