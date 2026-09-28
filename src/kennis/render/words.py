@@ -269,15 +269,66 @@ def conversion_repairs(count: int) -> str:
 def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
     """What became of the index after a note was remembered.
 
-    `unindexed` deliberately says nothing here: the collection has no index
-    at all, and what the reader needs then is the command that builds one,
-    which is a next step rather than a clause in a report line.
+    A `match` with an arm per value and no fall-through, so a fifth
+    outcome added without a word is a type error. It replaced a chain
+    of `if`s whose final `return` swallowed `deferred` into the
+    sentence meant for `unindexed`, which are two different facts: one
+    says there is no index, the other says there is one and somebody
+    else is rebuilding it.
+
+    `skipped` deliberately says nothing: the caller asked for no
+    indexing and does not need telling what it asked for.
     """
-    if outcome == "indexed":
-        return f"indexed, {count_of(chunk_count, 'chunk')}"
-    if outcome == "skipped":
-        return ""
-    return "not indexed"
+    match outcome:
+        case "indexed":
+            return f"indexed, {count_of(chunk_count, 'chunk')}"
+        case "skipped":
+            return ""
+        case "unindexed":
+            return "not indexed"
+        case "deferred":
+            return "not indexed - another process is rebuilding it"
+
+
+def describe_busy_indexes(collections: Sequence[str]) -> str:
+    """Which indexes another process was already rebuilding.
+
+    Said because the alternative was worse than silence: a build that
+    reached no collection reports zero documents, and the command line
+    then printed "nothing to index" at a corpus that was full. Found by
+    running the command. Concern #331.
+    """
+    one = len(collections) == 1
+    return (
+        f"{joined(list(collections))} {'is' if one else 'are'} being rebuilt "
+        f"by another kennis process, so {'it was' if one else 'they were'} "
+        f"left alone"
+    )
+
+
+def describe_uncommitted_build() -> str:
+    """A build that finished while something else held the corpus.
+
+    The index is published and searchable; only its commit waits. Said
+    rather than swallowed, because a corpus whose history does not
+    mention an index it has is a corpus somebody will wonder about.
+    """
+    return (
+        "the corpus was busy, so this index is published but not yet "
+        "committed; the next write records it"
+    )
+
+
+def needs_an_index(outcome: IndexOutcome) -> bool:
+    """Whether the note that was just written is findable.
+
+    Two ways it is not, and they share a remedy: the collection has no
+    index, or one was being rebuilt while this note was written. Both
+    are fixed by `kennis corpus index`, so a front end asks this
+    rather than listing the values it has to care about - which is how
+    `deferred` would otherwise have been missed in three places.
+    """
+    return outcome in ("unindexed", "deferred")
 
 
 def fetching_model(model: str) -> str:

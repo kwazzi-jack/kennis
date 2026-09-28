@@ -46,6 +46,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync, sync_corpus
+from kennis.engine.errors import CorpusBusy, IndexBusy
 from kennis.engine.events import EventSink
 from kennis.engine.history.history import commit_summary, outcome_summary
 from kennis.engine.history.outofband import (
@@ -78,14 +79,26 @@ class BuiltIndex:
 class IndexBuild:
     """What one `index` invocation built, per collection and in total.
 
-    `describes` is the binding as a phrase only in the sense that the
-    model's kind and name are two fields kennis is quoting; a front end
-    that wants to say "using ..." has both, and one that wants to say
-    nothing ignores them. `model` is None for a lexical-only binding,
-    which is a different sentence rather than an empty one.
+    The model's kind and name are two fields kennis is quoting; a front
+    end that wants to say "using ..." has both, and one that wants to
+    say nothing ignores them. Both are None for a lexical-only
+    binding, which is a different sentence rather than an empty one.
+
+    `busy` names the collections another process was already
+    rebuilding. Recorded rather than raised, so that one contended
+    index does not abandon the two that were free - and so that what
+    *was* built is still committed. Concern #167.
     """
 
     built: list[BuiltIndex]
+    busy: tuple[str, ...] = ()
+    # False when the corpus was being written while the build
+    # finished, so what it built is on disk and published but not yet
+    # in history. Recorded rather than raised: a build costs minutes
+    # and a commit costs milliseconds, and failing the whole command
+    # at the last step would throw away the expensive part for the
+    # cheap one. The next write commits it.
+    committed: bool = True
     model_kind: str | None = None
     model_name: str | None = None
 
@@ -168,14 +181,24 @@ def build_indexes(
     repository = Repository(context.corpus_root)
     root = index_root(context.corpus_root)
     built: list[BuiltIndex] = []
+    busy: list[str] = []
+
+    # **The corpus lock is taken twice and briefly, not once and for the
+    # duration.** A build takes minutes; holding the corpus across it
+    # meant a note written meanwhile was refused and lost, which is
+    # what concern #167 is. Each build takes its own index lock inside
+    # `build_index`, so the index is still guarded - what is released
+    # is the documents, which a build only reads.
     with corpus_lock(context.corpus_root):
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        for name in [collection] if collection else list(COLLECTION_NAMES):
-            target = Collection(root=context.corpus_root, name=name)
-            if not target.contents().documents:
-                continue
+
+    for name in [collection] if collection else list(COLLECTION_NAMES):
+        target = Collection(root=context.corpus_root, name=name)
+        if not target.contents().documents:
+            continue
+        try:
             report = build_index(
                 CollectionLoader(target),
                 index_root=root,
@@ -184,30 +207,45 @@ def build_indexes(
                 embed_batch_size=context.settings.embedding.batch_size,
                 repository=repository,
             )
-            built.append(
-                BuiltIndex(
-                    collection=name,
-                    documents=report.document_count,
-                    chunks=report.chunk_count,
-                    elapsed_seconds=report.elapsed_seconds,
-                )
+        except IndexBusy:
+            busy.append(name)
+            continue
+        built.append(
+            BuiltIndex(
+                collection=name,
+                documents=report.document_count,
+                chunks=report.chunk_count,
+                elapsed_seconds=report.elapsed_seconds,
             )
-        result = IndexBuild(
-            built=built,
-            model_kind=binding.model.kind if binding.model else None,
-            model_name=binding.model.model if binding.model else None,
         )
-        # One commit for one user action, with what it actually built in
-        # the subject rather than a tally of outcomes, which an index has
-        # none of.
-        repository.commit(
-            "index",
-            scope=collection or "corpus",
-            summary=commit_summary(
-                {"documents": result.documents, "chunks": result.chunks}
-            ),
-        )
-    return result
+
+    documents = sum(index.documents for index in built)
+    chunks = sum(index.chunks for index in built)
+    committed = True
+    try:
+        with corpus_lock(context.corpus_root):
+            # One commit for one user action, with what it actually
+            # built in the subject rather than a tally of outcomes,
+            # which an index has none of.
+            repository.commit(
+                "index",
+                scope=collection or "corpus",
+                summary=commit_summary({"documents": documents, "chunks": chunks}),
+            )
+    except CorpusBusy:
+        # The build released the corpus while it ran, so something else
+        # may hold it now - a `remember` from an agent is exactly the
+        # case section 16 describes. The index is published and usable
+        # either way; only its commit waits for the next write.
+        committed = False
+
+    return IndexBuild(
+        built=built,
+        busy=tuple(busy),
+        committed=committed,
+        model_kind=binding.model.kind if binding.model else None,
+        model_name=binding.model.model if binding.model else None,
+    )
 
 
 def synchronise_corpus(

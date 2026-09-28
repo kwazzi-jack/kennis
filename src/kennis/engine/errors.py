@@ -92,6 +92,21 @@ class CorpusBusy(KennisError):
     default_resolution = "kennis corpus status"
 
 
+class IndexBusy(KennisError):
+    """Another kennis process is rebuilding this collection's index.
+
+    Distinct from `CorpusBusy` because the two guard different things
+    and degrade differently. A busy *corpus* means a document write
+    cannot happen at all. A busy *index* means the documents are
+    writable and only the rebuild has to wait - which is why
+    `remember` writes the note and reports the index as deferred
+    rather than losing it. Design section 16, concern #167.
+    """
+
+    default_message = "this index is being rebuilt by another kennis process"
+    default_resolution = "kennis corpus index"
+
+
 class GitUnavailable(KennisError):
     """The `git` binary is missing.
 

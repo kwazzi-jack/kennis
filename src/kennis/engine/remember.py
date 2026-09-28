@@ -30,7 +30,7 @@ from kennis.engine.corpus.add import Uniqueness, duplicate_of, write_note
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.intake import Converted, sha256_of, title_from_markdown
 from kennis.engine.corpus.layout import index_root
-from kennis.engine.errors import InputError
+from kennis.engine.errors import IndexBusy, InputError
 from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.repository import Repository
 from kennis.engine.rag.binding import Binding
@@ -50,11 +50,18 @@ _TITLE_LIMIT = 60
 
 # `indexed` - the note is searchable now. `unindexed` - the collection has no
 # index yet, so it is not, and building one is a separate deliberate act.
-# `skipped` - the caller asked for no indexing.
+# `skipped` - the caller asked for no indexing. `deferred` - another process
+# was already rebuilding this index, so the note was written and the rebuild
+# was not attempted.
+#
+# `deferred` is the one that exists so a note is never lost. Design section
+# 16: `remember` must not block a tool call waiting for a lock, so on
+# contention it writes the note - the durable part, and per-file atomic -
+# and reports that the index was left alone. Concern #167.
 #
 # A value rather than a sentence: the engine names things and does not phrase
 # them, so what this means in words lives in `render/`. Invariant #81.
-type IndexOutcome = Literal["indexed", "unindexed", "skipped"]
+type IndexOutcome = Literal["indexed", "unindexed", "skipped", "deferred"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,14 +200,21 @@ def _index(
     # thing the reader needs to know, so both report `unindexed`.
     if manifest is None or manifest.index_id != index_id_for(binding):
         return "unindexed", 0
-    report = build_index(
-        CollectionLoader(collection),
-        index_root=root,
-        binding=binding,
-        events=events,
-        embed_batch_size=embed_batch_size,
-        repository=repository,
-    )
+    try:
+        report = build_index(
+            CollectionLoader(collection),
+            index_root=root,
+            binding=binding,
+            events=events,
+            embed_batch_size=embed_batch_size,
+            repository=repository,
+        )
+    except IndexBusy:
+        # The note is already written and committed by the caller. A
+        # rebuild that cannot happen now is the gap section 15 argues
+        # is acceptable; waiting for it, or refusing the write, are
+        # both worse. Concern #167.
+        return "deferred", 0
     return "indexed", report.chunk_count
 
 

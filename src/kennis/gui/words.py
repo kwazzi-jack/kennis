@@ -25,6 +25,7 @@ from kennis.render.words import (
     describe_freshness,
     index_state,
     joined,
+    needs_an_index,
 )
 
 NOTHING_FOUND = "No passages matched."
@@ -140,14 +141,17 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
             role="role-unchanged",
             where=where,
         )
-    if report.index_outcome == "unindexed":
+    if needs_an_index(report.index_outcome):
+        state = index_state(report.index_outcome, report.chunk_count)
         return ShownOutcome(
-            message=f"Remembered: {report.title}",
+            message=f"Remembered: {report.title} - {state}",
             role="role-operation",
             where=where,
             # The note is written and is not findable, and nothing on
             # this page can change that - so it is a command, not a
-            # clause appended to the good news.
+            # clause appended to the good news. The Index section on
+            # the manage page runs it, but a deferred rebuild is the
+            # one case where waiting a moment is also an answer.
             resolution="kennis corpus index",
         )
     state = index_state(report.index_outcome, report.chunk_count)

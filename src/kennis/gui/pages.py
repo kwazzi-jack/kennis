@@ -48,6 +48,7 @@ from kennis.render.packs import (
     describe_unfetched,
 )
 from kennis.render.refusals import describe_refusal, remedies_for_refusal
+from kennis.render.words import describe_busy_indexes, describe_uncommitted_build
 
 # Bands rather than raw fused scores, as the other two front ends use:
 # a fused score is a function of rank and says nothing an ordered list
@@ -313,6 +314,17 @@ def _shown_outcome(outcome: AddOutcome) -> ShownItem:
 
 def shown_index(built: IndexBuild) -> ShownJob:
     """An index build, one line per collection that had anything in it."""
+    notes: list[str] = []
+    if built.busy:
+        # Before the emptiness note and instead of it: a build that
+        # reached no collection built nothing, and "there is nothing
+        # to index" at a corpus that is full is false rather than
+        # merely unhelpful. Concern #331.
+        notes.append(describe_busy_indexes(built.busy))
+    elif not built.built:
+        notes.append(words.NOTHING_TO_INDEX)
+    if not built.committed:
+        notes.append(describe_uncommitted_build())
     return ShownJob(
         headline=words.indexed_headline(built),
         items=tuple(
@@ -324,7 +336,7 @@ def shown_index(built: IndexBuild) -> ShownJob:
             )
             for index in built.built
         ),
-        notes=() if built.built else (words.NOTHING_TO_INDEX,),
+        notes=tuple(notes),
         role="role-added" if built.built else "role-muted",
     )
 
