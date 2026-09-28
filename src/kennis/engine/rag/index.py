@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -83,7 +83,16 @@ class BuildReport:
     index_id: str
     index_dir: Path
     document_count: int
+    # The collection's chunks. A build indexes everything, so this is
+    # the collection's total and not any one document's - which is
+    # what `remember` read it as, reporting a one-sentence note as
+    # four chunks. Concern #344.
     chunk_count: int
+    # Chunks per document, keyed by `Document.id`, for a caller that
+    # wrote one document and wants to say what became of it. Free:
+    # the builder already holds the chunks grouped this way, so this
+    # is a `len` per entry rather than a second pass over any text.
+    chunks_by_document: Mapping[str, int]
     # Documents whose vectors had to be computed. The rest came from the
     # cache, which is the whole point of having one.
     embedded_count: int
@@ -263,6 +272,10 @@ def _publish(
         index_dir=index_dir,
         document_count=len(documents),
         chunk_count=len(chunks),
+        chunks_by_document={
+            document.id: len(document_chunks)
+            for document, _, document_chunks in chunked
+        },
         embedded_count=embedded,
         pruned_count=pruned,
         elapsed_seconds=time.monotonic() - started_at,

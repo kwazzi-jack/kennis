@@ -91,6 +91,10 @@ from kennis.writing import write_context_note, write_note
 
 _HERE: Final = Path(__file__).parent
 _TEMPLATES: Final = Jinja2Templates(directory=str(_HERE / "templates"))
+# A global rather than a per-route context entry: the header is on
+# every page, and not every route builds its context through
+# `_frame`.
+_TEMPLATES.env.globals["nav_labels"] = words.NAV_LABELS
 
 # The scopes a person may search, in the order they are offered. The
 # bundle last because it is the one that is not always there.

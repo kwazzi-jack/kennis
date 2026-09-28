@@ -9,6 +9,7 @@ not a fact about a document - it is a control on a page.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Final
 
 from kennis.engine.context.notes import BundleNote
 from kennis.engine.corpus.add import AddReport
@@ -28,7 +29,7 @@ from kennis.render.words import (
     needs_an_index,
 )
 
-NOTHING_FOUND = "No passages matched."
+NOTHING_FOUND = "Nothing matched. Try fewer words, or a wider scope."
 
 SEARCH_HINT = "Search everything kennis holds"
 
@@ -38,7 +39,17 @@ SCOPE_LABEL = "Where to look"
 
 EVERYWHERE_LABEL = "everywhere"
 
-BACK_TO_SEARCH = "back to the results"
+BACK_TO_SEARCH = "Back to the results"
+
+# The header's labels, keyed by the path they lead to. Here
+# rather than in `base.html` because they are words, and
+# because a label that disagreed with the page's own heading
+# called the same page two things. A test compares them.
+NAV_LABELS: Final[dict[str, str]] = {
+    "held": "What is held",
+    "remember": "Remember",
+    "manage": "Manage",
+}
 
 NOTHING_TO_INDEX = "There is nothing to index yet."
 
@@ -48,11 +59,11 @@ BUNDLE_NOT_COMMITTED = (
 )
 
 NOTHING_MATERIALISED = (
-    "Nothing is materialised yet. A sync converges each scope with what "
-    "every installed pack declares."
+    "Nothing has reached a collection yet. Installing records what the "
+    "pack declares; a sync brings it in."
 )
 
-BUSY_WITH_ANOTHER = "One operation runs at a time, and one is running now."
+BUSY_WITH_ANOTHER = "Something else is running. kennis does one at a time."
 
 CORPUS_BUSY_RETRY = (
     "The corpus is busy - something else is writing to it. Nothing was "
@@ -89,16 +100,16 @@ PACK_PREAMBLE = (
 
 PACK_ACTION = "Install"
 
-NOT_SEARCHABLE_YET = (
-    "This is not searchable until the index is rebuilt, which the Index "
-    "section above does."
-)
+# No "the Index section above": Add is first on the manage page
+# and Index is third, so the sentence was wrong as well as
+# fragile. A message does not name a position on a page.
+NOT_SEARCHABLE_YET = "Not searchable until the index is rebuilt."
 
-NO_SUCH_JOB = "That operation is not one this interface is running."
+NO_SUCH_JOB = "That operation has finished, or was never started here."
 
 STILL_RUNNING = "This is still running."
 
-NOTHING_TO_SHOW = "That operation reported nothing."
+NOTHING_TO_SHOW = "That operation finished without reporting anything."
 
 MARK_WITHHELD = (
     "This document has changed since the index was built, so the passage "
@@ -115,7 +126,7 @@ LOAD_IMAGES = "Load them"
 
 NEVER_INDEXED = "never indexed"
 
-CORPUS_CHANGED = "The corpus has changed since this page was drawn. Reload to see it."
+CORPUS_CHANGED = "Something else has changed the corpus. Reload to see it."
 
 NOTHING_HELD = "This corpus holds no documents yet."
 
@@ -257,21 +268,42 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
 
 
 __all__ = [
+    "ADD_ACTION",
+    "ADD_PREAMBLE",
     "BACK_TO_SEARCH",
+    "BUNDLE_NOT_COMMITTED",
+    "BUSY_WITH_ANOTHER",
     "CORPUS_BUSY",
+    "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
+    "EVERYWHERE_LABEL",
     "GROUP_HINT",
     "IMAGES_BLOCKED",
+    "INDEX_ACTION",
+    "INDEX_PREAMBLE",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
     "NEVER_INDEXED",
     "NOTHING_FOUND",
     "NOTHING_HELD",
+    "NOTHING_MATERIALISED",
+    "NOTHING_TO_ADD",
+    "NOTHING_TO_INDEX",
     "NOTHING_TO_REMEMBER",
+    "NOTHING_TO_SHOW",
+    "NOT_SEARCHABLE_YET",
     "NO_PACKS",
+    "NO_SUCH_JOB",
+    "PACK_ACTION",
+    "PACK_PREAMBLE",
     "REMEMBER_ACTION",
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
+    "SCOPE_LABEL",
+    "SEARCH_ACTION",
+    "SEARCH_HINT",
+    "STILL_RUNNING",
+    "SYNC_PREAMBLE",
     "TITLE_HINT",
     "describe_count",
     "describe_holding",

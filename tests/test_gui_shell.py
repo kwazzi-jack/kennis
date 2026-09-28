@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
+from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
@@ -222,7 +223,7 @@ def test_a_search_that_matches_nothing_says_so(corpus: Path, client: TestClient)
 
     found = client.get("/hits", params={"q": "zzzznotaword", "scope": "notes"})
 
-    assert "No passages matched." in found.text
+    assert words.NOTHING_FOUND in found.text
 
 
 def test_a_scope_with_no_index_reports_the_command_that_builds_one(
