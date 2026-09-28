@@ -621,3 +621,72 @@ def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(
     assert "context" in answer.text.lower()
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     assert not held.documents
+
+
+# ---------------------------------------------------------------------------
+# What a missing window backend looks like
+# ---------------------------------------------------------------------------
+
+
+def test_the_backend_probe_tracebacks_are_dropped_and_nothing_else_is():
+    """On Linux with neither GTK nor Qt bindings, pywebview logs a
+    full traceback per backend it tried before raising. kennis handles
+    that and opens a browser, so the tracebacks make a handled
+    fallback read as a crash - which is what it did when Brian first
+    ran it.
+
+    A filter on the message, not a silenced logger: silencing
+    `pywebview` for the duration would also hide anything going wrong
+    in a window that *did* open, which is the case someone would
+    actually need to see. So the test asserts both halves.
+    """
+    import logging
+
+    from kennis.gui.serve import _DropsBackendProbes
+
+    dropping = _DropsBackendProbes()
+
+    def record(message: str) -> logging.LogRecord:
+        return logging.LogRecord(
+            "pywebview", logging.ERROR, __file__, 1, message, None, None
+        )
+
+    assert not dropping.filter(record("GTK cannot be loaded"))
+    assert not dropping.filter(record("QT cannot be loaded"))
+    # Everything else still reaches the person running it.
+    assert dropping.filter(record("the window crashed"))
+    assert dropping.filter(record("failed to render the page"))
+
+
+def test_the_browser_fallback_is_announced(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A browser tab appearing where a window was asked for needs
+    saying, or it reads as the wrong thing happening silently."""
+    import kennis.gui.serve as serving
+
+    said: list[str] = []
+    monkeypatch.setattr(serving, "_shown_in_a_window", lambda url: False)
+    monkeypatch.setattr(serving.webbrowser, "open", lambda url: True)
+    monkeypatch.setattr(serving, "_wait_until_interrupted", lambda: None)
+
+    serving.run(lambda url: None, on_no_window=lambda: said.append("no window"))
+
+    assert said == ["no window"]
+
+
+def test_a_window_that_opens_is_not_announced_as_a_fallback(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The other side, so the test above cannot pass by announcing
+    always."""
+    import kennis.gui.serve as serving
+
+    said: list[str] = []
+    monkeypatch.setattr(serving, "_shown_in_a_window", lambda url: True)
+    monkeypatch.setattr(serving.webbrowser, "open", lambda url: True)
+    monkeypatch.setattr(serving, "_wait_until_interrupted", lambda: None)
+
+    serving.run(lambda url: None, on_no_window=lambda: said.append("no window"))
+
+    assert said == []
