@@ -95,7 +95,30 @@ _TEMPLATES: Final = Jinja2Templates(directory=str(_HERE / "templates"))
 # A global rather than a per-route context entry: the header is on
 # every page, and not every route builds its context through
 # `_frame`.
-_TEMPLATES.env.globals["nav_labels"] = words.NAV_LABELS
+# The sidebar's state is a cookie rather than browser storage, so
+# the server renders it and the first byte is already right. Read
+# after paint from `localStorage`, a collapsed sidebar would show
+# open and then collapse on every page load.
+#
+# A global **function** taking the request, not a constant and not
+# `_frame`: it varies per request, so a constant is wrong, and not
+# every route builds its context through `_frame`, so a value put
+# there is undefined on the pages that do not.
+_SIDEBAR_COOKIE: Final = "sidebar"
+_CLOSED: Final = "closed"
+_OPEN: Final = "open"
+
+
+def _sidebar_state(request: Request) -> str:
+    """`closed` only for exactly that value. Anything can be in a
+    cookie, and the default is the state that shows what is there."""
+    return _CLOSED if request.cookies.get(_SIDEBAR_COOKIE) == _CLOSED else _OPEN
+
+
+_TEMPLATES.env.globals["sidebar_state"] = _sidebar_state
+_TEMPLATES.env.globals["sidebar_links"] = words.SIDEBAR_LINKS
+_TEMPLATES.env.globals["sidebar_show"] = words.SIDEBAR_SHOW
+_TEMPLATES.env.globals["sidebar_hide"] = words.SIDEBAR_HIDE
 
 # The scopes a person may search, in the order they are offered. The
 # bundle last because it is the one that is not always there.
