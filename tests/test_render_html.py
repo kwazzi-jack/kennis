@@ -56,6 +56,110 @@ def test_a_displayed_equation_is_distinguished_from_an_inline_one():
     assert "math block" in rendered
 
 
+def test_display_maths_written_on_one_line_is_maths_not_dollar_signs():
+    """`$$x$$` inside a table cell is how the converted RIME paper
+    writes every equation it puts in a table, and there are 49 of
+    them. Without `double_inline` the inline rule matches the inner
+    pair and the outer dollars survive as text, so the reader sees
+    `$` then typeset maths then `$`. Measured: 104 stray dollar signs
+    in that one document."""
+    rendered = to_html("| a |\n|---|\n| $$\\mathsf{V}_{pq}$$ |\n")
+
+    assert "$" not in rendered
+    assert r"\mathsf{V}_{pq}" in rendered
+
+
+def test_display_maths_written_on_one_line_nests_where_text_nests():
+    """`mdit_py_plugins` renders `math_inline_double` as a `<div>`.
+    A `<div>` inside a `<p>` is nesting a browser escapes by closing
+    the paragraph early, which splits the sentence around the
+    equation. Inline maths has to be an inline element, which is the
+    reason kennis renders these tokens itself."""
+    rendered = to_html("before $$E = mc^2$$ after")
+
+    paragraph = rendered[rendered.index("<p>") : rendered.index("</p>")]
+    assert "<div" not in paragraph
+    assert "before" in paragraph and "after" in paragraph
+
+
+def test_a_shell_variable_is_not_mistaken_for_maths():
+    """The other direction, and the one that would be silent. Of the
+    dollar signs left in the corpus after this change, every one is a
+    shell variable, a shell prompt or a price. Consuming those would
+    turn documentation into empty space, and nothing would say so."""
+    rendered = to_html("Set `$XDG_CACHE_HOME` and `$HOME` before running.")
+
+    assert "$XDG_CACHE_HOME" in rendered
+    assert "$HOME" in rendered
+
+
+def test_every_maths_element_says_whether_it_is_displayed():
+    """`static/typeset.js` reads the class list to choose KaTeX's
+    `displayMode`, so the two files agree through the classes rather
+    than through two copies of the same rule. Every displayed form
+    carries `display`; the one inline form does not.
+
+    The selector matters too: it was `span.math`, and a displayed
+    equation is a `<div>`, so display maths was never typeset at all
+    and the reader saw raw TeX."""
+    displayed = (
+        "$$\nE = mc^2\n$$",
+        "$$\na = 1\n$$ (eq1)",
+        "text $$E = mc^2$$ text",
+    )
+    for source in displayed:
+        rendered = to_html(source)
+        assert 'class="math' in rendered, source
+        assert "display" in rendered, source
+
+    inline = to_html("text $E = mc^2$ text")
+    assert 'class="math inline"' in inline
+    assert "display" not in inline
+
+
+def test_an_empty_optional_argument_is_dropped_so_katex_can_read_it():
+    """MinerU writes `\\begin{array}[]{c}`. KaTeX reads the `[`, looks
+    for a column alignment and fails on the `]`, so 16 of one
+    paper's 419 expressions arrived on the page as red source text.
+    An empty option is not valid LaTeX either, which is what makes
+    it a conversion artefact rather than the author's maths."""
+    rendered = to_html(r"$$\begin{array}[]{c}a\\ b\end{array}$$")
+
+    assert "[]" not in rendered
+    assert r"\begin{array}{c}" in rendered
+
+
+def test_an_optional_argument_that_says_something_is_kept():
+    """The other direction, and the one that would change the maths
+    rather than repair the conversion: `[t]` sets the environment's
+    vertical alignment, and dropping it moves the equation."""
+    rendered = to_html(r"$$\begin{array}[t]{c}a\end{array}$$")
+
+    assert "[t]" in rendered
+
+
+def test_maths_is_escaped_before_it_reaches_the_page():
+    """kennis renders these tokens itself, so it escapes them itself.
+    TeX is full of characters that are markup in HTML - `<`, `>` and
+    `&` all appear in ordinary expressions - and an unescaped `<`
+    turns the rest of the equation into a tag the browser swallows.
+    KaTeX reads `textContent`, which is the unescaped text again, so
+    escaping costs the typesetter nothing."""
+    rendered = to_html("$a < b \\& c > d$")
+
+    assert "&lt;" in rendered and "&gt;" in rendered and "&amp;" in rendered
+
+
+def test_a_labelled_equation_keeps_its_label():
+    """`$$ ... $$ (eq1)` is how a paper numbers an equation. The
+    label arrives as the token's `info` and is dropped entirely if
+    the render rule ignores it, which loses the only thing the
+    document's own cross-references point at."""
+    rendered = to_html("$$\na = 1\n$$ (eq1)")
+
+    assert "eq1" in rendered
+
+
 # ---------------------------------------------------------------------------
 # Figures
 # ---------------------------------------------------------------------------

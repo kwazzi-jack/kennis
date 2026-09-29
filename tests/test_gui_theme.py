@@ -38,6 +38,7 @@ from kennis.gui.theme import (
     css_variables,
     stylesheet,
 )
+from kennis.render.html import to_html
 from kennis.render.theme import ANSI_COLOURS, ROLES, Role
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
@@ -303,6 +304,103 @@ def test_every_vendored_asset_is_accounted_for():
             continue
         assert any(fnmatch(path.name, pattern) for pattern in declared), (
             f"{path.name} is vendored and not declared in NOTICE.txt"
+        )
+
+
+_SELECTOR = re.compile(r'querySelectorAll\("([^"]+)"\)')
+
+
+def test_the_typesetter_selects_every_element_the_renderer_marks():
+    """`render/html.py` writes the maths elements and
+    `static/typeset.js` finds them, so the selector in the script and
+    the tags the renderer emits are one decision held in two files.
+
+    The selector was `span.math` and a displayed equation is a
+    `<div>`, so every equation a paper set on its own line stayed as
+    raw TeX. Nothing failed, because no test asked the script
+    anything.
+
+    This reads the selector out of the script rather than asserting a
+    literal, and checks each maths shape the renderer can produce
+    against it - so narrowing the selector, or changing an element
+    without changing the selector, both fail here."""
+    script = (TEMPLATES.parent / "static/typeset.js").read_text(encoding="utf-8")
+    found = _SELECTOR.search(script)
+    assert found is not None, "typeset.js does not call querySelectorAll"
+    tag, _, joined = found.group(1).partition(".")
+    wanted = set(joined.split("."))
+
+    shapes = ("$x$", "$$\nx\n$$", "text $$x$$ text", "$$\nx\n$$ (eq1)")
+    for source in shapes:
+        # Split rather than matched with a word boundary: a hyphen is
+        # a word boundary, so `\bmath\b` also matches `math-label`,
+        # which is the equation number and not maths to typeset.
+        drawn = re.findall(r'<(\w+) class="([^"]*)"', to_html(source))
+        marked = [(tag, names) for tag, names in drawn if "math" in names.split()]
+        assert marked, f"{source!r} produced no maths element"
+        for element, classes in marked:
+            assert not tag or element == tag, (
+                f"{source!r} renders a <{element}> and the script asks for <{tag}>"
+            )
+            assert wanted <= set(classes.split()), (
+                f"{source!r} renders class={classes!r}, the script asks for {wanted}"
+            )
+
+
+def test_the_typesetter_is_told_which_maths_is_displayed():
+    """KaTeX's `displayMode` comes from the class list, so the script
+    has to read the class `render/html.py` actually writes."""
+    script = (TEMPLATES.parent / "static/typeset.js").read_text(encoding="utf-8")
+    found = re.search(r'classList\.contains\("([^"]+)"\)', script)
+    assert found is not None, "typeset.js does not read a class for displayMode"
+    marker = found.group(1)
+
+    assert marker in to_html("$$\nx\n$$")
+    assert marker in to_html("text $$x$$ text")
+    assert marker not in to_html("text $x$ text")
+
+
+def test_a_table_scrolls_instead_of_widening_the_page():
+    """A converted paper sets its equations in single-cell tables -
+    55 of them in one document - and the widest measured 1050px
+    against a 1280px viewport whose margin had already taken 300px.
+    The whole page gained a horizontal scrollbar and the reading
+    column slid sideways under the reader.
+
+    `display: block` is what makes `overflow-x` apply to a table at
+    all; the rows keep their own layout inside it.
+
+    This asserts the rule is present, which is all a stylesheet test
+    can do. What established the defect and the fix was measuring
+    `document.documentElement.scrollWidth` against `clientWidth` in
+    a browser: 1348 against 1280 before, equal after."""
+    css = stylesheet()
+    rule = re.search(r"article table \{([^}]*)\}", css)
+    assert rule is not None, "tables have no rule of their own"
+    assert "overflow-x" in rule.group(1)
+    assert "display: block" in rule.group(1)
+
+
+def test_every_vendored_script_is_actually_loaded():
+    """A vendored script nothing loads is a licence obligation and a
+    repository's worth of bytes bought for nothing, and there is no
+    test that would notice.
+
+    `katex-auto-render.min.js` sat on every page for four units.
+    `typeset.js` renders the marked elements directly and explains in
+    its own comment why it does not use auto-render, so the bundle
+    was never called; a reader downloaded it on every page load. The
+    notice tests check that what is present is declared and what is
+    declared is present, which both passed, because neither asks
+    whether anything uses it."""
+    templates = TEMPLATES.parent / "templates"
+    loaded = " ".join(
+        path.read_text(encoding="utf-8") for path in templates.rglob("*.html")
+    )
+    scripts = (TEMPLATES.parent / "static/vendor").glob("*.js")
+    for script in sorted(scripts):
+        assert script.name in loaded, (
+            f"{script.name} is vendored and no template loads it"
         )
 
 
