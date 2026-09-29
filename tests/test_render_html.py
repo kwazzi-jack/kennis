@@ -325,3 +325,50 @@ def test_the_chunker_and_the_reader_address_the_same_text():
     for sentence in chunk.text.split("\n\n"):
         if sentence.strip():
             assert sentence.strip() in inside
+
+
+def test_a_leading_heading_that_repeats_the_title_is_dropped():
+    """Measured before fixing: 44 of the 45 crawled pages in the
+    corpus open with an `# H1` saying exactly what the frontmatter
+    title says, so the reader saw the title, then the provenance,
+    then the title again.
+
+    The v0.6c sketch recorded this as fixed and it was not; nothing
+    tested it. Concern #353.
+    """
+    shown = to_html("# Substitutions\n\nThe body.", without_title="Substitutions")
+
+    assert "<h1>" not in shown
+    assert "<p>The body.</p>" in shown
+
+
+def test_a_heading_saying_something_else_is_kept():
+    """Removing it would lose text the corpus holds."""
+    shown = to_html("# Another heading\n\nThe body.", without_title="The title")
+
+    assert "<h1>Another heading</h1>" in shown
+
+
+def test_a_second_level_heading_is_never_dropped():
+    """A `##` is structure rather than a title, even where its words
+    happen to match."""
+    shown = to_html("## The title\n\nThe body.", without_title="The title")
+
+    assert "<h2>The title</h2>" in shown
+
+
+def test_dropping_the_title_does_not_move_a_chunk_mark():
+    """The reason this happens to the tokens and never to the text.
+    `Chunk.char_start` addresses `Document.body`, so editing that
+    string before rendering would put every mark out by the
+    heading's length - the invariant a whole unit was built on."""
+    body = "# The title\n\nFirst paragraph.\n\nSecond paragraph.\n"
+    start = body.index("Second paragraph.")
+    marked = MarkedRange(start=start, end=start + len("Second paragraph."), anchor="c")
+
+    shown = to_html(body, marked=marked, without_title="The title")
+
+    assert "<h1>" not in shown
+    before, _, after = shown.partition('<div class="chunk" id="c">')
+    assert "First paragraph." in before
+    assert "Second paragraph." in after

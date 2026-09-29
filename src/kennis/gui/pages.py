@@ -35,6 +35,7 @@ from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
 from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
+from kennis.gui.snippet import marked_snippet, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import Holding
 from kennis.operations import IndexBuild
@@ -79,6 +80,12 @@ class ShownHit:
 
     headline: str
     detail: str
+    # **HTML, unlike the other two.** `headline` and `detail` are the
+    # strings `rendered_hit` hands every front end and they stay
+    # byte-identical; the snippet is the same source text rendered
+    # for this medium, because leaving `##` and `[[35](https://...)]`
+    # on the page is what the terminal's rule yields in a browser.
+    # Concerns #336 and #297.
     body: str | None
     collection: str
     document_id: str
@@ -93,6 +100,7 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
     """Every hit, rendered once, in rank order."""
     if not hits:
         return []
+    terms = terms_of(question)
     style, _ = score_style_for(hits, _STYLE)
     best = best_lexical(hits)
     shown: list[ShownHit] = []
@@ -102,7 +110,14 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
             ShownHit(
                 headline=rendered.headline,
                 detail=rendered.detail,
-                body=rendered.body,
+                # From the chunk rather than from `rendered.body`:
+                # `snippet_of` collapses the whitespace before
+                # truncating, so by then the heading and the
+                # paragraph after it are one line and a markdown
+                # parse would make a heading of both.
+                body=marked_snippet(hit.result.chunk.text, terms=terms)
+                if rendered.body is not None
+                else None,
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
                 href=_href(
@@ -293,7 +308,14 @@ def shown_document(
         collection=collection,
         path=relative_to_corpus(document.md_path, corpus_root),
         body_html=to_html(
-            document.body, load_remote_images=load_remote_images, marked=marked
+            document.body,
+            load_remote_images=load_remote_images,
+            marked=marked,
+            # The page already shows the title above the provenance.
+            # 44 of 45 crawled pages then repeated it as their first
+            # heading, so the reader saw it twice with the metadata
+            # wedged between. Concern #353.
+            without_title=document.frontmatter.title,
         ),
         has_blocked_images=_refers_remotely(document.body),
     )
@@ -343,7 +365,12 @@ def shown_bundle_document(
         document_id=relative_path,
         collection=CONTEXT_COLLECTION,
         path=f"{bundle.name}/{relative_path}",
-        body_html=to_html(body, load_remote_images=load_remote_images, marked=marked),
+        body_html=to_html(
+            body,
+            load_remote_images=load_remote_images,
+            marked=marked,
+            without_title=str(title),
+        ),
         has_blocked_images=_refers_remotely(body),
     )
 

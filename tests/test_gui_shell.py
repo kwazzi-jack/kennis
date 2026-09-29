@@ -120,7 +120,18 @@ def test_the_adapter_transliterates_and_does_not_choose():
     emitted = dict(_variables_of(css_variables()))
 
     for name, role in ROLES.items():
-        expected = CSS_COLOURS[role.colour] if role.colour else "inherit"
+        if role.colour:
+            expected = CSS_COLOURS[role.colour]
+        elif role.dim:
+            # Dim is a terminal attribute and a browser has none, so
+            # the adapter translates it to the muted grey rather than
+            # transliterating it away. Concern #351.
+            expected = CSS_COLOURS["bright_black"]
+        else:
+            # Not `inherit`: on a custom property at `:root` that is
+            # the guaranteed-invalid value, and `color: var(...)`
+            # then fell back to full ink.
+            expected = "currentColor"
         assert emitted[f"--role-{name}"] == expected, name
 
 
