@@ -263,11 +263,22 @@ def stylesheet() -> str:
     Generated rather than a static file because the roles are, and a
     static copy would be the second place a colour lives.
     """
+    dark = css_variables(CSS_COLOURS_DARK, DARK_GROUND)
     return (
         f":root {{\n{css_variables()}\n}}\n\n"
+        # The guard is the load-bearing part. This block is later in
+        # the sheet and applies to the same `:root`, so without it an
+        # explicit `light` would lose to a dark system - and choosing
+        # light would appear to do nothing on exactly the machines
+        # where a reader would want to.
         "@media (prefers-color-scheme: dark) {\n"
-        f":root {{\n{css_variables(CSS_COLOURS_DARK, DARK_GROUND)}\n}}\n"
+        f':root:not([data-theme="light"]) {{\n{dark}\n}}\n'
         "}\n\n"
+        # And this is what lets a reader on a light system ask for
+        # dark. `system` needs no rule: it is the absence of the
+        # attribute matching either of these, so the default is the
+        # behaviour that existed before there was a choice.
+        f':root[data-theme="dark"] {{\n{dark}\n}}\n\n'
         f"{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
     )
 
@@ -391,6 +402,12 @@ body { padding-left: var(--sidebar); }
 .sidebar .wordmark:hover { color: var(--ink); }
 
 .sidebar-toggle { align-self: flex-start; padding: 0.45rem 0.55rem; }
+
+/* Last in the sidebar and pushed to the bottom of it: a preference
+   is not a destination, and putting it in the list of six would
+   make it read as one. */
+.theme { margin-top: auto; font-size: 0.75rem; padding: 0.3rem 0.4rem; }
+:root[data-sidebar="closed"] .theme { display: none; }
 
 /* A shortcut lands its section against the top of the viewport
    otherwise, with the heading touching the edge. */

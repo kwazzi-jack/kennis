@@ -593,9 +593,13 @@ def test_everywhere_is_a_scope_and_it_is_the_default(corpus: Path, client: TestC
     # written between them, which says nothing about whether the
     # right scope is chosen. Concern #352's rule: assert the
     # property.
+    # The scope control only: the page has a theme control too, and
+    # its selected option is not a scope.
+    control = re.search(r'<select name="scope".*?</select>', page.text, re.DOTALL)
+    assert control is not None, "no scope select on the page"
     selected = [
         re.search(r'value="([^"]*)"', option)
-        for option in re.findall(r"<option\b[^>]*>", page.text)
+        for option in re.findall(r"<option\b[^>]*>", control.group(0))
         if " selected" in option
     ]
 

@@ -63,6 +63,19 @@ def admitted(app_client: TestClient) -> TestClient:
     return app_client
 
 
+def scope_select(page: str) -> str:
+    """Just the scope control.
+
+    The page has more than one `<select>` since the theme control
+    arrived, so a test that scanned every `<option>` was reading the
+    theme's too. Three tests broke at once, and all three had scoped
+    themselves by assuming there was only one select rather than by
+    saying which."""
+    found = re.search(r'<select name="scope".*?</select>', page, re.DOTALL)
+    assert found is not None, "no scope select on the page"
+    return found.group(0)
+
+
 def a_note(tmp_path: Path, name: str, body: str) -> None:
     run = CliRunner()
     source = tmp_path / "sources" / f"{name}.md"
@@ -120,7 +133,7 @@ def test_each_scope_option_carries_its_own_hint(corpus: Path, client: TestClient
     admitted(client)
 
     page = client.get("/").text
-    options = re.findall(r"<option\b[^>]*>", page)
+    options = re.findall(r"<option\b[^>]*>", scope_select(page))
 
     assert options
     for option in options:
