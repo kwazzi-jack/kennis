@@ -56,7 +56,7 @@ from kennis.engine.errors import (
 from kennis.engine.events import EventSink
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
-from kennis.gui import words
+from kennis.gui import history, words
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
     ShownJob,
@@ -70,6 +70,7 @@ from kennis.gui.pages import (
     shown_groups_of,
     shown_index,
     shown_install,
+    shown_recents,
     shown_rows,
     shown_skips,
 )
@@ -188,9 +189,27 @@ def build_app(token: str) -> FastAPI:
     async def serve_search(
         request: Request, q: str = "", scope: str = EVERY_SCOPE
     ) -> HTMLResponse:
-        return _TEMPLATES.TemplateResponse(
-            request, "search.html", _hits_context(q, scope)
-        )
+        context = _hits_context(q, scope)
+        # Only with no query. With one, the results have that space -
+        # a page showing both would put what was looked for before
+        # beside what was just found, which is two answers to one
+        # question.
+        context["recents"] = [] if q.strip() else shown_recents(history.recent())
+        context["recents_heading"] = words.RECENTS_HEADING
+        context["recents_clear"] = words.RECENTS_CLEAR
+        return _TEMPLATES.TemplateResponse(request, "search.html", context)
+
+    @app.post("/history/clear")
+    async def clear_history(request: Request) -> HTMLResponse:
+        # A POST, because a GET that writes is one a prefetcher will
+        # follow and this one destroys. The reader's own words are
+        # in here and there has to be a way to remove them.
+        history.clear()
+        context = _hits_context("", EVERY_SCOPE)
+        context["recents"] = []
+        context["recents_heading"] = words.RECENTS_HEADING
+        context["recents_clear"] = words.RECENTS_CLEAR
+        return _TEMPLATES.TemplateResponse(request, "recents.html", context)
 
     @app.get("/hits")
     async def serve_hits(
@@ -704,6 +723,22 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
         found = sweep(question, scopes=asked, named=scope != EVERY_SCOPE)
         context["groups"] = shown_groups_of(found, question)
         context["skips"] = shown_skips(found)
+        # Here rather than in either route, because both run a search
+        # and a reload, a Back and a keystroke must all record the
+        # same way. A refused search is not recorded: it found
+        # nothing because it could not run, which is not something to
+        # offer the reader again.
+        wanted = existing_corpus().settings.retrieval.default_top_k
+        history.record(
+            question,
+            scope=scope,
+            hits=sum(len(hits) for hits in found.groups.values()),
+            # Any scope that filled its quota had more to give, so
+            # the total is a floor. `default_top_k` is 3 per scope,
+            # which is why this is the usual case rather than the
+            # exception.
+            capped=any(len(hits) >= wanted for hits in found.groups.values()),
+        )
     except KennisError as error:
         context["problem"] = str(error)
         context["resolution"] = error.resolution

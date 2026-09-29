@@ -28,6 +28,11 @@ from kennis.render.words import (
     joined,
     needs_an_index,
 )
+from kennis.retrieval import EVERY_SCOPE
+
+RECENTS_HEADING = "Recent searches"
+
+RECENTS_CLEAR = "Forget these"
 
 NOTHING_FOUND = "Nothing matched. Try fewer words, or a wider scope."
 
@@ -258,6 +263,29 @@ def describe_count(holding: Holding) -> str:
     return f"{counted}, {holding.unreadable} unreadable"
 
 
+def describe_recent(scope: str, hits: int, *, capped: bool) -> str:
+    """The line beside a past search: where it looked and what it found.
+
+    The count is what it found *then*. The corpus has moved since -
+    a note written this morning may mean the same query answers
+    differently now - so this is a record of the search and not a
+    promise about re-running it.
+
+    **"at least" when a scope returned all it was asked for**, which
+    is most of the time: `default_top_k` is 3 per scope, so an
+    everywhere search over three indexed collections stops at 9 and
+    has no idea how many more there were. Every query reported "9
+    hits" until this said so, which is a number that looks measured
+    and is really a ceiling.
+    """
+    where = EVERYWHERE_LABEL if scope == EVERY_SCOPE else scope
+    counted = count_of(hits, "hit")
+    # "9+" rather than "at least 9": the margin is 11rem and the
+    # longer form wrapped between "9" and "hits", which reads worse
+    # than the notation does.
+    return f"{where}, {hits}+ hits" if capped else f"{where}, {counted}"
+
+
 def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
     """Named rather than silently empty.
 
@@ -296,6 +324,8 @@ __all__ = [
     "NO_SUCH_JOB",
     "PACK_ACTION",
     "PACK_PREAMBLE",
+    "RECENTS_CLEAR",
+    "RECENTS_HEADING",
     "REMEMBER_ACTION",
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
@@ -307,6 +337,7 @@ __all__ = [
     "TITLE_HINT",
     "describe_count",
     "describe_holding",
+    "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
     "unknown_scope",

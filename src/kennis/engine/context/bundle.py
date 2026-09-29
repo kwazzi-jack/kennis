@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Final
 
 from kennis import __version__
-from kennis.engine._atomic import replace_file
+from kennis.engine.atomic import replace_file
 
 BUNDLE_DIRNAME: Final = ".context"
 MANIFEST_FILENAME: Final = "bundle.json"

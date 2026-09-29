@@ -27,7 +27,7 @@ from pathlib import Path
 
 import yaml
 
-from kennis.engine._atomic import replace_file
+from kennis.engine.atomic import replace_file
 from kennis.engine.context.bundle import INDEX_DIRNAME, LANDING_FILENAME
 from kennis.engine.corpus.intake import sha256_of
 from kennis.engine.corpus.layout import title_filename, unique_filename

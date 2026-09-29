@@ -33,6 +33,7 @@ from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
+from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import Holding
@@ -214,6 +215,42 @@ def _href(
 
 
 @dataclass(frozen=True, slots=True)
+class ShownRecent:
+    """One past search, ready to be offered again.
+
+    `href` is composed here for the same reason `ShownHit`'s is: the
+    address that re-runs a search is a fact about the routes, and a
+    `{% if %}` in a template choosing one is a template deciding
+    where a search lives.
+    """
+
+    query: str
+    scope: str
+    detail: str
+    href: str
+
+
+def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
+    """The past searches, each as a link that runs it again.
+
+    The address already reconstructs a search from `q` and `scope`,
+    which is what v0.6d bought - so offering one again is a link and
+    not a stored result.
+    """
+    return [
+        ShownRecent(
+            query=search.query,
+            scope=search.scope,
+            detail=words.describe_recent(
+                search.scope, search.hits, capped=search.capped
+            ),
+            href=f"/?q={quote(search.query)}&scope={quote(search.scope)}",
+        )
+        for search in searches
+    ]
+
+
+@dataclass(frozen=True, slots=True)
 class ShownDocument:
     """One document, ready to place."""
 
@@ -327,6 +364,7 @@ __all__ = [
     "ShownGroup",
     "ShownHit",
     "ShownOutcome",
+    "ShownRecent",
     "ShownRow",
     "ShownSkip",
     "shown_basis",

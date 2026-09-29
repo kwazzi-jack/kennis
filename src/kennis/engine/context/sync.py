@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kennis.engine._atomic import replace_file
+from kennis.engine.atomic import replace_file
 from kennis.engine.context.bundle import LANDING_FILENAME
 from kennis.engine.context.notes import bundle_files
 from kennis.engine.errors import DocumentInvalid, PackInvalid

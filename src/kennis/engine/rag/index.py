@@ -40,7 +40,7 @@ from typing import Final
 
 import numpy as np
 
-from kennis.engine._atomic import replace_file, replacing_directory
+from kennis.engine.atomic import replace_file, replacing_directory
 from kennis.engine.errors import NothingToIndex
 from kennis.engine.events import (
     EventSink,

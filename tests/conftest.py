@@ -68,6 +68,23 @@ def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def nowhere_real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test writes to the developer's own state directory.
+
+    `gui/history.py` records searches under `KENNIS_STATE_DIR`,
+    which defaults to platformdirs' `user_state_dir("kennis")` -
+    a real path on a real machine. A test that drives the interface
+    and does not set it would append to Brian's own recent searches,
+    and nothing in the test would fail to say so.
+
+    The same hazard and the same remedy as `somewhere_else` and
+    concern #325: redirect it for every test, and have
+    `test_architecture.py` fail if this fixture is removed.
+    """
+    monkeypatch.setenv("KENNIS_STATE_DIR", str(tmp_path / "state-dir"))
+
+
+@pytest.fixture(autouse=True)
 def somewhere_else(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No test runs in the repository's own working directory.
 

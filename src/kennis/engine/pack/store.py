@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from kennis import __version__
-from kennis.engine._atomic import replace_file, replacing_directory
+from kennis.engine.atomic import replace_file, replacing_directory
 from kennis.engine.errors import PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.content import content_digest, read_source

@@ -14,10 +14,12 @@
 </head>
 <body>
 <header>
-  <a class="home" href="/">kennis</a>
-  {% for path, label in nav_labels.items() %}
-  <a href="/{{ path }}">{{ label }}</a>
-  {% endfor %}
+  <a class="wordmark" href="/">kennis</a>
+  <nav>
+    {% for path, label in nav_labels.items() %}
+    <a href="/{{ path }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
 </header>
 <p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision }}"
    data-message="{{ corpus_changed }}"></p>
