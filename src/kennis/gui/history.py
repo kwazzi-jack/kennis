@@ -63,6 +63,11 @@ class Search:
 
     query: str
     scope: str
+    # How the search was asked to match, or "" for "as each index is
+    # configured". Kept so that offering the search again reproduces
+    # the one that ran rather than a different one with the same
+    # words.
+    mode: str
     hits: int
     # Whether a scope returned everything it was asked for, so `hits`
     # is a floor rather than a total. `default_top_k` is per scope, so
@@ -105,6 +110,12 @@ def recent() -> list[Search]:
             Search(
                 query=str(entry["query"]),
                 scope=str(entry["scope"]),
+                # A default rather than a required key. This file is
+                # the reader's own data, and a `KeyError` here is
+                # swallowed below - requiring the field would empty
+                # their history to add a column, which is not a
+                # compatibility shim but a deletion.
+                mode=str(entry.get("mode", "")),
                 hits=int(entry["hits"]),
                 capped=bool(entry["capped"]),
                 at=float(entry["at"]),
@@ -124,6 +135,7 @@ def overwrite(searches: Sequence[Search]) -> None:
                 {
                     "query": search.query,
                     "scope": search.scope,
+                    "mode": search.mode,
                     "hits": search.hits,
                     "capped": search.capped,
                     "at": search.at,
@@ -139,7 +151,7 @@ def clear() -> None:
     overwrite([])
 
 
-def record(query: str, *, scope: str, hits: int, capped: bool) -> None:
+def record(query: str, *, scope: str, hits: int, capped: bool, mode: str) -> None:
     """Note that this search happened, collapsing it into the last
     one where the two are the same search still being typed.
 
@@ -155,7 +167,14 @@ def record(query: str, *, scope: str, hits: int, capped: bool) -> None:
     cleaned = query.strip()
     if not cleaned:
         return
-    entry = Search(query=cleaned, scope=scope, hits=hits, capped=capped, at=time.time())
+    entry = Search(
+        query=cleaned,
+        scope=scope,
+        mode=mode,
+        hits=hits,
+        capped=capped,
+        at=time.time(),
+    )
     held = recent()
     # Two removals, and they are different rules.
     #
@@ -183,9 +202,10 @@ def _same_search(entry: Search, previous: Search) -> bool:
     other end and the entry should keep whichever query the reader
     stopped on.
 
-    Regardless of scope. Changing the scope re-runs the search, so
-    two entries differing only in scope are the reader adjusting one
-    search rather than making two.
+    Regardless of scope, and of mode. Changing either re-runs the
+    search, so two entries differing only in a control are the reader
+    adjusting one search rather than making two - and the entry keeps
+    whichever they stopped on.
     """
     if entry.at - previous.at > COLLAPSE_WINDOW_SECONDS:
         return False

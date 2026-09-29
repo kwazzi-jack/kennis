@@ -87,6 +87,7 @@ from kennis.operations import (
 )
 from kennis.render.html import MarkedRange
 from kennis.render.packs import describe_holdings
+from kennis.render.words import describe_lexical_fallback
 from kennis.retrieval import EVERY_SCOPE, SCOPE_NAMES, chunk_range, sweep
 from kennis.writing import write_context_note, write_note
 
@@ -230,9 +231,12 @@ def build_app(token: str) -> FastAPI:
 
     @app.get("/")
     async def serve_search(
-        request: Request, q: str = "", scope: str = EVERY_SCOPE
+        request: Request,
+        q: str = "",
+        scope: str = EVERY_SCOPE,
+        mode: str = words.MODE_DEFAULT,
     ) -> HTMLResponse:
-        context = _hits_context(q, scope)
+        context = _hits_context(q, scope, mode)
         # Only with no query. With one, the results have that space -
         # a page showing both would put what was looked for before
         # beside what was just found, which is two answers to one
@@ -248,7 +252,7 @@ def build_app(token: str) -> FastAPI:
         # follow and this one destroys. The reader's own words are
         # in here and there has to be a way to remove them.
         history.clear()
-        context = _hits_context("", EVERY_SCOPE)
+        context = _hits_context("", EVERY_SCOPE, words.MODE_DEFAULT)
         context["recents"] = []
         context["recents_heading"] = words.RECENTS_HEADING
         context["recents_clear"] = words.RECENTS_CLEAR
@@ -256,20 +260,28 @@ def build_app(token: str) -> FastAPI:
 
     @app.get("/hits")
     async def serve_hits(
-        request: Request, q: str = "", scope: str = EVERY_SCOPE
+        request: Request,
+        q: str = "",
+        scope: str = EVERY_SCOPE,
+        mode: str = words.MODE_DEFAULT,
     ) -> HTMLResponse:
         # The partial htmx swaps in. The same context as the page, so
         # a first load and a keystroke cannot disagree about what a
         # result looks like.
         answer = _TEMPLATES.TemplateResponse(
-            request, "hits.html", _hits_context(q, scope)
+            request, "hits.html", _hits_context(q, scope, mode)
         )
         # **The address the reader should end up at, not the one that
         # was fetched.** `hx-push-url="true"` pushes the request URL,
         # which is this route - so Back and reload rendered the bare
         # fragment with no page around it. Found by walking the
         # interface, not by the suite. Concern #340.
-        answer.headers["HX-Push-Url"] = f"/?q={quote(q)}&scope={quote(scope)}"
+        # The mode only when there was one, for the same reason a
+        # recent search's link omits it: an address carrying `mode=`
+        # says the reader chose the default rather than not having
+        # chosen.
+        chosen = f"&mode={quote(mode)}" if mode else ""
+        answer.headers["HX-Push-Url"] = f"/?q={quote(q)}&scope={quote(scope)}{chosen}"
         return answer
 
     @app.get("/held")
@@ -727,7 +739,7 @@ def _frame(context: Context) -> dict[str, object]:
     }
 
 
-def _hits_context(question: str, scope: str) -> dict[str, object]:
+def _hits_context(question: str, scope: str, mode: str) -> dict[str, object]:
     """What a search page and its partial both need.
 
     A failure becomes fields rather than an exception: a search box
@@ -756,11 +768,15 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
         "scope_hints": {
             name: words.search_hint_for(name) for name in (EVERY_SCOPE, *SCOPES)
         },
+        "mode": mode,
+        "mode_choices": words.MODE_CHOICES,
+        "mode_label": words.MODE_LABEL,
         "search_action": words.SEARCH_ACTION,
         "searching": words.SEARCHING,
         "scope_label": words.SCOPE_LABEL,
         "groups": [],
         "skips": [],
+        "fallbacks": [],
         "nothing": words.NOTHING_FOUND,
         "problem": None,
         "resolution": None,
@@ -770,11 +786,34 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
     if scope not in SCOPES and scope != EVERY_SCOPE:
         context["problem"] = words.unknown_scope(scope, SCOPES)
         return context
+    # Checked against what the window offers rather than by letting
+    # `retrieval.as_mode` raise: its resolution is `kennis config get
+    # retrieval.corpus_method`, which is the wrong remedy for someone
+    # who edited an address. The same shape `_theme_choice` uses.
+    if mode not in {value for value, _ in words.MODE_CHOICES}:
+        context["problem"] = words.unknown_mode(mode)
+        return context
     asked = SCOPE_NAMES if scope == EVERY_SCOPE else (scope,)
     try:
-        found = sweep(question, scopes=asked, named=scope != EVERY_SCOPE)
+        found = sweep(
+            question,
+            scopes=asked,
+            named=scope != EVERY_SCOPE,
+            # Empty is "no mode given", which lets each scope use its
+            # own setting. Not the same as "hybrid": a bundle index is
+            # lexical by design.
+            mode=mode or None,
+        )
         context["groups"] = shown_groups_of(found, question)
         context["skips"] = shown_skips(found)
+        # The command line has printed this since milestone 1 and the
+        # page never did. A control offering "Meaning only" that
+        # quietly returns lexical results is a control that lies, so
+        # the mode selector is what made the omission matter.
+        # Concern #381.
+        context["fallbacks"] = [
+            describe_lexical_fallback(name) for name in found.degraded
+        ]
         # Here rather than in either route, because both run a search
         # and a reload, a Back and a keystroke must all record the
         # same way. A refused search is not recorded: it found
@@ -784,6 +823,7 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
         history.record(
             question,
             scope=scope,
+            mode=mode,
             hits=sum(len(hits) for hits in found.groups.values()),
             # Any scope that filled its quota had more to give, so
             # the total is a floor. `default_top_k` is 3 per scope,

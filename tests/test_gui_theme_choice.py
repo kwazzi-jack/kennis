@@ -154,19 +154,29 @@ def test_the_choice_is_rendered_by_the_server_from_the_cookie(
     assert 'data-theme="dark"' in page
 
 
+def theme_select(page: str) -> str:
+    """Just the colour control.
+
+    Named rather than found by excluding what the scope's options
+    carry. That version excluded them by `data-hint`, so the mode
+    control - which has no hints - was read as the theme's the day it
+    arrived. Scoping by exclusion is what concern #375 was, and this
+    is the second time: the fix is to say which select, not which
+    options to skip."""
+    found = re.search(r'<select class="theme".*?</select>', page, re.DOTALL)
+    assert found is not None, "no theme select on the page"
+    return found.group(0)
+
+
 def test_the_chosen_option_is_the_one_marked_selected(corpus: Path, client: TestClient):
     """Otherwise the control says `system` while the page is dark."""
     admitted(client)
     client.cookies.set("theme", "dark")
 
-    page = client.get("/").text
-    chosen = [
-        re.search(r'value="([^"]*)"', option)
-        for option in re.findall(r"<option\b[^>]*>", page)
-        if " selected" in option and "data-hint" not in option
-    ]
+    control = theme_select(client.get("/").text)
+    chosen = re.findall(r'<option value="([^"]*)"[^>]*\sselected', control)
 
-    assert [found.group(1) for found in chosen if found] == ["dark"]
+    assert chosen == ["dark"], control
 
 
 def test_an_unknown_cookie_value_is_the_system(corpus: Path, client: TestClient):

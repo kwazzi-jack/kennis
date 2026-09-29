@@ -13,7 +13,16 @@
 <script defer src="/static/sidebar.js"></script>
 <script defer src="/static/theme.js"></script>
 </head>
-<body>
+{# **No client-side history snapshot.** htmx caches the page as it
+   was and restores that on Back, but its snapshot does not carry the
+   search form, which sits outside the swapped `#hits`. Going back and
+   then forward left the scope control reading `all` while the address
+   and the results both said `notes` - a control disagreeing with what
+   is on the page under it. Without the cache, Back and Forward are
+   navigations the server answers, and the server renders the form
+   from the address, which is what concern #340's decision was for.
+   Concern #383. #}
+<body hx-history="false">
 <header class="sidebar">
   {# Present in both states, because "always present for the user to
      open" is the requirement: a collapsed sidebar that hid its own

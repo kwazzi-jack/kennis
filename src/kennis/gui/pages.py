@@ -253,18 +253,24 @@ class ShownRecent:
 def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
     """The past searches, each as a link that runs it again.
 
-    The address already reconstructs a search from `q` and `scope`,
-    which is what v0.6d bought - so offering one again is a link and
-    not a stored result.
+    The address reconstructs a search from `q`, `scope` and `mode`,
+    which is what v0.6d bought and v0.7b extended - so offering one
+    again is a link and not a stored result.
     """
     return [
         ShownRecent(
             query=search.query,
             scope=search.scope,
             detail=words.describe_recent(
-                search.scope, search.hits, capped=search.capped
+                search.scope, search.hits, capped=search.capped, mode=search.mode
             ),
-            href=f"/?q={quote(search.query)}&scope={quote(search.scope)}",
+            # The mode only when there was one. An address carrying
+            # `mode=` says the reader chose the default, which is a
+            # different claim from not having chosen.
+            href=(
+                f"/?q={quote(search.query)}&scope={quote(search.scope)}"
+                + (f"&mode={quote(search.mode)}" if search.mode else "")
+            ),
         )
         for search in searches
     ]

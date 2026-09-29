@@ -21,8 +21,9 @@
 (function () {
   var box = document.querySelector("input[name=q]");
   var where = document.querySelector("select[name=scope]");
+  var how = document.querySelector("select[name=mode]");
   var indicator = document.getElementById("searching");
-  if (!box || !where || !indicator) { return; }
+  if (!box || !where || !how || !indicator) { return; }
 
   function answered() {
     // Looked up each time, not held: the swap replaces it.
@@ -32,7 +33,9 @@
   function stale() {
     var shown = answered();
     if (!shown) { return false; }
-    return box.value !== shown.dataset.query || where.value !== shown.dataset.scope;
+    return box.value !== shown.dataset.query ||
+      where.value !== shown.dataset.scope ||
+      how.value !== shown.dataset.mode;
   }
 
   function reconsider() {
@@ -41,6 +44,7 @@
 
   box.addEventListener("input", reconsider);
   where.addEventListener("change", reconsider);
+  how.addEventListener("change", reconsider);
   document.body.addEventListener("htmx:afterSwap", reconsider);
 
   document.body.addEventListener("htmx:afterRequest", function (event) {
