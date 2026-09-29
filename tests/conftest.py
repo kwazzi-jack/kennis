@@ -85,6 +85,34 @@ def nowhere_real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reads the developer's own corpus.
+
+    `context.existing_corpus` resolves `KENNIS_CORPUS_ROOT`, then
+    `corpus.root` in the configuration, then the platform's data
+    directory. A test that builds an app without naming a corpus -
+    `build_app(TOKEN)` does exactly that - therefore reached
+    `~/.local/share/kennis`, which on this machine is Brian's real
+    corpus of 55 documents.
+
+    It passed here for five units and failed on every CI platform at
+    once, because a runner has no corpus there. That is the tell:
+    the outcome depended on the developer's machine, so the test was
+    asserting nothing about kennis.
+
+    Pointed at a path that does **not** exist, rather than at an
+    empty corpus. A test that needs a corpus should say so and build
+    one; being handed a usable one by accident is how this started.
+
+    The third of the same kind, and the same remedy as
+    `nowhere_real` and `somewhere_else`: redirect it for every test,
+    and have `test_architecture.py` fail if this fixture is removed.
+    Concerns #325 and #361.
+    """
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "no-corpus-here"))
+
+
+@pytest.fixture(autouse=True)
 def somewhere_else(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No test runs in the repository's own working directory.
 

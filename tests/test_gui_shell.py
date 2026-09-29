@@ -61,9 +61,14 @@ def test_a_request_with_the_wrong_token_is_refused(client: TestClient):
     assert client.get("/", params={"token": "not-it"}).status_code == 401
 
 
-def test_the_token_admits_and_is_remembered(client: TestClient):
+def test_the_token_admits_and_is_remembered(corpus: Path, client: TestClient):
     """It arrives once in the URL and is held in a cookie afterwards, so
-    it is not on every subsequent request line."""
+    it is not on every subsequent request line.
+
+    **It takes a corpus because the page it asks for reads one.** It
+    did not, and so it resolved the default location and read the
+    developer's own corpus - passing here and failing on all four CI
+    platforms at once. Concern #361."""
     first = client.get("/", params={"token": TOKEN})
 
     assert first.status_code == 200
@@ -154,7 +159,11 @@ def _variables_of(block: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def test_the_stylesheet_is_served_and_carries_the_variables(client: TestClient):
+def test_the_stylesheet_is_served_and_carries_the_variables(
+    corpus: Path, client: TestClient
+):
+    """The corpus is for the request that plants the token, not for
+    the stylesheet, which needs none. Concern #361."""
     client.get("/", params={"token": TOKEN})
 
     served = client.get("/static/kennis.css")
