@@ -634,6 +634,38 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 /* Narrow screens                                                   */
 /* ---------------------------------------------------------------- */
 
+/* A table scrolls sideways rather than pushing the page wider.
+   Measured: one paper sets 55 of its equations inside single-cell
+   tables, and the widest is 1050px against a 1280px viewport that
+   the margin has already spent 300px of - so the whole page gained
+   a horizontal scrollbar and the reading column moved under the
+   reader's thumb. `display: block` is what makes `overflow-x` apply
+   to a table at all; the rows keep their own layout inside it. */
+article table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* A displayed equation gets room around it and is allowed to scroll
+   sideways rather than force the whole page to. A long matrix is
+   wider than a reading measure and shrinking the text to fit would
+   make the equation the least legible thing on the page. */
+.math.block {
+  margin: 1.4rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* An equation number sits at the right margin of the column, which
+   is where a paper puts it and where a cross-reference expects to
+   find it. */
+.math-label {
+  float: right;
+  font-family: var(--gutter);
+  font-size: 0.85em;
+}
+
 @media (max-width: 46rem) {
   /* The margin goes above the column rather than beside it, and
      takes its place in document order - so the title comes first and

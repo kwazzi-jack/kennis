@@ -14,6 +14,16 @@ taste, and each would be easy to remove as an over-complication.
 before it is TeX. One paper in the corpus carries 343 inline maths
 spans, so without `dollarmath` most of that document is corrupted.
 
+**Display maths is also written on one line.** A converted paper puts
+equations in table cells, where only inline rules run, so it writes
+`$$...$$` inline rather than as a block. Without `double_inline` the
+inline rule matches the inner pair and the outer dollars survive as
+text: 104 of them in one paper, 13 of 55 documents affected. With it
+on, `mdit_py_plugins` renders that token as a `<div>`, which inside a
+`<p>` is nesting a browser escapes by closing the paragraph early. So
+kennis renders all four maths tokens itself, and the inline forms are
+spans.
+
 **A local figure reference is dangling.** Converted PDFs reference
 `images/<sha>.jpg` and the conversion keeps no image files - concern
 #134. An `<img>` pointing at nothing renders as a broken icon, which
@@ -30,6 +40,7 @@ choice.
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -249,13 +260,85 @@ def _parser(*, load_remote_images: bool) -> MarkdownIt:
     """
     parser = MarkdownIt("commonmark", {"html": False, "linkify": False})
     parser.enable("table")
-    parser.use(dollarmath_plugin)
+    parser.use(dollarmath_plugin, double_inline=True)
     parser.add_render_rule("fence", _render_fence)
+    for token_type, element, classes in _MATHS_ELEMENTS:
+        parser.add_render_rule(token_type, _maths_rule(element, classes))
     parser.add_render_rule(
         "image",
         _image_rule(load_remote_images=load_remote_images),
     )
     return parser
+
+
+# Which element each maths token becomes, and what it is called.
+#
+# **`display` is the one class both files read.** `static/typeset.js`
+# chooses KaTeX's `displayMode` from it, so the rule lives here and the
+# script asks rather than holding a second copy of it. `inline` and
+# `block` are for CSS, which wants to know the element's flow and not
+# how it is typeset.
+#
+# The inline forms are spans because that is the whole reason the
+# double-inline case exists: it appears inside paragraphs and table
+# cells, where a block element is nesting the browser undoes.
+_MATHS_ELEMENTS: Final[tuple[tuple[str, str, str], ...]] = (
+    ("math_inline", "span", "math inline"),
+    ("math_inline_double", "span", "math inline display"),
+    ("math_block", "div", "math block display"),
+    ("math_block_label", "div", "math block display"),
+)
+
+
+# An optional argument with nothing in it, which KaTeX will not read.
+#
+# MinerU writes `\begin{array}[]{c}`. LaTeX's `array` takes `t`, `b`
+# or `c` in that position and an empty one is not valid there either,
+# so it is an artefact of the conversion rather than something an
+# author wrote. KaTeX reads the `[`, looks for a column alignment and
+# fails on the `]`; that put 16 of one paper's 419 expressions on the
+# page as red source text.
+#
+# Measured across the corpus held: 30 occurrences, every one of them
+# `\begin{array}[]` and every one empty. No other environment carries
+# an option at all.
+#
+# **Only when it is empty, and only at render time.** A real option
+# changes how the environment is set, so dropping one would change
+# the maths rather than repair the conversion. And the document on
+# disk is untouched: `Chunk.char_start` and `char_end` address
+# `Document.body`, so editing that string would move every mark.
+_EMPTY_OPTION: Final = re.compile(r"(\\begin\{[A-Za-z*]+\})\[\s*\]")
+
+
+def _maths_rule(element: str, classes: str) -> RenderRule:
+    """The render rule for one maths token type.
+
+    The content is escaped here rather than by the plugin, because
+    these rules replace the plugin's own. TeX is full of characters
+    that are markup in HTML - `<`, `>`, `&` all appear in ordinary
+    expressions - and KaTeX reads `textContent`, which is the
+    unescaped text again.
+    """
+
+    def render_maths(
+        renderer: RendererProtocol,
+        tokens: Sequence[Token],
+        index: int,
+        options: OptionsDict,
+        env: EnvType,
+    ) -> str:
+        token = tokens[index]
+        maths = _EMPTY_OPTION.sub(r"\1", token.content)
+        drawn = f'<{element} class="{classes}">{_escaped(maths)}</{element}>'
+        if token.info:
+            # `$$ ... $$ (eq1)` - the label is what the document's own
+            # cross-references point at, so dropping it loses the only
+            # handle a reader has on the equation.
+            drawn += f'<span class="math-label">({_escaped(token.info)})</span>'
+        return drawn + "\n" if element == "div" else drawn
+
+    return render_maths
 
 
 def _render_fence(

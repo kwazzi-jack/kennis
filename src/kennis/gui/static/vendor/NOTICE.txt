@@ -14,7 +14,7 @@ one, so htmx has an entry here and no file.
 
 KaTeX 0.16.22
   Maths typesetting.
-  katex.min.js, katex-auto-render.min.js, katex.min.css,
+  katex.min.js, katex.min.css,
   fonts/KaTeX_*.woff2
   https://github.com/KaTeX/KaTeX
   MIT. Full text in LICENSE-KaTeX.txt.
