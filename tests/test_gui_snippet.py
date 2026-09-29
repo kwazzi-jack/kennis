@@ -440,3 +440,130 @@ def test_a_document_page_does_not_show_its_title_twice(
     assert page.status_code == 200
     assert page.text.count("Substitutions and formulas</h1>") == 1
     assert "The body of the page." in page.text
+
+
+# ---------------------------------------------------------------------------
+# Maths
+# ---------------------------------------------------------------------------
+
+
+def test_maths_in_a_snippet_is_maths_and_not_dollar_signs():
+    """Concern #376. v0.6h fixed this in `render/html.py`; this module
+    parses with its own `MarkdownIt` and nothing carried it across, so
+    a hit's snippet showed `$\\mathsf{B}$` in the middle of a
+    sentence."""
+    shown = marked_snippet(r"the true sky $\mathsf{B}$ by one", terms=())
+
+    assert "$" not in shown
+    assert 'class="math' in shown
+    assert r"\mathsf{B}" in shown
+
+
+def test_display_maths_written_inline_is_maths_in_a_snippet_too():
+    """`$$...$$` on one line is how the converted paper writes every
+    equation it puts in a table."""
+    shown = marked_snippet(r"so $$\mathsf{V}_{pq}$$ follows", terms=())
+
+    assert "$" not in shown
+    assert 'class="math' in shown
+
+
+def test_a_block_equation_is_shown_inline_rather_than_dropped():
+    """`_runs` walks `inline` tokens, and a block equation is a leaf
+    block token - so without a branch of its own it contributes
+    nothing at all. Shown inline rather than in display mode, because
+    a snippet is one paragraph and KaTeX's display mode is a block
+    element that would break the sentence quoting it."""
+    shown = marked_snippet("before\n\n$$\na = 1\n$$\n\nafter", terms=())
+
+    assert "a = 1" in shown
+    assert "display" not in shown
+
+
+def test_a_query_term_is_never_marked_inside_the_maths():
+    """A `<mark>` inside TeX is markup KaTeX will render or refuse.
+    The reader's word is not in the prose there in any case - it is
+    in a symbol."""
+    # Two characters, because `_SHORTEST_TERM` is 2 and a one-letter
+    # term is not marked anywhere - which made the first version of
+    # this test pass its first assertion and fail its second.
+    shown = marked_snippet(r"the matrix $\mathsf{Bx}$ and the Bx field", terms=("Bx",))
+
+    maths = shown[shown.index('class="math') : shown.index("</span>")]
+    assert "<mark>" not in maths
+    # And it is still marked where it is prose.
+    assert "<mark>Bx</mark>" in shown
+
+
+def test_maths_is_escaped_in_a_snippet():
+    """`<`, `>` and `&` are all ordinary in TeX and all markup in
+    HTML."""
+    shown = marked_snippet(r"where $a < b \& c > d$ holds", terms=())
+
+    assert "&lt;" in shown and "&gt;" in shown and "&amp;" in shown
+
+
+def _long_maths() -> str:
+    body = " ".join(f"x_{{{number}}}" for number in range(40))
+    return r"$\begin{array}{c} " + body + r" \end{array}$"
+
+
+def test_an_expression_that_does_not_fit_is_dropped_rather_than_halved():
+    """Half an expression is not an expression: `\\begin{array}` with
+    nothing closing it is a parse error where the whole would have
+    rendered, and KaTeX would put red source text in the results.
+
+    So a run that does not fit ends the snippet. Nothing of it
+    appears - not a fragment, not an empty span.
+
+    The first version of this test asked for a limit the expression
+    could not meet and then asserted the expression was there, which
+    is both halves of the rule at once and neither of them."""
+    shown = marked_snippet(f"prose here {_long_maths()} and after", terms=(), limit=40)
+
+    assert 'class="math' not in shown
+    assert "begin{array}" not in shown
+    assert shown.endswith("...")
+
+
+def test_an_expression_that_fits_is_kept_whole():
+    """The other half, and the one that would pass for free if the
+    first were implemented by dropping every expression."""
+    shown = marked_snippet(f"prose here {_long_maths()} and after", terms=(), limit=600)
+
+    maths = re.findall(r'<span class="math[^"]*">(.*?)</span>', shown, re.DOTALL)
+
+    assert maths, f"no maths survived to check: {shown!r}"
+    for found in maths:
+        assert found.count("{") == found.count("}"), found
+        assert "..." not in found, found
+        assert "begin{array}" in found and "end{array}" in found, found
+
+
+def test_the_empty_option_is_repaired_in_a_snippet_too():
+    """Concern #358's repair lives in `render/` so both renderers can
+    use it. Without it a snippet's TeX fails to parse where the same
+    document's body succeeds, and the reader sees red source text in
+    the results and a rendered equation in the paper."""
+    shown = marked_snippet(r"see $\begin{array}[]{c}a\end{array}$ there", terms=())
+
+    assert "[]" not in shown
+    assert r"\begin{array}{c}" in shown
+
+
+def test_the_snippet_marks_maths_with_a_class_the_typesetter_selects():
+    """`static/typeset.js` selects `.math` and listens on
+    `htmx:afterSwap`, so a swapped-in snippet typesets with no
+    further work - but only if the class is the one it asks for."""
+    script = (
+        Path(__file__).resolve().parents[1] / "src/kennis/gui/static/typeset.js"
+    ).read_text(encoding="utf-8")
+    selector = re.search(r'querySelectorAll\("([^"]+)"\)', script)
+    assert selector is not None
+    wanted = set(selector.group(1).lstrip(".").split("."))
+
+    shown = marked_snippet(r"the sky $\mathsf{B}$ here", terms=())
+    classes = re.search(r'<span class="([^"]*)"', shown)
+
+    assert classes is not None
+    assert wanted <= set(classes.group(1).split())

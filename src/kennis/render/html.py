@@ -311,6 +311,18 @@ _MATHS_ELEMENTS: Final[tuple[tuple[str, str, str], ...]] = (
 _EMPTY_OPTION: Final = re.compile(r"(\\begin\{[A-Za-z*]+\})\[\s*\]")
 
 
+def without_empty_options(maths: str) -> str:
+    """`maths` with an empty `\\begin{...}[]` option removed.
+
+    Public because `gui/snippet.py` renders the same TeX with its own
+    parser and needs the same repair - otherwise an expression fails
+    to parse in the search results and renders in the document, from
+    one string. The dependency runs `gui -> render -> engine`, so
+    this is the layer both can read.
+    """
+    return _EMPTY_OPTION.sub(r"\1", maths)
+
+
 def _maths_rule(element: str, classes: str) -> RenderRule:
     """The render rule for one maths token type.
 
@@ -329,7 +341,7 @@ def _maths_rule(element: str, classes: str) -> RenderRule:
         env: EnvType,
     ) -> str:
         token = tokens[index]
-        maths = _EMPTY_OPTION.sub(r"\1", token.content)
+        maths = without_empty_options(token.content)
         drawn = f'<{element} class="{classes}">{_escaped(maths)}</{element}>'
         if token.info:
             # `$$ ... $$ (eq1)` - the label is what the document's own
@@ -422,4 +434,10 @@ def _escaped(text: str) -> str:
     )
 
 
-__all__ = ["IMAGE_BLOCKED", "IMAGE_MISSING", "MarkedRange", "to_html"]
+__all__ = [
+    "IMAGE_BLOCKED",
+    "IMAGE_MISSING",
+    "MarkedRange",
+    "to_html",
+    "without_empty_options",
+]
