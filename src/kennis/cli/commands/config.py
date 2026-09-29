@@ -272,7 +272,7 @@ def _write_template() -> None:
         display.note(f"{path} already exists and was left alone")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(config_template(), encoding="utf-8")
+    path.write_text(config_template(), encoding="utf-8", newline="\n")
     display.operation("Wrote", str(path))
 
 

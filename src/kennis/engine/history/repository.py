@@ -284,15 +284,15 @@ def initialise_corpus(root: Path) -> Repository:
             f"git could not initialise a repository at {root}: {started.stderr.strip()}"
         )
 
-    (root / ".gitattributes").write_text(_GITATTRIBUTES, encoding="utf-8")
-    (root / ".gitignore").write_text(_GITIGNORE, encoding="utf-8")
-    (root / "README.md").write_text(_README, encoding="utf-8")
+    (root / ".gitattributes").write_text(_GITATTRIBUTES, encoding="utf-8", newline="\n")
+    (root / ".gitignore").write_text(_GITIGNORE, encoding="utf-8", newline="\n")
+    (root / "README.md").write_text(_README, encoding="utf-8", newline="\n")
     # An empty collection directory is invisible to git, so the corpus would
     # commit with no collections in it and `corpus status` on a fresh clone
     # would find nothing. A `.gitkeep` is the conventional answer and says
     # what it is.
     for name in COLLECTION_NAMES:
-        (root / name / ".gitkeep").write_text("", encoding="utf-8")
+        (root / name / ".gitkeep").write_text("", encoding="utf-8", newline="\n")
 
     repository = Repository(root)
     # Committed rather than left in the working tree: a repository with no

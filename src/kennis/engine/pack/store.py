@@ -375,7 +375,9 @@ def _ensure_ignored(corpus_root: Path) -> None:
         return
     corpus_root.mkdir(parents=True, exist_ok=True)
     separator = "" if existing.endswith("\n") or not existing else "\n"
-    path.write_text(existing + separator + _IGNORE_BLOCK, encoding="utf-8")
+    path.write_text(
+        existing + separator + _IGNORE_BLOCK, encoding="utf-8", newline="\n"
+    )
 
 
 def _reported(

@@ -379,7 +379,7 @@ def _write_config(values: Mapping[str, str]) -> None:
         section, _, name = key.partition(".")
         existing.setdefault(section, {})[name] = _as_typed(_field_of(key), value)
 
-    path.write_text(_as_toml_document(existing), encoding="utf-8")
+    path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
 
 
 def _write_credentials(secrets: Mapping[str, str]) -> None:
@@ -407,7 +407,7 @@ def _write_credentials(secrets: Mapping[str, str]) -> None:
 
     path.touch(mode=0o600, exist_ok=True)
     path.chmod(0o600)
-    path.write_text(_as_toml_document(existing), encoding="utf-8")
+    path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
 
 
 def _backend_for(key: str) -> str:

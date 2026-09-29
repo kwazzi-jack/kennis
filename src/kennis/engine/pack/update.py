@@ -116,7 +116,7 @@ def update_pack(path: Path, *, events: EventSink | None = None) -> PackUpdate:
             unselected=len(unselected),
         )
 
-    path.write_text(_spliced(text, content), encoding="utf-8")
+    path.write_text(_spliced(text, content), encoding="utf-8", newline="\n")
     return PackUpdate(
         path=path,
         outcome="written",

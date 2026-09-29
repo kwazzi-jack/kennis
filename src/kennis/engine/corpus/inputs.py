@@ -31,7 +31,7 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Final, Literal
 
 from kennis.engine._glob import globstar_regex, looks_like_pattern
@@ -161,6 +161,31 @@ def resolve_inputs(
     return resolved
 
 
+def split_at_anchor(pattern: PurePath) -> tuple[str, list[str]]:
+    """The drive or root `pattern` is anchored at, and the segments below it.
+
+    `("", [...])` when it is relative, which is what tells the caller to
+    start at the working directory. Empty rather than `"."`, because the
+    caller builds a `Path` from it and `Path("")` *is* `Path(".")` - the two
+    cases would stop being distinguishable one step further on.
+
+    **A drive letter is an anchor.** This used to be `text.startswith("/")`
+    inside `_expand_pattern`, which is true of `/a/b` and false of
+    `C:/a/b`, so every absolute Windows pattern was searched for beneath the
+    working directory - `./C:/papers` - and refused with "matched no files".
+    Concern #385.
+
+    It takes a path rather than the string it came from because that is the
+    only way the Windows case can be *tested* anywhere else: `Path(r"C:\a")`
+    on Linux is one filename with a backslash in it, where
+    `PureWindowsPath(r"C:\a")` is the thing itself.
+    """
+    parts = pattern.parts
+    if pattern.anchor:
+        return pattern.anchor, list(parts[1:])
+    return "", list(parts)
+
+
 def _expand_pattern(pattern: str) -> list[Path]:
     """Every existing file matching `pattern`, in a stable order.
 
@@ -169,19 +194,16 @@ def _expand_pattern(pattern: str) -> list[Path]:
     relative one is not silently resolved against somewhere else.
     """
     expanded = Path(pattern).expanduser()
-    text = expanded.as_posix()
+    anchor, segments = split_at_anchor(expanded)
 
-    segments = text.split("/")
-    fixed = [
-        segment for segment in _leading_literal_segments(segments) if segment != ""
-    ]
-    root = Path(text[:1]) if text.startswith("/") else Path(".")
+    fixed = _leading_literal_segments(segments)
+    root = Path(anchor) if anchor else Path(".")
     for segment in fixed:
         root = root / segment
     if not root.is_dir():
         return []
 
-    remainder = "/".join(segments[len(fixed) + (1 if text.startswith("/") else 0) :])
+    remainder = "/".join(segments[len(fixed) :])
     regex = globstar_regex(remainder)
 
     # Only `**` can match across directories, so without one the depth is
