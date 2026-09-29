@@ -28,6 +28,7 @@ from kennis.engine.corpus.converters import (
     default_converter,
 )
 from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from platforms import needs_a_posix_shell
 
 
 def a_pdf(path: Path) -> Path:
@@ -264,6 +265,7 @@ def test_a_page_limit_restricts_the_run(fake_mineru: Path, tmp_path: Path):
     assert batch.markdown
 
 
+@needs_a_posix_shell
 def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

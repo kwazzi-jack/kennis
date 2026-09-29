@@ -22,6 +22,7 @@ from kennis.engine.setup import (
     setup_questions,
     validate_answer,
 )
+from platforms import needs_file_modes
 
 
 @pytest.fixture(autouse=True)
@@ -241,17 +242,7 @@ def test_a_secret_never_reaches_the_config_file(isolated: Path):
     )
 
 
-@pytest.mark.skipif(
-    os.name == "nt",
-    reason=(
-        "Windows has no POSIX file mode: `chmod` only toggles read-only and "
-        "the file reports 0666. What protects the key there is the per-user "
-        "profile directory's ACL, which denies the same set 0600 denies - "
-        "other unprivileged users of the machine. Asserted in "
-        "`test_the_credentials_file_is_where_the_platform_protects_it`, "
-        "which runs everywhere. Concern #389."
-    ),
-)
+@needs_file_modes
 def test_the_credentials_file_is_readable_only_by_its_owner(isolated: Path):
     apply_answers(
         {"embedding.backend": "openai", "embedding.api_key": "sk-notarealkey"}
@@ -326,7 +317,6 @@ def test_choosing_hosted_conversion_asks_for_its_key():
 def test_the_datalab_key_is_written_under_its_own_variable(tmp_path: Path):
     """`credential("DATALAB_API_KEY")` is what reads it back, so the name the
     setup files it under is the name the converter looks for."""
-    import os
 
     os.environ["KENNIS_CONFIG_DIR"] = str(tmp_path)
     try:
@@ -342,7 +332,6 @@ def test_the_datalab_key_is_written_under_its_own_variable(tmp_path: Path):
 
 
 def test_the_conversion_key_never_reaches_the_config_file(tmp_path: Path):
-    import os
 
     os.environ["KENNIS_CONFIG_DIR"] = str(tmp_path)
     try:
