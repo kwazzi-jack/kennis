@@ -704,7 +704,15 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
         "scopes": SCOPES,
         "everywhere": EVERY_SCOPE,
         "everywhere_label": words.EVERYWHERE_LABEL,
-        "search_hint": words.SEARCH_HINT,
+        # The hint for the scope this page was drawn with, and one for
+        # every scope the select offers. Changing the select has to
+        # change the box without a round trip, and the words must not
+        # move into a script to manage it: each option carries the
+        # sentence, and `static/hint.js` copies the selected one.
+        "search_hint": words.search_hint_for(scope),
+        "scope_hints": {
+            name: words.search_hint_for(name) for name in (EVERY_SCOPE, *SCOPES)
+        },
         "search_action": words.SEARCH_ACTION,
         "scope_label": words.SCOPE_LABEL,
         "groups": [],

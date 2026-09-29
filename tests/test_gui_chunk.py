@@ -587,8 +587,20 @@ def test_everywhere_is_a_scope_and_it_is_the_default(corpus: Path, client: TestC
 
     page = client.get("/")
 
+    # The option that is selected, not two attributes that happen to
+    # be adjacent. The first version matched `value="all" selected`
+    # as a substring and broke the moment another attribute was
+    # written between them, which says nothing about whether the
+    # right scope is chosen. Concern #352's rule: assert the
+    # property.
+    selected = [
+        re.search(r'value="([^"]*)"', option)
+        for option in re.findall(r"<option\b[^>]*>", page.text)
+        if " selected" in option
+    ]
+
     assert EVERY_SCOPE in page.text
-    assert f'value="{EVERY_SCOPE}" selected' in page.text
+    assert [found.group(1) for found in selected if found] == [EVERY_SCOPE]
 
 
 def test_a_sweep_reports_every_collection_that_answered(
