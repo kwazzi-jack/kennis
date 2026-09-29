@@ -22,7 +22,10 @@
 {% for hit in group.hits %}
   <li>
     <a class="role-operation" href="{{ hit.href }}">{{ hit.headline }}</a>
-    <p class="role-muted detail">{{ hit.detail }}</p>
+    {# One element per field. A single string with `white-space:
+       pre-wrap` wrapped wherever the gutter ran out, which split a
+       band from its level as soon as there were two. Concern #380. #}
+    <p class="role-muted detail">{% for part in hit.detail_parts %}<span>{{ part }}</span>{% endfor %}</p>
     {# `safe` because `marked_snippet` escaped every character of the
        corpus's text itself and emitted only the tags it chose. Jinja
        escaping again would show `&lt;em&gt;` on the page. #}

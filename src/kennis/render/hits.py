@@ -11,20 +11,37 @@ model that produced it.
 
 So there are two bands and a silence:
 
-- **cosine**, against cuts measured for one model on a real corpus;
-- **lexical**, a fraction of the best hit of the same query, for a search
-  with no dense leg - relative, and the phrasing says so;
-- **nothing at all** for a dense search on a model kennis has not measured,
-  because inventing cuts for an unknown scale is the failure both of the
-  above avoid.
+- **meaning**, the cosine against cuts measured for one model on a real
+  corpus - absolute, and only for a model kennis has measured;
+- **lexical**, a fraction of the best hit of the same query in the same
+  collection - relative, and the label says so;
+- **nothing at all** for a leg that did not score, and no meaning band at
+  all on a model kennis has not measured, because inventing cuts for an
+  unknown scale is the failure both of the above avoid.
+
+**Each leg answers for itself, and that is a correction.** This module
+used to reason all of the above correctly and then resolve it by choosing
+*one* band: `basis_for` returned `cosine` whenever a dense leg ran on a
+calibrated model, so under hybrid search BM25 never spoke. A one-word
+query embeds to a modest cosine against a full chunk, so a search for
+`selfcal` that highlighted the literal word in the passage reported
+`relevance: low`. The reasoning was right about the hard part - the two
+scales mean different things and must not be conflated - and the
+resolution should have been to show both, labelled, rather than to pick.
+Concern #379.
+
+Nothing about *ordering* changes here. Hits are fused by reciprocal rank,
+so a hit reading `lexical: very high  meaning: low` can sit below one
+reading `lexical: high  meaning: medium`. That is what fusion did, and it
+is what the single band was hiding.
 
 The cuts are in `_COSINE_CUTS` with the run that produced them. Concerns
-#186 and #198.
+#186, #198 and #379.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -34,7 +51,16 @@ from kennis.engine.rag.models import SearchResult
 from kennis.render.words import snippet_of
 
 type Relevance = Literal["very high", "high", "medium", "low", "very low"]
-type Basis = Literal["cosine", "lexical"]
+
+# The two legs a search can run, named for what they measure rather
+# than for how. "lexical" is the engine's own word and this interface
+# is read by researchers; "meaning" is what a cosine is *for*, where
+# "dense" and "embedding" name the mechanism. First is lexical,
+# because it is the one a reader can check by eye against the passage
+# in front of them.
+type Leg = Literal["lexical", "meaning"]
+
+LEGS: Final[tuple[Leg, ...]] = ("lexical", "meaning")
 type ScoreStyle = Literal["human", "raw", "none"]
 
 SCORE_STYLES: Final[tuple[str, ...]] = ("human", "raw", "none")
@@ -71,40 +97,35 @@ CALIBRATED_MODELS: Final[frozenset[str]] = frozenset(_COSINE_CUTS)
 _LEXICAL_CUTS: Final[tuple[float, float, float, float]] = (0.8, 0.6, 0.4, 0.2)
 
 
-def basis_for(model: str | None, *, dense_ran: bool) -> Basis | None:
-    """Which scale this search's hits can be banded on, if any.
+def relevances(
+    result: SearchResult, *, model: str | None, best: float
+) -> tuple[tuple[Leg, Relevance], ...]:
+    """One band per leg that actually scored this passage.
+
+    Empty when neither did, which is a different thing from a band of
+    "very low" and has to read differently.
+
+    **A leg that did not run contributes nothing, and nothing has to
+    ask whether it ran.** That falls out of its score being `None`,
+    which is why there is no longer a `basis_for`: it existed to
+    choose between the two scales, and there is no choice to make.
 
     `model` is the embedding model the *index* was built with, read back
     from its binding rather than from the current configuration - the same
-    rule the query embedding follows, and for the same reason.
+    rule the query embedding follows, and for the same reason. Each
+    collection has its own index and so possibly its own model, which is
+    why it arrives per hit.
     """
-    if not dense_ran:
-        return "lexical"
-    if model is not None and model in _COSINE_CUTS:
-        return "cosine"
-    return None
-
-
-def relevance(
-    result: SearchResult, *, basis: Basis, model: str | None, best: float
-) -> Relevance | None:
-    """How well this passage matched, or None when the leg did not score it.
-
-    A hybrid hit found by the lexical leg alone carries no cosine. Saying
-    nothing about it is correct, and a band derived from the other leg would
-    be a different measurement wearing the same word.
-    """
-    if basis == "cosine":
-        if result.dense_score is None or model is None:
-            return None
-        return _banded(result.dense_score, _COSINE_CUTS[model])
-    if result.bm25_score is None:
-        return None
-    # An all-zero result list is not a ranking; every hit is as good as the
-    # best one, which is what a fraction of zero should mean and what a
-    # division would instead refuse to say.
-    share = 1.0 if best == 0 else result.bm25_score / best
-    return _banded(share, _LEXICAL_CUTS)
+    found: list[tuple[Leg, Relevance]] = []
+    if result.bm25_score is not None:
+        # An all-zero result list is not a ranking; every hit is as good as
+        # the best one, which is what a fraction of zero should mean and
+        # what a division would instead refuse to say.
+        share = 1.0 if best == 0 else result.bm25_score / best
+        found.append(("lexical", _banded(share, _LEXICAL_CUTS)))
+    if result.dense_score is not None and model is not None and model in _COSINE_CUTS:
+        found.append(("meaning", _banded(result.dense_score, _COSINE_CUTS[model])))
+    return tuple(found)
 
 
 def _banded(value: float, cuts: tuple[float, float, float, float]) -> Relevance:
@@ -116,8 +137,23 @@ def _banded(value: float, cuts: tuple[float, float, float, float]) -> Relevance:
     return _LEVELS[-1]
 
 
-def relevance_phrase(basis: Basis) -> str:
-    """What the band on these hits is a band of.
+# One clause per leg, each naming the leg and then the scale its
+# levels are on. The contrast the two clauses draw is the whole point:
+# the lexical band moves if a better match arrives in this collection,
+# the meaning band does not.
+#
+# **Noun phrases, not sentences**, because both front ends print this
+# after the collection's name and "Notes meaning is an absolute
+# cosine" reads as a possessive. The command line colours the name and
+# a page does not, so only the page showed it. Concern #380.
+_LEG_SCALES: Final[dict[Leg, str]] = {
+    "lexical": "lexical as a fraction of the best match here",
+    "meaning": "meaning as an absolute cosine",
+}
+
+
+def relevance_phrase(legs: Collection[Leg]) -> str:
+    """What these bands are bands of, one clause per leg.
 
     Printed once per **group** rather than once per hit: it is a property of
     a collection's own search, and the lexical one in particular has to be
@@ -127,10 +163,19 @@ def relevance_phrase(basis: Basis) -> str:
     It used to be printed once for the whole report, which was true only
     while every collection agreed - and the report dropped it entirely when
     they did not, which is the one case a reader needs it. Concern #230.
+
+    It also used to refuse when a group carried two scales, on the ground
+    that one sentence could not describe both. That was a consequence of
+    there being one band to describe; with a label on each, two clauses
+    describe two scales and mixing is the ordinary case. Concern #379.
+
+    **`legs` is a collection, not a sequence, because the order is this
+    function's and not its caller's.** The caller used to sort by
+    `LEGS.index` first, which put the same rule in two places - and a
+    rule enforced twice is a rule whose removal from either place
+    cannot be observed. Concern #379.
     """
-    if basis == "cosine":
-        return "relevance by cosine similarity"
-    return "relevance relative to the best lexical match"
+    return ", ".join(_LEG_SCALES[leg] for leg in LEGS if leg in legs)
 
 
 def hit_headline(rank: int, result: SearchResult) -> str:
@@ -203,16 +248,18 @@ def raw_scores(result: SearchResult) -> str:
 
 __all__ = [
     "CALIBRATED_MODELS",
+    "LEGS",
     "SCORE_STYLES",
-    "Basis",
+    "Leg",
     "Relevance",
     "ScoreStyle",
-    "basis_for",
+    "basis_phrase",
+    "hit_detail_parts",
     "hit_handle",
     "hit_headline",
     "raw_scores",
-    "relevance",
     "relevance_phrase",
+    "relevances",
 ]
 
 
@@ -224,16 +271,19 @@ class Hit:
     because a merged list is three lists interleaved and a reader has to
     be able to tell them apart without looking anything up.
 
-    `basis` travels with the hit rather than with the list because each
+    `model` travels with the hit rather than with the list because each
     collection has its own index and so its own embedding model: a corpus
     part-way through a model change can hold one index a relevance band
-    is calibrated for and one it is not. `None` is "this hit cannot be
-    banded".
+    is calibrated for and one it is not. `None` is "nothing here can be
+    banded on meaning".
+
+    There is no `basis`. It existed to choose which of the two scales a
+    hit was banded on, and each leg now answers for itself. Concern
+    #379.
     """
 
     collection: str
     result: SearchResult
-    basis: Basis | None
     model: str | None
 
 
@@ -256,15 +306,30 @@ class RenderedHit:
 
     headline: str
     detail: str
+    # The same fields `detail` joins, for a front end whose layout has
+    # to break between them. `detail` remains the byte-identical
+    # string; a test asserts the two cannot drift. Concern #380.
+    detail_parts: tuple[str, ...]
     body: str | None
 
 
-def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:
-    """The line under a hit: how well it matched, and how to reach it.
+_DETAIL_GAP: Final = "  "
+
+
+def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, ...]:
+    """How well a hit matched and how to reach it, one field per part.
 
     A context hit's handle is a path rather than an identifier, because
     a bundle document lives in the user's own project and there is no
     `read_context` to take a pair.
+
+    **The parts rather than the line, because a narrow margin has to
+    break between fields and cannot be trusted to find the break
+    itself.** The window puts this in a monospace gutter about twenty
+    characters wide; `white-space: pre-wrap` there preserved the two
+    spaces but wrapped wherever the line ran out, so a second band
+    arrived and split `meaning:` from `medium`. The join is still what
+    the command line prints, byte for byte. Concern #380.
     """
     handle = (
         bundle_hit_handle(hit.result, bundle_name=BUNDLE_DIRNAME)
@@ -272,15 +337,20 @@ def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:
         else hit_handle(hit.result)
     )
     if style == "none":
-        return handle
+        return (handle,)
     if style == "raw":
-        return f"{raw_scores(hit.result)}  {handle}"
-    if hit.basis is None:
-        return handle
-    level = relevance(hit.result, basis=hit.basis, model=hit.model, best=best)
-    if level is None:
-        return handle
-    return f"relevance: {level}  {handle}"
+        return (raw_scores(hit.result), handle)
+    found = relevances(hit.result, model=hit.model, best=best)
+    return (*(f"{leg}: {level}" for leg, level in found), handle)
+
+
+def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:
+    """The parts on one line, which is what a terminal shows.
+
+    Two spaces between them, so the fields read as fields even where
+    one of them contains a single space.
+    """
+    return _DETAIL_GAP.join(hit_detail_parts(hit, style=style, best=best))
 
 
 def rendered_hit(
@@ -298,6 +368,7 @@ def rendered_hit(
     return RenderedHit(
         headline=hit_headline(rank, hit.result),
         detail=hit_detail(hit, style=style, best=best),
+        detail_parts=hit_detail_parts(hit, style=style, best=best),
         body=(
             None
             if snippet == "none"
@@ -307,19 +378,29 @@ def rendered_hit(
 
 
 def basis_phrase(hits: Sequence[Hit], style: ScoreStyle) -> str:
-    """What this group's relevance levels are a band of, or nothing.
+    """What this group's relevance levels are bands of, or nothing.
 
     Empty when no level is being printed at all, so a report of raw
     scores does not carry a heading explaining a column it does not
-    have, and empty when a group mixes two scales, because one sentence
-    cannot describe both.
+    have, and empty when no hit in the group carries a band.
+
+    It is **not** empty when a group carries both scales. That refusal
+    was a consequence of there being one band; two labelled bands need
+    two clauses, which is what they get. Concern #379.
     """
     if style != "human":
         return ""
-    bases = {hit.basis for hit in hits if hit.basis is not None}
-    if len(bases) != 1:
+    # Every leg any hit in the group has. A group where one hit was
+    # found by both legs and another by one still needs both scales
+    # explained, because both appear in the list.
+    present = {
+        leg
+        for hit in hits
+        for leg, _ in relevances(hit.result, model=hit.model, best=best_lexical(hits))
+    }
+    if not present:
         return ""
-    return relevance_phrase(bases.pop())
+    return relevance_phrase(present)
 
 
 def best_lexical(hits: Sequence[Hit]) -> float:
@@ -373,7 +454,16 @@ def score_style_for(hits: Sequence[Hit], asked: ScoreStyle) -> tuple[ScoreStyle,
     **The saying-so is the caller's**, which is why the second value
     exists. A command line prints a note; a tool may phrase it as part
     of its payload or not at all, and neither should be decided here.
+
+    **It degrades only when *no* leg can speak.** It used to ask
+    whether a single chosen scale existed, so a hybrid search on an
+    uncalibrated model fell back to raw numbers although its lexical
+    band was perfectly good. Now the lexical band is shown and the
+    meaning band is simply absent, which is more than the reader had
+    and none of it invented. Concern #379.
     """
-    if asked != "human" or any(hit.basis is not None for hit in hits):
+    best = best_lexical(hits)
+    banded = any(relevances(hit.result, model=hit.model, best=best) for hit in hits)
+    if asked != "human" or banded:
         return asked, False
     return "raw", True

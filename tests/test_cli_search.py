@@ -149,6 +149,10 @@ def test_each_group_names_its_collection_and_its_relevance_basis(
     The basis line used to be printed once for the whole report and dropped
     whenever two collections disagreed about it - which is the one case a
     reader needs it. Concern #230.
+
+    The heading now names a scale per leg rather than one for the group,
+    so this asserts the lexical clause is there for a search that ran
+    lexically. Concern #379.
     """
     indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
 
@@ -156,7 +160,7 @@ def test_each_group_names_its_collection_and_its_relevance_basis(
 
     assert result.exit_code == 0, result.output
     assert "Notes" in result.output
-    assert "relevance relative to the best lexical match" in result.output
+    assert "lexical as a fraction of the best match here" in result.output
     assert hits_in(result.output, "notes") == 1
 
 
@@ -292,8 +296,11 @@ def test_a_lexical_band_is_relative_to_its_own_group(
     Taken across collections, a strong match in one would push every hit in
     the other down a band for no reason a reader could see. That compromise
     existed only while one column served every collection; the group heading
-    says "relative to the best lexical match" now, once per group.
-    Concern #231.
+    says so now, once per group. Concern #231.
+
+    Six occurrences in docs against one in notes, so a shared best would
+    put the notes hit well down the bands. It reads "very high" because
+    it is the best *notes* has.
     """
     a_docs_page(
         corpus, "sediment", "Sediment sediment sediment sediment sediment sediment."
@@ -304,7 +311,7 @@ def test_a_lexical_band_is_relative_to_its_own_group(
 
     assert result.exit_code == 0, result.output
     notes = group_of(result.output, "notes")
-    assert "relevance: very high" in notes, notes
+    assert "lexical: very high" in notes, notes
 
 
 def test_a_collection_with_no_hits_gets_no_group(
@@ -922,7 +929,8 @@ def test_a_context_group_says_its_band_is_relative(workspace: Path, run: CliRunn
         main, ["search", "four-minute chunks", "--collection", "context"]
     )
 
-    assert "relative to the best lexical match" in result.output
+    assert "lexical as a fraction of the best match here" in result.output
+    assert "absolute cosine" not in result.output
 
 
 def test_a_context_search_does_not_report_a_missing_dense_leg(

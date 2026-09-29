@@ -26,6 +26,7 @@ all six of its guards missing and nothing noticed for five milestones
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -267,11 +268,19 @@ def test_the_command_line_output_is_unchanged_by_the_extraction(corpus: Path):
     # what the first version of this test tripped over. What must
     # hold is that the count comes before the groups and the groups
     # before their hits.
-    summary = next(i for i, line in enumerate(lines) if line.startswith("Found "))
-    scale = next(i for i, line in enumerate(lines) if "relevance" in line)
-    detail = next(
-        i for i, line in enumerate(lines) if "id=" in line and "chunk=" in line
-    )
+    def first(what: str, matches: Callable[[str], bool]) -> int:
+        # An index, or a failure that says which part was missing.
+        # `next` on an exhausted generator raises StopIteration, which
+        # reports as an error with no indication of what was looked for.
+        found = [i for i, line in enumerate(lines) if matches(line)]
+        assert found, f"no {what} line in:\n" + "\n".join(lines)
+        return found[0]
+
+    summary = first("count", lambda line: line.startswith("Found "))
+    # The group heading names the scale its levels are on. It used to
+    # carry the word "relevance"; it now names each leg. Concern #379.
+    scale = first("scale", lambda line: "as a fraction of the best match here" in line)
+    detail = first("handle", lambda line: "id=" in line and "chunk=" in line)
 
     assert summary < scale < detail
 
