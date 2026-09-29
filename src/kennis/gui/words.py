@@ -36,7 +36,28 @@ RECENTS_CLEAR = "Forget these"
 
 NOTHING_FOUND = "Nothing matched. Try fewer words, or a wider scope."
 
-SEARCH_HINT = "Search everything kennis holds"
+
+def search_hint_for(scope: str) -> str:
+    """What the search box says when it is empty.
+
+    **It names the scope it is pointed at.** It read "Search
+    everything kennis holds" whatever the select said, so a reader
+    who had narrowed to `literature` was told the opposite of what
+    was about to happen.
+
+    `EVERYWHERE_LABEL` for a sweep rather than a second word for the
+    same choice: the select's own option says "everywhere", and the
+    box beside it saying "everything" would be two names for one
+    scope.
+
+    Plain text with no emphasis, because a `placeholder` attribute
+    carries no markup. Italicising the scope would mean hiding the
+    native placeholder behind an element positioned over the box,
+    and that was weighed and declined.
+    """
+    where = EVERYWHERE_LABEL if scope == EVERY_SCOPE else scope
+    return f"Search {where} kennis holds"
+
 
 SEARCH_ACTION = "Search"
 
@@ -331,7 +352,6 @@ __all__ = [
     "REMEMBER_PREAMBLE",
     "SCOPE_LABEL",
     "SEARCH_ACTION",
-    "SEARCH_HINT",
     "STILL_RUNNING",
     "SYNC_PREAMBLE",
     "TITLE_HINT",
@@ -340,6 +360,7 @@ __all__ = [
     "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
+    "search_hint_for",
     "unknown_scope",
     "unreadable_note",
 ]

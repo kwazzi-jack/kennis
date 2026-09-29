@@ -4,9 +4,9 @@
       hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope]">
   <input type="search" name="q" value="{{ question }}" placeholder="{{ search_hint }}" autofocus>
   <select name="scope" aria-label="{{ scope_label }}">
-    <option value="{{ everywhere }}"{% if scope == everywhere %} selected{% endif %}>{{ everywhere_label }}</option>
+    <option value="{{ everywhere }}" data-hint="{{ scope_hints[everywhere] }}"{% if scope == everywhere %} selected{% endif %}>{{ everywhere_label }}</option>
     {% for name in scopes %}
-    <option value="{{ name }}"{% if name == scope %} selected{% endif %}>{{ name }}</option>
+    <option value="{{ name }}" data-hint="{{ scope_hints[name] }}"{% if name == scope %} selected{% endif %}>{{ name }}</option>
     {% endfor %}
   </select>
   <button type="submit">{{ search_action }}</button>
@@ -16,4 +16,5 @@
 </div>
 {% include "recents.html" %}
 <script defer src="/static/focus.js"></script>
+<script defer src="/static/hint.js"></script>
 {% endblock %}
