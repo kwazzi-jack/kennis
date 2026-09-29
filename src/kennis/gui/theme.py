@@ -39,7 +39,9 @@ from __future__ import annotations
 
 from typing import Final
 
-from kennis.render.theme import ANSI_COLOURS, ROLES, AnsiColour
+from pygments.token import STANDARD_TYPES, Token, _TokenType
+
+from kennis.render.theme import ANSI_COLOURS, ROLES, AnsiColour, Role
 
 # The page itself. Not white and not black: a hair off each, because
 # a pure-white ground under a serif at reading size glares, and a
@@ -111,10 +113,115 @@ def css_variables(
     # grey at low opacity rather than a tenth colour, so the palette
     # stays nine.
     lines.append(f"  --rule: {table['bright_black']}44;")
+    # The wash behind a marked query term. The `query` role's own
+    # colour is a *foreground*, chosen to contrast with the ground,
+    # so using it as a background would be dark on dark. The same
+    # trick as the hairline: one of the nine at low alpha, composed
+    # here because the layout may name no colour.
+    lines.append(f"  --mark: {table['yellow']}33;")
     for name, role in ROLES.items():
-        value = table[role.colour] if role.colour else "inherit"
-        lines.append(f"  --role-{name}: {value};")
+        lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)
+
+
+def _value_for(role: Role, table: dict[AnsiColour, str]) -> str:
+    """What one role's custom property is set to here.
+
+    Three cases, and two of them were one bug.
+
+    **A dim role becomes the muted grey.** Dim is a terminal
+    attribute and a browser has none, so the adapter has to
+    translate rather than transliterate - the same argument that
+    made `white` the ordinary foreground rather than `#FFFFFF`.
+    Ten roles are dim without a colour, `muted` among them, and the
+    interface used `var(--role-muted)` in nine places.
+
+    **A role with no colour at all becomes `currentColor`, not
+    `inherit`.** `inherit` on a custom property declared at `:root`
+    has no parent to inherit from, so it resolves to the
+    guaranteed-invalid value; `color: var(--role-muted)` then fell
+    back to the inherited text colour and every muted element on
+    every page rendered at full ink. Measured in the browser, not
+    inferred. `currentColor` says what was meant and is valid.
+    Concern #351.
+    """
+    if role.colour:
+        return table[role.colour]
+    if role.dim:
+        return table["bright_black"]
+    return "currentColor"
+
+
+# Pygments' token hierarchy, mapped onto the seven code roles
+# `render/theme.py` already names. **No colour is chosen here**: the
+# registry decides which role wears which of the nine names and this
+# file decides what a name looks like, so a second palette deciding
+# the same thing for code would be the thing the split exists to
+# prevent.
+#
+# Ordered by specificity only where two roots are on one branch -
+# `String` and `Number` sit under `Literal`, and the walk finds them
+# first because it climbs from the leaf.
+_CODE_ROLES: Final[tuple[tuple[_TokenType, str], ...]] = (
+    (Token.Comment, "code_comment"),
+    (Token.Keyword, "code_keyword"),
+    (Token.Literal.String, "code_string"),
+    (Token.Literal.Number, "code_number"),
+    (Token.Name, "code_name"),
+    (Token.Operator, "code_operator"),
+    (Token.Punctuation, "code_operator"),
+    (Token.Generic.Deleted, "removed"),
+    (Token.Generic.Inserted, "added"),
+    (Token.Literal, "code_string"),
+    (Token.Error, "error"),
+)
+
+
+def _code_role(token_type: _TokenType) -> str | None:
+    """The role a pygments token wears, or None to leave it alone.
+
+    Climbs the token's own ancestry rather than matching a name, so
+    a lexer's private subtype - `Token.Literal.Scalar.Plain` in
+    YAML - lands on its nearest mapped ancestor instead of falling
+    through uncoloured.
+    """
+    walk: _TokenType | None = token_type
+    while walk is not None:
+        for root, role in _CODE_ROLES:
+            if walk is root:
+                return role
+        walk = walk.parent
+    return None
+
+
+def code_css() -> str:
+    """A rule for every class pygments can emit inside `.highlight`.
+
+    Generated from `STANDARD_TYPES` rather than from a list someone
+    wrote, because the defect this fixes was highlighting that ran
+    on every fenced block and produced classes no stylesheet had a
+    rule for - a hand-written list would have the same gap in a
+    smaller place.
+
+    **Two kinds of rule.** An exact class for every standard type,
+    and a prefix selector for each of their roots: a token type
+    pygments has no short name for is emitted as its root's name
+    joined to the rest of its path, so YAML produces `l-Scalar-Plain`
+    and `p-Indicator`. Without the second kind those inherit nothing.
+    """
+    exact: list[str] = []
+    roots: dict[str, str] = {}
+    for token_type, short in sorted(STANDARD_TYPES.items(), key=lambda pair: pair[1]):
+        role = _code_role(token_type)
+        if not short or role is None:
+            continue
+        exact.append(f".highlight .{short} {{ color: var(--role-{role}); }}")
+        roots.setdefault(short, role)
+    prefixed = [
+        f'.highlight [class^="{short}-"] {{ color: var(--role-{role}); }}'
+        for short, role in sorted(roots.items())
+    ]
+    return "\n".join(["/* Code, in the roles the terminal uses. */", *exact, *prefixed])
 
 
 def css_weights() -> str:
@@ -161,7 +268,7 @@ def stylesheet() -> str:
         "@media (prefers-color-scheme: dark) {\n"
         f":root {{\n{css_variables(CSS_COLOURS_DARK, DARK_GROUND)}\n}}\n"
         "}\n\n"
-        f"{css_weights()}\n\n{_LAYOUT}"
+        f"{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
     )
 
 
@@ -330,6 +437,15 @@ a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
 .hits a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .hits a:hover, .hits a:focus-visible { text-decoration: underline; }
 .hits .body { color: var(--role-muted); }
+/* Where the query matched. A wash rather than a block of colour:
+   the marked words are still the corpus's prose and should read as
+   prose with something behind them, not as a separate element. */
+mark {
+  background: var(--mark);
+  color: var(--ink);
+  border-radius: 0.15em;
+  padding: 0 0.1em;
+}
 
 /* A scope the sweep could not reach, and the command that fixes it.
    One row per scope rather than the command line's one line per

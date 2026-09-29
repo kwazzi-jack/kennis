@@ -14,7 +14,10 @@
   <li>
     <a class="role-operation" href="{{ hit.href }}">{{ hit.headline }}</a>
     <p class="role-muted detail">{{ hit.detail }}</p>
-    {% if hit.body %}<p class="body">{{ hit.body }}</p>{% endif %}
+    {# `safe` because `marked_snippet` escaped every character of the
+       corpus's text itself and emitted only the tags it chose. Jinja
+       escaping again would show `&lt;em&gt;` on the page. #}
+    {% if hit.body %}<p class="body">{{ hit.body | safe }}</p>{% endif %}
   </li>
 {% endfor %}
 </ol>

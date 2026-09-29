@@ -85,6 +85,7 @@ def to_html(
     *,
     load_remote_images: bool = False,
     marked: MarkedRange | None = None,
+    without_title: str | None = None,
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
 
@@ -96,14 +97,56 @@ def to_html(
     arriving from a search hit lands on the passage rather than at the
     top of a nineteen-page paper. Omitted, the output is byte for byte
     what it was before marking existed.
+
+    `without_title` drops a leading heading that only repeats the
+    document's own title. 44 of the 45 crawled pages in one corpus
+    open with an `# H1` saying what the frontmatter already says, so
+    a reader saw the title twice with the provenance between the two
+    copies.
+
+    **Dropped from the tokens, never from the text.**
+    `Chunk.char_start` and `char_end` address `Document.body`, so
+    editing that string before rendering would put every chunk mark
+    out by the heading's length. Concern #353.
     """
     parser = _parser(load_remote_images=load_remote_images)
-    if marked is None:
+    if marked is None and without_title is None:
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
-    return str(
-        parser.renderer.render(_wrapped(tokens, markdown, marked), parser.options, {})
-    )
+    if marked is not None:
+        tokens = _wrapped(tokens, markdown, marked)
+    if without_title is not None:
+        tokens = _without_title(tokens, without_title)
+    return str(parser.renderer.render(tokens, parser.options, {}))
+
+
+def _without_title(tokens: list[Token], title: str) -> list[Token]:
+    """`tokens` without a leading `# ` heading that repeats `title`.
+
+    Only the first block, and only an exact match once both are
+    stripped: a document whose first heading says something else is
+    a document with a heading, and removing it would lose text the
+    corpus holds. A `##` is left alone too - a second-level heading
+    is structure, not a title.
+
+    Any wrapper `_wrapped` opened is stepped over rather than
+    removed, so a mark that began at the title still opens in the
+    right place.
+    """
+    at = 0
+    while at < len(tokens) and tokens[at].type not in _HEADINGS:
+        if tokens[at].type != "html_block" and not tokens[at].type.endswith("_open"):
+            return tokens
+        at += 1
+    if at + 2 >= len(tokens) or tokens[at].tag != "h1":
+        return tokens
+    inline = tokens[at + 1]
+    if inline.type != "inline" or inline.content.strip() != title.strip():
+        return tokens
+    return tokens[:at] + tokens[at + 3 :]
+
+
+_HEADINGS: Final = frozenset({"heading_open"})
 
 
 def _wrapped(tokens: list[Token], markdown: str, marked: MarkedRange) -> list[Token]:

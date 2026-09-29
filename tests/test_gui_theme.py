@@ -38,7 +38,7 @@ from kennis.gui.theme import (
     css_variables,
     stylesheet,
 )
-from kennis.render.theme import ANSI_COLOURS, ROLES
+from kennis.render.theme import ANSI_COLOURS, ROLES, Role
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
 
@@ -207,13 +207,29 @@ def test_the_dark_block_redefines_every_role():
         assert f"--role-{name}:" in dark, f"{name} is not redefined for dark"
 
 
+def _expected(role: Role, table: dict[str, str]) -> str:
+    """What a role's property must be, in the three cases.
+
+    A coloured role gets its colour, which is the guard these tests
+    were written for. A **dim** role with no colour gets the muted
+    grey, because dim is a terminal attribute a browser has none of -
+    the same translation that made `white` the foreground. A role
+    with neither gets `currentColor`, not `inherit`: a custom
+    property declared at `:root` has no parent, so `inherit` resolved
+    to the guaranteed-invalid value and every muted element on every
+    page rendered at full ink. Concern #351.
+    """
+    if role.colour:
+        return table[role.colour]
+    return table["bright_black"] if role.dim else "currentColor"
+
+
 def test_the_light_variables_still_come_from_the_registry():
     """The original guard, kept: a role's colour is the one the
     registry gave it, looked up in the map, and never chosen here."""
     emitted = dict(re.findall(r"--role-([a-z_]+):\s*([^;]+);", css_variables()))
     for name, role in ROLES.items():
-        expected = CSS_COLOURS[role.colour] if role.colour else "inherit"
-        assert emitted[name] == expected
+        assert emitted[name] == _expected(role, CSS_COLOURS), name
 
 
 # ---------------------------------------------------------------------------
