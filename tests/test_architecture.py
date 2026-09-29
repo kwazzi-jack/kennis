@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from platformdirs import user_state_dir
+from platformdirs import user_data_dir, user_state_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
@@ -427,6 +427,32 @@ def test_a_test_does_not_run_in_the_repository():
     """
     assert Path.cwd() != PROJECT_ROOT
     assert not (PROJECT_ROOT / ".context").exists()
+
+
+def test_a_test_does_not_read_the_real_corpus():
+    """The corpus a test resolves is a test's, not Brian's.
+
+    `context.resolve_context` falls back to the platform's data
+    directory when nothing names a corpus, and on this machine that
+    is a real corpus of 55 documents. `build_app(TOKEN)` names none,
+    so two interface tests read it - and passed for five units while
+    asserting nothing, because the thing that made them pass was the
+    developer's own data.
+
+    All four CI jobs failed on exactly those two, which is what a
+    test dependent on one machine looks like from another. The
+    autouse `no_real_corpus` fixture points the variable at a path
+    that does not exist, and this is what fails if it is removed.
+
+    Concern #361.
+    """
+    from kennis.context import resolve_context
+
+    resolved = resolve_context().corpus_root
+
+    assert resolved != Path(user_data_dir("kennis"))
+    assert not resolved.is_relative_to(Path.home() / ".local" / "share")
+    assert not resolved.exists(), "a test was handed a usable corpus it did not build"
 
 
 def test_a_test_does_not_write_to_the_real_state_directory():

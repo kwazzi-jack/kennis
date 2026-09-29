@@ -199,12 +199,23 @@ def test_every_hit_of_a_dense_search_carries_its_cosine(
     a_corpus(notes, tmp_path)
     index = built(notes, index_root)
 
-    # More notes than the 50-candidate window, all equidistant from the
-    # query under WordEmbedder, so the last of them cannot be in the dense
-    # window: ties break by position. Only the lexical leg reaches it.
+    # More notes than the 50-candidate window, and `rare.md` has to fall
+    # outside it while the lexical leg still reaches it.
+    #
+    # **Strictly last by cosine, not last by position.** The first version
+    # gave every note the same vector and relied on ties breaking by the
+    # order chunks were indexed - which is the order the filesystem lists
+    # a directory in, so it held on ext4 and not on APFS, and macOS put
+    # `rare.md` at dense rank 47. The test said so rather than passing,
+    # which is the only reason it was noticed. Concern #362.
+    #
+    # Under `WordEmbedder` a text with none of the four axis words sits on
+    # axis 4, so the query and the fillers are parallel; `rare.md` names an
+    # axis and is orthogonal to the query. Its cosine is 0 against their 1,
+    # whatever order anything is listed in.
     for number in range(60):
         a_note(notes, tmp_path, f"filler{number}.md", f"# Filler {number}\n\nprose")
-    a_note(notes, tmp_path, "rare.md", "# Rare\n\nzzuniquetoken appears here")
+    a_note(notes, tmp_path, "rare.md", "# Rare\n\nzzuniquetoken imaging")
     index = built(notes, index_root)
 
     hits = search(index, "zzuniquetoken", top_k=10, embedder=WordEmbedder())
@@ -213,6 +224,13 @@ def test_every_hit_of_a_dense_search_carries_its_cosine(
     assert found.dense_rank is None, "the fixture no longer exercises the case"
     assert found.dense_score is not None
     assert all(hit.dense_score is not None for hit in hits)
+    # What makes the case above hold, asserted rather than assumed: it is
+    # outside the dense window because it is the least similar thing there
+    # is, not because of where it landed.
+    others = [hit.dense_score for hit in hits if hit is not found]
+    assert all(found.dense_score < other for other in others if other is not None), (
+        "the fixture no longer puts rare.md strictly last by cosine"
+    )
 
 
 # ---------------------------------------------------------------------------
