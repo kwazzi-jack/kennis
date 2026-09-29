@@ -101,6 +101,15 @@ def git(
             cwd=cwd,
             capture_output=True,
             text=True,
+            # **Not the locale's codec.** `text=True` alone decodes with
+            # `locale.getencoding()`, which is UTF-8 here and the ANSI code
+            # page on Windows, where a path with an accent in it came back
+            # mojibake and the status parse disagreed with the filesystem.
+            # Git emits paths as UTF-8. No `errors=`: a path that will not
+            # decode has to raise, because `errors="replace"` would hand
+            # kennis a name it would then use to address a file.
+            # Concern #388.
+            encoding="utf-8",
             check=False,
             timeout=timeout,
             stdin=subprocess.DEVNULL,

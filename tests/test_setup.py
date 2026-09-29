@@ -8,10 +8,13 @@ reachable from a GUI later.
 
 from __future__ import annotations
 
+import inspect
+import os
 from pathlib import Path
 
 import pytest
 
+from kennis.engine import setup
 from kennis.engine.setup import (
     Question,
     apply_answers,
@@ -238,6 +241,17 @@ def test_a_secret_never_reaches_the_config_file(isolated: Path):
     )
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason=(
+        "Windows has no POSIX file mode: `chmod` only toggles read-only and "
+        "the file reports 0666. What protects the key there is the per-user "
+        "profile directory's ACL, which denies the same set 0600 denies - "
+        "other unprivileged users of the machine. Asserted in "
+        "`test_the_credentials_file_is_where_the_platform_protects_it`, "
+        "which runs everywhere. Concern #389."
+    ),
+)
 def test_the_credentials_file_is_readable_only_by_its_owner(isolated: Path):
     apply_answers(
         {"embedding.backend": "openai", "embedding.api_key": "sk-notarealkey"}
@@ -245,6 +259,28 @@ def test_the_credentials_file_is_readable_only_by_its_owner(isolated: Path):
 
     mode = (isolated / "credentials.toml").stat().st_mode & 0o777
     assert mode == 0o600, oct(mode)
+
+
+def test_the_credentials_file_is_where_the_platform_protects_it(isolated: Path):
+    """The part of the guarantee that holds on every platform.
+
+    `chmod` is a no-op on Windows, so kennis cannot restrict the file
+    itself there and relies on the config directory - which is under the
+    user's profile and whose ACL denies exactly what 0600 denies. That is
+    only true while the file stays in the config directory, which is what
+    this asserts. Concern #389."""
+    apply_answers(
+        {"embedding.backend": "openai", "embedding.api_key": "sk-notarealkey"}
+    )
+
+    written = isolated / "credentials.toml"
+
+    assert written.is_file()
+    assert written.parent == isolated
+    # And the call that would restrict it is still made, so the guarantee
+    # is the platform's only where the platform gives kennis no choice.
+    source = inspect.getsource(setup)
+    assert "chmod(0o600)" in source.replace(" ", "")
 
 
 def test_applying_a_bad_answer_refuses_before_writing(isolated: Path):
