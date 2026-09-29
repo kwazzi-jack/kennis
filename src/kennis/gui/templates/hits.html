@@ -1,3 +1,12 @@
+{# What these hits are for. It rides inside `#hits`, which is what
+   htmx replaces, so every swap restates it; `searching.js` compares
+   it with the form to decide whether the page is up to date. A
+   marker outside the swapped region would keep saying whatever it
+   said when the page was first drawn. An id rather than a class
+   because it carries no styling, and every class a template uses
+   has to be styled - a test says so. #}
+<span id="answered" data-query="{{ question }}" data-scope="{{ scope }}"
+      hidden></span>
 {% if problem %}
 <p class="role-warning">{{ problem }}</p>
 {% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
