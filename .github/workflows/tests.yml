@@ -100,6 +100,14 @@ jobs:
       # the job rather than in the code. The `mcp` extra stays optional
       # for a user: `test_engine_imports_without_the_interface_libraries`
       # proves `import kennis.engine` works without it.
+      #
+      # **No `--extra mineru`, and that is a decision rather than an
+      # oversight.** It pulls torch and a model stack, which would dominate
+      # every job in the matrix for a converter the suite exercises through
+      # a fake. What is covered is kennis's handling of a converter - the
+      # staging, the timeout, the failure reporting, the output parse -
+      # which is where kennis's defects would be. What is not covered is
+      # MinerU itself, on any platform. Concerns #392, #395.
       - run: uv sync --frozen --extra mcp --extra gui --python ${{ matrix.python }}
 
       # `--python` on each run as well as on the sync: without it `uv run`
