@@ -83,6 +83,38 @@ NAV_LABELS: Final[dict[str, str]] = {
     "manage": "Manage",
 }
 
+SIDEBAR_SHOW = "Show the menu"
+
+SIDEBAR_HIDE = "Hide the menu"
+
+SEARCH_PAGE = "Search"
+
+ADD_DOCUMENTS = "Add documents"
+
+INDEX_DOCUMENTS = "Index"
+
+# What the sidebar lists, in the order it lists it. Ordered data
+# rather than a mapping, because the order is a decision: the four
+# Brian asked to have one click away come before Manage, which is
+# where two of them used to live.
+#
+# **The page labels are taken from `NAV_LABELS`, not repeated.** A
+# test ties each of those to its page's `<h1>`; a second spelling
+# here would drift from the heading while that test kept passing.
+#
+# A path with a fragment reaches a section rather than a page, which
+# is why those two are not in `NAV_LABELS` - that mapping is about
+# pages, and a section has no `<h1>`. A separate test ties each to
+# its section's `<h2>`.
+SIDEBAR_LINKS: Final[tuple[tuple[str, str], ...]] = (
+    ("/", SEARCH_PAGE),
+    ("/held", NAV_LABELS["held"]),
+    ("/remember", NAV_LABELS["remember"]),
+    ("/manage#add", ADD_DOCUMENTS),
+    ("/manage#index", INDEX_DOCUMENTS),
+    ("/manage", NAV_LABELS["manage"]),
+)
+
 NOTHING_TO_INDEX = "There is nothing to index yet."
 
 BUNDLE_NOT_COMMITTED = (
@@ -324,6 +356,7 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
 
 __all__ = [
     "ADD_ACTION",
+    "ADD_DOCUMENTS",
     "ADD_PREAMBLE",
     "BACK_TO_SEARCH",
     "BUNDLE_NOT_COMMITTED",
@@ -335,6 +368,7 @@ __all__ = [
     "GROUP_HINT",
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
+    "INDEX_DOCUMENTS",
     "INDEX_PREAMBLE",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
@@ -359,6 +393,10 @@ __all__ = [
     "SCOPE_LABEL",
     "SEARCHING",
     "SEARCH_ACTION",
+    "SEARCH_PAGE",
+    "SIDEBAR_HIDE",
+    "SIDEBAR_LINKS",
+    "SIDEBAR_SHOW",
     "STILL_RUNNING",
     "SYNC_PREAMBLE",
     "TITLE_HINT",

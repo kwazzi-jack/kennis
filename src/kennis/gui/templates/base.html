@@ -1,5 +1,5 @@
-<!doctype html>
-<html lang="en">
+{% set sidebar = sidebar_state(request) %}<!doctype html>
+<html lang="en" data-sidebar="{{ sidebar }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,13 +10,23 @@
 <script defer src="/static/vendor/katex.min.js"></script>
 <script defer src="/static/typeset.js"></script>
 <script defer src="/static/revision.js"></script>
+<script defer src="/static/sidebar.js"></script>
 </head>
 <body>
-<header>
+<header class="sidebar">
+  {# Present in both states, because "always present for the user to
+     open" is the requirement: a collapsed sidebar that hid its own
+     toggle could not be reopened. Both labels come from the server
+     and `sidebar.js` picks one. #}
+  <button type="button" class="sidebar-toggle" id="sidebar-toggle"
+          data-show="{{ sidebar_show }}" data-hide="{{ sidebar_hide }}"
+          aria-expanded="{{ 'false' if sidebar == 'closed' else 'true' }}"
+          aria-label="{{ sidebar_show if sidebar == 'closed' else sidebar_hide }}"
+          ><span class="bars"></span></button>
   <a class="wordmark" href="/">kennis</a>
   <nav>
-    {% for path, label in nav_labels.items() %}
-    <a href="/{{ path }}">{{ label }}</a>
+    {% for href, label in sidebar_links %}
+    <a class="sidebar-link" href="{{ href }}">{{ label }}</a>
     {% endfor %}
   </nav>
 </header>

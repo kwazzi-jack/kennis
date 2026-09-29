@@ -307,7 +307,22 @@ _LAYOUT = """\
   /* Under 70 characters of the column face at 1.0625rem. */
   --measure: 33rem;
   --column: 'Source Serif 4', Charter, Cambria, Georgia, serif;
-  --gutter: ui-monospace, 'DejaVu Sans Mono', 'Cascadia Mono', Menlo, monospace;
+  /* Two faces, divided by the rule the interface already uses.
+     `--gutter` is what kennis composed - provenance, counts,
+     labels, buttons, messages - and `--mono` is what must be read
+     or typed verbatim.
+
+     They were one variable, and `code, pre` was set in it. Making
+     the margin proportional, which is what was asked for, would
+     have put every code block in a sans and undone the syntax
+     highlighting with it. Nothing would have failed. */
+  --gutter: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans',
+            'DejaVu Sans', Arial, sans-serif;
+  --mono: ui-monospace, 'DejaVu Sans Mono', 'Cascadia Mono', Menlo, monospace;
+
+  /* The sidebar's width, which is the whole of what collapsing
+     changes: the column is centred in whatever is left. */
+  --sidebar: 13rem;
 }
 
 * { box-sizing: border-box; }
@@ -331,17 +346,74 @@ main {
 /* The header is the one hairline in the design. It separates the
    interface's own furniture from everything below it, which is
    either kennis speaking or the corpus speaking. */
-header {
-  display: block;
-  padding: 1.4rem 1.5rem 0.9rem;
-  border-bottom: 1px solid var(--rule);
+:root[data-sidebar="closed"] { --sidebar: 3.25rem; }
+
+/* The column is centred in what the sidebar leaves, which is why
+   the padding is on `body` and `main` keeps its own `margin: auto`.
+   Putting the offset on `main` instead would centre it in the whole
+   viewport and slide it under the sidebar. */
+body { padding-left: var(--sidebar); }
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar);
+  box-sizing: border-box;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.2rem 1rem;
+  border-right: 1px solid var(--rule);
   font-family: var(--gutter);
   font-size: 0.8125rem;
 }
 
-header nav { display: flex; gap: 1.5rem; margin-top: 0.7rem; }
-header a { color: var(--role-muted); text-decoration: none; }
-header a:hover { color: var(--ink); text-decoration: underline; }
+.sidebar nav { display: flex; flex-direction: column; gap: 0.55rem; }
+.sidebar a { color: var(--role-muted); text-decoration: none; }
+.sidebar a:hover { color: var(--ink); text-decoration: underline; }
+
+/* The whole row is the target, not the width of the word: a list
+   of six destinations in a narrow column is easier to hit than to
+   aim at. */
+.sidebar-link { display: block; }
+
+/* The wordmark keeps full ink inside the sidebar, and needs saying
+   because `.sidebar a` is more specific than `.wordmark` - one
+   class plus an element beats one class - so the name of the
+   interface was rendered in the muted grey meant for navigation.
+   Measured in the browser: the muted grey where the body's ink
+   was expected. The second time a colour has been lost to a
+   rule nobody was looking at; concern #351 was the first. */
+.sidebar .wordmark,
+.sidebar .wordmark:hover { color: var(--ink); }
+
+.sidebar-toggle { align-self: flex-start; padding: 0.45rem 0.55rem; }
+
+/* A shortcut lands its section against the top of the viewport
+   otherwise, with the heading touching the edge. */
+#add, #index { scroll-margin-top: 1.5rem; }
+
+/* Three bars, drawn rather than typed: the ASCII rule leaves no
+   hamburger glyph and no arrows, and an image would be a fourth
+   vendored asset for twelve pixels. */
+.bars {
+  display: block;
+  width: 1rem;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 5px currentColor, 0 10px currentColor;
+  margin: 0 0 10px;
+}
+
+/* Collapsed, only the toggle is left - the rail keeps a width so
+   there is something to click, which is what "always present for
+   the user to open" means. */
+:root[data-sidebar="closed"] .sidebar { padding: 1.2rem 0.5rem; }
+:root[data-sidebar="closed"] .wordmark { display: none; }
+:root[data-sidebar="closed"] .sidebar nav { display: none; }
 
 /* The one place the interface says its own name, and it says it
    once. It was the first item in the navigation, at the same size
@@ -526,9 +598,18 @@ article img { max-width: 100%; height: auto; }
 }
 
 code, pre {
-  font-family: var(--gutter);
+  font-family: var(--mono);
   font-size: 0.9em;
 }
+
+/* A printed command had no face of its own. `.role-command` is a
+   generated colour role, so it inherited its surroundings: the
+   monospace inside `.skipped`, and the serif body face in
+   `problem.html`, `outcome.html`, `job-outcome.html` and
+   `document.html`. The same command read two ways depending on
+   which page refused. rules.md 4.4 says a printed command must run
+   as printed; it should look like one too. */
+.role-command { font-family: var(--mono); }
 
 pre {
   overflow-x: auto;
@@ -685,8 +766,31 @@ article table {
   .hits li { grid-template-columns: 1fr; row-gap: 0.4rem; }
   .hits li > * { grid-column: 1; }
   .hits .detail { grid-row: auto; text-align: left; }
-  header { padding: 1.1rem 1rem 0.8rem; }
-  header nav { flex-wrap: wrap; gap: 0.9rem; }
+  /* Back across the top rather than off-canvas. A sliding overlay
+     is a great deal of machinery for a width this interface is not
+     used at, and a static bar is what it already was. */
+  :root, :root[data-sidebar="closed"] { --sidebar: 0px; }
+  body { padding-left: 0; }
+  .sidebar {
+    position: static;
+    width: auto;
+    flex-direction: row;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    padding: 1.1rem 1rem 0.8rem;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  .sidebar-toggle { display: none; }
+  :root[data-sidebar="closed"] .wordmark { display: block; }
+  .sidebar nav,
+  :root[data-sidebar="closed"] .sidebar nav {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+  }
   main { padding: 1.5rem 1rem 4rem; }
 }
 

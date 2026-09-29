@@ -188,7 +188,19 @@ def test_no_colour_is_written_outside_the_two_maps():
     place a drift starts."""
     from kennis.gui.theme import layout_css
 
-    literals = re.findall(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(", layout_css())
+    # **Declaration values only, and with comments stripped.** The
+    # first version searched the whole text for `#xxx`, which has
+    # the shape of a three-digit hex and also the shape of an id
+    # selector and of a concern number in a comment: `#add { ... }`
+    # and "concern #351" both failed it. A colour cannot appear in
+    # a selector, so nothing is lost by looking where colours are.
+    without_comments = re.sub(r"/\*.*?\*/", " ", layout_css(), flags=re.DOTALL)
+    values = re.findall(r":\s*([^;{}]*)", without_comments)
+    literals = [
+        found
+        for value in values
+        for found in re.findall(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(", value)
+    ]
     assert not literals, f"colour literals in the layout: {literals}"
 
 
