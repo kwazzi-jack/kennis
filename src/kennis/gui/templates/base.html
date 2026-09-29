@@ -1,5 +1,5 @@
-{% set sidebar = sidebar_state(request) %}<!doctype html>
-<html lang="en" data-sidebar="{{ sidebar }}">
+{% set sidebar = sidebar_state(request) %}{% set theme = theme_choice(request) %}<!doctype html>
+<html lang="en" data-sidebar="{{ sidebar }}" data-theme="{{ theme }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,6 +11,7 @@
 <script defer src="/static/typeset.js"></script>
 <script defer src="/static/revision.js"></script>
 <script defer src="/static/sidebar.js"></script>
+<script defer src="/static/theme.js"></script>
 </head>
 <body>
 <header class="sidebar">
@@ -29,6 +30,11 @@
     <a class="sidebar-link" href="{{ href }}">{{ label }}</a>
     {% endfor %}
   </nav>
+  <select class="theme" id="theme" aria-label="{{ theme_label }}">
+    {% for value, label in theme_choices %}
+    <option value="{{ value }}"{% if value == theme %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
 </header>
 <p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision }}"
    data-message="{{ corpus_changed }}"></p>

@@ -83,6 +83,17 @@ NAV_LABELS: Final[dict[str, str]] = {
     "manage": "Manage",
 }
 
+THEME_LABEL = "Colours"
+
+# The three choices, in the order they are offered. `system` first
+# because it is the default and the behaviour that existed before
+# there was a choice.
+THEME_CHOICES: Final[tuple[tuple[str, str], ...]] = (
+    ("system", "Match the system"),
+    ("light", "Light"),
+    ("dark", "Dark"),
+)
+
 SIDEBAR_SHOW = "Show the menu"
 
 SIDEBAR_HIDE = "Hide the menu"
@@ -399,6 +410,8 @@ __all__ = [
     "SIDEBAR_SHOW",
     "STILL_RUNNING",
     "SYNC_PREAMBLE",
+    "THEME_CHOICES",
+    "THEME_LABEL",
     "TITLE_HINT",
     "describe_count",
     "describe_holding",

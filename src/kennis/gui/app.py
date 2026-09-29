@@ -115,6 +115,26 @@ def _sidebar_state(request: Request) -> str:
     return _CLOSED if request.cookies.get(_SIDEBAR_COOKIE) == _CLOSED else _OPEN
 
 
+_THEME_COOKIE: Final = "theme"
+_SYSTEM: Final = "system"
+
+
+def _theme_choice(request: Request) -> str:
+    """Which palette this reader asked for, defaulting to the system.
+
+    Only a value the interface actually offers. Anything can be in a
+    cookie, and `data-theme="chartreuse"` would match neither rule -
+    which happens to be harmless, but relying on that is relying on
+    the cascade to absorb bad input.
+    """
+    asked = request.cookies.get(_THEME_COOKIE, _SYSTEM)
+    offered = {value for value, _ in words.THEME_CHOICES}
+    return asked if asked in offered else _SYSTEM
+
+
+_TEMPLATES.env.globals["theme_choice"] = _theme_choice
+_TEMPLATES.env.globals["theme_choices"] = words.THEME_CHOICES
+_TEMPLATES.env.globals["theme_label"] = words.THEME_LABEL
 _TEMPLATES.env.globals["sidebar_state"] = _sidebar_state
 _TEMPLATES.env.globals["sidebar_links"] = words.SIDEBAR_LINKS
 _TEMPLATES.env.globals["sidebar_show"] = words.SIDEBAR_SHOW
