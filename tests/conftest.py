@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from platforms import NO_POSIX_SHELL
+
 # A fake MinerU. It parses the flags the converter passes, writes one markdown
 # file per staged input in the nested layout the real tool produces, and can
 # be told to fail one document or all of them.
@@ -132,7 +134,14 @@ def somewhere_else(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Put a fake `mineru` first on PATH and return the log it writes."""
+    """Put a fake `mineru` first on PATH and return the log it writes.
+
+    Skipped rather than marked, so every test that takes this fixture is
+    covered and so is the next one somebody writes. The reason is in
+    `tests/platforms.py` with the others. Concern #392.
+    """
+    if os.name == "nt":
+        pytest.skip(NO_POSIX_SHELL)
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
     script = binary_dir / "mineru"

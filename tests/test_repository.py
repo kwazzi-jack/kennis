@@ -17,6 +17,7 @@ from kennis.engine.history.repository import (
     Repository,
     initialise_corpus,
 )
+from platforms import needs_arrow_filenames
 
 
 @pytest.fixture
@@ -288,6 +289,7 @@ def test_a_committed_path_that_is_not_ascii_is_reported_as_itself(corpus: Path):
     assert changes == [("A", UMLAUT_NAME)]
 
 
+@needs_arrow_filenames
 def test_a_path_containing_an_arrow_is_not_read_as_a_rename(corpus: Path):
     """`R  old -> new` is how the non-NUL format joins a rename onto one
     line, so a filename containing those characters was a misparse waiting."""
