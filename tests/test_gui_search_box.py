@@ -201,3 +201,95 @@ def test_a_search_in_the_address_answers_without_any_script(
 
     assert 'value="bandpass"' in page
     assert "gains" in page
+
+
+# ---------------------------------------------------------------------------
+# Saying when it is working
+# ---------------------------------------------------------------------------
+
+
+def test_the_hits_say_what_they_are_the_hits_for(corpus: Path, client: TestClient):
+    """The indicator asks one question - are the hits on the page the
+    hits for what is in the box? - so the page has to state what the
+    hits are for. It travels inside `#hits`, which is what htmx
+    replaces, so every swap brings a fresh statement.
+
+    A marker outside the swapped region would keep saying whatever it
+    said when the page was first drawn."""
+    a_note(corpus, "gains", "The bandpass and the gains of the array.")
+    admitted(client)
+
+    fragment = client.get("/hits", params={"q": "bandpass", "scope": "notes"}).text
+
+    assert 'data-query="bandpass"' in fragment
+    assert 'data-scope="notes"' in fragment
+
+
+def test_what_the_hits_are_for_is_safe_in_an_attribute(
+    corpus: Path, client: TestClient
+):
+    """The query is the reader's own text and it lands in an HTML
+    attribute. A quote in it would close the attribute and everything
+    after it would be markup."""
+    admitted(client)
+
+    fragment = client.get(
+        "/hits", params={"q": '" onmouseover="x', "scope": "notes"}
+    ).text
+
+    assert '" onmouseover="x' not in fragment
+    assert "onmouseover" not in fragment.replace("&#34; onmouseover=&#34;x", "")
+
+
+def test_the_page_carries_an_indicator_with_words_from_python(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+
+    page = client.get("/").text
+
+    assert words.SEARCHING in page
+    assert 'aria-live="polite"' in page
+
+
+def test_the_indicator_script_composes_nothing_and_remembers_nothing():
+    """Two properties, and the second is why this is not the obvious
+    implementation.
+
+    **No words.** The same rule `hint.js` and `progress.js` follow.
+
+    **No timer.** The obvious version shows on `input` and hides on
+    `htmx:afterSwap`, and gets stuck: htmx's trigger is `input
+    changed`, so typing a character and deleting it fires no request
+    and the indicator never comes down. The remedy people reach for
+    is a `setTimeout` safety net, which is a second wrong answer -
+    it hides a true statement after an arbitrary delay. This one
+    recomputes from what is on the page, so there is nothing to get
+    stuck and nothing to time out."""
+    script = (STATIC / "searching.js").read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("//")
+    )
+
+    assert words.SEARCHING not in code
+    assert "setTimeout" not in code
+    assert "setInterval" not in code
+    # It has to read both halves of the comparison, or it is not
+    # deriving the answer from anything.
+    assert "dataset.query" in code
+    assert "dataset.scope" in code
+
+
+def test_the_indicator_is_hidden_when_the_hits_match_the_box(
+    corpus: Path, client: TestClient
+):
+    """A page drawn from the address is already up to date, so it must
+    not open saying it is searching."""
+    a_note(corpus, "gains", "The bandpass and the gains of the array.")
+    admitted(client)
+
+    page = client.get("/", params={"q": "bandpass", "scope": "notes"}).text
+    indicator = page[page.index('id="searching"') :]
+    indicator = indicator[: indicator.index(">") + 1]
+
+    assert "hidden" in indicator

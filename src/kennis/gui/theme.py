@@ -578,6 +578,16 @@ blockquote {
 .search { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1rem; }
 .search input[type="search"] { flex: 1 1 12rem; }
 
+/* kennis composed this sentence, so it wears the gutter's face -
+   the same division the margin makes. `align-self: center` because
+   the form is a flex row of controls and an unaligned line of text
+   sits on their top edge. */
+.searching {
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  align-self: center;
+}
+
 input, select, textarea, button {
   font: inherit;
   font-size: 0.9375rem;

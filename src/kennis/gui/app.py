@@ -714,6 +714,7 @@ def _hits_context(question: str, scope: str) -> dict[str, object]:
             name: words.search_hint_for(name) for name in (EVERY_SCOPE, *SCOPES)
         },
         "search_action": words.SEARCH_ACTION,
+        "searching": words.SEARCHING,
         "scope_label": words.SCOPE_LABEL,
         "groups": [],
         "skips": [],

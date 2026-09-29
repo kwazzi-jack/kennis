@@ -61,6 +61,12 @@ def search_hint_for(scope: str) -> str:
 
 SEARCH_ACTION = "Search"
 
+# Shown while the hits on the page are not the hits for what is in
+# the box. That covers the 400ms typing debounce as well as the
+# request, which is the point: the request is 12ms of a 412ms wait
+# and an indicator for it alone would never be seen. Concern #365.
+SEARCHING = "Searching"
+
 SCOPE_LABEL = "Where to look"
 
 EVERYWHERE_LABEL = "everywhere"
@@ -351,6 +357,7 @@ __all__ = [
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
     "SCOPE_LABEL",
+    "SEARCHING",
     "SEARCH_ACTION",
     "STILL_RUNNING",
     "SYNC_PREAMBLE",
