@@ -21,12 +21,25 @@ from kennis.engine.errors import CorpusBusy, CorpusNotFound
 from kennis.engine.history.git import git, git_binary
 
 _GITATTRIBUTES: Final = """\
+# Line endings belong to the repository, not to the machine. Git for Windows
+# defaults to core.autocrlf=true, which rewrites LF as CRLF whenever it puts
+# a file into the working tree - including the per-path `git checkout` that
+# restores a hand deletion, which runs on three of the five mutating
+# operations. A content digest is taken over the working tree, so without
+# this a document restored on Windows stops matching the pack it came from
+# and the mismatch is reported as tampering. Concerns #384, #386.
+* text=auto eol=lf
+
 # The index is generated, binary, and rebuilt wholesale. Git must not try to
 # diff or merge it as text: doing so is slow, produces nothing a person can
 # read, and can write conflict markers into the middle of a numpy array.
+# `-text` as well as `-diff`, because the rule above would otherwise leave
+# a generated artefact to `text=auto`'s content sniffing; these are known
+# to be binary and saying so is cheaper than being right by accident.
+# A later rule wins, so these override the `*` above.
 *.npy binary
 *.jsonl -diff
-index/** -diff
+index/** -diff -text
 """
 
 _GITIGNORE: Final = """\

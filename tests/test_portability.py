@@ -28,6 +28,8 @@ import pytest
 
 from kennis.engine.atomic import replace_file
 from kennis.engine.corpus.inputs import split_at_anchor
+from kennis.engine.history.git import git as run_git
+from kennis.engine.history.repository import initialise_corpus
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src/kennis"
@@ -133,6 +135,87 @@ def test_a_written_document_holds_no_carriage_returns(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# What git's output is decoded with
+# ---------------------------------------------------------------------------
+
+
+def _subprocess_runs(function: object) -> list[ast.Call]:
+    """Every `<something>.run(...)` call in `function`, as syntax.
+
+    Shared by the two tests below so neither can be satisfied by the prose
+    that explains it - concern #387, and #388 for the inverted case."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    found = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+    ]
+    assert found, ast.dump(tree)
+    return found
+
+
+def test_git_output_is_decoded_as_utf8():
+    """`subprocess.run(text=True)` with no `encoding=` decodes using the
+    *locale* encoding: UTF-8 here, the ANSI code page on Windows. Git emits
+    paths as UTF-8, so a corpus document with an accent in its name came
+    back mojibake there and the status parse disagreed with the filesystem.
+
+    Read from the syntax tree for #387's reason: a docstring explaining the
+    argument would satisfy a text search. Concern #388."""
+    for call in _subprocess_runs(run_git):
+        named = {
+            keyword.arg: keyword.value
+            for keyword in call.keywords
+            if keyword.arg is not None
+        }
+        assert "encoding" in named, ast.unparse(call)
+        given = named["encoding"]
+        assert isinstance(given, ast.Constant) and given.value == "utf-8", ast.unparse(
+            call
+        )
+
+
+def test_git_does_not_silently_repair_a_path_it_cannot_decode():
+    """`errors="replace"` would turn an undecodable byte into `?` and kennis
+    would then use that string to address a file. A path that will not
+    decode has to raise. Concern #388.
+
+    From the syntax tree, like its neighbour, and for a reason worth
+    recording: the first version searched the source for `errors=` and the
+    comment *explaining* that there is no `errors=` contains the string. So
+    a textual negative is satisfied by prose just as a textual positive is -
+    #387 from the other side, and the same remedy answers both."""
+    for call in _subprocess_runs(run_git):
+        named = [keyword.arg for keyword in call.keywords]
+        assert "errors" not in named, ast.unparse(call)
+
+
+def test_a_name_outside_ascii_survives_the_round_trip(tmp_path: Path):
+    """The property, which holds here whatever the codec is - this locale is
+    UTF-8 - and is the one that means something on Windows.
+
+    `--porcelain -z` already disables git's octal quoting, and the parser
+    already reads records rather than splitting on ` -> `, so the decode was
+    all that was left. Concern #388."""
+    root = tmp_path / "corpus"
+    root.mkdir()
+    repository = initialise_corpus(root)
+    accented = root / "notes" / "\u00e9t\u00e9.md"
+    accented.parent.mkdir(parents=True, exist_ok=True)
+    accented.write_text("# Ete\n", encoding="utf-8", newline="\n")
+
+    # `status_names` is what kennis parses. `ls-files` is used by no
+    # production path and *does* quote a non-ASCII name as
+    # `"\303\251t\303\251.md"`, which is exactly what `-z` avoids.
+    changed = [path for _, path in repository.status_names(scope="notes")]
+
+    assert any("\u00e9t\u00e9.md" in path for path in changed), changed
+    assert all((root / path).exists() for path in changed), changed
+
+
+# ---------------------------------------------------------------------------
 # The root a pattern starts from
 # ---------------------------------------------------------------------------
 
@@ -193,3 +276,50 @@ def test_a_bare_anchor_has_no_segments():
     and the failure would appear somewhere else entirely."""
     assert split_at_anchor(PurePosixPath("/")) == ("/", [])
     assert split_at_anchor(PureWindowsPath("C:\\")) == ("C:\\", [])
+
+
+# ---------------------------------------------------------------------------
+# What git is told about line endings
+# ---------------------------------------------------------------------------
+
+
+def test_the_corpus_tells_git_to_keep_line_endings(tmp_path: Path):
+    """v0.7c made kennis write LF. This is the other half: git writes the
+    working tree too.
+
+    `core.autocrlf=true` is the Git for Windows default and rewrites LF as
+    CRLF on checkout - including the per-path `git checkout` in
+    `Repository.restore`, which `operations.py` runs on three of the five
+    mutating operations. So a document deleted by hand and put back would
+    come back CRLF however carefully kennis wrote it, and its digest would
+    stop matching the pack. Concern #386.
+
+    Asserted on the file a real `corpus init` writes, not on the constant,
+    because the constant being right is not the property."""
+    root = tmp_path / "corpus"
+    root.mkdir()
+    initialise_corpus(root)
+
+    rules = (root / ".gitattributes").read_text(encoding="utf-8").splitlines()
+    declared = [line for line in rules if line and not line.startswith("#")]
+
+    assert "* text=auto eol=lf" in declared, declared
+    # And it is first, because a later rule wins and the index's rules have
+    # to be able to override it.
+    assert declared[0] == "* text=auto eol=lf", declared
+
+
+def test_the_generated_index_is_not_left_to_content_sniffing(tmp_path: Path):
+    """`text=auto` decides text from content, which is reliable but is a
+    guess about files kennis knows are binary. The index's own rules come
+    after the `*` rule, so they win."""
+    root = tmp_path / "corpus"
+    root.mkdir()
+    initialise_corpus(root)
+
+    rules = (root / ".gitattributes").read_text(encoding="utf-8").splitlines()
+    declared = [line for line in rules if line and not line.startswith("#")]
+
+    assert "*.npy binary" in declared, declared
+    assert "index/** -diff -text" in declared, declared
+    assert declared.index("* text=auto eol=lf") < declared.index("*.npy binary")

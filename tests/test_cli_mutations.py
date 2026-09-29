@@ -678,10 +678,23 @@ def test_the_manifest_records_the_commit_it_was_built_from(
 def test_the_lock_is_never_committed(corpus: Path, run: CliRunner, tmp_path: Path):
     """It lives inside the corpus because that is what it guards, and it is
     not part of it. A committed lock file travels to every clone and reports
-    a corpus that was busy on another machine three weeks ago."""
+    a corpus that was busy on another machine three weeks ago.
+
+    **Asserted while the lock is held**, not after. `filelock` leaves the
+    file behind when it releases on Unix and deletes it on Windows, where
+    a lock is mandatory and the file has to go - so the old version was
+    asserting a dependency's implementation detail rather than kennis's
+    behaviour, and it failed on Windows for a reason that was not a
+    defect. Concern #390.
+
+    The `is_file` line is not decoration: without it the second assertion
+    passes for a file that was never created, which is what it did on
+    Windows."""
     added(run, a_source(tmp_path, "trees.md"))
-    assert lock_path(corpus).is_file()
-    assert ".kennis.lock" not in tracked(corpus)
+
+    with corpus_lock(corpus):
+        assert lock_path(corpus).is_file()
+        assert ".kennis.lock" not in tracked(corpus)
 
 
 def test_the_vector_cache_is_never_committed(
