@@ -79,9 +79,13 @@ class ShownHit:
     """
 
     headline: str
-    detail: str
+    # The margin's fields, one per line, because the gutter is about
+    # twenty characters wide and a CSS wrap broke `meaning:` from
+    # `medium`. Joined by two spaces they are `rendered.detail`, which
+    # is what the command line prints. Concern #380.
+    detail_parts: tuple[str, ...]
     # **HTML, unlike the other two.** `headline` and `detail` are the
-    # strings `rendered_hit` hands every front end and they stay
+    # fields `rendered_hit` hands every front end and they stay
     # byte-identical; the snippet is the same source text rendered
     # for this medium, because leaving `##` and `[[35](https://...)]`
     # on the page is what the terminal's rule yields in a browser.
@@ -109,7 +113,7 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
         shown.append(
             ShownHit(
                 headline=rendered.headline,
-                detail=rendered.detail,
+                detail_parts=rendered.detail_parts,
                 # From the chunk rather than from `rendered.body`:
                 # `snippet_of` collapses the whitespace before
                 # truncating, so by then the heading and the
@@ -189,13 +193,14 @@ def shown_basis(hits: list[Hit], collection: str) -> str:
     without its scale**: the two bands mean genuinely different
     things - an absolute cosine against measured cuts, or a position
     relative to this query's own best lexical hit - and a level
-    without its basis is a number with no units.
+    without its scale is a number with no units.
 
-    `render/hits.py::basis_phrase` composes the phrase and already
-    returns nothing when the group mixes two scales or prints no
-    level at all. Only the subject is added here, because the
-    command line's report has a margin to carry it and a page does
-    not.
+    `render/hits.py::basis_phrase` composes the phrase and returns
+    nothing when no level is printed at all. It no longer refuses a
+    group carrying both scales: each leg is labelled now, so two
+    clauses describe two scales. Concern #379. Only the subject is
+    added here, because the command line's report has a margin to
+    carry it and a page does not.
     """
     if not hits:
         return ""

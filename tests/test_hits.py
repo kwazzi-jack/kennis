@@ -13,12 +13,16 @@ import pytest
 from kennis.engine.rag.models import Chunk, SearchResult
 from kennis.render.hits import (
     CALIBRATED_MODELS,
-    basis_for,
+    Hit,
+    basis_phrase,
+    hit_detail,
+    hit_detail_parts,
     hit_handle,
     hit_headline,
     raw_scores,
-    relevance,
     relevance_phrase,
+    relevances,
+    score_style_for,
 )
 
 _CALIBRATED = "BAAI/bge-small-en-v1.5"
@@ -50,6 +54,32 @@ def a_hit(
         score=score,
         bm25_score=bm25_score,
         dense_score=dense_score,
+    )
+
+
+def _band(
+    result: SearchResult,
+    leg: str,
+    *,
+    model: str | None = _CALIBRATED,
+    best: float = 1.0,
+) -> str | None:
+    """One leg's band, or None when that leg did not score.
+
+    `relevances` returns every leg at once, which is the point of it;
+    these tests are about one scale's cuts at a time, so they ask for
+    one.
+    """
+    return dict(relevances(result, model=model, best=best)).get(leg)
+
+
+def _banded_hit(
+    *, bm25_score: float | None = None, dense_score: float | None = None
+) -> Hit:
+    return Hit(
+        collection="notes",
+        result=a_hit(bm25_score=bm25_score, dense_score=dense_score),
+        model=_CALIBRATED,
     )
 
 
@@ -112,23 +142,63 @@ def test_a_handle_carries_what_read_takes():
 
 
 # ---------------------------------------------------------------------------
-# Which basis is in force
+# Each leg says its own score
 # ---------------------------------------------------------------------------
 
 
-def test_a_calibrated_model_with_a_dense_leg_bands_on_cosine():
-    assert basis_for(_CALIBRATED, dense_ran=True) == "cosine"
+def test_an_exact_lexical_match_is_not_reported_as_low():
+    """The defect this unit exists for.
+
+    Under hybrid search `basis_for` returned `"cosine"` and
+    `relevance` banded the dense leg alone, so BM25 never spoke. A
+    one-word query embeds to a modest cosine against a full chunk,
+    and a search for `selfcal` that highlighted the literal word in
+    the passage reported `relevance: low`.
+
+    Both legs now answer for themselves."""
+    found = relevances(
+        a_hit(bm25_score=9.0, dense_score=0.58), model=_CALIBRATED, best=9.0
+    )
+
+    assert dict(found)["lexical"] == "very high"
+    assert dict(found)["meaning"] == "low"
 
 
-def test_a_lexical_only_search_bands_relative_to_the_best_hit():
-    assert basis_for(_CALIBRATED, dense_ran=False) == "lexical"
+def test_a_leg_that_did_not_score_says_nothing():
+    """Which is what removed `basis_for`: there is no choice to make
+    any more, only two questions each answered or not."""
+    lexical_only = relevances(a_hit(bm25_score=4.0), model=_CALIBRATED, best=4.0)
+    dense_only = relevances(a_hit(dense_score=0.81), model=_CALIBRATED, best=0.0)
+
+    assert [leg for leg, _ in lexical_only] == ["lexical"]
+    assert [leg for leg, _ in dense_only] == ["meaning"]
 
 
-def test_an_uncalibrated_model_has_no_band_at_all():
-    """A band is a claim on a scale, and kennis has not measured this one.
-    Concern #198: the cuts belong to the model, not to kennis."""
-    assert basis_for("text-embedding-3-small", dense_ran=True) is None
-    assert basis_for(None, dense_ran=True) is None
+def test_an_uncalibrated_model_has_no_meaning_band():
+    """A band is a claim on a scale, and kennis has not measured this
+    one. Concern #198: the cuts belong to the model, not to kennis.
+    The lexical band is unaffected - it is relative to this query's
+    own best and needs no calibration."""
+    found = relevances(
+        a_hit(bm25_score=4.0, dense_score=0.9),
+        model="text-embedding-3-small",
+        best=4.0,
+    )
+
+    assert [leg for leg, _ in found] == ["lexical"]
+
+    unknown = relevances(a_hit(dense_score=0.9), model=None, best=0.0)
+    assert unknown == ()
+
+
+def test_the_legs_are_reported_in_a_fixed_order():
+    """Lexical first, because it is the one a reader can check by
+    eye against the passage."""
+    both = relevances(
+        a_hit(bm25_score=4.0, dense_score=0.81), model=_CALIBRATED, best=4.0
+    )
+
+    assert [leg for leg, _ in both] == ["lexical", "meaning"]
 
 
 def test_the_calibrated_model_is_the_default_one():
@@ -139,10 +209,128 @@ def test_the_calibrated_model_is_the_default_one():
     assert Settings().embedding.model in CALIBRATED_MODELS
 
 
-def test_each_basis_is_phrased_differently():
-    """The two make different claims and a reader has to be told which."""
-    assert relevance_phrase("cosine") != relevance_phrase("lexical")
-    assert "cosine" in relevance_phrase("cosine")
+def test_the_phrase_describes_every_leg_the_group_has():
+    """**Relevance is never shown without its scale**, and there are
+    now two scales that mean genuinely different things: a position
+    relative to this query's own best lexical hit, and an absolute
+    cosine against measured cuts.
+
+    The old phrase refused when a group mixed them - "one sentence
+    cannot describe both" - which was a consequence of there being
+    one band. With two labels the sentence describes both, and
+    mixing is the ordinary case."""
+    both = [_banded_hit(bm25_score=4.0, dense_score=0.81)]
+    lexical = [_banded_hit(bm25_score=4.0)]
+
+    phrase = basis_phrase(both, "human")
+    assert "lexical" in phrase and "meaning" in phrase
+    assert "cosine" in phrase
+
+    only = basis_phrase(lexical, "human")
+    assert "lexical" in only
+    assert "cosine" not in only
+
+
+def test_a_detail_line_labels_every_band_it_shows():
+    """A level with no leg on it is the defect this unit fixes wearing
+    a different hat: `relevance: low` gave the reader no way to know
+    which of two incomparable scales it was on.
+
+    The handle stays last, because it is what `kennis read` takes and
+    a reader copying it should not have to find it among the bands."""
+    line = hit_detail(
+        _banded_hit(bm25_score=9.0, dense_score=0.58), style="human", best=9.0
+    )
+
+    assert line.index("lexical: very high") < line.index("meaning: low")
+    assert line.index("meaning: low") < line.index("id=")
+    assert "chunk=0" in line
+
+
+def test_the_line_is_exactly_the_parts_joined():
+    """Two representations of one thing, and nothing keeps them in step
+    but this. The window lays the fields out itself because a
+    twenty-character gutter cannot be trusted to wrap between them;
+    the command line prints the line. If they drift, the byte-identical
+    property design section 20 asks for is quietly gone. Concern #380.
+
+    Every style, because `none` and `raw` compose different fields."""
+    hit = _banded_hit(bm25_score=9.0, dense_score=0.58)
+
+    for style in ("human", "raw", "none"):
+        parts = hit_detail_parts(hit, style=style, best=9.0)
+        assert "  ".join(parts) == hit_detail(hit, style=style, best=9.0)
+        assert all(part == part.strip() for part in parts), parts
+
+
+def test_a_field_never_contains_the_separator():
+    """Which is what makes the two representations interchangeable: a
+    field holding two spaces would join into a line that no longer
+    splits back into the fields it came from."""
+    for hit in (
+        _banded_hit(bm25_score=9.0, dense_score=0.58),
+        _banded_hit(bm25_score=9.0),
+        _banded_hit(dense_score=0.58),
+    ):
+        for style in ("human", "raw", "none"):
+            parts = hit_detail_parts(hit, style=style, best=9.0)
+            assert not any("  " in part for part in parts), parts
+
+
+def test_a_detail_line_omits_a_leg_that_did_not_score():
+    """Not "meaning: very low" - that is a measurement, and no
+    measurement was taken."""
+    line = hit_detail(_banded_hit(bm25_score=9.0), style="human", best=9.0)
+
+    assert "lexical: " in line
+    assert "meaning" not in line
+
+
+def test_raw_numbers_appear_only_when_no_leg_can_be_banded():
+    """`score_style_for` used to ask whether a single chosen scale
+    existed, so a hybrid search on a model kennis has not measured
+    fell back to raw numbers although its lexical band was perfectly
+    good. It now degrades only when nothing at all can be banded.
+    Concern #379."""
+    uncalibrated = Hit(
+        collection="notes",
+        result=a_hit(bm25_score=4.0, dense_score=0.9),
+        model="text-embedding-3-small",
+    )
+    unbandable = Hit(collection="notes", result=a_hit(dense_score=0.9), model=None)
+
+    assert score_style_for([uncalibrated], "human") == ("human", False)
+    assert score_style_for([unbandable], "human") == ("raw", True)
+
+
+def test_a_style_the_reader_asked_for_is_never_overridden():
+    """The degradation exists because "human" cannot be honoured, not
+    because kennis prefers numbers."""
+    unbandable = [Hit(collection="notes", result=a_hit(dense_score=0.9), model=None)]
+
+    assert score_style_for(unbandable, "raw") == ("raw", False)
+    assert score_style_for(unbandable, "none") == ("none", False)
+
+
+def test_the_phrase_puts_its_clauses_in_the_fixed_order():
+    """Given the legs the other way round, and given them as a set with
+    no order of its own. The order belongs to `relevance_phrase`, which
+    is why its caller no longer sorts: the same rule in two places is
+    one whose removal from either cannot be observed. Concern #379."""
+    reversed_order = relevance_phrase(["meaning", "lexical"])
+    unordered = relevance_phrase({"meaning", "lexical"})
+
+    assert reversed_order.index("lexical") < reversed_order.index("meaning")
+    assert unordered == reversed_order
+
+
+def test_no_phrase_is_offered_when_no_level_is_printed():
+    """A report of raw scores must not carry a heading explaining a
+    column it does not have."""
+    hits = [_banded_hit(bm25_score=4.0, dense_score=0.81)]
+
+    assert basis_phrase(hits, "raw") == ""
+    assert basis_phrase(hits, "none") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +359,7 @@ def test_the_cosine_band_matches_what_was_measured(cosine: float, expected: str)
     the floor. Concern #198."""
     hit = a_hit(dense_score=cosine)
 
-    assert relevance(hit, basis="cosine", model=_CALIBRATED, best=0.816) == expected
+    assert _band(hit, "meaning", best=0.816) == expected
 
 
 def test_a_real_query_and_a_nonsense_query_land_in_different_bands():
@@ -181,12 +369,10 @@ def test_a_real_query_and_a_nonsense_query_land_in_different_bands():
     nonsense = [0.567, 0.574, 0.600, 0.607]
 
     banded_real = {
-        relevance(a_hit(dense_score=value), basis="cosine", model=_CALIBRATED, best=1.0)
-        for value in real
+        _band(a_hit(dense_score=value), "meaning", best=1.0) for value in real
     }
     banded_nonsense = {
-        relevance(a_hit(dense_score=value), basis="cosine", model=_CALIBRATED, best=1.0)
-        for value in nonsense
+        _band(a_hit(dense_score=value), "meaning", best=1.0) for value in nonsense
     }
 
     assert banded_real <= {"high", "very high"}
@@ -198,8 +384,8 @@ def test_the_cosine_band_does_not_depend_on_the_other_hits():
     same whatever it is shown beside."""
     hit = a_hit(dense_score=0.70)
 
-    alone = relevance(hit, basis="cosine", model=_CALIBRATED, best=0.70)
-    beside = relevance(hit, basis="cosine", model=_CALIBRATED, best=0.99)
+    alone = _band(hit, "meaning", best=0.70)
+    beside = _band(hit, "meaning", best=0.99)
 
     assert alone == beside == "medium"
 
@@ -216,9 +402,9 @@ def test_the_lexical_band_is_a_fraction_of_the_best_hit():
     middling = a_hit(bm25_score=10.0)
     poor = a_hit(bm25_score=1.0)
 
-    assert relevance(best, basis="lexical", model=None, best=20.0) == "very high"
-    assert relevance(middling, basis="lexical", model=None, best=20.0) == "medium"
-    assert relevance(poor, basis="lexical", model=None, best=20.0) == "very low"
+    assert _band(best, "lexical", model=None, best=20.0) == "very high"
+    assert _band(middling, "lexical", model=None, best=20.0) == "medium"
+    assert _band(poor, "lexical", model=None, best=20.0) == "very low"
 
 
 def test_the_best_lexical_hit_is_always_the_top_band():
@@ -226,20 +412,20 @@ def test_the_best_lexical_hit_is_always_the_top_band():
     the band is relative."""
     for best in (0.1, 5.0, 900.0):
         hit = a_hit(bm25_score=best)
-        assert relevance(hit, basis="lexical", model=None, best=best) == "very high"
+        assert _band(hit, "lexical", model=None, best=best) == "very high"
 
 
 def test_a_band_needs_a_score_on_the_leg_it_bands():
     """A hybrid hit found only by the lexical leg has no cosine. Saying
     nothing is correct; inventing one is not."""
-    assert relevance(a_hit(), basis="cosine", model=_CALIBRATED, best=0.8) is None
-    assert relevance(a_hit(), basis="lexical", model=None, best=1.0) is None
+    assert _band(a_hit(), "meaning", best=0.8) is None
+    assert _band(a_hit(), "lexical", model=None, best=1.0) is None
 
 
 def test_a_zero_best_score_does_not_divide_by_zero():
     hit = a_hit(bm25_score=0.0)
 
-    assert relevance(hit, basis="lexical", model=None, best=0.0) is not None
+    assert _band(hit, "lexical", model=None, best=0.0) is not None
 
 
 # ---------------------------------------------------------------------------

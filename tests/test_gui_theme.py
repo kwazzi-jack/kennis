@@ -428,3 +428,30 @@ def test_the_notice_declares_nothing_that_is_not_there():
         assert any(fnmatch(name, pattern) for name in present), (
             f"NOTICE.txt declares {pattern}, which is not vendored"
         )
+
+
+def test_each_margin_field_is_its_own_line():
+    """The margin is a gutter about twenty characters wide. It used to
+    hold the whole detail line with `white-space: pre-wrap`, on the
+    belief that preserving the two spaces would break between fields;
+    it does not - it breaks wherever the line runs out, and as soon as
+    a hit carried two bands it separated `meaning:` from `medium`.
+
+    Each field is now its own element and each element is a block. A
+    browser shows this and the source does not, which is the third
+    time in this milestone. Concern #380."""
+    # Without the comments. The rule below *explains* that it no
+    # longer sets `white-space: pre-wrap`, and the first version of
+    # this test read that explanation as the declaration and failed
+    # against correct CSS. Concern #337, for the third time.
+    css = re.sub(r"/\*.*?\*/", "", stylesheet(), flags=re.DOTALL)
+
+    fields = re.findall(r"\.hits \.detail span\s*\{([^}]*)\}", css)
+    assert fields, "the margin's fields have no rule of their own"
+    assert any("display: block" in rule for rule in fields), fields
+
+    margin = re.findall(r"\.hits \.detail\s*\{([^}]*)\}", css)
+    assert margin, "the margin has no rule"
+    assert not any("white-space" in rule for rule in margin), (
+        "the margin is laid out by its fields now, not by preserved whitespace"
+    )

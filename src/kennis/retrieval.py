@@ -35,7 +35,7 @@ from kennis.engine.rag.embedding import resolve_host
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Filter
 from kennis.engine.rag.search import Mode, search
-from kennis.render.hits import Hit, basis_for
+from kennis.render.hits import Hit
 
 # The most a caller may ask for. A ceiling rather than a validation
 # error: a caller asking for 500 wants "lots", and refusing them is
@@ -86,10 +86,8 @@ def search_scope(collection: str, question: str, top_k: int = 5) -> list[Hit]:
             context.settings.embedding.base_url or None,
         ),
     )
-    basis = basis_for(model, dense_ran=running != "bm25")
     return [
-        Hit(collection=collection, result=result, basis=basis, model=model)
-        for result in results
+        Hit(collection=collection, result=result, model=model) for result in results
     ]
 
 
@@ -180,9 +178,10 @@ class Sweep:
     `groups` is keyed in `SCOPE_NAMES` order and **never sorted by
     best hit**. Ranking collections against each other would put the
     cross-collection comparison back in through the layout, and it is
-    the comparison `basis_phrase` exists to refuse: a band from an
-    absolute cosine and a band relative to this query's best lexical
-    hit are different measurements wearing the same word.
+    the comparison the labelled bands exist to prevent: an absolute
+    cosine and a position relative to this query's best lexical hit
+    are different measurements, and each collection's lexical band is
+    relative to its own best.
 
     `degraded` names the scopes that ran lexically although more was
     asked of them. Carried rather than printed, because `retrieval`
@@ -263,9 +262,8 @@ def sweep(
         if running != asked and asked != "bm25":
             degraded.append(name)
         model = index.binding.model.model if index.binding.model else None
-        basis = basis_for(model, dense_ran=running != "bm25")
         found = [
-            Hit(collection=name, result=result, basis=basis, model=model)
+            Hit(collection=name, result=result, model=model)
             for result in search(
                 index,
                 question,

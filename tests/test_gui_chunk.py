@@ -159,14 +159,15 @@ def test_the_link_names_the_chunk_the_hit_reported(corpus: Path, client: TestCli
 
     found = client.get("/hits", params={"q": "flagging", "scope": "notes"})
 
-    # The detail line states the chunk, in the same words `kennis
-    # search` prints; the link must agree with it. Matched separately
-    # rather than by splitting on "chunk=", which the href now also
-    # contains - the first version of this test read its own answer
-    # out of the thing it was checking.
-    reported = re.search(r"chunk=(\d+)</p>|chunk=(\d+)\s", found.text)
-    assert reported is not None, "the detail line must state the chunk"
-    number = reported.group(1) or reported.group(2)
+    # The margin states the chunk, in the same words `kennis search`
+    # prints; the link must agree with it. Anchored on the closing
+    # tag of the margin's own field rather than by splitting on
+    # "chunk=", which the href also contains - the first version of
+    # this test read its own answer out of the thing it was checking.
+    # The field is a `<span>` since #380 put each on its own line.
+    reported = re.search(r"chunk=(\d+)</span>", found.text)
+    assert reported is not None, "the margin must state the chunk"
+    number = reported.group(1)
     assert int(number) > 0, "the match must not be in the first chunk"
     assert f"?chunk={number}&amp;q=" in found.text
     assert f"#chunk-{number}" in found.text

@@ -510,11 +510,15 @@ body { padding-left: var(--sidebar); }
   font-family: var(--gutter);
   font-size: 0.75rem;
   line-height: 1.5;
-  /* Each field on its own line, which `white-space` gives without
-     the engine having to hand over the parts separately. */
-  white-space: pre-wrap;
+  /* A long identifier rather than overflow the gutter. Fields are
+     separated by the block below, not by `white-space: pre-wrap`,
+     which preserved the two spaces and then wrapped wherever the
+     line ran out - splitting `meaning:` from `medium` as soon as a
+     hit carried two bands. Concern #380. */
   word-break: break-word;
 }
+
+.hits .detail span { display: block; }
 
 a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
 

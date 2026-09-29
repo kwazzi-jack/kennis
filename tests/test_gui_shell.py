@@ -360,6 +360,40 @@ def test_a_hit_carries_the_same_text_as_the_command_line(
         assert headline in served.text, headline
 
 
+def test_the_margin_carries_every_field_the_command_line_prints(
+    corpus: Path, client: TestClient
+):
+    """The margin lays the fields out itself since #380, so the joined
+    line no longer appears on the page and the test above cannot see
+    them. Each field still has to be the same bytes, and each has to
+    be in an element of its own - a gutter twenty characters wide
+    wrapped `meaning:` away from `medium` when they shared one."""
+    a_note(corpus, "calibration", "Calibration solves for antenna gains.")
+    admitted(client)
+
+    printed = CliRunner().invoke(
+        main, ["search", "antenna gains", "--collection", "notes", "--snippet", "none"]
+    )
+    assert printed.exit_code == 0, printed.output
+    served = client.get("/hits", params={"q": "antenna gains", "scope": "notes"})
+
+    # The command line's own detail line, which is the fields joined
+    # by two spaces. Recognised by the handle it ends with rather than
+    # by a band, because a lexical-only corpus prints one band and a
+    # hybrid one prints two.
+    lines = [
+        line.strip()
+        for line in printed.output.splitlines()
+        if "id=" in line and "chunk=" in line
+    ]
+    assert lines, printed.output
+    for line in lines:
+        fields = line.split("  ")
+        assert len(fields) >= 2, line
+        for field in fields:
+            assert f"<span>{field}</span>" in served.text, field
+
+
 # ---------------------------------------------------------------------------
 # Browsing what is held
 # ---------------------------------------------------------------------------
