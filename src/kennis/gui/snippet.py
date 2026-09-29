@@ -39,6 +39,9 @@ from typing import Final
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
+from mdit_py_plugins.dollarmath import dollarmath_plugin
+
+from kennis.render.html import without_empty_options
 
 # The same default `render/words.py::snippet_of` uses, so the two
 # front ends cut at about the same place even though one counts
@@ -49,6 +52,9 @@ _SNIPPET_CHARACTERS: Final = 280
 # a judgement about which words are worth marking - it is the point
 # at which the mark stops carrying information.
 _SHORTEST_TERM: Final = 2
+
+_MATHS_INLINE: Final = frozenset({"math_inline", "math_inline_double"})
+_MATHS_BLOCKS: Final = frozenset({"math_block", "math_block_label"})
 
 # Inline markdown that survives into a snippet. A snippet is prose,
 # so a block element has nothing to be: the structure was flattened
@@ -62,16 +68,33 @@ _KEPT: Final[dict[str, str]] = {
 }
 
 
+# **Everything is inline in a snippet, including a display
+# equation.** A snippet is one paragraph of prose; KaTeX's display
+# mode produces a block element, which would break the sentence
+# quoting it. So a `math_block` is shown inline rather than in
+# display mode - and shown at all, which it was not: `_runs` walks
+# `inline` tokens and a block equation is a leaf block token, so
+# without a branch of its own it contributed nothing.
+_MATHS_CLASS: Final = "math inline"
+
+
 @dataclass(frozen=True, slots=True)
 class _Run:
-    """A piece of the snippet: either text to escape, or a tag to emit.
+    """A piece of the snippet: text to escape, a tag to emit, or TeX.
 
     Kept apart so truncation can count only what the reader sees and
     marking can touch only what the reader reads.
+
+    **TeX is a third kind because it is neither.** It is escaped like
+    text, but it must not be marked - a `<mark>` inside an expression
+    is markup KaTeX will render or refuse - and it must not be cut,
+    because half an expression is a parse error where the whole would
+    have rendered.
     """
 
     text: str
     tag: str | None = None
+    maths: str | None = None
 
 
 def marked_snippet(
@@ -96,6 +119,13 @@ def _tokens(chunk: str) -> list[Token]:
     # wants no fences, no images and no tables, because none of them
     # can be shown in four lines of prose.
     parser = MarkdownIt("commonmark", {"html": False, "linkify": False})
+    # The same protection `render/html.py` has, for the same reason
+    # and by the same route. Two parsers is deliberate - concern
+    # #336 - but the maths rule is not one of the things they should
+    # differ about, and for one unit they did: a snippet showed
+    # `$\mathsf{B}$` where the document showed the symbol. Concern
+    # #376.
+    parser.use(dollarmath_plugin, double_inline=True)
     return parser.parse(chunk)
 
 
@@ -113,6 +143,12 @@ def _runs(tokens: Sequence[Token]) -> Iterator[_Run]:
     for token in tokens:
         if token.type == "heading_open":
             heading = True
+            continue
+        if token.type in _MATHS_BLOCKS:
+            if not first:
+                yield _Run(" ")
+            first = False
+            yield _Run(without_empty_options(token.content), maths=_MATHS_CLASS)
             continue
         if token.type != "inline" or token.children is None:
             continue
@@ -134,6 +170,8 @@ def _runs(tokens: Sequence[Token]) -> Iterator[_Run]:
                 yield _Run("", "<code>")
                 yield _Run(child.content)
                 yield _Run("", "</code>")
+            elif child.type in _MATHS_INLINE:
+                yield _Run(without_empty_options(child.content), maths=_MATHS_CLASS)
             elif child.type in _KEPT:
                 yield _Run("", _KEPT[child.type])
             elif child.type == "softbreak" or child.type == "hardbreak":
@@ -159,6 +197,18 @@ def _truncated(runs: list[_Run], limit: int) -> list[_Run]:
         if run.tag is not None:
             kept.append(run)
             continue
+        if run.maths is not None:
+            # All or nothing. `\left(\begin{array}` with nothing
+            # closing it is a parse error where the whole expression
+            # would have rendered, so an expression that does not fit
+            # ends the snippet instead of being bisected.
+            if seen + len(run.text) <= limit:
+                seen += len(run.text)
+                kept.append(run)
+                continue
+            kept.append(_Run("..."))
+            cut = True
+            break
         if seen + len(run.text) <= limit:
             seen += len(run.text)
             kept.append(run)
@@ -207,6 +257,12 @@ def _rendered(runs: Sequence[_Run], pattern: re.Pattern[str] | None) -> Iterator
     for run in runs:
         if run.tag is not None:
             yield run.tag
+        elif run.maths is not None:
+            # Escaped, never marked: `<`, `>` and `&` are all
+            # ordinary in TeX and all markup here, and the reader's
+            # term inside an expression is a symbol rather than a
+            # word they were looking for.
+            yield f'<span class="{run.maths}">{escape(run.text)}</span>'
         elif pattern is None:
             yield escape(run.text)
         else:
