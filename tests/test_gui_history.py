@@ -279,7 +279,7 @@ def test_the_history_records_no_results(corpus: Path, client: TestClient):
 
     written = json.loads(history.history_path().read_text(encoding="utf-8"))
 
-    assert set(written[0]) == {"query", "scope", "hits", "capped", "at"}
+    assert set(written[0]) == {"query", "scope", "mode", "hits", "capped", "at"}
 
 
 def test_a_saturated_search_reports_its_count_as_a_floor(

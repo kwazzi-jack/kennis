@@ -6,13 +6,19 @@
    because it carries no styling, and every class a template uses
    has to be styled - a test says so. #}
 <span id="answered" data-query="{{ question }}" data-scope="{{ scope }}"
-      hidden></span>
+      data-mode="{{ mode }}" hidden></span>
 {% if problem %}
 <p class="role-warning">{{ problem }}</p>
 {% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
 {% elif question and not groups %}
 <p class="role-muted">{{ nothing }}</p>
 {% endif %}
+{# The sweep ran but not the way it was asked to. A warning rather
+   than a problem: there are results, and they are lexical ones.
+   Concern #381. #}
+{% for fallback in fallbacks %}
+<p class="role-warning">{{ fallback }}</p>
+{% endfor %}
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
 {% endfor %}

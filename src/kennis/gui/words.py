@@ -69,6 +69,27 @@ SEARCHING = "Searching"
 
 SCOPE_LABEL = "Where to look"
 
+# How to match, and **the labels are the band's labels**. A hit's
+# margin reads `lexical: very high  meaning: low`, so a control
+# offering "bm25" and "dense" beside it would give the reader two
+# vocabularies for one distinction. Those are the engine's names for
+# the mechanism; these name what it measures.
+#
+# The first value is empty, and it is not "hybrid". Passing no mode
+# lets each scope use its own setting, and a bundle's is lexical by
+# design - design section 13, because a dense bundle index costs what
+# `retrieval.context_method` exists to avoid. Sending "hybrid" for a
+# reader who touched nothing would ask the bundle for a leg it
+# deliberately has not got, and then report the absence as news.
+MODE_LABEL = "How to match"
+MODE_DEFAULT = ""
+MODE_CHOICES: Final[tuple[tuple[str, str], ...]] = (
+    (MODE_DEFAULT, "As configured"),
+    ("hybrid", "Lexical and meaning"),
+    ("bm25", "Lexical only"),
+    ("dense", "Meaning only"),
+)
+
 EVERYWHERE_LABEL = "everywhere"
 
 BACK_TO_SEARCH = "Back to the results"
@@ -333,7 +354,7 @@ def describe_count(holding: Holding) -> str:
     return f"{counted}, {holding.unreadable} unreadable"
 
 
-def describe_recent(scope: str, hits: int, *, capped: bool) -> str:
+def describe_recent(scope: str, hits: int, *, capped: bool, mode: str) -> str:
     """The line beside a past search: where it looked and what it found.
 
     The count is what it found *then*. The corpus has moved since -
@@ -353,7 +374,29 @@ def describe_recent(scope: str, hits: int, *, capped: bool) -> str:
     # "9+" rather than "at least 9": the margin is 11rem and the
     # longer form wrapped between "9" and "hits", which reads worse
     # than the notation does.
-    return f"{where}, {hits}+ hits" if capped else f"{where}, {counted}"
+    found = f"{where}, {hits}+ hits" if capped else f"{where}, {counted}"
+    # The mode only when it is not the default, because two facts
+    # were asked for and a third is worth a line only when it is
+    # news. A search that ran as everything else does is not.
+    if mode == MODE_DEFAULT:
+        return found
+    return f"{found}, {dict(MODE_CHOICES)[mode].lower()}"
+
+
+def unknown_mode(asked: str) -> str:
+    """Named rather than quietly replaced by the default.
+
+    Parallel to `unknown_scope`, and for the same reason: falling
+    back answers a question other than the one in the address and
+    says nothing about having done so. The remedy is not a command -
+    `retrieval.as_mode` offers `kennis config get
+    retrieval.corpus_method`, which is the wrong thing to hand
+    someone who edited a URL - so this names the choices instead.
+    """
+    offered = [label for value, label in MODE_CHOICES if value]
+    return (
+        f"There is no way to match called '{asked}'. The choices are {joined(offered)}."
+    )
 
 
 def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
@@ -383,6 +426,9 @@ __all__ = [
     "INDEX_PREAMBLE",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
+    "MODE_CHOICES",
+    "MODE_DEFAULT",
+    "MODE_LABEL",
     "NEVER_INDEXED",
     "NOTHING_FOUND",
     "NOTHING_HELD",
@@ -419,6 +465,7 @@ __all__ = [
     "describe_written",
     "describe_written_to_bundle",
     "search_hint_for",
+    "unknown_mode",
     "unknown_scope",
     "unreadable_note",
 ]
