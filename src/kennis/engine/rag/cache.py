@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kennis.engine._atomic import replace_file
+from kennis.engine.atomic import replace_file
 from kennis.engine.rag.binding import Binding
 
 

@@ -1,0 +1,16 @@
+<section class="recents" id="recents">
+{% if recents %}
+  <h2>{{ recents_heading }}</h2>
+  <ol class="hits">
+    {% for recent in recents %}
+    <li>
+      <a class="role-operation" href="{{ recent.href }}">{{ recent.query }}</a>
+      <p class="role-muted detail">{{ recent.detail }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+  <form hx-post="/history/clear" hx-target="#recents" hx-swap="outerHTML">
+    <button type="submit">{{ recents_clear }}</button>
+  </form>
+{% endif %}
+</section>

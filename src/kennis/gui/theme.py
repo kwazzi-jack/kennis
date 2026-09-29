@@ -225,18 +225,63 @@ main {
    interface's own furniture from everything below it, which is
    either kennis speaking or the corpus speaking. */
 header {
-  display: flex;
-  align-items: baseline;
-  gap: 1.5rem;
-  padding: 0.9rem 1.5rem;
+  display: block;
+  padding: 1.4rem 1.5rem 0.9rem;
   border-bottom: 1px solid var(--rule);
   font-family: var(--gutter);
   font-size: 0.8125rem;
 }
 
+header nav { display: flex; gap: 1.5rem; margin-top: 0.7rem; }
 header a { color: var(--role-muted); text-decoration: none; }
 header a:hover { color: var(--ink); text-decoration: underline; }
-header a.home { color: var(--ink); font-weight: 600; margin-right: auto; }
+
+/* The one place the interface says its own name, and it says it
+   once. It was the first item in the navigation, at the same size
+   as "manage", so the page had no title at all - the search page
+   in particular opened on a box and nothing saying what it
+   searched. Set in the text face rather than the gutter's
+   monospace, because it is a name and not a field. */
+.wordmark {
+  display: block;
+  font-family: var(--column);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--ink);
+}
+.wordmark:hover { text-decoration: none; }
+
+/* Past searches, offered again. Shaped like the hits list because
+   it occupies the same place and answers the same question - the
+   margin says where the search looked and what it found, the
+   column carries the reader's own words. */
+.recents { margin-top: 2.5rem; }
+/* Tighter than a hit, because an entry is one line of the reader's
+   own words with no snippet under it. The hit's 1.5rem left four
+   queries occupying a screen. */
+.recents .hits li { padding: 0.7rem 0; }
+.recents .hits li > * { margin-bottom: 0; }
+.recents h2 {
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--role-muted);
+  margin: 0 0 1rem;
+}
+.recents form { margin-top: 1.25rem; }
+.recents button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--role-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.recents button:hover { color: var(--ink); }
 
 #corpus-changed { margin: 0; padding: 0.6rem 1.5rem; font-size: 0.875rem; }
 
@@ -482,7 +527,8 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
   .hits li { grid-template-columns: 1fr; row-gap: 0.4rem; }
   .hits li > * { grid-column: 1; }
   .hits .detail { grid-row: auto; text-align: left; }
-  header { flex-wrap: wrap; gap: 0.9rem; }
+  header { padding: 1.1rem 1rem 0.8rem; }
+  header nav { flex-wrap: wrap; gap: 0.9rem; }
   main { padding: 1.5rem 1rem 4rem; }
 }
 

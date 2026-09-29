@@ -24,7 +24,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from kennis.engine._atomic import replace_file
+from kennis.engine.atomic import replace_file
 from kennis.engine.corpus.ids import natural_key_for_docs
 from kennis.engine.corpus.layout import WRAPPED_DOCUMENT_FILENAME
 from kennis.engine.corpus.schema import (

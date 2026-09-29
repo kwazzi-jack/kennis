@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from platformdirs import user_state_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
@@ -426,3 +427,21 @@ def test_a_test_does_not_run_in_the_repository():
     """
     assert Path.cwd() != PROJECT_ROOT
     assert not (PROJECT_ROOT / ".context").exists()
+
+
+def test_a_test_does_not_write_to_the_real_state_directory():
+    """The state directory is a test's, not Brian's.
+
+    `gui/history.py` records every search under `KENNIS_STATE_DIR`,
+    whose default is a real path on a real machine. A test driving
+    the interface without it would append to Brian's own recent
+    searches and nothing would say so - the same shape as concern
+    #325 and the same remedy. The autouse `nowhere_real` fixture
+    redirects it, and this is what fails if it is removed.
+    """
+    from kennis.gui.history import state_dir
+
+    written_to = state_dir()
+
+    assert written_to != Path(user_state_dir("kennis"))
+    assert not written_to.is_relative_to(Path.home() / ".local" / "state")
