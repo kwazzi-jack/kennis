@@ -45,6 +45,16 @@ def replace_file(path: Path, data: str | bytes, *, encoding: str = "utf-8") -> N
 
     The target is left untouched if anything goes wrong, including a Ctrl-C
     partway through the write - hence `BaseException` rather than `Exception`.
+
+    **`newline="\n"`, so what kennis writes does not depend on where it is
+    running.** Without it Python translates `\n` to `os.linesep`, and every
+    corpus document written on Windows landed as CRLF. That is not a
+    cosmetic difference: `pack/content.py::content_digest` hashes
+    `path.read_bytes()`, so the same logical document digested differently
+    on the two platforms and a pack built on Linux failed validation on
+    Windows - reported as the file having been tampered with. Reading needs
+    no equivalent, because universal newlines already normalise CRLF to LF
+    on the way in. Concern #384.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
@@ -53,7 +63,7 @@ def replace_file(path: Path, data: str | bytes, *, encoding: str = "utf-8") -> N
             with os.fdopen(handle, "wb") as stream:
                 stream.write(data)
         else:
-            with os.fdopen(handle, "w", encoding=encoding) as stream:
+            with os.fdopen(handle, "w", encoding=encoding, newline="\n") as stream:
                 stream.write(data)
         os.replace(temporary, path)
     except BaseException:

@@ -471,5 +471,7 @@ def _write_chunks(path: Path, chunks: Sequence[Chunk]) -> None:
     without holding the whole of it as a parsed structure twice.
     """
     path.write_text(
-        "".join(f"{chunk.model_dump_json()}\n" for chunk in chunks), encoding="utf-8"
+        "".join(f"{chunk.model_dump_json()}\n" for chunk in chunks),
+        encoding="utf-8",
+        newline="\n",
     )

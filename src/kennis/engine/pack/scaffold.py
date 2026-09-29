@@ -111,7 +111,7 @@ def scaffold_pack(
     # behind, so a failed `init` is not a half-made pack the author has to
     # delete before trying again.
     load_pack(text)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
     if events is not None:
         events.emit(
             ItemFinished(operation=OPERATION, item=str(path), outcome=Outcome.ADDED)
