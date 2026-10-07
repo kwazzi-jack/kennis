@@ -1,3 +1,28 @@
+## v0.6.0 (2026-10-07)
+
+### Feat
+
+- **gui**: let the reader choose which retrieval legs run
+- **gui**: let the reader choose light, dark or the system
+- **gui**: put the menu in a sidebar, and split the gutter from the monospace
+- **gui**: say when the results are not yet for what is in the box
+- **gui**: name the scope in the search box, and hold the enter key still
+- **gui**: render a hit snippet, mark the query in it, and colour code
+- **gui**: offer recent searches again, and raise the wordmark
+- **gui**: sweep every scope by default and put the search in the address
+- **gui**: give the interface a palette, a reading measure and a margin
+- **gui**: open a hit at the chunk it matched, in both stores
+- **engine**: lock each collection's index separately from the corpus
+
+### Fix
+
+- **engine**: decode git as utf-8 and keep line endings out of the platform
+- **engine**: write LF and anchor a pattern at its drive on every platform
+- **render**: let each retrieval leg report its own relevance band
+- **gui**: render the maths in a hit snippet instead of quoting its dollars
+- **render**: typeset the maths a paper actually writes
+- **render**: count the note that was written, and say what happened plainly
+
 ## v0.5.0 (2026-09-28)
 
 ### Feat
