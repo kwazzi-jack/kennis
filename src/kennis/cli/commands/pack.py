@@ -28,6 +28,7 @@ from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
 from kennis.engine.pack.update import PackUpdate, update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.operations import install_a_pack
+from kennis.render.machine_readable import pack_list_document
 from kennis.render.packs import (
     describe_damage,
     describe_declarations,
@@ -252,15 +253,31 @@ def _say_what_was_checked(report: PackReport) -> None:
 
 
 @pack_group.command(name="list", cls=KennisCommand)
-def list_command() -> None:
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print one JSON document for a program to read, instead of rows.",
+)
+def list_command(*, as_json: bool) -> None:
     """Every pack installed on this machine.
 
     The listing is the whole answer, so it is a listing and not a report:
     the pack id leads, because it is the column you copy out of and hand
     to `pack remove`.
+
+    `--json` is for a provider asking whether its pack is held, so the
+    rows stay free to change for a person (#401 reversed). No corpus is
+    still a failure rather than an empty document, because "kennis cannot
+    answer" and "kennis holds nothing" lead a provider to different things.
     """
+    if as_json:
+        display.declare_stdout_a_payload()
     context = existing_corpus()
     listing = list_installed(context.corpus_root)
+    if as_json:
+        display.plain(pack_list_document(listing).model_dump_json(indent=2))
+        return
     # Padded so the versions line up. Layout, not wording, so it is decided
     # here: `corpus list` needs none of this because a surrogate id is fixed
     # width, and a pack id is whatever the provider called itself.

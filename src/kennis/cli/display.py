@@ -603,7 +603,8 @@ def _diagnostic(
     line = Text(f"{indent}{label}: {text}")
     _MESSAGE_HIGHLIGHTER.highlight(line)
     line.stylize(style, len(indent), len(indent) + len(label) + 1)
-    (error_console if stderr else console).print(line, soft_wrap=True)
+    on_stderr = stderr or _stdout_is_payload
+    (error_console if on_stderr else console).print(line, soft_wrap=True)
 
 
 def note(text: str, *, stderr: bool = False) -> None:
@@ -756,13 +757,35 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
 # primitive.
 _quiet = False
 _progress_wanted = True
+# Set by a command whose stdout is a document for a program. Every
+# diagnostic then goes to stderr - including the failure `KennisGroup`
+# prints after the command has already raised, which is why this is
+# module state and not a context manager the command could leave.
+_stdout_is_payload = False
 
 
 def set_verbosity(*, quiet: bool = False, progress: bool = True) -> None:
-    """Apply `--quiet` / `--no-progress` for the rest of the process."""
-    global _quiet, _progress_wanted
+    """Apply `--quiet` / `--no-progress` for the rest of the process.
+
+    Also clears the payload declaration: every invocation starts as a
+    report, which matters where one process runs several (a test, or a
+    caller that invokes the group directly).
+    """
+    global _quiet, _progress_wanted, _stdout_is_payload
     _quiet = quiet
     _progress_wanted = progress
+    _stdout_is_payload = False
+
+
+def declare_stdout_a_payload() -> None:
+    """Send every diagnostic to stderr for the rest of this invocation.
+
+    For a command whose stdout another program parses, where an `error:`
+    line would be read as malformed output instead of as a refusal. Call
+    it before anything that can raise.
+    """
+    global _stdout_is_payload
+    _stdout_is_payload = True
 
 
 def progress_wanted() -> bool:
