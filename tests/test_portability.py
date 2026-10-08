@@ -20,6 +20,7 @@ on Linux both the wrong answer and the right one look identical.
 from __future__ import annotations
 
 import ast
+import hashlib
 import inspect
 import textwrap
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -28,8 +29,12 @@ import pytest
 
 from kennis.engine.atomic import replace_file
 from kennis.engine.corpus.inputs import split_at_anchor
+from kennis.engine.corpus.intake import convert_local_file, read_text_file
 from kennis.engine.history.git import git as run_git
 from kennis.engine.history.repository import initialise_corpus
+from kennis.engine.pack.content import content_digest
+from kennis.engine.pack.schema import ContentSource
+from kennis.render.refusals import quoted_for_posix, quoted_for_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src/kennis"
@@ -323,3 +328,92 @@ def test_the_generated_index_is_not_left_to_content_sniffing(tmp_path: Path):
     assert "*.npy binary" in declared, declared
     assert "index/** -diff -text" in declared, declared
     assert declared.index("* text=auto eol=lf") < declared.index("*.npy binary")
+
+
+# The first Windows run, 2026-10-08. Each of these failed on Linux before its
+# fix, because each builds the Windows case explicitly rather than waiting
+# for a platform to supply it.
+
+
+def test_a_digest_does_not_see_line_endings():
+    """Git for Windows checks a pack's files out as CRLF by default, so a
+    digest of the raw bytes reported a pack built on Linux as tampered
+    with. Brian decided on 2026-10-08 that the digest normalises CRLF."""
+    assert content_digest(b"# A\r\n\r\nBody.\r\n") == content_digest(b"# A\n\nBody.\n")
+
+
+def test_a_digest_of_lf_text_is_the_sha256_it_always_was():
+    """Every pack built so far is LF, so normalising must not move one
+    digest - a hand-written statement of the format, not kennis against
+    itself."""
+    assert content_digest(b"Body.\n") == hashlib.sha256(b"Body.\n").hexdigest()
+
+
+def test_a_digest_still_sees_a_change_of_content():
+    assert content_digest(b"Body.\r\n") != content_digest(b"Edited.\r\n")
+
+
+def test_a_crlf_source_is_read_as_lf(tmp_path: Path):
+    """#384 said reading needed nothing because universal newlines
+    normalise on the way in. `read_text_file` decodes `read_bytes()`,
+    so it never did, on any platform."""
+    path = tmp_path / "a.md"
+    path.write_bytes(b"# A note\r\n\r\nBody.\r\n")
+
+    assert read_text_file(path) == "# A note\n\nBody.\n"
+
+
+def test_a_lone_carriage_return_is_a_line_ending_too(tmp_path: Path):
+    """What universal newlines do, so a file reads the same whichever way
+    kennis opens it."""
+    path = tmp_path / "a.md"
+    path.write_bytes(b"one\rtwo\n")
+
+    assert read_text_file(path) == "one\ntwo\n"
+
+
+def test_a_crlf_markdown_document_reaches_the_body_as_lf(tmp_path: Path):
+    path = tmp_path / "A note.md"
+    path.write_bytes(b"# A note\r\n\r\nBody.\r\n")
+
+    assert "\r" not in convert_local_file(path).markdown
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["C:\\Windows", "C:notes", "\\etc\\passwd", "..\\outside", "notes\\..\\..\\up"],
+    ids=["drive-root", "drive-relative", "rooted", "parent", "parent-inside"],
+)
+def test_a_windows_shaped_source_is_refused_on_every_platform(source: str):
+    """A pack is data written on one platform and installed on another, so
+    the host's `Path` is the wrong question: on Linux every one of these is
+    a single harmless filename, and on Windows each leaves the pack."""
+    with pytest.raises(ValueError):
+        ContentSource(source=source)
+
+
+def test_a_posix_root_is_refused_where_windows_would_call_it_relative():
+    """`PureWindowsPath("/etc/passwd")` has no drive and is not absolute,
+    which is how this passed the check on Windows. Asked of both flavours
+    it is refused everywhere."""
+    assert not PureWindowsPath("/etc/passwd").is_absolute()
+    with pytest.raises(ValueError):
+        ContentSource(source="/etc/passwd")
+
+
+def test_an_ordinary_nested_source_is_still_accepted():
+    assert ContentSource(source="notes/recipes/").source == "notes/recipes/"
+
+
+def test_a_windows_remedy_is_double_quoted_where_it_has_to_be():
+    """cmd.exe does not treat a single quote as quoting, so a POSIX-quoted
+    path is not a command that runs as printed there."""
+    assert quoted_for_windows(r"C:\Users\a b\paper.md") == r'"C:\Users\a b\paper.md"'
+
+
+def test_a_windows_remedy_is_bare_where_it_can_be():
+    assert quoted_for_windows(r"C:\Users\ab\paper.md") == r"C:\Users\ab\paper.md"
+
+
+def test_a_posix_remedy_is_shell_quoted():
+    assert quoted_for_posix("/tmp/a b/paper.md") == "'/tmp/a b/paper.md'"

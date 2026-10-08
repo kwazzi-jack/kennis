@@ -117,17 +117,20 @@ def test_an_empty_file_is_content_with_a_digest(tmp_path: Path):
     assert "empty.md" in found.digests
 
 
-def test_line_endings_are_not_normalised(tmp_path: Path):
-    """The digest is of the bytes, so a provider on Windows and one on Linux
-    shipping the same words have different digests - which is correct, and
-    worth pinning so nobody 'fixes' it into a text-mode read."""
+def test_line_endings_are_normalised(tmp_path: Path):
+    """Reversed on 2026-10-08 (#403). This test used to pin the opposite -
+    "a provider on Windows and one on Linux shipping the same words have
+    different digests, which is correct" - and the first Windows run showed
+    what that costs: Git for Windows checks a pack out as CRLF by default,
+    so a pack built on Linux was reported there as tampered with. Brian
+    decided the digest reads CRLF as LF."""
     a_source(tmp_path, **{"crlf.md": b"# Title\r\n\r\nBody.\r\n"})
     a_source(tmp_path / "other", **{"lf.md": b"# Title\n\nBody.\n"})
 
     crlf = read_source(tmp_path, ContentSource(source="notes/"))
     lf = read_source(tmp_path / "other", ContentSource(source="notes/"))
 
-    assert crlf.digests["crlf.md"] != lf.digests["lf.md"]
+    assert crlf.digests["crlf.md"] == lf.digests["lf.md"]
 
 
 def test_a_nested_tree_is_taken_at_any_depth(tmp_path: Path):

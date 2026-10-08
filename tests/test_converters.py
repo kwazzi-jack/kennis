@@ -443,12 +443,19 @@ def test_the_repair_can_be_switched_off(tmp_path: Path):
 
 
 def an_interpreter_with(directory: Path, *names: str) -> Path:
-    """A directory standing in for the `bin/` of the venv kennis runs from."""
+    """A directory standing in for the `bin/` of the venv kennis runs from.
+
+    `.exe` on Windows, because `shutil.which` only finds a name carrying
+    one of PATHEXT's suffixes there - and a real tool venv holds
+    `Scripts\\mineru.exe` beside `python.exe`, so the fixture was the
+    POSIX-shaped one, not kennis.
+    """
+    suffix = ".exe" if os.name == "nt" else ""
     directory.mkdir(parents=True, exist_ok=True)
-    interpreter = directory / "python"
+    interpreter = directory / f"python{suffix}"
     interpreter.write_text("", encoding="utf-8")
     for name in names:
-        beside = directory / name
+        beside = directory / f"{name}{suffix}"
         beside.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         beside.chmod(0o755)
     return interpreter

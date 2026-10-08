@@ -30,7 +30,7 @@ wrong with it.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Final
 
 import yaml
@@ -156,12 +156,16 @@ class ContentSource(BaseModel):
     @field_validator("source")
     @classmethod
     def _stays_under_the_pack_root(cls, value: str) -> str:
-        path = Path(value)
-        if path.is_absolute():
+        # Both flavours, not the host's `Path`: a pack is written on one
+        # platform and installed on another. `/etc/passwd` has no drive and
+        # is relative to Windows; `C:\x` and `..\x` are one filename to
+        # Linux. An anchor is a drive, a root, or both (#385, #403).
+        flavours = (PurePosixPath(value), PureWindowsPath(value))
+        if any(path.anchor for path in flavours):
             raise ValueError(f"'{value}' is absolute; a source is relative to the pack")
         if value.startswith("~"):
             raise ValueError(f"'{value}' names a home directory, not the pack")
-        if ".." in path.parts:
+        if any(".." in path.parts for path in flavours):
             raise ValueError(f"'{value}' leaves the pack root")
         return value
 

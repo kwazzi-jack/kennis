@@ -59,14 +59,21 @@ class SourceContent:
 def content_digest(data: bytes) -> str:
     """The digest a pack records for one of its files.
 
-    sha256 of the bytes. Named here rather than left to each caller because
-    a pack is an interchange format that another tool may write without
-    kennis, and `state.json`'s `file_sha256` already fixes the family.
-    Deliberately not `rag.binding.document_digest`, which is blake2b over
-    decoded text and exists to keep chunking stable - a different question
-    with a different answer. Concern #257.
+    sha256 of the bytes with every CRLF read as LF. Named here rather than
+    left to each caller because a pack is an interchange format that
+    another tool may write without kennis, and `state.json`'s
+    `file_sha256` already fixes the family. Deliberately not
+    `rag.binding.document_digest`, which is blake2b over decoded text and
+    exists to keep chunking stable - a different question with a
+    different answer. Concern #257.
+
+    **Line endings are not content.** Git for Windows checks files out as
+    CRLF by default, so a digest of the raw bytes reported a pack built
+    on Linux as tampered with on the first Windows machine to clone it.
+    Every caller digests text, and an LF-only file digests exactly as it
+    did before, so no recorded digest moved (Brian, 2026-10-08; #403).
     """
-    return hashlib.sha256(data).hexdigest()
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def read_source(root: Path, source: ContentSource) -> SourceContent:
