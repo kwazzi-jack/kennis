@@ -6,6 +6,10 @@ and what a pipeline's exit code is.
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,7 +17,9 @@ from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
 from kennis.engine.locking import corpus_lock
+from kennis.engine.pack.store import STATE_FILENAME, pack_root
 from kennis.engine.pack.validate import content_digest
+from kennis.render.machine_readable import PackListDocument
 
 HEADER = """
 kennis:
@@ -537,3 +543,161 @@ def test_the_holdings_line_is_indented_past_the_id_column(
     holding_line = next(line for line in lines if "stimela pipelines" in line)
     leading = len(holding_line) - len(holding_line.lstrip())
     assert leading > len(identifier_line) - len(identifier_line.lstrip())
+
+
+# `pack list --json`. Milestone 10c, after #401 was reversed: boepie reads
+# fields from a document rather than the id column of a layout for a person.
+
+
+def test_list_as_json_is_one_document_the_model_validates(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["pack", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    document = PackListDocument.model_validate_json(result.stdout)
+    assert document.format_version == 1
+    assert document.unreadable == []
+    [listed] = document.packs
+    assert listed.id == "boepie"
+    assert listed.version == "0.1.0"
+    assert listed.files == 1
+    assert listed.verified is True
+    assert listed.name == "stimela pipelines"
+    assert listed.description is None
+
+
+def test_list_as_json_says_what_a_hand_written_reader_would_expect(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """Read with `json.loads`, not the model: a test that only round-trips
+    through `PackListDocument` agrees with itself whatever the field names
+    are, and boepie does not import kennis. This is the hand-written
+    statement of the contract (#373)."""
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    document = json.loads(run.invoke(main, ["pack", "list", "--json"]).stdout)
+
+    assert document == {
+        "format_version": 1,
+        "packs": [
+            {
+                "id": "boepie",
+                "version": "0.1.0",
+                "files": 1,
+                "verified": True,
+                "name": "stimela pipelines",
+                "description": None,
+            }
+        ],
+        "unreadable": [],
+    }
+
+
+def test_list_as_json_with_nothing_installed_is_an_empty_list(
+    run: CliRunner, corpus: Path
+):
+    result = run.invoke(main, ["pack", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "format_version": 1,
+        "packs": [],
+        "unreadable": [],
+    }
+
+
+def test_list_as_json_names_an_unreadable_directory_and_prints_no_advice(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """The human listing follows an unreadable directory with `pack remove`
+    advice. In the document it is a field, and stdout carries nothing else."""
+    path = a_provider(isolated / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    (pack_root(corpus, "boepie") / STATE_FILENAME).unlink()
+
+    result = run.invoke(main, ["pack", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+    assert document["packs"] == []
+    assert document["unreadable"] == ["boepie"]
+
+
+def test_list_as_json_without_a_corpus_fails_on_stderr_and_leaves_stdout_empty(
+    run: CliRunner, isolated: Path
+):
+    """No corpus is a failure, not an empty list: a provider has to tell
+    "kennis cannot answer" from "kennis holds nothing". And the refusal is
+    prose, so it must not reach the stream a parser reads."""
+    result = run.invoke(main, ["pack", "list", "--json"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "there is no kennis corpus" in result.stderr
+    assert "kennis corpus init" in result.stderr
+
+
+def test_list_as_json_is_printed_under_quiet(run: CliRunner, corpus: Path):
+    """--quiet suppresses a report. The document is a payload, so it stays."""
+    result = run.invoke(main, ["--quiet", "pack", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["packs"] == []
+
+
+def test_the_human_listing_still_prints_failures_on_stdout(
+    run: CliRunner, isolated: Path
+):
+    """The reroute is for the document's sake and must not leak into the
+    ordinary command, whose stdout is the report a failure belongs in.
+    Runs after a --json invocation in the same process, because the
+    reroute is module state in `display`."""
+    run.invoke(main, ["pack", "list", "--json"])
+
+    result = run.invoke(main, ["pack", "list"])
+
+    assert result.exit_code == 1
+    assert "there is no kennis corpus" in result.stdout
+
+
+def test_list_as_json_from_a_real_process_is_parseable(
+    run: CliRunner, corpus: Path, isolated: Path
+):
+    """rich's console is bound to the real stdout, and the runner replaces
+    it. Only a real pipe says whether a long line is wrapped, styled or
+    marked up on the way out. The description is longer than the twenty
+    columns and has spaces in it: rich wraps at a space, so a string that
+    fits on a line of its own is moved whole, every break lands between two
+    tokens, and the wrapped document is still valid JSON. The pack name
+    alone (19 characters) passed with wrapping switched on (#352)."""
+    root = isolated / "provider"
+    (root / "notes").mkdir(parents=True)
+    (root / "notes" / "conventions.md").write_text("Recipes.\n", encoding="utf-8")
+    path = root / "p.ken.yml"
+    path.write_text(
+        HEADER + '  description: "Radio interferometry reduction."\n'
+        "corpus:\n  notes:\n    - source: notes/\n",
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "kennis.cli", "pack", "list", "--json"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        env={**os.environ, "COLUMNS": "20"},
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    [listed] = json.loads(completed.stdout)["packs"]
+    assert listed["description"] == "Radio interferometry reduction."
