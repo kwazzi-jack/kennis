@@ -75,15 +75,23 @@ def text_layer_vocabulary(pdf_path: Path) -> frozenset[str]:
     Streamed page by page: the word set is what is kept, never the whole
     text. Both the joined form and its halves are kept, because a half is
     often a real word elsewhere in the same document.
+
+    **Closed explicitly.** A `PdfDocument` sits in a reference cycle, so
+    an unclosed one holds the file until a collection happens to run -
+    in the window, for as long as it is open, and on Windows the source
+    cannot be moved meanwhile. One that reaches exit is listed on stderr
+    by pypdfium2, after a `corpus add` that succeeded. Closing the
+    document closes its pages and text pages with it.
     """
     words: set[str] = set()
-    document = pypdfium2.PdfDocument(pdf_path)
-    for page in document:
-        text = page.get_textpage().get_text_range()
-        words.update(match.group().lower() for match in _TOKEN.finditer(text))
-        words.update(
-            match.group().lower() for match in _TOKEN.finditer(_BREAKS.sub("", text))
-        )
+    with pypdfium2.PdfDocument(pdf_path) as document:
+        for page in document:
+            text = page.get_textpage().get_text_range()
+            words.update(match.group().lower() for match in _TOKEN.finditer(text))
+            words.update(
+                match.group().lower()
+                for match in _TOKEN.finditer(_BREAKS.sub("", text))
+            )
     return frozenset(words)
 
 
