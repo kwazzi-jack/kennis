@@ -518,7 +518,10 @@ def test_the_run_invokes_the_mineru_it_found(
     MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
 
     assert invoked, "mineru was never run"
-    assert invoked[0][0] == str(beside / "mineru")
+    # The file, not the spelling: on Windows `shutil.which` returns the name
+    # with PATHEXT's case, `mineru.EXE`, for the `mineru.exe` it found.
+    found = next(path for path in beside.iterdir() if path.stem == "mineru")
+    assert Path(invoked[0][0]).samefile(found)
 
 
 def test_the_install_hint_matches_how_kennis_was_installed(
