@@ -10,6 +10,7 @@ facts as fields and the command on its own.
 
 from __future__ import annotations
 
+import os
 import shlex
 from dataclasses import fields, is_dataclass
 from pathlib import Path
@@ -156,12 +157,14 @@ def test_every_remedy_runs_as_printed():
 
 
 def test_a_path_with_a_space_survives_its_remedy():
-    """The remedy is a command string, so the name goes through
-    `shlex.quote`. Without it the command parses as two arguments and
-    rule 4.4 is broken by a filename."""
+    """The remedy is a command string, so the name is quoted for the
+    platform's shell. Without it the command parses as two arguments and
+    rule 4.4 is broken by a filename. Written out per platform by hand,
+    because cmd.exe does not read single quotes as quoting (#403)."""
     remedies = remedies_for_refusal(NoIdentity(named="/tmp/two words.pdf"))
 
-    assert remedies == ("kennis corpus add -n '/tmp/two words.pdf'",)
+    quoted = '"/tmp/two words.pdf"' if os.name == "nt" else "'/tmp/two words.pdf'"
+    assert remedies == (f"kennis corpus add -n {quoted}",)
     assert command_accepts(remedies[0]) == ""
 
 

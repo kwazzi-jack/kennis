@@ -80,3 +80,12 @@ Tests:
 - As expected, `list2cmdline` leaves a path without spaces bare, which
   is what lets `test_a_refused_add_offers_the_command_that_resolves_it`
   check the Windows dispatch on the next run unchanged.
+- **The second Windows run left two, both expectations I wrote or
+  missed.** `shutil.which` returns PATHEXT's spelling, `mineru.EXE`, so
+  a string comparison with `bin\mineru` failed although kennis ran the
+  right file; the test now asks `samefile`, and still fails when kennis
+  runs the bare name. And `test_refusals.py` held a second hand-written
+  POSIX-quoted remedy that the first sweep did not look for - I updated
+  `test_add_literature.py`'s copy and never searched for the literal.
+  A behaviour changed per platform needs a grep for every test that
+  states the old one, not just the ones that failed.
