@@ -1,3 +1,9 @@
+## v0.6.1 (2026-10-08)
+
+### Feat
+
+- **cli**: print pack list as a json document a provider can parse
+
 ## v0.6.0 (2026-10-07)
 
 ### Feat
