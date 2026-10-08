@@ -401,6 +401,71 @@ def test_the_vocabulary_joins_words_broken_across_a_line(tmp_path: Path):
     assert "numer" in vocabulary
 
 
+def test_the_vocabulary_closes_the_pdf_it_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A long-lived process - the window - converts many PDFs, and each one
+    left open is a file handle held until exit, and on Windows a source
+    that cannot be moved or deleted. `close()` sets `raw` to None, and
+    closing the document closes its pages and text pages with it."""
+    import pypdfium2
+
+    from kennis.engine.corpus.ligatures import text_layer_vocabulary
+
+    opened: list[pypdfium2.PdfDocument] = []
+    original = pypdfium2.PdfDocument
+
+    def recording(*arguments: object, **options: object) -> pypdfium2.PdfDocument:
+        document = original(*arguments, **options)
+        opened.append(document)
+        return document
+
+    monkeypatch.setattr(pypdfium2, "PdfDocument", recording)
+    text_layer_vocabulary(a_hyphenated_pdf(tmp_path / "broken.pdf"))
+
+    [document] = opened
+    assert document.raw is None
+
+
+def test_reading_the_vocabulary_leaves_nothing_for_exit_to_close(tmp_path: Path):
+    """The symptom Brian saw after a successful `corpus add`: pypdfium2
+    closes what is still open at interpreter exit and lists it on stderr.
+    Only a real process reaches exit.
+
+    **Two conditions, and the test passed against the defect until both
+    were reproduced.** An unclosed `PdfDocument` sits in a reference cycle,
+    so it reaches exit only if no collection runs first - hence
+    `gc.disable()`. And at exit, two handlers race in last-registered-first
+    order: pypdfium2's `destroy_lib`, registered on import, which closes
+    what is open *and lists it*, and `weakref.finalize`'s, registered on
+    the first `finalize` anyone creates, which runs the same finalizers
+    silently. The list is printed only when something created a
+    `finalize` before pypdfium2 was imported, so `destroy_lib` runs first
+    - which is what kennis's command line does. The anchor stands in for
+    that earlier import."""
+    pdf = a_hyphenated_pdf(tmp_path / "broken.pdf")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import gc, sys, weakref; from pathlib import Path; gc.disable();"
+            "anchor = type('Anchor', (), {})(); weakref.finalize(anchor, int);"
+            "from kennis.engine.corpus.ligatures import text_layer_vocabulary;"
+            "text_layer_vocabulary(Path(sys.argv[1]))",
+            str(pdf),
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "still open" not in completed.stderr
+
+
 def test_mineru_output_is_normalised_markdown(tmp_path: Path):
     """MinerU writes tables as raw HTML - 15% of one paper's stored
     characters. What reaches the corpus must be markdown, so this goes
