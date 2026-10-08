@@ -1,3 +1,9 @@
+## v0.6.3 (2026-10-08)
+
+### Fix
+
+- **engine**: close the pdf the ligature vocabulary reads
+
 ## v0.6.2 (2026-10-08)
 
 ### Fix
