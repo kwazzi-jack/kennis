@@ -1,3 +1,9 @@
+## v0.6.2 (2026-10-08)
+
+### Fix
+
+- **engine**: read crlf as lf in pack digests and text sources, and check pack paths for both platforms
+
 ## v0.6.1 (2026-10-08)
 
 ### Feat
