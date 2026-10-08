@@ -111,7 +111,7 @@ def test_every_page_is_reachable_from_the_navigation():
     neither was documented anywhere a reader could arrive at. Concern
     #327."""
     written = {
-        str(path.relative_to(DOCS_ROOT))
+        path.relative_to(DOCS_ROOT).as_posix()
         for path in DOCS_ROOT.rglob("*.md")
         # A leading underscore names a fragment another page includes
         # rather than a page of its own.

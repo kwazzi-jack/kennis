@@ -510,7 +510,9 @@ def test_context_status_counts_what_was_written_since_the_build(
 def test_context_status_reports_a_stale_index(bundle: Path, run: CliRunner):
     assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
     assert run.invoke(main, ["context", "index"]).exit_code == 0
-    written = next(path for path in bundle.glob("*.md") if path.name != "LANDING.md")
+    # Not the first `glob` hit: NTFS lists `.skeleton.md` before the note,
+    # so on Windows this edited the skeleton, which the loader ignores.
+    [written] = bundle_notes(bundle)
     written.write_text(
         written.read_text(encoding="utf-8").replace("Four", "Eight"), encoding="utf-8"
     )

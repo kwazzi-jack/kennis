@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from shlex import quote
 
 import httpx
 import pytest
@@ -37,7 +36,11 @@ from kennis.engine.refusals import (
     NoPublisherText,
     NotAnInput,
 )
-from kennis.render.refusals import describe_refusal, remedies_for_refusal
+from kennis.render.refusals import (
+    describe_refusal,
+    quoted_for_this_shell,
+    remedies_for_refusal,
+)
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -568,7 +571,7 @@ def test_the_refusal_names_both_ways_forward(papers: Collection, tmp_path: Path)
     # front end that cannot offer a terminal command can still show the
     # sentence. Unit 9e.
     assert remedies_for_refusal(refusal) == (
-        f"kennis corpus add -n {quote(str(path))}",
+        f"kennis corpus add -n {quoted_for_this_shell(str(path))}",
     )
 
 

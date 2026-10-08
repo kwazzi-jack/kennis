@@ -194,9 +194,13 @@ def read_text_file(path: Path) -> str:
         raise SourceUnreadable(f"could not read '{path}': {error}") from error
     for encoding in _TEXT_ENCODINGS:
         try:
-            return data.decode(encoding)
+            text = data.decode(encoding)
         except UnicodeDecodeError:
             continue
+        # What universal newlines would have done had this been opened as
+        # text. Decoding bytes does none of it, so a CRLF source carried
+        # `\r` into `Document.body` on every platform (#403).
+        return text.replace("\r\n", "\n").replace("\r", "\n")
     raise SourceUnreadable(f"could not decode '{path}' as text in any known encoding")
 
 

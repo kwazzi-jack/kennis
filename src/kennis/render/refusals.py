@@ -20,7 +20,9 @@ is needed.
 
 from __future__ import annotations
 
-from shlex import quote
+import os
+import shlex
+import subprocess
 
 from kennis.engine.refusals import (
     AmbiguousIdentity,
@@ -39,6 +41,28 @@ from kennis.engine.refusals import (
     UnsupportedFormat,
 )
 from kennis.render.words import count_of
+
+
+def quoted_for_posix(argument: str) -> str:
+    """One argument as a POSIX shell reads it."""
+    return shlex.quote(argument)
+
+
+def quoted_for_windows(argument: str) -> str:
+    """One argument as cmd.exe and PowerShell both read it.
+
+    `list2cmdline` double-quotes only when the argument needs it. A
+    single-quoted path, which is what `shlex.quote` produces for any
+    path containing a backslash, is not quoting to cmd.exe at all.
+    """
+    return subprocess.list2cmdline([argument])
+
+
+def quoted_for_this_shell(argument: str) -> str:
+    """One argument quoted so the remedy runs as printed on this platform."""
+    if os.name == "nt":
+        return quoted_for_windows(argument)
+    return quoted_for_posix(argument)
 
 
 def describe_refusal(refusal: Refusal) -> str:
@@ -136,7 +160,7 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             # `--identifier` as a command would mean choosing a value on
             # the user's behalf, and for an ambiguous page that is
             # choosing which paper this is.
-            return (f"kennis corpus add -n {quote(named)}",)
+            return (f"kennis corpus add -n {quoted_for_this_shell(named)}",)
         case (
             Quoted()
             | SameContent()

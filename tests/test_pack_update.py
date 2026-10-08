@@ -156,7 +156,11 @@ def test_everything_above_the_marker_survives_byte_for_byte(tmp_path: Path):
     lost the editor header line unit 3 exists to write, every comment, and
     the author's key order."""
     a_file(tmp_path, "notes/one.md", "Body.\n")
-    path = a_pack(tmp_path, HEADER + "\n# A comment the author wrote.\n" + NOTES)
+    path = tmp_path / "stimela.ken.yml"
+    # Bytes, not `write_text`: on Windows that writes CRLF and kennis writes
+    # LF, so the test compared a policy rather than the property. What
+    # becomes of a CRLF pack is the next test's question.
+    path.write_bytes((HEADER + "\n# A comment the author wrote.\n" + NOTES).encode())
     head = path.read_bytes()
 
     update_pack(path)
@@ -166,6 +170,23 @@ def test_everything_above_the_marker_survives_byte_for_byte(tmp_path: Path):
     text = path.read_bytes()
     assert text.startswith(head)
     assert b"# A comment the author wrote." in text
+
+
+def test_a_crlf_pack_is_rewritten_as_lf_and_otherwise_unchanged(tmp_path: Path):
+    """kennis writes LF on every platform (#384), so an author's CRLF does
+    not survive `pack update`; everything else above the marker does. A
+    consequence of the policy, pinned so it is a decision and not a
+    surprise (#403)."""
+    a_file(tmp_path, "notes/one.md", "Body.\n")
+    path = tmp_path / "stimela.ken.yml"
+    authored = HEADER + "\n# A comment the author wrote.\n" + NOTES
+    path.write_bytes(authored.replace("\n", "\r\n").encode())
+
+    update_pack(path)
+
+    text = path.read_bytes()
+    assert b"\r" not in text
+    assert text.startswith(authored.encode())
 
 
 def test_the_marker_is_written_once_however_often_update_runs(tmp_path: Path):
