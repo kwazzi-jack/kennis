@@ -195,7 +195,7 @@ def test_every_page_carries_the_choice(corpus: Path, client: TestClient):
     admitted(client)
     client.cookies.set("theme", "dark")
 
-    for path in ("/", "/held", "/remember", "/manage"):
+    for path in ("/", "/corpus", "/remember", "/add"):
         page = client.get(path)
         assert page.status_code == 200, path
         assert 'data-theme="dark"' in page.text, path

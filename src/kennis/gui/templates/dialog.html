@@ -1,0 +1,11 @@
+{# One action's form, as a dialog. `dialog.js` opens it as a modal
+   when it arrives in `#dialog`; Escape closes it natively. #}
+<dialog class="dialog" aria-labelledby="dialog-title">
+  <header class="dialog-head">
+    <h2 id="dialog-title">{{ title }}</h2>
+    <button type="button" class="ghost" data-close aria-label="{{ close_label }}">{{ icon("x") }}</button>
+  </header>
+  <div class="dialog-body">
+  {% include form_template %}
+  </div>
+</dialog>

@@ -186,19 +186,26 @@ def test_the_form_has_what_a_browser_needs_to_submit_on_enter(
     assert "submit" in [part.strip().split()[0] for part in trigger.group(1).split(",")]
 
 
-def test_the_form_names_no_action_so_it_falls_back_to_the_address(
+def test_a_native_submission_goes_to_the_address_the_page_rebuilds_from(
     corpus: Path, client: TestClient
 ):
-    """With no `action`, a native submission goes to the current path
-    with the fields as a query string - which is the address the page
-    reconstructs from. An `action="/hits"` would send a reader without
-    JavaScript to a bare fragment instead. Concern #340."""
+    """A native submission must reach `/` with the fields as a query
+    string - the address the page reconstructs from. An
+    `action="/hits"` would send a reader without JavaScript to a bare
+    fragment instead. Concern #340.
+
+    Until 11a this was done by naming no action, because the form was
+    only on the search page. It is in the bar now, on every page, so
+    the action is named: `/`, by `GET`."""
     admitted(client)
 
     page = client.get("/").text
-    form = page[page.index("<form") : page.index("</form>")]
+    form = re.search(r'<form class="searchbox"[^>]*>', page)
 
-    assert "action=" not in form
+    assert form is not None
+    assert 'action="/"' in form.group(0)
+    assert 'method="get"' in form.group(0)
+    assert "/hits" not in re.findall(r'action="([^"]*)"', form.group(0))
 
 
 def test_a_search_in_the_address_answers_without_any_script(

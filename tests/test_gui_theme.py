@@ -309,7 +309,7 @@ def test_every_vendored_asset_is_accounted_for():
     notice = (vendor / "NOTICE.txt").read_text(encoding="utf-8")
     # What the notice declares: bare filenames, and globs for a family
     # carried in many weights.
-    declared = set(re.findall(r"[\w*.-]+\.(?:woff2|js|css)", notice))
+    declared = set(re.findall(r"[\w*.-]+\.(?:woff2|js|css|svg)", notice))
 
     for path in sorted(vendor.rglob("*")):
         if path.is_dir() or path.name == "NOTICE.txt" or "LICENSE" in path.name:
@@ -424,7 +424,7 @@ def test_the_notice_declares_nothing_that_is_not_there():
     notice = (vendor / "NOTICE.txt").read_text(encoding="utf-8")
     present = [path.name for path in vendor.rglob("*") if path.is_file()]
 
-    for pattern in set(re.findall(r"[\w*.-]+\.(?:woff2|js|css)", notice)):
+    for pattern in set(re.findall(r"[\w*.-]+\.(?:woff2|js|css|svg)", notice)):
         assert any(fnmatch(name, pattern) for name in present), (
             f"NOTICE.txt declares {pattern}, which is not vendored"
         )

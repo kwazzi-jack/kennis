@@ -1,0 +1,9 @@
+<p class="role-muted">{{ sync_preamble }}</p>
+<div class="fields">
+  <form hx-post="/sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+    <button type="submit">{{ sync_corpus_action }}</button>
+  </form>
+  <form hx-post="/context-sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+    <button type="submit">{{ sync_context_action }}</button>
+  </form>
+</div>
