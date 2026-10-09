@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}kennis - what is held{% endblock %}
+{% block title %}kennis - {{ corpus_heading }}{% endblock %}
 {% block main %}
-<h1>What is held</h1>
+<h1>{{ corpus_heading }}</h1>
 {% if empty %}<p class="role-muted">{{ nothing_held }}</p>{% endif %}
 <table class="holdings">
   <thead><tr><th>collection</th><th>documents</th><th>index</th></tr></thead>
@@ -16,7 +16,7 @@
   </tbody>
 </table>
 
-<h2>Packs</h2>
+<h2 id="packs">Packs</h2>
 {% if packs %}
 <ul class="packs">{% for line in packs %}<li>{{ line }}</li>{% endfor %}</ul>
 {% else %}

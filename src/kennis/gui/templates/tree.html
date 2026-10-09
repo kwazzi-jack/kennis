@@ -1,0 +1,23 @@
+{# One collection's groups and documents, fetched when it is opened.
+   The ungrouped come first under no heading. #}
+<ul class="tree">
+{% for group, documents in groups %}
+  {% if group %}
+  <li>
+    <details open>
+      <summary class="node">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ group }}</span><span class="count">{{ documents | length }}</span></summary>
+      <ul class="tree">
+        {% for document in documents %}
+        <li><a class="node leaf" href="/document/{{ collection }}/{{ document.document_id }}" title="{{ document.title }}">{{ icon("file-text") }}<span class="name">{{ document.title }}</span></a></li>
+        {% endfor %}
+      </ul>
+    </details>
+  </li>
+  {% else %}
+  {% for document in documents %}
+  <li><a class="node leaf" href="/document/{{ collection }}/{{ document.document_id }}" title="{{ document.title }}">{{ icon("file-text") }}<span class="name">{{ document.title }}</span></a></li>
+  {% endfor %}
+  {% endif %}
+{% endfor %}
+</ul>
+{% if unreadable %}<p class="pane-note role-error">{{ unreadable }}</p>{% endif %}

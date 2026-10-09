@@ -1,8 +1,7 @@
-{% extends "base.html" %}
-{% block title %}kennis - remember{% endblock %}
-{% block main %}
-<h1>Remember</h1>
 <p class="role-muted">{{ preamble }}</p>
+{# Not `data-closes-dialog`: the outcome is answered into this form's
+   own `#outcome`, and the text stays in the box until the write is
+   confirmed, so closing would hide both. #}
 <form hx-post="/remember" hx-target="#outcome" hx-swap="innerHTML">
   <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}" autofocus></textarea>
   <div class="fields">
@@ -14,4 +13,3 @@
   <button type="submit">{{ action }}</button>
 </form>
 <div id="outcome">{% include "outcome.html" %}</div>
-{% endblock %}

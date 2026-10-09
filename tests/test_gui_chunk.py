@@ -560,10 +560,18 @@ def test_the_page_re_runs_the_search_when_the_scope_changes(
 ):
     """`hx-trigger` listened to the text input only, so picking a new
     scope left the previous scope's results on screen under the new
-    label - which is worse than showing nothing."""
-    search = (TEMPLATES_DIR / "search.html").read_text(encoding="utf-8")
+    label - which is worse than showing nothing.
 
-    assert "select[name=scope]" in search
+    Read from the rendered form rather than a template: the form moved
+    from `search.html` into the bar in 11a, and a test reading the old
+    file would have gone on passing against a template that no longer
+    held it."""
+    admitted(client)
+
+    form = re.search(r'<form class="searchbox"[^>]*>', client.get("/").text)
+
+    assert form is not None
+    assert "change from:select[name=scope]" in form.group(0)
 
 
 def test_the_search_box_is_focused_on_arrival(corpus: Path, client: TestClient):

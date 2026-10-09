@@ -119,6 +119,15 @@ def css_variables(
     # trick as the hairline: one of the nine at low alpha, composed
     # here because the layout may name no colour.
     lines.append(f"  --mark: {table['yellow']}33;")
+    # The brand: the highlighter amber, which is already this palette's
+    # `yellow` and already measured against the ground. Used for what
+    # is chosen - the open place in the pane, a pressed control - so
+    # the colour of a marked passage is also the colour of "here".
+    lines.append(f"  --brand: {table['yellow']};")
+    lines.append(f"  --brand-wash: {table['yellow']}1f;")
+    # The surface of the pane and the strip: the muted grey at a low
+    # alpha, so it works on both grounds without a tenth colour.
+    lines.append(f"  --raised: {table['bright_black']}14;")
     for name, role in ROLES.items():
         lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)
@@ -331,9 +340,8 @@ _LAYOUT = """\
             'DejaVu Sans', Arial, sans-serif;
   --mono: ui-monospace, 'DejaVu Sans Mono', 'Cascadia Mono', Menlo, monospace;
 
-  /* The sidebar's width, which is the whole of what collapsing
-     changes: the column is centred in whatever is left. */
-  --sidebar: 13rem;
+  /* The pane's width, which is the whole of what collapsing changes. */
+  --pane: 16rem;
 }
 
 * { box-sizing: border-box; }
@@ -348,106 +356,294 @@ body {
   line-height: 1.6;
 }
 
-main {
-  max-width: calc(var(--margin) + var(--gap) + var(--measure));
-  margin: 0 auto;
-  padding: 2.5rem 1.5rem 6rem;
+/* ---------------------------------------------------------------- */
+/* The shell: a bar, the pane, the column, and the strip            */
+/* ---------------------------------------------------------------- */
+
+/* A grid on `body`, sized by the dynamic viewport. The mockup sized
+   it as `calc(100% - 2.3rem)` and the strip clipped at the bottom of
+   the window as soon as the bar above it wrapped: arithmetic about
+   one element's height is wrong the moment another's changes. Here
+   each row takes what it needs and the middle row takes the rest. */
+.shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--pane) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "bar bar" "pane main" "strip strip";
+  overflow: hidden;
 }
 
-/* The header is the one hairline in the design. It separates the
-   interface's own furniture from everything below it, which is
-   either kennis speaking or the corpus speaking. */
-:root[data-sidebar="closed"] { --sidebar: 3.25rem; }
+/* Collapsed, the pane takes no width at all: its toggle is in the
+   bar, which never collapses, so there is nothing to leave behind. */
+:root[data-pane="closed"] { --pane: 0px; }
+:root[data-pane="closed"] .pane { visibility: hidden; }
 
-/* The column is centred in what the sidebar leaves, which is why
-   the padding is on `body` and `main` keeps its own `margin: auto`.
-   Putting the offset on `main` instead would centre it in the whole
-   viewport and slide it under the sidebar. */
-body { padding-left: var(--sidebar); }
-
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: var(--sidebar);
-  box-sizing: border-box;
-  overflow-y: auto;
+.bar {
+  grid-area: bar;
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.2rem 1rem;
-  border-right: 1px solid var(--rule);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--rule);
   font-family: var(--gutter);
   font-size: 0.8125rem;
 }
 
-.sidebar nav { display: flex; flex-direction: column; gap: 0.55rem; }
-.sidebar a { color: var(--role-muted); text-decoration: none; }
-.sidebar a:hover { color: var(--ink); text-decoration: underline; }
-
-/* The whole row is the target, not the width of the word: a list
-   of six destinations in a narrow column is easier to hit than to
-   aim at. */
-.sidebar-link { display: block; }
-
-/* The wordmark keeps full ink inside the sidebar, and needs saying
-   because `.sidebar a` is more specific than `.wordmark` - one
-   class plus an element beats one class - so the name of the
-   interface was rendered in the muted grey meant for navigation.
-   Measured in the browser: the muted grey where the body's ink
-   was expected. The second time a colour has been lost to a
-   rule nobody was looking at; concern #351 was the first. */
-.sidebar .wordmark,
-.sidebar .wordmark:hover { color: var(--ink); }
-
-.sidebar-toggle { align-self: flex-start; padding: 0.45rem 0.55rem; }
-
-/* Last in the sidebar and pushed to the bottom of it: a preference
-   is not a destination, and putting it in the list of six would
-   make it read as one. */
-.theme { margin-top: auto; font-size: 0.75rem; padding: 0.3rem 0.4rem; }
-:root[data-sidebar="closed"] .theme { display: none; }
-
-/* A shortcut lands its section against the top of the viewport
-   otherwise, with the heading touching the edge. */
-#add, #index { scroll-margin-top: 1.5rem; }
-
-/* Three bars, drawn rather than typed: the ASCII rule leaves no
-   hamburger glyph and no arrows, and an image would be a fourth
-   vendored asset for twelve pixels. */
-.bars {
-  display: block;
-  width: 1rem;
-  height: 2px;
-  background: currentColor;
-  box-shadow: 0 5px currentColor, 0 10px currentColor;
-  margin: 0 0 10px;
-}
-
-/* Collapsed, only the toggle is left - the rail keeps a width so
-   there is something to click, which is what "always present for
-   the user to open" means. */
-:root[data-sidebar="closed"] .sidebar { padding: 1.2rem 0.5rem; }
-:root[data-sidebar="closed"] .wordmark { display: none; }
-:root[data-sidebar="closed"] .sidebar nav { display: none; }
-
-/* The one place the interface says its own name, and it says it
-   once. It was the first item in the navigation, at the same size
-   as "manage", so the page had no title at all - the search page
-   in particular opened on a box and nothing saying what it
-   searched. Set in the text face rather than the gutter's
-   monospace, because it is a name and not a field. */
+/* The one place the interface says its own name. Set in the text
+   face rather than the gutter's, because it is a name and not a
+   field. */
 .wordmark {
-  display: block;
   font-family: var(--column);
-  font-size: 1.6rem;
+  font-size: 1.4rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1;
   color: var(--ink);
+  text-decoration: none;
 }
 .wordmark:hover { text-decoration: none; }
+
+.icon {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  vertical-align: -0.15em;
+}
+
+/* A control that is only an icon, or an icon and a short label.
+   No border until it is pointed at, so a row of them reads as a
+   toolbar and not as a row of boxes. */
+.ghost, .action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ghost { color: var(--role-muted); }
+.ghost:hover, .action:hover {
+  background: var(--raised);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.searchbox {
+  flex: 1 1 24rem;
+  max-width: 40rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+}
+.searchbox input[type="search"] {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font-family: var(--column);
+}
+/* The box keeps room to type in; the selects give way first. On a
+   phone they took the row and left the box a sliver. */
+.searchbox input[type="search"] { min-width: 7rem; }
+.searchbox select, .searchbox button {
+  font-size: 0.75rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.searchbox .searching { margin: 0; }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: auto;
+}
+.theme { font-size: 0.75rem; padding: 0.25rem 0.35rem; margin-left: 0.4rem; }
+
+/* ---- the pane: a tree, like an editor's file explorer ---- */
+
+.pane {
+  grid-area: pane;
+  overflow-y: auto;
+  background: var(--raised);
+  border-right: 1px solid var(--rule);
+  padding: 0.75rem 0.5rem 1rem;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+.pane section { margin: 0; }
+
+.pane-head {
+  margin: 0 0.4rem 0.3rem;
+  font-family: var(--gutter);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--role-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.pane-head a { color: inherit; text-decoration: none; }
+.pane-head a:hover { color: var(--ink); }
+/* A project's name, as it is spelled on disk. */
+.pane-head .project {
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+.pane-note { margin: 0 0.4rem; font-size: 0.75rem; }
+
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree .tree {
+  margin-left: 0.85rem;
+  padding-left: 0.35rem;
+  border-left: 1px solid var(--rule);
+}
+.tree summary { list-style: none; }
+/* Where a collection's documents arrive when it is first opened.
+   Empty until then, and an empty branch takes no room. */
+.branch:empty { display: none; }
+.tree summary::-webkit-details-marker { display: none; }
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.22rem 0.35rem;
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+  min-width: 0;
+}
+.node:hover { background: var(--raised); }
+.node .icon { color: var(--role-muted); }
+.node .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+.node.top .name { font-weight: 600; }
+.node .file { font-family: var(--mono); font-size: 0.75rem; }
+/* The chevron turns when its branch is open. It is the first icon
+   in a summary; the second names the kind. */
+summary.node > .icon:first-child { transition: transform 0.12s; }
+details[open] > summary.node > .icon:first-child { transform: rotate(90deg); }
+/* A leaf has no chevron, so it is indented by one to line up with
+   its siblings' names. */
+.node.leaf { padding-left: 1.6rem; }
+.node[aria-current="page"] { background: var(--brand-wash); }
+
+.pane .count {
+  font-size: 0.75rem;
+  color: var(--role-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A collection's state, as a dot. The words are beside it for a
+   screen reader and in its title for a pointer; the dot is for the
+   glance. */
+.state {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex: none;
+  border: 1px solid var(--rule);
+}
+.state-current { background: var(--role-added); border-color: var(--role-added); }
+.state-behind, .state-none {
+  background: var(--role-warning);
+  border-color: var(--role-warning);
+}
+.state-empty { background: none; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- the centre ---- */
+
+main {
+  grid-area: main;
+  overflow-y: auto;
+  padding: 2rem 1.5rem 4rem;
+  min-width: 0;
+}
+/* The column keeps its measure inside whatever the pane leaves. One
+   element owns the centring: on `main > *` it was undone by any later
+   rule setting a child's `margin` shorthand - `h1` among them, which
+   left the corpus page's heading beside its table rather than above. */
+.column {
+  max-width: calc(var(--margin) + var(--gap) + var(--measure));
+  margin: 0 auto;
+}
+
+.action-page h2 { font-size: 1.3rem; margin: 0 0 0.5rem; }
+
+/* ---- an action's dialog ---- */
+
+.dialog {
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+}
+.dialog::backdrop { background: var(--rule); }
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.1rem 0.3rem;
+}
+.dialog-head h2 { margin: 0; font-size: 1.05rem; font-family: var(--gutter); }
+.dialog-body { padding: 0.3rem 1.1rem 1.1rem; }
+.dialog-body p { margin: 0 0 0.6rem; }
+
+/* ---- the strip ---- */
+
+.strip {
+  grid-area: strip;
+  max-height: 40dvh;
+  overflow-y: auto;
+  background: var(--raised);
+  border-top: 1px solid var(--rule);
+  padding: 0 1rem;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+}
+.strip #job:not(:empty) { padding: 0.5rem 0; }
 
 /* Past searches, offered again. Shaped like the hits list because
    it occupies the same place and answers the same question - the
@@ -787,31 +983,17 @@ article table {
   .hits li { grid-template-columns: 1fr; row-gap: 0.4rem; }
   .hits li > * { grid-column: 1; }
   .hits .detail { grid-row: auto; text-align: left; }
-  /* Back across the top rather than off-canvas. A sliding overlay
-     is a great deal of machinery for a width this interface is not
-     used at, and a static bar is what it already was. */
-  :root, :root[data-sidebar="closed"] { --sidebar: 0px; }
-  body { padding-left: 0; }
-  .sidebar {
-    position: static;
-    width: auto;
-    flex-direction: row;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 0.9rem;
-    padding: 1.1rem 1rem 0.8rem;
-    border-right: none;
-    border-bottom: 1px solid var(--rule);
+  /* The pane leaves the grid: on a phone the window is the column
+     and the bar, and the pane would take most of the width. Its
+     places are still reachable from the bar's search and actions. */
+  .shell, :root[data-pane="closed"] .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "bar" "main" "strip";
   }
-  .sidebar-toggle { display: none; }
-  :root[data-sidebar="closed"] .wordmark { display: block; }
-  .sidebar nav,
-  :root[data-sidebar="closed"] .sidebar nav {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0.9rem;
-  }
+  .pane { display: none; }
+  #pane-toggle { display: none; }
+  .action .label { display: none; }
+  .searchbox { order: 3; flex-basis: 100%; max-width: none; flex-wrap: wrap; }
   main { padding: 1.5rem 1rem 4rem; }
 }
 

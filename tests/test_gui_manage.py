@@ -105,7 +105,7 @@ def messages(client: TestClient, job_id: str) -> list[dict[str, object]]:
 
 def test_an_add_writes_the_document_and_reports_it(client: TestClient, tmp_path: Path):
     started = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -131,7 +131,7 @@ def test_an_add_commits_what_it_wrote(client: TestClient, tmp_path: Path):
     before = Repository(corpus_root).head()
 
     started = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -146,9 +146,7 @@ def test_an_add_commits_what_it_wrote(client: TestClient, tmp_path: Path):
 def test_an_add_with_nothing_named_is_refused_before_a_job_starts(client: TestClient):
     """A job that had nothing to do would still occupy the one slot and
     would still have to be watched to find that out."""
-    answer = client.post(
-        "/manage/add", data={"identifiers": "  \n\n", "collection": "notes"}
-    )
+    answer = client.post("/add", data={"identifiers": "  \n\n", "collection": "notes"})
 
     assert "at least one" in answer.text
     assert "data-job" not in answer.text
@@ -164,7 +162,7 @@ def test_a_refused_add_offers_a_repair_that_can_be_submitted(
     source = a_source(tmp_path, "paper.md")
 
     started = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "literature"}
+        "/add", data={"identifiers": str(source), "collection": "literature"}
     )
     shown = finished(client, job_of(started.text))
 
@@ -179,12 +177,12 @@ def test_the_offered_repair_actually_repairs(client: TestClient, tmp_path: Path)
     A repair that does not repair is worse than no repair."""
     source = a_source(tmp_path, "paper.md")
     refused = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "literature"}
+        "/add", data={"identifiers": str(source), "collection": "literature"}
     )
     finished(client, job_of(refused.text))
 
     repaired = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "notes"}
+        "/add", data={"identifiers": str(source), "collection": "notes"}
     )
     shown = finished(client, job_of(repaired.text))
 
@@ -204,7 +202,7 @@ def test_a_repair_replaces_the_command_rather_than_joining_it(
     source = a_source(tmp_path, "paper.md")
 
     started = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "literature"}
+        "/add", data={"identifiers": str(source), "collection": "literature"}
     )
     shown = finished(client, job_of(started.text))
 
@@ -218,7 +216,7 @@ def test_an_added_document_is_told_it_is_not_searchable_yet(
     """Said as a sentence pointing at the control above, rather than as
     `kennis corpus index`, for the same reason."""
     started = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -252,7 +250,7 @@ def test_an_ambiguous_refusal_offers_every_candidate_and_chooses_none(
 
 def test_an_unknown_collection_is_named_back(client: TestClient, tmp_path: Path):
     answer = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "a.md")),
             "collection": "elsewhere",
@@ -272,7 +270,7 @@ def test_the_stream_carries_each_item_and_then_closes(
     client: TestClient, tmp_path: Path
 ):
     started = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": "\n".join(
                 str(a_source(tmp_path, name)) for name in ("one.md", "two.md")
@@ -297,7 +295,7 @@ def test_the_stream_ends_even_when_the_operation_fails(
     corpus_root = existing_corpus().corpus_root
     with corpus_lock(corpus_root):
         started = client.post(
-            "/manage/add",
+            "/add",
             data={
                 "identifiers": str(a_source(tmp_path, "trees.md")),
                 "collection": "notes",
@@ -315,7 +313,7 @@ def test_a_busy_corpus_is_a_state_to_retry_from(client: TestClient, tmp_path: Pa
     corpus_root = existing_corpus().corpus_root
     with corpus_lock(corpus_root):
         started = client.post(
-            "/manage/add",
+            "/add",
             data={
                 "identifiers": str(a_source(tmp_path, "trees.md")),
                 "collection": "notes",
@@ -336,7 +334,7 @@ def test_an_operation_started_from_the_window_reaches_the_log(
     start_logging()
     try:
         started = client.post(
-            "/manage/add",
+            "/add",
             data={
                 "identifiers": str(a_source(tmp_path, "trees.md")),
                 "collection": "notes",
@@ -383,7 +381,7 @@ def test_a_second_operation_is_refused_and_says_which_is_running(
     running = app.state.jobs.start("add", lambda events: holding.wait(10))
 
     second = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "two.md")),
             "collection": "notes",
@@ -405,7 +403,7 @@ def test_a_job_that_has_finished_is_no_longer_in_the_way(
     assert earlier.done.wait(10)
 
     started = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "one.md")),
             "collection": "notes",
@@ -423,7 +421,7 @@ def test_a_job_that_has_finished_is_no_longer_in_the_way(
 
 def test_indexing_reports_what_it_built(client: TestClient, tmp_path: Path):
     added = client.post(
-        "/manage/add",
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -431,7 +429,7 @@ def test_indexing_reports_what_it_built(client: TestClient, tmp_path: Path):
     )
     finished(client, job_of(added.text))
 
-    started = client.post("/manage/index", data={"collection": ""})
+    started = client.post("/index", data={"collection": ""})
     shown = finished(client, job_of(started.text))
 
     assert "Indexed 1 document" in shown
@@ -439,7 +437,7 @@ def test_indexing_reports_what_it_built(client: TestClient, tmp_path: Path):
 
 
 def test_indexing_an_empty_corpus_says_there_is_nothing_to_do(client: TestClient):
-    started = client.post("/manage/index", data={"collection": ""})
+    started = client.post("/index", data={"collection": ""})
     shown = finished(client, job_of(started.text))
 
     assert "nothing to index" in shown
@@ -450,7 +448,7 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
 ):
     """And says so quietly. Nothing happened, so the line must not be
     the colour of something having happened."""
-    started = client.post("/manage/sync", data={})
+    started = client.post("/sync", data={})
     shown = finished(client, job_of(started.text))
 
     assert "data-job" not in shown
@@ -461,7 +459,7 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
 def test_a_project_sync_outside_a_bundle_names_the_command_that_makes_one(
     client: TestClient,
 ):
-    answer = client.post("/manage/context-sync", data={})
+    answer = client.post("/context-sync", data={})
 
     assert "data-job" not in answer.text
     assert "kennis context init" in answer.text
@@ -470,18 +468,21 @@ def test_a_project_sync_outside_a_bundle_names_the_command_that_makes_one(
 def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     client: TestClient,
 ):
-    answer = client.post("/manage/pack", data={"path": "/nowhere/at/all.ken.yml"})
+    answer = client.post("/pack", data={"path": "/nowhere/at/all.ken.yml"})
 
     assert "data-job" not in answer.text
     assert "/nowhere/at/all.ken.yml" in answer.text
 
 
-def test_the_management_page_offers_every_operation(client: TestClient):
-    page = client.get("/manage")
+def test_the_sync_dialog_offers_both_syncs(client: TestClient):
+    """The one dialog with two operations in it. Every other action's
+    dialog posts to its own path, which `test_gui_workbench` asserts;
+    this one also posts to `/context-sync`, and that has no button of
+    its own in the bar."""
+    dialog = client.get("/sync", headers={"HX-Request": "true"}).text
 
-    assert page.status_code == 200
-    for action in ("/manage/add", "/manage/index", "/manage/sync", "/manage/pack"):
-        assert action in page.text
+    assert 'hx-post="/sync"' in dialog
+    assert 'hx-post="/context-sync"' in dialog
 
 
 def test_the_management_routes_need_the_token(tmp_path: Path):
@@ -490,6 +491,7 @@ def test_the_management_routes_need_the_token(tmp_path: Path):
     in this one."""
     stranger = TestClient(build_app(TOKEN), follow_redirects=False)
 
-    assert stranger.post("/manage/add", data={"identifiers": "x"}).status_code == 401
-    assert stranger.get("/manage").status_code == 401
+    assert stranger.post("/add", data={"identifiers": "x"}).status_code == 401
+    assert stranger.get("/add").status_code == 401
+    assert stranger.get("/tree/notes").status_code == 401
     assert stranger.get("/job/whatever/events").status_code == 401

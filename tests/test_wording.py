@@ -130,22 +130,22 @@ def test_no_message_names_a_position_on_the_page():
     assert named == {}
 
 
-def test_the_navigation_labels_are_the_page_headings():
-    """The labels were hardcoded in `base.html` in lower case while
-    every heading was capitalised, so the same page was called two
-    things depending on where the reader read it."""
-    templates = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
-    headings = {
-        "held": "holdings.html",
-        "remember": "remember.html",
-        "manage": "manage.html",
-    }
+def test_a_place_is_called_the_same_in_the_pane_and_on_its_page():
+    """The labels were once hardcoded in `base.html` in lower case
+    while every heading was capitalised, so the same page was called
+    two things depending on where the reader read it.
 
-    for label, template in headings.items():
-        text = (templates / template).read_text(encoding="utf-8")
-        found = re.search(r"<h1>([^<]+)</h1>", text)
-        assert found is not None, template
-        assert found.group(1) == words.NAV_LABELS[label], label
+    The pane's heading and the overview page's `<h1>` are now one
+    word from `words`, so comparing them proves only that they agree.
+    The third statement is by hand (#373): Brian asked for "Corpus",
+    to match what the place is, in place of "Library"."""
+    templates = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
+    page = (templates / "corpus.html").read_text(encoding="utf-8")
+    shell = (templates / "base.html").read_text(encoding="utf-8")
+
+    assert "<h1>{{ corpus_heading }}</h1>" in page
+    assert '<a href="/corpus">{{ corpus_heading }}</a>' in shell
+    assert words.CORPUS_HEADING == "Corpus"
 
 
 def test_no_message_uses_a_word_kennis_invented():

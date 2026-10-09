@@ -164,11 +164,11 @@ def test_the_control_shows_the_mode_the_address_asked_for(
 
 def test_changing_the_mode_re_runs_the_search(corpus: Path, client: TestClient):
     """By name, not `from:select`. htmx resolves that against the
-    document and the theme control in the sidebar is a select, so a
+    document and the theme control in the bar is a select, so a
     colour change would fire a search."""
     admitted(client)
 
-    form = re.search(r'<form class="search".*?>', client.get("/").text, re.DOTALL)
+    form = re.search(r'<form class="searchbox".*?>', client.get("/").text, re.DOTALL)
     assert form is not None
     trigger = form.group(0)
 

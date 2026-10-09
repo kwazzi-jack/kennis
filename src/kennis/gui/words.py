@@ -94,16 +94,6 @@ EVERYWHERE_LABEL = "everywhere"
 
 BACK_TO_SEARCH = "Back to the results"
 
-# The header's labels, keyed by the path they lead to. Here
-# rather than in `base.html` because they are words, and
-# because a label that disagreed with the page's own heading
-# called the same page two things. A test compares them.
-NAV_LABELS: Final[dict[str, str]] = {
-    "held": "What is held",
-    "remember": "Remember",
-    "manage": "Manage",
-}
-
 THEME_LABEL = "Colours"
 
 # The three choices, in the order they are offered. `system` first
@@ -115,37 +105,69 @@ THEME_CHOICES: Final[tuple[tuple[str, str], ...]] = (
     ("dark", "Dark"),
 )
 
-SIDEBAR_SHOW = "Show the menu"
+PANE_SHOW = "Show the corpus"
 
-SIDEBAR_HIDE = "Hide the menu"
+PANE_HIDE = "Hide the corpus"
 
-SEARCH_PAGE = "Search"
-
-ADD_DOCUMENTS = "Add documents"
-
-INDEX_DOCUMENTS = "Index"
-
-# What the sidebar lists, in the order it lists it. Ordered data
-# rather than a mapping, because the order is a decision: the four
-# Brian asked to have one click away come before Manage, which is
-# where two of them used to live.
+# The bar's actions as (path, label, icon), in the order they are
+# shown. **The path is the action's one route**: `GET` shows its form,
+# as a dialog when htmx asks and as a page otherwise, and `POST` does
+# the work. The bar, the palette and any later entrance are aliases of
+# these paths, never second implementations.
 #
-# **The page labels are taken from `NAV_LABELS`, not repeated.** A
-# test ties each of those to its page's `<h1>`; a second spelling
-# here would drift from the heading while that test kept passing.
-#
-# A path with a fragment reaches a section rather than a page, which
-# is why those two are not in `NAV_LABELS` - that mapping is about
-# pages, and a section has no `<h1>`. A separate test ties each to
-# its section's `<h2>`.
-SIDEBAR_LINKS: Final[tuple[tuple[str, str], ...]] = (
-    ("/", SEARCH_PAGE),
-    ("/held", NAV_LABELS["held"]),
-    ("/remember", NAV_LABELS["remember"]),
-    ("/manage#add", ADD_DOCUMENTS),
-    ("/manage#index", INDEX_DOCUMENTS),
-    ("/manage", NAV_LABELS["manage"]),
+# A verb or a short noun for something done. Places are the pane's and
+# are nouns; a label here names what happens when it is pressed.
+ACTIONS: Final[tuple[tuple[str, str, str], ...]] = (
+    ("/add", "Add", "file-plus"),
+    ("/remember", "Note", "pencil"),
+    ("/index", "Index", "database"),
+    ("/sync", "Sync", "refresh-cw"),
+    ("/pack", "Pack", "package"),
 )
+
+# Each action's dialog heading. It contains the action's label, so the
+# button and what it opens are recognisably one thing; a test asserts
+# it.
+ACTION_TITLES: Final[dict[str, str]] = {
+    "/add": "Add to the corpus",
+    "/remember": "Write a note",
+    "/index": "Rebuild an index",
+    "/sync": "Synchronise",
+    "/pack": "Install a pack",
+}
+
+CLOSE = "Close"
+
+CORPUS_HEADING = "Corpus"
+
+CONTEXT_HEADING = "Context"
+
+KENNIS_HEADING = "kennis"
+
+CORPUS_OVERVIEW = "Overview"
+
+NO_CONTEXT = "No project here. Run kennis context init in one."
+
+CORPUS_UNREADABLE = "The corpus could not be read."
+
+# A collection's icon names its kind. There are exactly three kinds
+# (`schema.COLLECTION_NAMES`), so this is a complete mapping rather
+# than a default with exceptions, and a test asserts it covers them.
+COLLECTION_ICONS: Final[dict[str, str]] = {
+    "literature": "book-open",
+    "docs": "globe",
+    "notes": "sticky-note",
+}
+
+# What each collection's dot says, keyed by the pane's state. Four
+# states, because "empty" and "never indexed" are different answers
+# to "is there anything to do" (#245).
+PANE_STATES: Final[dict[str, str]] = {
+    "empty": "Nothing held yet",
+    "none": "Never indexed",
+    "behind": "Needs indexing",
+    "current": "Searchable",
+}
 
 NOTHING_TO_INDEX = "There is nothing to index yet."
 
@@ -195,6 +217,10 @@ PACK_PREAMBLE = (
 )
 
 PACK_ACTION = "Install"
+
+SYNC_CORPUS_ACTION = "Synchronise the corpus"
+
+SYNC_CONTEXT_ACTION = "Synchronise this project"
 
 # No "the Index section above": Add is first on the manage page
 # and Index is third, so the sentence was wrong as well as
@@ -409,21 +435,28 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
 
 
 __all__ = [
+    "ACTIONS",
+    "ACTION_TITLES",
     "ADD_ACTION",
-    "ADD_DOCUMENTS",
     "ADD_PREAMBLE",
     "BACK_TO_SEARCH",
     "BUNDLE_NOT_COMMITTED",
     "BUSY_WITH_ANOTHER",
+    "CLOSE",
+    "COLLECTION_ICONS",
+    "CONTEXT_HEADING",
     "CORPUS_BUSY",
     "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
+    "CORPUS_HEADING",
+    "CORPUS_OVERVIEW",
+    "CORPUS_UNREADABLE",
     "EVERYWHERE_LABEL",
     "GROUP_HINT",
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
-    "INDEX_DOCUMENTS",
     "INDEX_PREAMBLE",
+    "KENNIS_HEADING",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
     "MODE_CHOICES",
@@ -438,10 +471,14 @@ __all__ = [
     "NOTHING_TO_REMEMBER",
     "NOTHING_TO_SHOW",
     "NOT_SEARCHABLE_YET",
+    "NO_CONTEXT",
     "NO_PACKS",
     "NO_SUCH_JOB",
     "PACK_ACTION",
     "PACK_PREAMBLE",
+    "PANE_HIDE",
+    "PANE_SHOW",
+    "PANE_STATES",
     "RECENTS_CLEAR",
     "RECENTS_HEADING",
     "REMEMBER_ACTION",
@@ -450,11 +487,9 @@ __all__ = [
     "SCOPE_LABEL",
     "SEARCHING",
     "SEARCH_ACTION",
-    "SEARCH_PAGE",
-    "SIDEBAR_HIDE",
-    "SIDEBAR_LINKS",
-    "SIDEBAR_SHOW",
     "STILL_RUNNING",
+    "SYNC_CONTEXT_ACTION",
+    "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",
     "THEME_CHOICES",
     "THEME_LABEL",

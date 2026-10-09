@@ -1,0 +1,18 @@
+<p class="role-muted">{{ add_preamble }}</p>
+<form hx-post="/add" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+  <textarea name="identifiers" rows="4" autofocus></textarea>
+  <div class="fields">
+    {% for name in collections %}
+    <label><input type="radio" name="collection" value="{{ name }}"
+      {% if loop.first %}checked{% endif %}> {{ name }}</label>
+    {% endfor %}
+  </div>
+  <div class="fields">
+    <input type="text" name="title" placeholder="title">
+    <input type="text" name="group" placeholder="group">
+    <input type="text" name="identifier" placeholder="arXiv id, DOI or bibcode">
+    <input type="text" name="citekey" placeholder="citekey">
+    <input type="text" name="project" placeholder="docs project">
+  </div>
+  <button type="submit">{{ add_action }}</button>
+</form>

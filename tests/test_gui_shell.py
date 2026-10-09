@@ -403,7 +403,7 @@ def test_the_holdings_page_lists_every_collection(corpus: Path, client: TestClie
     a_note(corpus, "calibration", "Antenna gains.")
     admitted(client)
 
-    page = client.get("/held")
+    page = client.get("/corpus")
 
     assert page.status_code == 200
     for name in ("notes", "literature", "docs"):
@@ -418,7 +418,7 @@ def test_a_collection_never_indexed_is_not_called_stale(
     sends someone to rebuild an index that does not exist."""
     admitted(client)
 
-    page = client.get("/held")
+    page = client.get("/corpus")
 
     assert "never indexed" in page.text
     assert "stale" not in page.text
@@ -471,7 +471,7 @@ def test_a_page_carries_the_revision_it_was_drawn_at(corpus: Path, client: TestC
     a_note(corpus, "calibration", "Antenna gains.")
     admitted(client)
 
-    page = client.get("/held")
+    page = client.get("/corpus")
     current = client.get("/revision").json()["revision"]
 
     assert current
@@ -519,7 +519,7 @@ def test_a_listing_says_when_it_left_documents_out(corpus: Path, client: TestCli
     admitted(client)
 
     listing = client.get("/collection/notes")
-    summary = client.get("/held")
+    summary = client.get("/corpus")
 
     assert "could not be read" in listing.text
     assert "kennis corpus status" in listing.text

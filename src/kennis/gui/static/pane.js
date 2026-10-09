@@ -1,9 +1,9 @@
-// Open and close the sidebar, and remember which.
+// Open and close the pane, and remember which.
 //
 // **The state is a cookie, and the server renders it.** This script
 // only handles the click; the first paint of every page is already
 // correct, because the cookie was on the request. Reading
-// `localStorage` after paint would show the sidebar open and then
+// `localStorage` after paint would show the pane open and then
 // collapse it on every page load.
 //
 // Written here rather than by a round trip, so the attributes are
@@ -14,21 +14,21 @@
 // Both labels arrive from the server on the button. Nothing here
 // composes a sentence, and a test asserts that.
 (function () {
-  var toggle = document.getElementById("sidebar-toggle");
+  var toggle = document.getElementById("pane-toggle");
   if (!toggle) { return; }
   var root = document.documentElement;
   var YEAR = 31536000;
 
   toggle.addEventListener("click", function () {
-    var closing = root.dataset.sidebar !== "closed";
+    var closing = root.dataset.pane !== "closed";
     var state = closing ? "closed" : "open";
-    root.dataset.sidebar = state;
+    root.dataset.pane = state;
     toggle.setAttribute("aria-expanded", closing ? "false" : "true");
     toggle.setAttribute(
       "aria-label",
       closing ? toggle.dataset.show : toggle.dataset.hide
     );
     document.cookie =
-      "sidebar=" + state + "; path=/; max-age=" + YEAR + "; samesite=strict";
+      "pane=" + state + "; path=/; max-age=" + YEAR + "; samesite=strict";
   });
 })();

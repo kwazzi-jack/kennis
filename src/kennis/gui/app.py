@@ -57,6 +57,7 @@ from kennis.engine.events import EventSink
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
 from kennis.gui import history, words
+from kennis.gui.icons import icon
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
     ShownJob,
@@ -74,6 +75,7 @@ from kennis.gui.pages import (
     shown_rows,
     shown_skips,
 )
+from kennis.gui.pane import bundle_folders, pane_now
 from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
 from kennis.holdings import freshness_of, holdings, installed_packs, revision
@@ -93,27 +95,26 @@ from kennis.writing import write_context_note, write_note
 
 _HERE: Final = Path(__file__).parent
 _TEMPLATES: Final = Jinja2Templates(directory=str(_HERE / "templates"))
-# A global rather than a per-route context entry: the header is on
-# every page, and not every route builds its context through
-# `_frame`.
-# The sidebar's state is a cookie rather than browser storage, so
-# the server renders it and the first byte is already right. Read
-# after paint from `localStorage`, a collapsed sidebar would show
-# open and then collapse on every page load.
+# Globals rather than per-route context entries: the shell is on every
+# page, and not every route builds its context through `_frame`.
+# The pane's state is a cookie rather than browser storage, so the
+# server renders it and the first byte is already right. Read after
+# paint from `localStorage`, a collapsed pane would show open and then
+# collapse on every page load.
 #
 # A global **function** taking the request, not a constant and not
 # `_frame`: it varies per request, so a constant is wrong, and not
 # every route builds its context through `_frame`, so a value put
 # there is undefined on the pages that do not.
-_SIDEBAR_COOKIE: Final = "sidebar"
+_PANE_COOKIE: Final = "pane"
 _CLOSED: Final = "closed"
 _OPEN: Final = "open"
 
 
-def _sidebar_state(request: Request) -> str:
+def _pane_state(request: Request) -> str:
     """`closed` only for exactly that value. Anything can be in a
     cookie, and the default is the state that shows what is there."""
-    return _CLOSED if request.cookies.get(_SIDEBAR_COOKIE) == _CLOSED else _OPEN
+    return _CLOSED if request.cookies.get(_PANE_COOKIE) == _CLOSED else _OPEN
 
 
 _THEME_COOKIE: Final = "theme"
@@ -136,14 +137,45 @@ def _theme_choice(request: Request) -> str:
 _TEMPLATES.env.globals["theme_choice"] = _theme_choice
 _TEMPLATES.env.globals["theme_choices"] = words.THEME_CHOICES
 _TEMPLATES.env.globals["theme_label"] = words.THEME_LABEL
-_TEMPLATES.env.globals["sidebar_state"] = _sidebar_state
-_TEMPLATES.env.globals["sidebar_links"] = words.SIDEBAR_LINKS
-_TEMPLATES.env.globals["sidebar_show"] = words.SIDEBAR_SHOW
-_TEMPLATES.env.globals["sidebar_hide"] = words.SIDEBAR_HIDE
-
 # The scopes a person may search, in the order they are offered. The
 # bundle last because it is the one that is not always there.
 SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION)
+
+_TEMPLATES.env.globals.update(
+    {
+        "pane_state": _pane_state,
+        "pane_now": pane_now,
+        "pane_show": words.PANE_SHOW,
+        "pane_hide": words.PANE_HIDE,
+        "pane_states": words.PANE_STATES,
+        "icon": icon,
+        "actions": words.ACTIONS,
+        "close_label": words.CLOSE,
+        "collection_icons": words.COLLECTION_ICONS,
+        "corpus_heading": words.CORPUS_HEADING,
+        "context_heading": words.CONTEXT_HEADING,
+        "kennis_heading": words.KENNIS_HEADING,
+        "corpus_unreadable": words.CORPUS_UNREADABLE,
+        "no_context": words.NO_CONTEXT,
+        "recents_heading": words.RECENTS_HEADING,
+        "corpus_changed": words.CORPUS_CHANGED,
+        # The search form is the bar's, on every page, so what it
+        # offers is invariant and global; only the search page passes
+        # what was asked.
+        "everywhere": EVERY_SCOPE,
+        "everywhere_label": words.EVERYWHERE_LABEL,
+        "scopes": SCOPES,
+        "scope_hints": {
+            name: words.search_hint_for(name) for name in (EVERY_SCOPE, *SCOPES)
+        },
+        "scope_label": words.SCOPE_LABEL,
+        "mode_choices": words.MODE_CHOICES,
+        "mode_label": words.MODE_LABEL,
+        "mode_default": words.MODE_DEFAULT,
+        "search_action": words.SEARCH_ACTION,
+        "searching": words.SEARCHING,
+    }
+)
 
 # The name the cookie is held under. Prefixed because it is kennis's
 # and a browser may be holding cookies for other things served from
@@ -284,13 +316,13 @@ def build_app(token: str) -> FastAPI:
         answer.headers["HX-Push-Url"] = f"/?q={quote(q)}&scope={quote(scope)}{chosen}"
         return answer
 
-    @app.get("/held")
-    async def serve_holdings(request: Request) -> HTMLResponse:
+    @app.get("/corpus")
+    async def serve_corpus(request: Request) -> HTMLResponse:
         context = existing_corpus()
         held = holdings(context)
         return _TEMPLATES.TemplateResponse(
             request,
-            "holdings.html",
+            "corpus.html",
             {
                 "rows": shown_rows(held),
                 "empty": not any(holding.documents for holding in held),
@@ -322,10 +354,85 @@ def build_app(token: str) -> FastAPI:
             },
         )
 
+    @app.get("/tree/{collection}")
+    async def serve_tree(request: Request, collection: str) -> HTMLResponse:
+        """One collection's documents, or the bundle's, for the pane.
+
+        Fetched when the reader opens it, never drawn with the page:
+        every document costs about 0.7 ms to list, which on every page
+        load would be most of a second at a thousand documents.
+        """
+        if collection == CONTEXT_COLLECTION:
+            bundle = find_bundle()
+            folders = [] if bundle is None else bundle_folders(bundle)
+            return _TEMPLATES.TemplateResponse(
+                request, "tree-context.html", {"folders": folders}
+            )
+        if collection not in COLLECTION_NAMES:
+            return _refused(request, words.unknown_scope(collection, SCOPES))
+        groups, unreadable = shown_groups(existing_corpus().corpus_root, collection)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "tree.html",
+            {
+                "collection": collection,
+                "groups": groups,
+                "unreadable": words.unreadable_note(unreadable),
+            },
+        )
+
     @app.get("/remember")
     async def serve_remember_form(request: Request) -> HTMLResponse:
-        return _TEMPLATES.TemplateResponse(
-            request, "remember.html", _remember_context(None)
+        return _action(
+            request, "/remember", "forms/remember.html", _remember_context(None)
+        )
+
+    @app.get("/add")
+    async def serve_add_form(request: Request) -> HTMLResponse:
+        return _action(
+            request,
+            "/add",
+            "forms/add.html",
+            {
+                "collections": COLLECTION_NAMES,
+                "add_preamble": words.ADD_PREAMBLE,
+                "add_action": words.ADD_ACTION,
+            },
+        )
+
+    @app.get("/index")
+    async def serve_index_form(request: Request) -> HTMLResponse:
+        return _action(
+            request,
+            "/index",
+            "forms/index.html",
+            {
+                "collections": COLLECTION_NAMES,
+                "index_preamble": words.INDEX_PREAMBLE,
+                "index_action": words.INDEX_ACTION,
+            },
+        )
+
+    @app.get("/sync")
+    async def serve_sync_form(request: Request) -> HTMLResponse:
+        return _action(
+            request,
+            "/sync",
+            "forms/sync.html",
+            {
+                "sync_preamble": words.SYNC_PREAMBLE,
+                "sync_corpus_action": words.SYNC_CORPUS_ACTION,
+                "sync_context_action": words.SYNC_CONTEXT_ACTION,
+            },
+        )
+
+    @app.get("/pack")
+    async def serve_pack_form(request: Request) -> HTMLResponse:
+        return _action(
+            request,
+            "/pack",
+            "forms/pack.html",
+            {"pack_preamble": words.PACK_PREAMBLE, "pack_action": words.PACK_ACTION},
         )
 
     @app.post("/remember")
@@ -466,11 +573,7 @@ def build_app(token: str) -> FastAPI:
             },
         )
 
-    @app.get("/manage")
-    async def serve_manage(request: Request) -> HTMLResponse:
-        return _TEMPLATES.TemplateResponse(request, "manage.html", _manage_context())
-
-    @app.post("/manage/add")
+    @app.post("/add")
     async def start_add(request: Request) -> HTMLResponse:
         """Start an add and answer with somewhere to watch it.
 
@@ -496,7 +599,7 @@ def build_app(token: str) -> FastAPI:
             ),
         )
 
-    @app.post("/manage/index")
+    @app.post("/index")
     async def start_index(request: Request) -> HTMLResponse:
         form = await request.form()
         chosen = str(form.get("collection") or "")
@@ -508,14 +611,14 @@ def build_app(token: str) -> FastAPI:
             lambda events: build_indexes(context, collection, events=events),
         )
 
-    @app.post("/manage/sync")
+    @app.post("/sync")
     async def start_corpus_sync(request: Request) -> HTMLResponse:
         context = existing_corpus()
         return _started(
             request, "sync", lambda events: synchronise_corpus(context, events=events)
         )
 
-    @app.post("/manage/context-sync")
+    @app.post("/context-sync")
     async def start_bundle_sync(request: Request) -> HTMLResponse:
         context = existing_corpus()
         bundle = find_bundle()
@@ -532,7 +635,7 @@ def build_app(token: str) -> FastAPI:
             lambda events: synchronise_bundle(bundle, context, events=events),
         )
 
-    @app.post("/manage/pack")
+    @app.post("/pack")
     async def start_pack_install(request: Request) -> HTMLResponse:
         form = await request.form()
         given = str(form.get("path") or "").strip()
@@ -754,26 +857,15 @@ def _hits_context(question: str, scope: str, mode: str) -> dict[str, object]:
     """
     context: dict[str, object] = {
         **_frame(existing_corpus()),
+        # What was asked. What the form offers - the scopes, the hint
+        # for each, the modes - is a template global, because the form
+        # is the bar's and is on every page.
         "question": question,
         "scope": scope,
-        "scopes": SCOPES,
-        "everywhere": EVERY_SCOPE,
-        "everywhere_label": words.EVERYWHERE_LABEL,
-        # The hint for the scope this page was drawn with, and one for
-        # every scope the select offers. Changing the select has to
-        # change the box without a round trip, and the words must not
-        # move into a script to manage it: each option carries the
-        # sentence, and `static/hint.js` copies the selected one.
-        "search_hint": words.search_hint_for(scope),
-        "scope_hints": {
-            name: words.search_hint_for(name) for name in (EVERY_SCOPE, *SCOPES)
-        },
         "mode": mode,
-        "mode_choices": words.MODE_CHOICES,
-        "mode_label": words.MODE_LABEL,
-        "search_action": words.SEARCH_ACTION,
-        "searching": words.SEARCHING,
-        "scope_label": words.SCOPE_LABEL,
+        # Only this page's form searches as you type: live search swaps
+        # into `#hits`, which no other page has.
+        "searching_here": True,
         "groups": [],
         "skips": [],
         "fallbacks": [],
@@ -932,17 +1024,24 @@ def _refused(
     )
 
 
-def _manage_context() -> dict[str, object]:
-    """What the management page needs before anything has been asked."""
-    context = existing_corpus()
-    return {
-        "collections": COLLECTION_NAMES,
-        "add_preamble": words.ADD_PREAMBLE,
-        "add_action": words.ADD_ACTION,
-        "index_preamble": words.INDEX_PREAMBLE,
-        "index_action": words.INDEX_ACTION,
-        "sync_preamble": words.SYNC_PREAMBLE,
-        "pack_preamble": words.PACK_PREAMBLE,
-        "pack_action": words.PACK_ACTION,
-        **_frame(context),
+def _action(
+    request: Request, path: str, form_template: str, context: dict[str, object]
+) -> HTMLResponse:
+    """An action's form: a dialog when htmx asks, a page otherwise.
+
+    **One route per action.** The bar's link, and any later entrance,
+    is an ordinary link to `path`. htmx fetches it into `#dialog`; a
+    reader without a script follows it and gets the same form inside
+    the whole window. Both render `form_template`, so the form is
+    written once.
+    """
+    shown = {
+        "title": words.ACTION_TITLES[path],
+        "form_template": form_template,
+        **context,
     }
+    if request.headers.get("hx-request") == "true":
+        return _TEMPLATES.TemplateResponse(request, "dialog.html", shown)
+    return _TEMPLATES.TemplateResponse(
+        request, "action-page.html", {**shown, **_frame(existing_corpus())}
+    )
