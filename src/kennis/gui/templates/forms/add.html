@@ -1,18 +1,24 @@
-<p class="role-muted">{{ add_preamble }}</p>
-<form hx-disabled-elt="find button" hx-post="/add" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
-  <textarea name="identifiers" rows="4" autofocus></textarea>
-  <div class="fields">
-    {% for name in collections %}
-    <label><input type="radio" name="collection" value="{{ name }}"
-      {% if loop.first %}checked{% endif %}> {{ name }}</label>
-    {% endfor %}
-  </div>
-  <div class="fields">
-    <input type="text" name="title" placeholder="title">
-    <input type="text" name="group" placeholder="group">
-    <input type="text" name="identifier" placeholder="arXiv id, DOI or bibcode">
-    <input type="text" name="citekey" placeholder="citekey">
-    <input type="text" name="project" placeholder="docs project">
-  </div>
+{# The Add dialog: one tab per kind of thing to add (#413). A tab is a
+   link: htmx swaps only this tab's content inside the open dialog, and
+   without a script it is followed and the form arrives as a page. #}
+<div class="add-tab">
+<nav class="tabs" aria-label="{{ add_tabs_label }}">
+  {% for tab in tabs %}<a class="tab" href="{{ tab.href }}" hx-get="{{ tab.href }}" hx-target="closest .add-tab" hx-select=".add-tab" hx-swap="outerHTML"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}
+</nav>
+<p class="role-muted">{{ preamble }}</p>
+<form hx-disabled-elt="find button[type=submit]" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
+  <input type="hidden" name="kind" value="{{ kind }}">
+  {% if fixed_collection %}<input type="hidden" name="collection" value="{{ fixed_collection }}">{% endif %}
+  {% if kind == "group" %}
+  {% for index in first_blocks %}{% include "forms/add-block.html" %}{% endfor %}
+  {% with index = first_blocks | length + 1 %}{% include "forms/add-another.html" %}{% endwith %}
+  {% else %}
+  {% for field in fields %}{% include "forms/add-field.html" %}{% endfor %}
+  <div id="add-preview" class="preview" aria-live="polite"></div>
+  {% if kind == "site" %}
+  <button type="button" class="ghost probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview">{{ check_site }}</button>
+  {% endif %}
+  {% endif %}
   <button type="submit">{{ add_action }}</button>
 </form>
+</div>

@@ -1124,6 +1124,118 @@ button:focus-visible, a:focus-visible {
 .fields label { font-family: var(--gutter); font-size: 0.8125rem; }
 .fields input[type="text"] { flex: 1 1 12rem; }
 
+/* ---- the Add dialog ---- */
+
+/* The tabs: one per kind of thing to add. The current one is marked
+   by weight and a rule under it, not by colour alone. */
+.add-tab .tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.1rem;
+  border-bottom: 1px solid var(--rule);
+  margin: 0 0 0.8rem;
+}
+.add-tab .tab {
+  padding: 0.4rem 0 0.45rem;
+  color: var(--role-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.add-tab .tab:hover { color: var(--ink); }
+.add-tab .tab[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--brand);
+}
+
+/* A field: its name and whether it is needed on one line, the control
+   under them, and what empty becomes under that. */
+.add-tab .field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.5rem;
+  margin: 0 0 0.75rem;
+}
+.add-tab .field .name { font-weight: 600; }
+.add-tab .need { color: var(--role-muted); font-size: 0.75rem; }
+.add-tab .field > .choices, .add-tab .field > .entry-row, .add-tab .field > .empty,
+.add-tab .field > input, .add-tab .field > textarea {
+  grid-column: 1 / -1;
+}
+.add-tab .entry-row { display: flex; gap: 0.4rem; align-items: start; }
+.add-tab .entry-row input, .add-tab .entry-row textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.add-tab .choices { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+.add-tab .empty { color: var(--role-muted); font-size: 0.75rem; }
+.add-tab .browse { display: inline-flex; align-items: center; gap: 0.3rem; }
+.add-tab .preview { min-height: 1.2rem; margin: 0 0 0.75rem; }
+.add-tab .preview p { margin: 0 0 0.3rem; }
+.add-tab .probe { margin: 0 0 0.75rem; }
+
+/* A group of Several by group. */
+.add-tab .block {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem 0.2rem;
+  margin: 0 0 0.75rem;
+}
+.add-tab .block legend { font-weight: 600; padding: 0 0.3rem; }
+.add-tab .another { margin: 0 0 0.9rem; }
+.add-tab .checks { list-style: none; margin: 0 0 0.6rem; padding: 0; }
+.add-tab .check { font-size: 0.75rem; margin: 0 0 0.2rem; }
+.add-tab .check code { font-family: var(--mono); }
+.add-tab .held { color: var(--role-muted); }
+
+/* The chooser: one folder of this computer, inside the dialog. */
+.chooser-panel {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--raised);
+  padding: 0.5rem 0.7rem;
+  margin: 0 0 0.75rem;
+}
+.chooser-panel .where { margin: 0 0 0.4rem; word-break: break-all; }
+.chooser-panel .where code { font-family: var(--mono); font-size: 0.75rem; }
+.chooser-panel .chooser-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  align-items: center;
+  margin: 0 0 0.4rem;
+}
+.chooser-panel .up { color: var(--role-muted); }
+.chooser-panel .entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.chooser-panel .entry {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+.chooser-panel .entry:hover, .chooser-panel .entry:focus-visible {
+  background: var(--brand-wash);
+}
+.chooser-panel .entry.folder .icon { color: var(--role-muted); }
+.chooser-panel .entry.file .icon { color: var(--role-muted); }
+.chooser:empty { display: none; }
+
 section { margin: 0 0 3rem; }
 section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 

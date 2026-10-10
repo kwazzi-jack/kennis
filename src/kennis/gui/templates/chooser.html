@@ -1,0 +1,19 @@
+{# One folder of the computer kennis runs on. A folder opens in place;
+   a file, or this folder where one is wanted, is chosen by
+   `chooser.js`, which writes its path into the field named by
+   `data-target`. Names only: nothing here opens a file. #}
+<div class="chooser-panel" data-target="{{ target }}">
+  <p class="where"><span class="role-muted">{{ chooser_heading }}</span> <code>{{ listing.path }}</code></p>
+  {% if listing.problem %}<p class="role-warning">{{ listing.problem }}</p>{% endif %}
+  <p class="chooser-actions">
+    {% if listing.parent_href %}<a class="up" href="{{ listing.parent_href }}" hx-get="{{ listing.parent_href }}" hx-target="closest .chooser">{{ chooser_up }}</a>{% endif %}
+    {% if folders and not listing.problem %}<button type="button" class="ghost" data-choose="{{ listing.path }}">{{ choose_folder }}</button>{% endif %}
+    {% if not page %}<button type="button" class="ghost" data-chooser-cancel>{{ chooser_cancel }}</button>{% endif %}
+  </p>
+  <ul class="entries">
+    {% for entry in listing.entries %}
+    <li>{% if entry.folder %}<a class="entry folder" href="{{ entry.href }}" hx-get="{{ entry.href }}" hx-target="closest .chooser">{{ icon("folder") }}{{ entry.name }}</a>{% elif page %}<code class="entry file">{{ entry.path }}</code>{% else %}<button type="button" class="entry file" data-choose="{{ entry.path }}">{{ icon("file-text") }}{{ entry.name }}</button>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% if listing.truncated %}<p class="role-muted">{{ listing.truncated }}</p>{% endif %}
+</div>

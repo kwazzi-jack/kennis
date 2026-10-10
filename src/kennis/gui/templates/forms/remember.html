@@ -2,7 +2,7 @@
 {# Not `data-closes-dialog`: the outcome is answered into this form's
    own `#outcome`, and the text stays in the box until the write is
    confirmed, so closing would hide both. #}
-<form hx-disabled-elt="find button" hx-post="/remember" hx-target="#outcome" hx-swap="innerHTML">
+<form hx-disabled-elt="find button[type=submit]" hx-post="/remember" hx-target="#outcome" hx-swap="innerHTML">
   <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}" autofocus></textarea>
   <div class="fields">
     <input type="text" name="title" placeholder="{{ title_hint }}">

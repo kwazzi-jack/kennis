@@ -20,9 +20,18 @@ from pathlib import Path
 from typing import Final, Literal
 from urllib.parse import urlparse
 
-# Post-2007 arXiv identifiers: YYMM.NNNNN, four or five digits after the dot,
-# with an optional version suffix.
-_MODERN_ARXIV: Final = re.compile(r"(?<!\d)(\d{4}\.\d{4,5})(v\d+)?(?!\d)")
+# Post-2007 arXiv identifiers: YYMM.NNNN to the end of 2014 and YYMM.NNNNN
+# from January 2015, with an optional version suffix. **The month decides
+# the length**, and accepting either length for any month made every
+# four-digit prefix of a modern identifier an identifier of its own - a
+# reader pausing at `2409.1975` while typing `2409.19750` sent arXiv a
+# lookup for a paper that cannot exist (11d).
+_MODERN_ARXIV: Final = re.compile(
+    r"(?<!\d)("
+    r"(?:0[7-9]|1[0-4])(?:0[1-9]|1[0-2])\.\d{4}"
+    r"|(?:1[5-9]|[2-9]\d)(?:0[1-9]|1[0-2])\.\d{5}"
+    r")(v\d+)?(?!\d)"
+)
 
 # Pre-2007: archive[.subject-class]/YYMMNNN, e.g. astro-ph/0601234.
 _LEGACY_ARXIV: Final = re.compile(

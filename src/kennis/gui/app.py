@@ -48,7 +48,9 @@ from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.status import bundle_freshness
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOptions, AddReport
+from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import relative_to_corpus
+from kennis.engine.corpus.preview import check_lines, preview_paper, preview_site
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import (
@@ -61,6 +63,18 @@ from kennis.engine.events import EventSink
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
 from kennis.gui import history, words
+from kennis.gui.adding import (
+    FIRST_BLOCKS,
+    FIXED_COLLECTIONS,
+    add_fields,
+    add_kind,
+    add_tabs,
+    chooser_target,
+    listing_of,
+    shown_checks,
+    shown_paper_preview,
+    shown_site_preview,
+)
 from kennis.gui.icons import icon
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
@@ -86,8 +100,10 @@ from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
 from kennis.holdings import freshness_of, holdings, installed_packs, revision
 from kennis.operations import (
+    GroupBlock,
     IndexBuild,
     add_documents,
+    add_in_groups,
     build_indexes,
     install_a_pack,
     synchronise_bundle,
@@ -193,6 +209,22 @@ _TEMPLATES.env.globals.update(
         "mode_default": words.MODE_DEFAULT,
         "search_action": words.SEARCH_ACTION,
         "searching": words.SEARCHING,
+        # The Add dialog's words, global because its fragments - a
+        # preview, a block, a chooser - are drawn by routes of their own.
+        "add_tabs_label": words.ADD_TABS_LABEL,
+        "required": words.REQUIRED,
+        "optional": words.OPTIONAL,
+        "empty_prefix": words.EMPTY_PREFIX,
+        "field_labels": words.FIELD_LABELS,
+        "browse": words.BROWSE,
+        "another_group": words.ANOTHER_GROUP,
+        "block_heading": words.BLOCK_HEADING,
+        "check_site": words.CHECK_SITE,
+        "line_held": words.LINE_HELD,
+        "chooser_heading": words.CHOOSER_HEADING,
+        "chooser_up": words.CHOOSER_UP,
+        "chooser_cancel": words.CHOOSER_CANCEL,
+        "choose_folder": words.CHOOSE_FOLDER,
     }
 )
 
@@ -450,16 +482,85 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/add")
-    async def serve_add_form(request: Request) -> HTMLResponse:
-        return _action(
+    async def serve_add_form(request: Request, kind: str = "") -> HTMLResponse:
+        return _action(request, "/add", "forms/add.html", _add_context(kind))
+
+    @app.get("/add/block")
+    async def serve_add_block(request: Request, index: int = 1) -> HTMLResponse:
+        """One more group, and the button that asks for the one after."""
+        return _TEMPLATES.TemplateResponse(
             request,
-            "/add",
-            "forms/add.html",
-            {
-                "collections": COLLECTION_NAMES,
-                "add_preamble": words.ADD_PREAMBLE,
-                "add_action": words.ADD_ACTION,
-            },
+            "forms/add-blocks.html",
+            {"index": max(1, min(index, 999)), "collections": COLLECTION_NAMES},
+        )
+
+    # Plain `def`, not `async`: a preview may ask arXiv or probe a site,
+    # and a blocking request inside an `async` route would stall every
+    # other request until it answered. FastAPI runs these on a thread.
+    @app.get("/add/preview/paper")
+    def preview_a_paper(
+        request: Request, identifiers: str = "", citekey: str = "", title: str = ""
+    ) -> HTMLResponse:
+        first = next(iter(_lines(identifiers)), "")
+        papers = Collection(root=existing_corpus().corpus_root, name="literature")
+        preview = preview_paper(
+            papers, first, citekey=citekey.strip() or None, title=title.strip() or None
+        )
+        return _TEMPLATES.TemplateResponse(
+            request, "forms/add-preview.html", {"lines": shown_paper_preview(preview)}
+        )
+
+    @app.get("/add/preview/site")
+    def preview_a_site(
+        request: Request, identifiers: str = "", project: str = "", probe: str = ""
+    ) -> HTMLResponse:
+        first = next(iter(_lines(identifiers)), "")
+        probed = bool(probe) and bool(first)
+        preview = preview_site(first, project=project.strip() or None, probe=probed)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "forms/add-preview.html",
+            {"lines": shown_site_preview(preview, probed=probed)},
+        )
+
+    @app.get("/add/check")
+    async def check_a_block(request: Request, index: int = 1) -> HTMLResponse:
+        """Each line of one group, as its own tab would recognise it."""
+        asked = request.query_params
+        destination = asked.get(f"collection-{index}", "notes")
+        if destination not in COLLECTION_NAMES:
+            destination = "notes"
+        target = Collection(root=existing_corpus().corpus_root, name=destination)
+        checks = check_lines(target, _lines(asked.get(f"lines-{index}", "")))
+        return _TEMPLATES.TemplateResponse(
+            request, "forms/add-check.html", {"checks": shown_checks(checks)}
+        )
+
+    @app.get("/browse")
+    async def serve_chooser(
+        request: Request, target: str = "", path: str = "", folders: str = ""
+    ) -> HTMLResponse:
+        """One folder of this computer, for a field to take a path from.
+
+        Read-only and names only, under the same token as every route.
+        Without a script it is a page of paths to copy, because nothing
+        else can put one into a form.
+        """
+        chosen = chooser_target(target)
+        if chosen is None:
+            return HTMLResponse(words.NOT_A_FIELD, status_code=400)
+        wants_folders = bool(folders)
+        context = {
+            "target": chosen,
+            "folders": wants_folders,
+            "listing": listing_of(path, target=chosen, folders=wants_folders),
+        }
+        if _from_htmx(request):
+            return _TEMPLATES.TemplateResponse(request, "chooser.html", context)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "chooser-page.html",
+            {**context, "page": True, **_frame(existing_corpus())},
         )
 
     @app.get("/index")
@@ -656,14 +757,29 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         have hung.
         """
         form = await request.form()
-        identifiers = _lines(str(form.get("identifiers") or ""))
-        destination = str(form.get("collection") or "notes")
-        if not identifiers:
-            return _refused_a_post(request, words.NOTHING_TO_ADD)
-        if destination not in COLLECTION_NAMES:
-            return _refused_a_post(request, words.unknown_collection(destination))
         context = existing_corpus()
         options = _add_options(context, form)
+        if isinstance(options, str):
+            return _refused_a_post(request, options)
+        if form.get("kind") == "group":
+            blocks = _group_blocks(form)
+            if isinstance(blocks, str):
+                return _refused_a_post(request, blocks)
+            if not blocks:
+                return _refused_a_post(request, words.NOTHING_TO_ADD)
+            return _started(
+                request,
+                "add",
+                lambda events: add_in_groups(context, blocks, options, events=events),
+            )
+        identifiers = _lines(str(form.get("identifiers") or ""))
+        destination = str(form.get("collection") or "")
+        if not identifiers:
+            return _refused_a_post(request, words.NOTHING_TO_ADD)
+        if not destination:
+            return _refused_a_post(request, words.CHOOSE_A_COLLECTION)
+        if destination not in COLLECTION_NAMES:
+            return _refused_a_post(request, words.unknown_collection(destination))
         return _started(
             request,
             "add",
@@ -1074,16 +1190,86 @@ def _lines(given: str) -> list[str]:
     return [line.strip() for line in given.splitlines() if line.strip()]
 
 
-def _add_options(context: Context, form: FormData) -> AddOptions:
-    """The engine's options, from the form and the settings behind it.
+def _add_context(asked: str) -> dict[str, object]:
+    """One tab of the Add dialog."""
+    kind = add_kind(asked)
+    return {
+        "kind": kind,
+        "tabs": add_tabs(kind),
+        "preamble": words.ADD_PREAMBLES[kind],
+        "fields": add_fields(
+            kind, default_group=existing_corpus().settings.corpus.default_group
+        ),
+        "fixed_collection": FIXED_COLLECTIONS.get(kind),
+        "collections": COLLECTION_NAMES,
+        "first_blocks": FIRST_BLOCKS,
+        "add_action": words.ADD_ACTION,
+    }
+
+
+def _group_blocks(form: FormData) -> list[GroupBlock] | str:
+    """The Several by group tab's blocks that have lines, or why not.
+
+    A block with no lines is skipped - two are drawn whether or not both
+    are wanted - and a block with lines and no name is refused, because
+    the name is the point of the tab.
+    """
+    numbers = sorted(
+        int(key.removeprefix("lines-"))
+        for key in form
+        if key.startswith("lines-") and key.removeprefix("lines-").isdigit()
+    )
+    blocks: list[GroupBlock] = []
+    for number in numbers:
+        identifiers = _lines(str(form.get(f"lines-{number}") or ""))
+        if not identifiers:
+            continue
+        name = str(form.get(f"group-{number}") or "").strip()
+        if not name:
+            return words.GROUP_NEEDS_A_NAME
+        destination = str(form.get(f"collection-{number}") or "")
+        if not destination:
+            return words.CHOOSE_A_COLLECTION
+        if destination not in COLLECTION_NAMES:
+            return words.unknown_collection(destination)
+        blocks.append(
+            GroupBlock(
+                collection=destination, group=name, identifiers=tuple(identifiers)
+            )
+        )
+    return blocks
+
+
+def _count(form: FormData, name: str, default: int) -> int | str:
+    """A whole-number field, its default when empty, or why not."""
+    given = str(form.get(name) or "").strip()
+    if not given:
+        return default
+    if not given.isdigit() or int(given) < 1:
+        return words.not_a_count(words.FIELD_LABELS[name], given)
+    return int(given)
+
+
+def _add_options(context: Context, form: FormData) -> AddOptions | str:
+    """The engine's options, from the form and the settings behind it,
+    or the sentence refusing a field that cannot be one.
 
     The settings supply what the form does not ask: a default group, a
     conversion batch size and the politeness delay are configuration
     rather than per-add decisions, and putting them on the page would
     invite changing them per add.
     """
+    defaults = AddOptions()
+    max_pages = _count(form, "max_pages", defaults.max_pages)
+    if isinstance(max_pages, str):
+        return max_pages
+    max_depth = _count(form, "max_depth", defaults.max_depth)
+    if isinstance(max_depth, str):
+        return max_depth
     identifier = str(form.get("identifier") or "") or None
     return AddOptions(
+        max_pages=max_pages,
+        max_depth=max_depth,
         title=str(form.get("title") or "") or None,
         group=str(form.get("group") or "")
         or context.settings.corpus.default_group

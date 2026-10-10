@@ -292,10 +292,161 @@ CORPUS_BUSY_RETRY = (
 
 NOTHING_TO_ADD = "Name at least one file, directory or URL."
 
-ADD_PREAMBLE = (
-    "A file, a directory, a URL, or - for literature - an arXiv "
-    "identifier, DOI or ADS bibcode. One per line."
+# The Add dialog's four tabs, in the order offered. A kind of thing to
+# add, not a collection: a PDF of a paper is a Paper, and a Markdown
+# file is a File whichever collection it goes to (#413).
+ADD_TABS: Final[tuple[tuple[str, str], ...]] = (
+    ("paper", "Paper"),
+    ("site", "Documentation site"),
+    ("file", "File"),
+    ("group", "Several by group"),
 )
+
+ADD_PREAMBLES: Final[dict[str, str]] = {
+    "paper": (
+        "A paper for the literature collection: an arXiv identifier, a DOI, "
+        "an ADS bibcode, or a PDF on this computer."
+    ),
+    "site": (
+        "A documentation site for the docs collection. kennis walks its pages "
+        "from the address given, politely, and stores each as a document."
+    ),
+    "file": (
+        "A file or a folder on this computer, into the collection you choose. "
+        "A folder adds every file in it that kennis can convert."
+    ),
+    "group": (
+        "Several things at once, one group per block. Each line is checked "
+        "as its own tab would check it."
+    ),
+}
+
+# Every field says which it is, and an optional one says what empty
+# becomes, because "optional" alone leaves the reader to guess what
+# kennis will do instead.
+REQUIRED = "required"
+OPTIONAL = "optional"
+EMPTY_PREFIX = "Left empty:"
+ADD_TABS_LABEL = "What to add"
+# Answered to a chooser asked to write into a field no form draws.
+NOT_A_FIELD = "There is no such field to choose a path for."
+
+# What each form field is called where a person reads it. One label per
+# name, whichever tab shows the field.
+FIELD_LABELS: Final[dict[str, str]] = {
+    "paper": "Paper",
+    "site": "Address",
+    "file": "File or folder",
+    "identifier": "Its identifier",
+    "title": "Title",
+    "citekey": "Citekey",
+    "group": "Group",
+    "project": "Project",
+    "collection": "Collection",
+    "max_pages": "Pages at most",
+    "max_depth": "Links deep at most",
+    "lines": "One per line",
+}
+
+# What an empty optional field becomes.
+EMPTY_MEANS: Final[dict[str, str]] = {
+    "identifier": "read from the PDF's first page",
+    "title": "the paper's own title, from arXiv or its first heading",
+    "file_title": "the document's first heading, or its file name",
+    "citekey": "made from the first author, the year and the title",
+    "project": "named from the address",
+    "file_project": "needed only for docs, where it names the project",
+    "max_pages": "300",
+    "max_depth": "5",
+}
+
+
+def group_empty_means(default_group: str | None) -> str:
+    """What an empty group becomes, which depends on the settings."""
+    if default_group:
+        return f"'{default_group}', the default group in your settings"
+    return "the collection itself, in no group"
+
+
+GROUP_NEEDS_A_NAME = "Each block with lines in it needs a group name."
+# No collection is chosen for the reader, as `corpus add` chooses none:
+# a Markdown note sent to literature by a default is refused there for
+# having no paper identifier, which reads as kennis failing.
+CHOOSE_A_COLLECTION = "Choose the collection to add to."
+ANOTHER_GROUP = "Another group"
+BLOCK_HEADING = "Group"
+
+BROWSE = "Browse"
+CHOOSE_FOLDER = "Choose this folder"
+CHOOSER_UP = "Up one folder"
+CHOOSER_CANCEL = "Cancel"
+CHOOSER_HEADING = "Choose from this computer"
+# A folder of thousands of files is listed only so far, and says so.
+CHOOSER_SHOWN_AT_MOST = 500
+
+
+def chooser_truncated(shown: int, total: int) -> str:
+    return f"Showing {shown} of {total}. Type the path to reach one not shown."
+
+
+def not_a_folder(path: str) -> str:
+    return f"'{path}' is not a folder kennis can list."
+
+
+def not_a_count(label: str, given: str) -> str:
+    return f"{label} must be a whole number; '{given}' is not one."
+
+
+# The preview, for a paper.
+def previewed_arxiv(identifier: str, title: str, authors: str, year: str) -> str:
+    who = ", ".join(part for part in (authors, year) if part)
+    return f"arXiv {identifier}: {title}" + (f" - {who}" if who else "")
+
+
+def previewed_citekey(citekey: str) -> str:
+    return f"Citekey: {citekey}"
+
+
+ARXIV_SILENT = (
+    "arXiv did not answer, so the citekey will be made from the paper's title. "
+    "The add asks again."
+)
+PREVIEW_FILE = (
+    "A file on this computer. It is converted when added, and its identifier "
+    "read from its first page unless one is given as its identifier."
+)
+PREVIEW_ADDRESS = "An address. What it serves is converted when added."
+PREVIEW_UNRECOGNISED = "Not an identifier kennis recognises yet."
+
+
+# The preview, for a site.
+def previewed_project(project: str) -> str:
+    return f"Filed under the project '{project}'."
+
+
+PROJECT_UNNAMED = (
+    "No project name can be made from this address; give one as the project."
+)
+CHECK_SITE = "Check how its pages are found"
+# Words for each way `discovery_mode` answers.
+DISCOVERY_WORDS: Final[dict[str, str]] = {
+    "sphinx": "Its pages are listed by its Sphinx inventory.",
+    "sitemap": "Its pages are listed by its sitemap.",
+    "crawl": "It has no list of pages, so kennis will follow its links.",
+}
+SITE_UNREACHABLE = "The site did not answer."
+
+# A line of a group, checked.
+LINE_KINDS: Final[dict[str, str]] = {
+    "arxiv": "arXiv identifier",
+    "doi": "DOI",
+    "bibcode": "bibcode",
+    "address": "address",
+    "file": "file",
+    "folder": "folder",
+    "nothing": "not recognised",
+}
+LINE_HELD = "already held"
 
 ADD_ACTION = "Add"
 
@@ -541,10 +692,23 @@ __all__ = [
     "ACTION_TITLES",
     "ACTIVITY_HEADING",
     "ADD_ACTION",
-    "ADD_PREAMBLE",
+    "ADD_PREAMBLES",
+    "ADD_TABS",
+    "ADD_TABS_LABEL",
+    "ANOTHER_GROUP",
+    "ARXIV_SILENT",
     "BACK_TO_SEARCH",
+    "BLOCK_HEADING",
+    "BROWSE",
     "BUNDLE_NOT_COMMITTED",
     "BUSY_WITH_ANOTHER",
+    "CHECK_SITE",
+    "CHOOSER_CANCEL",
+    "CHOOSER_HEADING",
+    "CHOOSER_SHOWN_AT_MOST",
+    "CHOOSER_UP",
+    "CHOOSE_A_COLLECTION",
+    "CHOOSE_FOLDER",
     "CLOSE",
     "COLLECTION_ICONS",
     "CONTEXT_HEADING",
@@ -554,8 +718,13 @@ __all__ = [
     "CORPUS_HEADING",
     "CORPUS_OVERVIEW",
     "CORPUS_UNREADABLE",
+    "DISCOVERY_WORDS",
+    "EMPTY_MEANS",
+    "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",
+    "FIELD_LABELS",
     "GROUP_HINT",
+    "GROUP_NEEDS_A_NAME",
     "HIDE_PASSAGE",
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
@@ -569,6 +738,8 @@ __all__ = [
     "KEY_LOW",
     "KEY_ORDER",
     "KEY_SUMMARY",
+    "LINE_HELD",
+    "LINE_KINDS",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
     "MEASURE_ICONS",
@@ -584,11 +755,13 @@ __all__ = [
     "NOTHING_TO_INDEX",
     "NOTHING_TO_REMEMBER",
     "NOTHING_TO_SHOW",
+    "NOT_A_FIELD",
     "NOT_SEARCHABLE_YET",
     "NO_CONTEXT",
     "NO_PACKS",
     "NO_SUCH_JOB",
     "OPEN_AT_PASSAGE",
+    "OPTIONAL",
     "ORDER_CHOICES",
     "ORDER_LABEL",
     "ORDER_LIMIT",
@@ -597,6 +770,10 @@ __all__ = [
     "PANE_HIDE",
     "PANE_SHOW",
     "PANE_STATES",
+    "PREVIEW_ADDRESS",
+    "PREVIEW_FILE",
+    "PREVIEW_UNRECOGNISED",
+    "PROJECT_UNNAMED",
     "QUIT",
     "QUIT_TITLE",
     "QUIT_WHILE_RUNNING",
@@ -605,10 +782,12 @@ __all__ = [
     "REMEMBER_ACTION",
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
+    "REQUIRED",
     "SCOPE_LABEL",
     "SEARCHING",
     "SEARCH_ACTION",
     "SHOW_PASSAGE",
+    "SITE_UNREACHABLE",
     "STILL_RUNNING",
     "STOPPED",
     "SYNC_CONTEXT_ACTION",
@@ -617,13 +796,20 @@ __all__ = [
     "THEME_CHOICES",
     "THEME_LABEL",
     "TITLE_HINT",
+    "chooser_truncated",
     "describe_count",
     "describe_holding",
     "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
+    "group_empty_means",
     "key_models",
     "last_job",
+    "not_a_count",
+    "not_a_folder",
+    "previewed_arxiv",
+    "previewed_citekey",
+    "previewed_project",
     "search_hint_for",
     "searchable_summary",
     "unknown_mode",

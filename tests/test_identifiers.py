@@ -15,6 +15,7 @@ from kennis.engine.literature.identifiers import (
     PaperIdentifier,
     arxiv_id_if_reference,
     find_paper_identifiers,
+    identifier_if_reference,
     looks_like_bibtex,
     normalize_arxiv_id,
     normalize_bibcode,
@@ -286,3 +287,36 @@ def test_a_bib_file_is_recognised_by_its_suffix():
     assert looks_like_bibtex("library.bib") is True
     assert looks_like_bibtex("library.BIB") is True
     assert looks_like_bibtex("paper.pdf") is False
+
+
+# ---------------------------------------------------------------------------
+# How many digits follow the dot depends on the month (11d)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "valid", ["0704.0001", "1101.2268", "1412.8765", "1501.00001", "2409.19750"]
+)
+def test_an_identifier_of_its_months_shape_is_recognised(valid: str):
+    assert parse_identifier(valid) == PaperIdentifier(kind="arxiv", value=valid)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        # Five digits began in January 2015 and four ended with 2014, so
+        # each of these is a prefix of a real identifier, or nothing at all.
+        "2409.1975",
+        "1501.0001",
+        "1412.12345",
+        # There is no thirteenth month.
+        "2413.12345",
+    ],
+)
+def test_a_number_arxiv_could_not_have_issued_is_not_an_identifier(invalid: str):
+    """Found by the Add dialog's preview: `2409.1975` was recognised, so a
+    reader pausing while typing `2409.19750` sent arXiv a lookup for a
+    different paper - and an add of it would have asked arXiv for an
+    identifier that cannot exist."""
+    assert parse_identifier(invalid) is None
+    assert identifier_if_reference(invalid) is None

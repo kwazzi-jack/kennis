@@ -100,7 +100,9 @@ def test_every_form_that_posts_disables_its_button_while_it_waits(
 
     assert len(forms) == expected
     for form in forms:
-        assert 'hx-disabled-elt="find button"' in form, form
+        # The submit button by type: `find` takes the first match, and
+        # the Add tabs put a Browse button ahead of it (11d).
+        assert 'hx-disabled-elt="find button[type=submit]"' in form, form
 
 
 def test_a_waiting_form_looks_busy(client: TestClient):

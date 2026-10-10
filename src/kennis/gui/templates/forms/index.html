@@ -1,5 +1,5 @@
 <p class="role-muted">{{ index_preamble }}</p>
-<form hx-disabled-elt="find button" hx-post="/index" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+<form hx-disabled-elt="find button[type=submit]" hx-post="/index" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
   <div class="fields">
     <label><input type="radio" name="collection" value="" checked> every collection</label>
     {% for name in collections %}
