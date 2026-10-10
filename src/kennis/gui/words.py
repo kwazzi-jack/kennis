@@ -700,6 +700,43 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
     return f"There is no scope called '{asked}'. The scopes are {joined(list(scopes))}."
 
 
+# The tree's marks, after an editor's source-control view: quiet when
+# the index has a document as it stands, a letter when not. The letter is
+# what is seen; the sentence is its tooltip and what a screen reader says.
+STATE_LETTERS: Final[dict[str, str]] = {
+    "unindexed": "U",
+    "changed": "M",
+    "unreadable": "!",
+}
+
+STATE_WORDS: Final[dict[str, str]] = {
+    "unindexed": "Not in the index yet, so search will not find it",
+    "changed": "Changed since it was indexed, so search finds the earlier text",
+    "unreadable": "kennis cannot read this document's frontmatter",
+}
+
+ATTENTION_ONLY = "Only what needs attention"
+
+MENU_OPEN = "Open"
+MENU_MOVE = "Move to group"
+MENU_ADD_HERE = "Add here"
+MENU_INDEX = "Index this collection"
+
+MOVE_GROUP_LABEL = "Group to move it to"
+MOVE_GROUP_EMPTY = "empty for the top level"
+
+
+def attention_count(count: int) -> str:
+    """How many documents beneath a group need attention."""
+    verb = "needs" if count == 1 else "need"
+    return f"{count_of(count, 'document')} here {verb} attention"
+
+
+def menu_for(name: str) -> str:
+    """The accessible name of a row's menu button, which is only an icon."""
+    return f"Actions for {name}"
+
+
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
@@ -710,6 +747,7 @@ __all__ = [
     "ADD_TABS_LABEL",
     "ANOTHER_GROUP",
     "ARXIV_SILENT",
+    "ATTENTION_ONLY",
     "BACK_TO_SEARCH",
     "BLOCK_HEADING",
     "BROWSE",
@@ -756,9 +794,15 @@ __all__ = [
     "LOAD_IMAGES",
     "MARK_WITHHELD",
     "MEASURE_ICONS",
+    "MENU_ADD_HERE",
+    "MENU_INDEX",
+    "MENU_MOVE",
+    "MENU_OPEN",
     "MODE_CHOICES",
     "MODE_DEFAULT",
     "MODE_LABEL",
+    "MOVE_GROUP_EMPTY",
+    "MOVE_GROUP_LABEL",
     "NEVER_INDEXED",
     "NOTHING_FOUND",
     "NOTHING_HELD",
@@ -803,6 +847,8 @@ __all__ = [
     "SITE_UNREACHABLE",
     "SKIP",
     "SKIPPED",
+    "STATE_LETTERS",
+    "STATE_WORDS",
     "STILL_RUNNING",
     "STOPPED",
     "SYNC_CONTEXT_ACTION",
@@ -811,6 +857,7 @@ __all__ = [
     "THEME_CHOICES",
     "THEME_LABEL",
     "TITLE_HINT",
+    "attention_count",
     "chooser_truncated",
     "describe_count",
     "describe_holding",
@@ -820,6 +867,7 @@ __all__ = [
     "group_empty_means",
     "key_models",
     "last_job",
+    "menu_for",
     "not_a_count",
     "not_a_folder",
     "open_candidate",

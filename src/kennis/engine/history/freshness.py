@@ -66,14 +66,28 @@ class Freshness:
     unverifiable: Unverifiable | None = None
 
 
-def index_freshness(
+@dataclass(frozen=True, slots=True)
+class DocumentStates:
+    """Which documents an index is behind on, by name.
+
+    Each name is a path relative to the corpus root as `document_of` gives
+    it: a bare document's `.md`, a wrapped document's directory. A document
+    in none of the three is in the index as it stands.
+    """
+
+    added: frozenset[str] = frozenset()
+    changed: frozenset[str] = frozenset()
+    gone: frozenset[str] = frozenset()
+
+
+def document_states(
     repository: Repository,
     *,
     collection: str,
-    built_from: str | None,
+    built_from: str,
     indexed: dict[str, str] | None = None,
-) -> Freshness:
-    """Compare a collection against what its index actually holds.
+) -> DocumentStates:
+    """Every document the index is behind on, sorted into what it is behind on.
 
     **git narrows and the digest decides.** The diff is what makes this
     `O(changed files)` rather than `O(corpus)`, and it is kept for that - but
@@ -92,12 +106,11 @@ def index_freshness(
 
     Passing `indexed=None` keeps the old behaviour of trusting the diff, and
     is for a caller that has no manifest to hand. Concern #245.
-    """
-    if built_from is None:
-        return Freshness(state="unverifiable", unverifiable="no commit recorded")
-    if not repository.has_commit(built_from):
-        return Freshness(state="unverifiable", unverifiable="commit not in this corpus")
 
+    The names rather than counts, because a tree marks each document; the
+    counts `index_freshness` reports are the sizes of these sets, so the
+    tree and `corpus status` cannot disagree.
+    """
     scope = f"{collection}/"
     flagged: dict[str, str] = {}
     for source in (
@@ -128,12 +141,35 @@ def index_freshness(
             changed=changed,
             gone=gone,
         )
+    return DocumentStates(
+        added=frozenset(added), changed=frozenset(changed), gone=frozenset(gone)
+    )
 
+
+def index_freshness(
+    repository: Repository,
+    *,
+    collection: str,
+    built_from: str | None,
+    indexed: dict[str, str] | None = None,
+) -> Freshness:
+    """Compare a collection against what its index actually holds.
+
+    The counts of `document_states`, and a state from them. See there for
+    how a document is sorted.
+    """
+    if built_from is None:
+        return Freshness(state="unverifiable", unverifiable="no commit recorded")
+    if not repository.has_commit(built_from):
+        return Freshness(state="unverifiable", unverifiable="commit not in this corpus")
+    states = document_states(
+        repository, collection=collection, built_from=built_from, indexed=indexed
+    )
     return Freshness(
-        state="stale" if (changed or gone) else "in step",
-        added=len(added),
-        changed=len(changed),
-        gone=len(gone),
+        state="stale" if (states.changed or states.gone) else "in step",
+        added=len(states.added),
+        changed=len(states.changed),
+        gone=len(states.gone),
     )
 
 

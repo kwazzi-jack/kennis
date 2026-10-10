@@ -17,12 +17,19 @@ reintroduce that.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
 from kennis.context import Context
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.layout import index_root
+from kennis.engine.corpus.layout import index_root, relative_to_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.history.freshness import Freshness, index_freshness
+from kennis.engine.history.freshness import (
+    DocumentStates,
+    Freshness,
+    document_states,
+    index_freshness,
+)
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.installed import InstalledPack, list_installed
 from kennis.engine.rag.index import read_manifest
@@ -90,6 +97,64 @@ def freshness_of(
     )
 
 
+type DocumentState = Literal["", "unindexed", "changed"]
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentMarks:
+    """Where the index stands for each document of one collection.
+
+    Three answers, and the difference between the first two matters: a
+    collection that was **never indexed** has nothing in step, so every
+    document is unindexed; one whose index **cannot be checked** - its
+    commit is not in this corpus - has no per-document answer at all, and
+    a tree says nothing rather than guessing. Otherwise `states` holds the
+    sets `corpus status` counts, so the two cannot disagree.
+    """
+
+    never_indexed: bool
+    states: DocumentStates | None
+
+    def state_of(self, corpus_root: Path, anchor: Path) -> DocumentState:
+        """One document's state, named by its wrapper or its file.
+
+        `anchor` is spelled the way `document_of` names a document - a
+        wrapped one by its directory - so it is looked up as given.
+        """
+        if self.never_indexed:
+            return "unindexed"
+        if self.states is None:
+            return ""
+        name = relative_to_corpus(anchor, corpus_root)
+        if name in self.states.changed:
+            return "changed"
+        if name in self.states.added:
+            return "unindexed"
+        return ""
+
+
+def document_marks(context: Context, collection: str) -> DocumentMarks:
+    """Per-document freshness for one collection, by the same rule as
+    `freshness_of`, with `indexed=manifest.documents` for the same
+    reason (#245)."""
+    manifest = read_manifest(index_root(context.corpus_root), collection)
+    if manifest is None:
+        return DocumentMarks(never_indexed=True, states=None)
+    repository = Repository(context.corpus_root)
+    built_from = manifest.built_from
+    if built_from is None or not repository.has_commit(built_from):
+        return DocumentMarks(never_indexed=False, states=None)
+    return DocumentMarks(
+        never_indexed=False,
+        states=document_states(
+            repository,
+            collection=collection,
+            built_from=built_from,
+            indexed=manifest.documents,
+        ),
+    )
+
+
 def installed_packs(context: Context) -> tuple[InstalledPack, ...]:
     """Every pack in the store, or nothing when there is no store yet."""
     return tuple(list_installed(context.corpus_root).packs)
@@ -106,7 +171,10 @@ def revision(context: Context) -> str | None:
 
 
 __all__ = [
+    "DocumentMarks",
+    "DocumentState",
     "Holding",
+    "document_marks",
     "freshness_of",
     "holdings",
     "installed_packs",

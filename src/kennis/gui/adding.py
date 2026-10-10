@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, Literal
 from urllib.parse import quote
@@ -87,6 +87,22 @@ class ShownField:
     browse: Browse | None = None
     preview: str | None = None
     choices: tuple[str, ...] = ()
+    # What the field holds when it is drawn: empty, unless the reader
+    # opened the dialog from a place in the tree (11f).
+    value: str = ""
+
+
+def filled(fields: Sequence[ShownField], given: Mapping[str, str]) -> list[ShownField]:
+    """`fields` with the values `given` for them, and only for them.
+
+    Filled as given. Jinja escapes the value; a choice the field does not
+    offer checks no radio, which is the field left empty; and the add
+    refuses a wrong value exactly as it would refuse it typed.
+    """
+    return [
+        replace(field, value=given[field.name]) if given.get(field.name) else field
+        for field in fields
+    ]
 
 
 def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
@@ -372,6 +388,7 @@ __all__ = [
     "add_kind",
     "add_tabs",
     "chooser_target",
+    "filled",
     "listing_of",
     "shown_checks",
     "shown_paper_preview",
