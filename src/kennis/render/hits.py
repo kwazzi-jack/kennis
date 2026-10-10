@@ -31,8 +31,8 @@ resolution should have been to show both, labelled, rather than to pick.
 Concern #379.
 
 Nothing about *ordering* changes here. Hits are fused by reciprocal rank,
-so a hit reading `lexical: very high  meaning: low` can sit below one
-reading `lexical: high  meaning: medium`. That is what fusion did, and it
+so a hit reading `keywords: very high  meaning: low` can sit below one
+reading `keywords: high  meaning: medium`. That is what fusion did, and it
 is what the single band was hiding.
 
 The cuts are in `_COSINE_CUTS` with the run that produced them. Concerns
@@ -61,6 +61,13 @@ type Relevance = Literal["very high", "high", "medium", "low", "very low"]
 type Leg = Literal["lexical", "meaning"]
 
 LEGS: Final[tuple[Leg, ...]] = ("lexical", "meaning")
+
+# What a person reads for each leg. The engine's names stay the keys,
+# because they name the computation; "keywords" is what a lexical match
+# is *of*, and is a word a reader who has never met BM25 already has.
+# Both front ends print it, so the terminal, an agent and the window
+# all say the same thing. Concern #417.
+LEG_LABELS: Final[dict[Leg, str]] = {"lexical": "keywords", "meaning": "meaning"}
 type ScoreStyle = Literal["human", "raw", "none"]
 
 SCORE_STYLES: Final[tuple[str, ...]] = ("human", "raw", "none")
@@ -147,7 +154,7 @@ def _banded(value: float, cuts: tuple[float, float, float, float]) -> Relevance:
 # cosine" reads as a possessive. The command line colours the name and
 # a page does not, so only the page showed it. Concern #380.
 _LEG_SCALES: Final[dict[Leg, str]] = {
-    "lexical": "lexical as a fraction of the best match here",
+    "lexical": "keywords as a fraction of the best match here",
     "meaning": "meaning as an absolute cosine",
 }
 
@@ -178,6 +185,28 @@ def relevance_phrase(legs: Collection[Leg]) -> str:
     return ", ".join(_LEG_SCALES[leg] for leg in LEGS if leg in legs)
 
 
+def hit_title(result: SearchResult) -> str:
+    """What this hit is: the document's title and, where it adds
+    something, the section.
+
+    The headline is this with the rank in front. The window shows the
+    title alone, because a rank in a fused list is a position and not a
+    measurement, and a page has the list's own order to show position
+    (#342, #406).
+    """
+    chunk = result.chunk
+    title = str(chunk.metadata.get("title") or chunk.document_id)
+    # Casefolded, because a title taken from a filename beside an H1
+    # written in prose case - `calibration` and `Calibration` - is the
+    # ordinary relationship between the two, not an odd one. A heading
+    # that differs from the title only in case carries nothing the title
+    # does not. Concern #296.
+    same = chunk.section is not None and chunk.section.casefold() == title.casefold()
+    section = None if same else chunk.section
+    where = f" - {section}" if section else ""
+    return f"{title}{where}"
+
+
 def hit_headline(rank: int, result: SearchResult) -> str:
     """The line a reader scans: what this hit is.
 
@@ -191,17 +220,7 @@ def hit_headline(rank: int, result: SearchResult) -> str:
     `kennis read` takes and splitting them across two lines invites copying
     one without the other.
     """
-    chunk = result.chunk
-    title = str(chunk.metadata.get("title") or chunk.document_id)
-    # Casefolded, because a title taken from a filename beside an H1
-    # written in prose case - `calibration` and `Calibration` - is the
-    # ordinary relationship between the two, not an odd one. A heading
-    # that differs from the title only in case carries nothing the title
-    # does not. Concern #296.
-    same = chunk.section is not None and chunk.section.casefold() == title.casefold()
-    section = None if same else chunk.section
-    where = f" - {section}" if section else ""
-    return f"[{rank}] {title}{where}"
+    return f"[{rank}] {hit_title(result)}"
 
 
 def hit_handle(result: SearchResult) -> str:
@@ -249,6 +268,7 @@ def raw_scores(result: SearchResult) -> str:
 __all__ = [
     "CALIBRATED_MODELS",
     "LEGS",
+    "LEG_LABELS",
     "SCORE_STYLES",
     "Leg",
     "Relevance",
@@ -257,6 +277,7 @@ __all__ = [
     "hit_detail_parts",
     "hit_handle",
     "hit_headline",
+    "hit_title",
     "raw_scores",
     "relevance_phrase",
     "relevances",
@@ -311,6 +332,14 @@ class RenderedHit:
     # string; a test asserts the two cannot drift. Concern #380.
     detail_parts: tuple[str, ...]
     body: str | None
+    # The headline without its rank, and the bands as values rather
+    # than as `keywords: high`, for a front end that lays them out
+    # itself. Taken from the same functions as `headline` and `detail`,
+    # so the window cannot say something the terminal does not. Empty
+    # `measures` unless the style is `human`, because only then is a
+    # band being shown at all.
+    title: str
+    measures: tuple[tuple[Leg, Relevance], ...]
 
 
 _DETAIL_GAP: Final = "  "
@@ -341,7 +370,7 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     if style == "raw":
         return (raw_scores(hit.result), handle)
     found = relevances(hit.result, model=hit.model, best=best)
-    return (*(f"{leg}: {level}" for leg, level in found), handle)
+    return (*(f"{LEG_LABELS[leg]}: {level}" for leg, level in found), handle)
 
 
 def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:
@@ -373,6 +402,12 @@ def rendered_hit(
             None
             if snippet == "none"
             else snippet_of(hit.result.chunk.text, full=snippet == "full")
+        ),
+        title=hit_title(hit.result),
+        measures=(
+            relevances(hit.result, model=hit.model, best=best)
+            if style == "human"
+            else ()
         ),
     )
 

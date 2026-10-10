@@ -15,6 +15,7 @@ protect. Concern #309.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -343,7 +344,8 @@ def test_a_hit_carries_the_same_text_as_the_command_line(
     them are `render/hits.py`'s and not its own. Compared as **whole
     lines**, for #297's reason: asserting that the page merely mentions
     the query passes for a page that composed its own headline, and an
-    injection proved exactly that.
+    injection proved exactly that. The window shows the headline
+    without its rank (#406), as the whole content of the title link.
     """
     a_note(corpus, "calibration", "Calibration solves for antenna gains.")
     a_note(corpus, "baking", "A recipe for sourdough bread at home.")
@@ -362,17 +364,19 @@ def test_a_hit_carries_the_same_text_as_the_command_line(
     ]
     assert headlines, printed.output
     for headline in headlines:
-        assert headline in served.text, headline
+        title = re.sub(r"^\[\d+\] ", "", headline)
+        assert re.search(
+            rf'<a class="title" [^>]*>{re.escape(title)}</a>', served.text
+        ), title
 
 
-def test_the_margin_carries_every_field_the_command_line_prints(
+def test_the_hit_carries_every_field_the_command_line_prints(
     corpus: Path, client: TestClient
 ):
-    """The margin lays the fields out itself since #380, so the joined
-    line no longer appears on the page and the test above cannot see
-    them. Each field still has to be the same bytes, and each has to
-    be in an element of its own - a gutter twenty characters wide
-    wrapped `meaning:` away from `medium` when they shared one."""
+    """The window lays the fields out itself, so the joined line never
+    appears on the page and the test above cannot see them. Each band
+    `label: level` is a measure titled with the label and carrying the
+    level in its own element; the handle is an element of its own."""
     a_note(corpus, "calibration", "Calibration solves for antenna gains.")
     admitted(client)
 
@@ -393,10 +397,17 @@ def test_the_margin_carries_every_field_the_command_line_prints(
     ]
     assert lines, printed.output
     for line in lines:
-        fields = line.split("  ")
-        assert len(fields) >= 2, line
-        for field in fields:
-            assert f"<span>{field}</span>" in served.text, field
+        *bands, handle = line.split("  ")
+        assert bands, line
+        assert f'<p class="handle">{handle}</p>' in served.text, handle
+        for band in bands:
+            label, level = band.split(": ")
+            assert re.search(
+                rf'<span class="measure" title="{label}"[^>]*>.*?'
+                rf'<span class="level">{level}</span>',
+                served.text,
+                re.S,
+            ), band
 
 
 # ---------------------------------------------------------------------------

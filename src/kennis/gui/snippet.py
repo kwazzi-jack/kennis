@@ -114,6 +114,125 @@ def marked_snippet(
     return "".join(_rendered(runs, pattern))
 
 
+# How much of the window sits before the first match, when the match is
+# too far in for the window to start at the top. Enough for the start of
+# its sentence, usually, and little enough that the match is in the first
+# line a closed passage shows.
+_LEAD_CHARACTERS: Final = 60
+
+
+@dataclass(frozen=True, slots=True)
+class Passage:
+    """A hit's whole chunk as HTML, in three parts that join to it.
+
+    `window` is what a closed passage shows: the snippet, placed so the
+    first match is in it. `before` and `after` are the rest of the chunk
+    on either side, which an opened passage shows *around* the window,
+    so no text is ever shown twice (Brian, 2026-10-09; concern #415).
+    Each part is balanced HTML on its own - a tag open at a boundary is
+    closed there and opened again on the other side - so a page can put
+    each in its own element.
+    """
+
+    before: str
+    window: str
+    after: str
+
+
+def passage_of(
+    chunk: str, *, terms: Sequence[str], limit: int = _SNIPPET_CHARACTERS
+) -> Passage:
+    """The chunk split around a window of about `limit` visible characters.
+
+    The window starts at the top unless the first match would fall
+    outside it, in which case it starts a short lead before the match.
+    The same runs `marked_snippet` reads, so the maths and marking rules
+    are the same ones and TeX is never split between two parts.
+    """
+    runs = list(_runs(_tokens(chunk)))
+    pattern = _pattern(terms)
+    start = _window_start(runs, pattern, limit)
+    before, rest = _split(runs, start)
+    window, after = _split(rest, limit)
+    return Passage(
+        before="".join(_rendered(before, pattern)),
+        window="".join(_rendered(window, pattern)),
+        after="".join(_rendered(after, pattern)),
+    )
+
+
+def _window_start(
+    runs: Sequence[_Run], pattern: re.Pattern[str] | None, limit: int
+) -> int:
+    """Where the window begins, in characters the reader sees."""
+    if pattern is None:
+        return 0
+    seen = 0
+    for run in runs:
+        if run.tag is not None:
+            continue
+        if run.maths is None:
+            found = pattern.search(run.text)
+            if found is not None:
+                at = seen + found.start()
+                # A match the top-anchored window already shows whole
+                # needs no move, and moving it would hide the opening.
+                if at + len(found.group(0)) <= limit:
+                    return 0
+                return max(0, at - _LEAD_CHARACTERS)
+        seen += len(run.text)
+    return 0
+
+
+def _split(runs: Sequence[_Run], offset: int) -> tuple[list[_Run], list[_Run]]:
+    """Cut the runs at a word boundary at or before `offset` visible
+    characters, keeping each side balanced.
+
+    TeX is never cut: an expression that straddles the offset goes
+    whole to the second side, for the reason `_truncated` gives. A tag
+    open at the cut is closed on the first side and opened again on the
+    second.
+    """
+    # Nothing before the start, not an empty pair of tags: a heading's
+    # `<strong></strong>` is a non-empty string, and a page asks whether
+    # a part is empty to decide whether there is anything to open.
+    if offset <= 0:
+        return [], list(runs)
+    head: list[_Run] = []
+    tail: list[_Run] = []
+    opened: list[str] = []
+    seen = 0
+    cut = False
+    for run in runs:
+        if cut:
+            tail.append(run)
+            continue
+        if run.tag is not None:
+            head.append(run)
+            if run.tag.startswith("</"):
+                if opened:
+                    opened.pop()
+            else:
+                opened.append(run.tag)
+            continue
+        if seen + len(run.text) <= offset:
+            seen += len(run.text)
+            head.append(run)
+            continue
+        cut = True
+        room = offset - seen
+        if run.maths is None and " " in run.text[:room]:
+            boundary = run.text.rindex(" ", 0, room) + 1
+            head.append(_Run(run.text[:boundary]))
+            remainder = _Run(run.text[boundary:])
+        else:
+            remainder = run
+        head.extend(_Run("", f"</{tag[1:]}") for tag in reversed(opened))
+        tail.extend(_Run("", tag) for tag in opened)
+        tail.append(remainder)
+    return head, tail
+
+
 def _tokens(chunk: str) -> list[Token]:
     # A parser of its own rather than `render/html.py`'s: this one
     # wants no fences, no images and no tables, because none of them
@@ -297,4 +416,4 @@ def terms_of(question: str) -> tuple[str, ...]:
     return tuple(question.split())
 
 
-__all__ = ["marked_snippet", "terms_of"]
+__all__ = ["Passage", "marked_snippet", "passage_of", "terms_of"]

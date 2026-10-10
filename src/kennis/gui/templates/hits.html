@@ -22,20 +22,56 @@
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
 {% endfor %}
+{# The scale, once, ahead of every group (#408). A `<details>`, so it
+   opens without a script. The ramp is the five strength colours, one
+   cell each, and the same cells the bars below are drawn from. #}
+{% if key %}
+<details class="key">
+  <summary>{{ icon("info") }}<span class="label">{{ key_summary }}</span>
+    <span class="ramp"><span class="end">{{ key_low }}</span><span class="cells">{% for step in range(1, 6) %}<i class="cell on" data-step="{{ step }}"></i>{% endfor %}</span><span class="end">{{ key_high }}</span></span>
+  </summary>
+  <ul class="key-lines">
+    {% for line in key.lines %}
+    <li>{{ icon(line.icon) }}<span>{{ line.scale }}</span></li>
+    {% endfor %}
+  </ul>
+  {% if key.models %}<p>{{ key_models(key.models) }}</p>{% endif %}
+  <p>{{ key_order }}</p>
+</details>
+{% endif %}
+{% if orders %}
+<nav class="order" aria-label="{{ order_label }}">
+  <span class="label">{{ order_label }}</span>
+  {% for choice in orders %}<a href="{{ choice.href }}"{% if choice.current %} aria-current="true"{% endif %}>{{ choice.label }}</a>{% endfor %}
+  <span class="limit">{{ order_limit }}</span>
+</nav>
+{% endif %}
 {% for group in groups %}
-{% if group.basis %}<p class="basis">{{ group.basis }}</p>{% endif %}
-<ol class="hits">
+<h2 class="place">{{ group.heading }}</h2>
+<ol class="results">
 {% for hit in group.hits %}
-  <li>
-    <a class="role-operation" href="{{ hit.href }}">{{ hit.headline }}</a>
-    {# One element per field. A single string with `white-space:
-       pre-wrap` wrapped wherever the gutter ran out, which split a
-       band from its level as soon as there were two. Concern #380. #}
-    <p class="role-muted detail">{% for part in hit.detail_parts %}<span>{{ part }}</span>{% endfor %}</p>
-    {# `safe` because `marked_snippet` escaped every character of the
-       corpus's text itself and emitted only the tags it chose. Jinja
-       escaping again would show `&lt;em&gt;` on the page. #}
-    {% if hit.body %}<p class="body">{{ hit.body | safe }}</p>{% endif %}
+  <li class="hit">
+    {% if hit.measures %}
+    <p class="measures">
+      {% for measure in hit.measures %}
+      {# The colour is the level's, on every filled cell; the count of
+         filled cells and the word say the same without colour (#421). #}
+      <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
+      {% endfor %}
+    </p>
+    {% endif %}
+    <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
+      <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+    {# Three parts that join to the whole chunk. Drawn whole; only
+       `passage.js` closes it, so a reader without a script reads it
+       all. `safe` because `passage_of` escaped every character of the
+       corpus's text itself and emitted only the tags it chose. #}
+    <div class="passage"><span class="gap" aria-hidden="true">{% if hit.passage.before %}... {% endif %}</span><span class="before">{{ hit.passage.before | safe }}</span><span class="window">{{ hit.passage.window | safe }}</span><span class="after">{{ hit.passage.after | safe }}</span><span class="gap" aria-hidden="true">{% if hit.passage.after %} ...{% endif %}</span></div>
+    {% if hit.opens %}
+    <button type="button" class="toggle" hidden aria-expanded="false"
+            data-open="{{ show_passage }}" data-close="{{ hide_passage }}">{{ icon("chevron-right") }}<span class="label">{{ show_passage }}</span></button>
+    {% endif %}
+    <p class="handle">{{ hit.handle }}</p>
   </li>
 {% endfor %}
 </ol>

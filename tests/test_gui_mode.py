@@ -37,6 +37,7 @@ from kennis.cli.__main__ import main
 from kennis.gui import history, words
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_recents
+from kennis.render.hits import LEG_LABELS
 from kennis.retrieval import as_mode
 
 TOKEN = "a-test-token"
@@ -90,14 +91,16 @@ def a_note(tmp_path: Path, name: str, body: str) -> None:
 
 
 def test_the_modes_are_named_for_what_a_band_is_named_for():
-    """`lexical` and `meaning` are what a hit's margin says. A control
-    offering `bm25` and `dense` beside it would make the reader hold
-    two vocabularies for one distinction, and the engine's names are
-    for the mechanism rather than for what it measures."""
+    """`keywords` and `meaning` are what a hit's bars are labelled. A
+    control offering `bm25` and `dense` beside them would make the
+    reader hold two vocabularies for one distinction, and the engine's
+    names are for the mechanism rather than for what it measures. The
+    whole vocabulary is written by hand in `test_gui_results.py`."""
     labels = " ".join(label for _, label in words.MODE_CHOICES).lower()
 
-    assert "lexical" in labels
-    assert "meaning" in labels
+    for label in LEG_LABELS.values():
+        assert label in labels
+    assert "bm25" not in labels and "dense" not in labels
     for mechanism in ("bm25", "dense", "hybrid", "embedding", "cosine"):
         assert mechanism not in labels, mechanism
 
@@ -272,8 +275,8 @@ def test_a_named_mode_reaches_the_engine(corpus: Path, client: TestClient):
         "/hits", params={"q": "sediment", "scope": "notes", "mode": "bm25"}
     ).text
 
-    assert "lexical search" in default, default
-    assert "lexical search" not in chosen, chosen
+    assert "matched keywords only" in default, default
+    assert "matched keywords only" not in chosen, chosen
     # Both found the note, so the difference is the warning and not
     # one of them having failed to run.
     assert "chunk=" in default and "chunk=" in chosen
@@ -296,7 +299,7 @@ def test_the_page_says_when_a_search_ran_lexically_after_all(
         "/", params={"q": "sediment", "scope": "notes", "mode": "dense"}
     ).text
 
-    assert "no dense leg" in page
+    assert "no meaning leg" in page
     assert "notes" in page
 
 

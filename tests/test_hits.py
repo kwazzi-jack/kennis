@@ -223,11 +223,11 @@ def test_the_phrase_describes_every_leg_the_group_has():
     lexical = [_banded_hit(bm25_score=4.0)]
 
     phrase = basis_phrase(both, "human")
-    assert "lexical" in phrase and "meaning" in phrase
+    assert "keywords" in phrase and "meaning" in phrase
     assert "cosine" in phrase
 
     only = basis_phrase(lexical, "human")
-    assert "lexical" in only
+    assert "keywords" in only
     assert "cosine" not in only
 
 
@@ -242,7 +242,7 @@ def test_a_detail_line_labels_every_band_it_shows():
         _banded_hit(bm25_score=9.0, dense_score=0.58), style="human", best=9.0
     )
 
-    assert line.index("lexical: very high") < line.index("meaning: low")
+    assert line.index("keywords: very high") < line.index("meaning: low")
     assert line.index("meaning: low") < line.index("id=")
     assert "chunk=0" in line
 
@@ -282,7 +282,7 @@ def test_a_detail_line_omits_a_leg_that_did_not_score():
     measurement was taken."""
     line = hit_detail(_banded_hit(bm25_score=9.0), style="human", best=9.0)
 
-    assert "lexical: " in line
+    assert "keywords: " in line
     assert "meaning" not in line
 
 
@@ -320,7 +320,7 @@ def test_the_phrase_puts_its_clauses_in_the_fixed_order():
     reversed_order = relevance_phrase(["meaning", "lexical"])
     unordered = relevance_phrase({"meaning", "lexical"})
 
-    assert reversed_order.index("lexical") < reversed_order.index("meaning")
+    assert reversed_order.index("keywords") < reversed_order.index("meaning")
     assert unordered == reversed_order
 
 

@@ -168,16 +168,20 @@ kennis search "rank" --mode bm25 --snippet none
 ```
 
 ```
-Found 1 passage, relevance relative to the best lexical match
-  [1] [notes] Why fusion uses ranks
-      relevance: very high  id=30ed1x2rt8 chunk=0
+Found 1 in notes
+
+Notes keywords as a fraction of the best match here
+  [1] Why fusion uses ranks
+      keywords: very high  id=30ed1x2rt8 chunk=0
+
   hint: run `kennis read 30ed1x2rt8 --chunks 0:2` to read one in context
 ```
 
-The summary line has changed. With no dense leg there is no absolute scale,
-so the level is a fraction of this query's own best hit - and the top hit of
-a lexical search is `very high` by construction. kennis changes the wording
-rather than presenting a relative number as though it were absolute.
+Only one measure is reported now. With the meaning leg switched off there
+is no absolute scale, so the keywords level is a fraction of this query's own
+best match in the collection - and the top hit is `very high` by
+construction. The line above the group says so, rather than presenting a
+relative number as though it were absolute.
 
 ## 8. Look at what you built
 

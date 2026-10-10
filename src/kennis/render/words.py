@@ -318,7 +318,9 @@ def describe_lexical_fallback(collection: str) -> str:
     quality needs to know they are not comparing against the dense
     index they think they configured.
     """
-    return f"the {collection} index has no dense leg, so this ran as a lexical search"
+    # In the words the mode control uses, "Keywords only", so the
+    # warning names the choice it made for the reader (#417).
+    return f"the {collection} index has no meaning leg, so this matched keywords only"
 
 
 def describe_busy_indexes(collections: Sequence[str]) -> str:
