@@ -7,13 +7,6 @@ note, and run the whole of corpus management without a terminal.
 kennis gui
 ```
 
-Install the extra first, since the interface is not part of the base
-package:
-
-```
-uv tool install "kennis[gui]"
-```
-
 ## A browser tab
 
 kennis serves a local web interface and opens it in your own browser.

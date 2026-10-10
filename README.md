@@ -49,17 +49,17 @@ Not published yet, so from source:
 ```
 git clone git@github.com:kwazzi-jack/kennis.git
 cd kennis
-uv sync                       # add --extra mineru to convert PDFs
+uv sync                       # add --extra mcp for the MCP server
 uv run kennis --help
 ```
 
 To get a `kennis` on your PATH instead of prefixing every command with
-`uv run`, install it as a tool. Converting PDFs needs the `mineru` extra,
-which is a large download:
+`uv run`, install it as a tool. PDF conversion is part of the install and is
+its large part - MinerU brings PyTorch:
 
 ```
-uv tool install .                       # or
-uv tool install "kennis[mineru] @ ."    # with PDF conversion
+uv tool install .                     # or
+uv tool install "kennis[mcp] @ ."     # with the MCP server
 ```
 
 `uv tool install` links only the requested package's executables, so `mineru`

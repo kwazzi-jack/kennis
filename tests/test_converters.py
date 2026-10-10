@@ -58,7 +58,7 @@ def test_a_missing_converter_reports_how_to_install_it(no_mineru: None, tmp_path
 
     message = f"{raised.value} {raised.value.resolution}"
     assert "mineru" in message
-    assert "--extra mineru" in message
+    assert "uv sync" in message
 
 
 def test_the_install_hint_is_reported_once_for_a_whole_batch(
@@ -338,7 +338,7 @@ def test_mineru_converts_a_real_pdf(tmp_path: Path):
     and what this costs afterwards is patience rather than a host being up.
     """
     if shutil.which("mineru") is None:
-        pytest.skip("mineru is not installed; uv sync --extra mineru")
+        pytest.skip("mineru is not installed; uv sync")
 
     path = a_real_pdf(tmp_path / "paper.pdf")
 
@@ -531,7 +531,7 @@ def test_mineru_is_found_beside_the_interpreter_when_it_is_not_on_path(
 ):
     """**Reported from a real install.**
 
-    `uv tool install "kennis[mineru]"` installs mineru into the tool's own
+    `uv tool install kennis` installs mineru into the tool's own
     virtual environment and links only *kennis's* entry point into
     `~/.local/bin` - it says so itself: `Installed 1 executable: kennis`. So
     `~/.local/share/uv/tools/kennis/bin/mineru` exists, is never on PATH, and
@@ -595,16 +595,17 @@ def test_the_install_hint_matches_how_kennis_was_installed(
     """Brian, on the hint he was given: "It should say to install
     kennis[mineru]".
 
-    `uv sync --extra mineru` is right in a source checkout and meaningless to
-    somebody who installed the tool - there is no project to sync. An error
-    names the command that resolves it, so which command that is depends on
-    which of the two they are.
+    `uv sync` is right in a source checkout and meaningless to somebody who
+    installed the tool - there is no project to sync. An error names the
+    command that resolves it, so which command that is depends on which of
+    the two they are. Since #423 mineru is in the base install, so neither
+    names an extra: the remedy is to install kennis again.
     """
     monkeypatch.setattr(converters, "_from_source_checkout", lambda: True)
-    assert MineruConverter().install_hint() == "uv sync --extra mineru"
+    assert MineruConverter().install_hint() == "uv sync"
 
     monkeypatch.setattr(converters, "_from_source_checkout", lambda: False)
-    assert MineruConverter().install_hint() == 'uv tool install "kennis[mineru]"'
+    assert MineruConverter().install_hint() == "uv tool install --reinstall kennis"
 
 
 def test_this_checkout_is_recognised_as_one():

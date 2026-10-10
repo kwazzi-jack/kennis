@@ -122,13 +122,16 @@ _MINERU_FORMATS: Final[dict[str, SourceFormat]] = {
 
 MINERU_FORMATS: Final[frozenset[SourceFormat]] = frozenset(_MINERU_FORMATS.values())
 
-# Which command installs the extra depends on how kennis itself was
-# installed, and the two are not interchangeable: there is no project to sync
-# for somebody who installed the tool, and `uv tool install` is not what a
-# contributor with a checkout wants. Rule: an error names the command that
-# resolves it, so it has to name the right one.
-_SOURCE_INSTALL_HINT: Final = "uv sync --extra mineru"
-_TOOL_INSTALL_HINT: Final = 'uv tool install "kennis[mineru]"'
+# mineru is a base dependency (#423), so a missing one is an install that
+# did not finish - a sync that dropped it, or a platform where it failed to
+# resolve - and the remedy is to install kennis again. Which command does
+# that depends on how kennis itself was installed, and the two are not
+# interchangeable: there is no project to sync for somebody who installed
+# the tool, and `uv tool install` is not what a contributor with a checkout
+# wants. Rule: an error names the command that resolves it, so it has to
+# name the right one.
+_SOURCE_INSTALL_HINT: Final = "uv sync"
+_TOOL_INSTALL_HINT: Final = "uv tool install --reinstall kennis"
 
 
 def _is_source_checkout(root: Path) -> bool:
@@ -156,7 +159,7 @@ def _from_source_checkout() -> bool:
 def _executable(name: str) -> str | None:
     """`name` on PATH, or failing that beside the interpreter kennis runs on.
 
-    **`uv tool install "kennis[mineru]"` never puts mineru on PATH.** It
+    **`uv tool install kennis` never puts mineru on PATH.** It
     installs it into the tool's own virtual environment and links only
     kennis's entry point, saying so as it goes: `Installed 1 executable:
     kennis`. So a PATH-only check reports mineru missing on a machine that

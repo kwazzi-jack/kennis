@@ -88,6 +88,18 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "pypdfium2>=5.10.1",
     "packaging>=26.3",
+    # The window. In the base install since pywebview went (#420): what is
+    # left is small and pure Python, and everyone who installs kennis gets
+    # `kennis gui` (#423).
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "uvicorn>=0.30",
+    # PDF conversion, in the base install because nobody installs kennis
+    # without wanting it (Brian, #423) - although it is the heaviest thing
+    # here by far, with torch and on Linux the CUDA libraries behind it.
+    # Pinned below 4: version 4 is a client to a daemon and its convenient
+    # path uploads documents. The pin is a decision, not staleness (#130).
+    "mineru[pipeline]>=3.4,<4",
 ]
 
 [project.optional-dependencies]
@@ -102,15 +114,6 @@ dependencies = [
 # Concern #16.
 mcp = [
     "fastmcp>=4.0.10,<5",
-]
-mineru = [
-    "mineru[pipeline]>=3.4,<4",
-]
-gui = [
-    "fastapi>=0.115",
-    "jinja2>=3.1",
-    "markdown-it-py>=3",
-    "uvicorn>=0.30",
 ]
 
 [project.scripts]

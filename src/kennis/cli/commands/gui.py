@@ -1,10 +1,9 @@
 """`kennis gui`: open the graphical interface.
 
 Thin, like `serve`. The command decides what a person is told and the
-`gui` package does the work, and the import is deferred into the
-function body so that building the command tree does not pull the
-`gui` extra in - someone who installed kennis without it must still be
-able to run every other command.
+`gui` package does the work. The import stays inside the function so
+that building the command tree for any other command does not import
+fastapi and uvicorn.
 """
 
 from __future__ import annotations

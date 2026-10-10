@@ -49,13 +49,13 @@ jobs:
 
       - run: uv python install 3.12
 
-      # `--extra mineru` is the point of this job. Without it the real
-      # conversion test skips, and a job whose one interesting test silently
+      # Everything, torch included: the real conversion test is the point
+      # of this job, and the test matrix leaves torch out (#423). Without
+      # it the test skips, and a job whose one interesting test silently
       # skips reports nothing - which is worse than not running it.
       # `--extra mcp` too: the slow set includes the MCP server's
-      # subprocess tests, and a job whose subject silently skips reports
-      # nothing - the reason this workflow syncs mineru as well.
-      - run: uv sync --frozen --extra mineru --extra mcp --python 3.12
+      # subprocess tests.
+      - run: uv sync --frozen --extra mcp --python 3.12
 
       - name: slow tests
         run: uv run --no-sync --python 3.12 pytest -m slow -v --durations=10

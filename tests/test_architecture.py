@@ -279,52 +279,6 @@ def test_interface_module_imports_no_other_front_end(path: Path):
     assert not violations, f"{module_name_of(path)} imports {violations}"
 
 
-def test_the_command_line_builds_without_the_gui_extra():
-    """`kennis --help` works on an install that never asked for fastapi.
-
-    The same property `serve` has and for the same reason: `gui` is an
-    optional extra, so the deferred import inside `gui_command` is what
-    keeps every other command runnable - and a deferred import is
-    exactly the kind of thing that gets tidied to the top of a module.
-    """
-    program = """
-import sys
-
-BLOCKED = {"fastapi", "uvicorn", "starlette"}
-
-
-class Refuse:
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.partition(".")[0] in BLOCKED:
-            raise ImportError("the gui extra is not installed")
-        return None
-
-
-sys.meta_path.insert(0, Refuse())
-
-from click.testing import CliRunner
-
-from kennis.cli.__main__ import main
-
-helped = CliRunner().invoke(main, ["--help"])
-assert helped.exit_code == 0, helped.output
-assert "gui" in helped.output, helped.output
-
-opened = CliRunner().invoke(main, ["gui"])
-assert opened.exit_code != 0
-assert isinstance(opened.exception, ImportError), opened.exception
-"""
-    completed = subprocess.run(
-        [sys.executable, "-c", program],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        stdin=subprocess.DEVNULL,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-
-
 def test_the_command_line_builds_without_the_mcp_extra():
     """`kennis --help` works on an install that never asked for fastmcp.
 

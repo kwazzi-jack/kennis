@@ -76,8 +76,9 @@ context bundle, packs, the [MCP server](how-to/serve-an-agent.md) and the
 [graphical interface](how-to/the-interface.md).
 
 Not built: cross-machine synchronisation, and any packaged application.
-`kennis serve` and `kennis gui` are each an extra rather than a base
-dependency, so install `kennis[mcp]` or `kennis[gui]` for them.
+`kennis serve` is an extra rather than a base dependency, so install
+`kennis[mcp]` for it. `kennis gui` and PDF conversion are in the base
+install.
 
 This is experimental software under active development. It keeps no
 backwards-compatibility shims: when something is reworked, the old path is

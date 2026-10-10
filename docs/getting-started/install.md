@@ -20,25 +20,21 @@ uv sync
 uv run kennis --help
 ```
 
-To convert PDFs, DOCX, PPTX and XLSX you need the `mineru` extra, which is a
-large download:
+kennis converts PDFs, DOCX, PPTX and XLSX locally with MinerU, which is part
+of the install. It is the large part: MinerU brings PyTorch, and on Linux the
+CUDA libraries with it, a download of several gigabytes.
 
-```
-uv sync --extra mineru
-```
-
-!!! warning "A bare `uv sync` removes the extra"
-    `uv sync` syncs the default set, which **uninstalls** anything the
-    `mineru` extra brought in. Once you are using it, always say
-    `uv sync --extra mineru`.
+!!! warning "A bare `uv sync` removes extras"
+    `uv sync` syncs the default set, which **uninstalls** the `mcp` extra if
+    you had it. Once you are using it, always say `uv sync --extra mcp`.
 
 ## As a tool on your PATH
 
 To get a `kennis` command instead of prefixing everything with `uv run`:
 
 ```
-uv tool install .                       # without PDF conversion
-uv tool install "kennis[mineru] @ ."    # with it
+uv tool install .                     # kennis, the window and PDF conversion
+uv tool install "kennis[mcp] @ ."     # and the MCP server for agents
 ```
 
 `uv tool install` links only the requested package's executables, so `mineru`
@@ -54,7 +50,7 @@ installed into.
 To upgrade after pulling:
 
 ```
-uv tool install --force "kennis[mineru] @ ."
+uv tool install --reinstall "kennis[mcp] @ ."
 ```
 
 ## Check it
