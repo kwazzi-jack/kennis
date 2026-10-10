@@ -1,0 +1,18 @@
+{# The palette (11g): every action and place, one list, actions first.
+   Each entry is an ordinary link to a route that already exists - an
+   action into `#dialog` as the bar's are, a place by navigating - so
+   running one is clicking it, and without a script this is a page of
+   links. `palette.js` filters on `data-match`, moves the selection and
+   clicks it on Enter; it composes nothing. #}
+<div class="palette">
+<input type="text" class="palette-input" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-label="{{ palette_prompt }}" placeholder="{{ palette_prompt }}" autocomplete="off" aria-activedescendant="palette-0" autofocus>
+<ul class="palette-list" id="palette-list" role="listbox" aria-label="{{ palette_prompt }}">
+{% for entry in entries %}
+<li role="option" id="palette-{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}" data-match="{{ entry.match }}">
+<a href="{{ entry.href }}"{% if entry.opens_a_dialog %} hx-get="{{ entry.href }}" hx-target="#dialog" hx-swap="innerHTML"{% endif %} tabindex="-1"><span class="role-{{ entry.role }}">{{ icon(entry.icon) }}</span><span class="label">{{ entry.label }}</span><span class="kind role-{{ entry.role }}">{{ entry.kind }}</span></a>
+</li>
+{% endfor %}
+</ul>
+<p class="palette-empty role-muted" hidden>{{ palette_empty }}</p>
+<p class="palette-keys role-muted">{% for keys, meaning in palette_keys %}<span><span class="kbd">{{ keys }}</span> {{ meaning }}</span>{% endfor %}</p>
+</div>

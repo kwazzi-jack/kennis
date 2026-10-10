@@ -737,6 +737,66 @@ details.menu[open] > .menu-button { opacity: 1; }
   white-space: nowrap;
 }
 
+/* ---- the palette ---- */
+/* A key as it is pressed: the face of what must be typed verbatim. */
+.kbd {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--role-muted);
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 0.3rem;
+  line-height: 1.4;
+}
+.palette-open { display: inline-flex; align-items: center; gap: 0.35rem; }
+.palette { display: flex; flex-direction: column; gap: 0.4rem; }
+.palette-input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--ground);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.palette-list a {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  color: var(--ink);
+  text-decoration: none;
+}
+/* The selection is the reader's place in the list, whether it was
+   moved there by a key or by the pointer. */
+.palette-list [aria-selected="true"] > a { background: var(--brand-wash); }
+.palette-list .label { flex: 1; min-width: 0; }
+/* The role gives the kind its colour only: `command` also sets the
+   verbatim face, and a kind is a word kennis composes. */
+.palette-list .kind {
+  font-family: var(--gutter);
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+.palette-empty { margin: 0.4rem 0.6rem; }
+.palette-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0.2rem 0 0;
+  font-size: 0.6875rem;
+}
+
 /* ---- the centre ---- */
 
 main {
@@ -1462,6 +1522,7 @@ article table {
   .pane { display: none; }
   #pane-toggle { display: none; }
   .action .label { display: none; }
+  .palette-open .kbd { display: none; }
   .searchbox { order: 3; flex-basis: 100%; max-width: none; flex-wrap: wrap; }
   main { padding: 1.5rem 1rem 4rem; }
 }

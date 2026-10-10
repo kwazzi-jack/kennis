@@ -189,7 +189,44 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/index": "Rebuild an index",
     "/sync": "Synchronise",
     "/pack": "Install a pack",
+    "/palette": "Every action and place",
 }
+
+# The palette (11g). Its actions are the bar's, opened on a tab or a
+# collection where that saves a step; its places are the pane's.
+PALETTE_TITLE = "Every action and place"
+PALETTE_PROMPT = "Type an action or a place"
+PALETTE_EMPTY = "Nothing matches"
+PALETTE_SHORTCUT = "Ctrl K"
+PALETTE_KEYS: Final[tuple[tuple[str, str], ...]] = (
+    ("Up Down", "move"),
+    ("Enter", "run"),
+    ("Esc", "close"),
+)
+# (address, label, icon), in the order the palette lists them.
+PALETTE_ACTIONS_BEFORE_INDEX: Final[tuple[tuple[str, str, str], ...]] = (
+    ("/add?kind=paper", "Add a paper", "file-plus"),
+    ("/add?kind=site", "Add a documentation site", "globe"),
+    ("/add?kind=file", "Add a file", "file-plus"),
+    ("/add?kind=group", "Add several by group", "folder"),
+    ("/remember", "Write a note", "pencil"),
+    ("/index", "Index every collection", "database"),
+)
+PALETTE_ACTIONS_AFTER_INDEX: Final[tuple[tuple[str, str, str], ...]] = (
+    ("/sync", "Synchronise", "refresh-cw"),
+    ("/pack", "Install a pack", "package"),
+)
+PALETTE_KINDS: Final[dict[str, str]] = {
+    "action": "action",
+    "collection": "collection",
+    "page": "page",
+}
+
+
+def index_collection(collection: str) -> str:
+    """The palette's entry that opens the index form on one collection."""
+    return f"Index {collection}"
+
 
 CLOSE = "Close"
 
@@ -213,6 +250,13 @@ CONTEXT_HEADING = "Context"
 KENNIS_HEADING = "kennis"
 
 ACTIVITY_HEADING = "Activity"
+
+# The palette's places beyond the collections, by the pane's own names.
+PALETTE_PAGES: Final[tuple[tuple[str, str, str], ...]] = (
+    ("/corpus", CORPUS_HEADING, "database"),
+    ("/", RECENTS_HEADING, "history"),
+    ("/activity", ACTIVITY_HEADING, "activity"),
+)
 
 NOTHING_RUN = "Nothing has run since kennis started. Operations are kept for an hour."
 
@@ -824,6 +868,15 @@ __all__ = [
     "ORDER_LIMIT",
     "PACK_ACTION",
     "PACK_PREAMBLE",
+    "PALETTE_ACTIONS_AFTER_INDEX",
+    "PALETTE_ACTIONS_BEFORE_INDEX",
+    "PALETTE_EMPTY",
+    "PALETTE_KEYS",
+    "PALETTE_KINDS",
+    "PALETTE_PAGES",
+    "PALETTE_PROMPT",
+    "PALETTE_SHORTCUT",
+    "PALETTE_TITLE",
     "PANE_HIDE",
     "PANE_SHOW",
     "PANE_STATES",
@@ -865,6 +918,7 @@ __all__ = [
     "describe_written",
     "describe_written_to_bundle",
     "group_empty_means",
+    "index_collection",
     "key_models",
     "last_job",
     "menu_for",

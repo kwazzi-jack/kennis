@@ -28,6 +28,7 @@ from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, DocumentFacts
 from kennis.engine.corpus.layout import relative_to_corpus
+from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import DocumentNotFound
 from kennis.engine.events import Outcome
@@ -538,6 +539,7 @@ def _refers_remotely(markdown: str) -> bool:
 
 
 __all__ = [
+    "PALETTE_ROLES",
     "STATE_ORDER",
     "STATE_ROLES",
     "ShownBranch",
@@ -551,6 +553,7 @@ __all__ = [
     "ShownMeasure",
     "ShownOrder",
     "ShownOutcome",
+    "ShownPaletteEntry",
     "ShownRecent",
     "ShownRow",
     "ShownSkip",
@@ -558,6 +561,7 @@ __all__ = [
     "ShownTreeEntry",
     "add_here_address",
     "ordered_by",
+    "palette_entries",
     "shown_bundle_document",
     "shown_document",
     "shown_groups",
@@ -665,6 +669,75 @@ def add_here_address(collection: str, group: str) -> str:
     if group:
         asked[field] = group
     return "/add?" + urlencode(asked)
+
+
+# A palette entry's kind wears an existing role on its icon and its kind
+# word, so the list is not grey; the label stays ink.
+PALETTE_ROLES: Final[dict[str, str]] = {
+    "action": "command",
+    "collection": "operation",
+    "page": "value",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ShownPaletteEntry:
+    """One line of the palette: an existing route under another name.
+
+    An action opens its dialog, as the bar's do; a place is navigated to.
+    `match` is what the script compares typing against, lower-cased here
+    so the script composes nothing.
+    """
+
+    label: str
+    href: str
+    kind: str
+    icon: str
+    role: str
+    match: str
+
+    @property
+    def opens_a_dialog(self) -> bool:
+        return self.kind == "action"
+
+
+def palette_entries() -> list[ShownPaletteEntry]:
+    """Every action and place, actions first."""
+    listed: list[tuple[str, str, str, str]] = [
+        *(
+            (href, label, "action", icon)
+            for href, label, icon in words.PALETTE_ACTIONS_BEFORE_INDEX
+        ),
+        *(
+            (
+                f"/index?collection={name}",
+                words.index_collection(name),
+                "action",
+                "database",
+            )
+            for name in COLLECTION_NAMES
+        ),
+        *(
+            (href, label, "action", icon)
+            for href, label, icon in words.PALETTE_ACTIONS_AFTER_INDEX
+        ),
+        *(
+            (f"/collection/{name}", name, "collection", words.COLLECTION_ICONS[name])
+            for name in COLLECTION_NAMES
+        ),
+        *((href, label, "page", icon) for href, label, icon in words.PALETTE_PAGES),
+    ]
+    return [
+        ShownPaletteEntry(
+            label=label,
+            href=href,
+            kind=words.PALETTE_KINDS[kind],
+            icon=icon,
+            role=PALETTE_ROLES[kind],
+            match=f"{label} {words.PALETTE_KINDS[kind]}".casefold(),
+        )
+        for href, label, kind, icon in listed
+    ]
 
 
 # A mark wears an existing role, never a new colour. Not yet indexed is
