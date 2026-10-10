@@ -935,8 +935,60 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 /* ---------------------------------------------------------------- */
 
 .job { margin: 1.5rem 0 0; }
-.job-bar { width: 100%; height: 0.35rem; }
-.job-step { font-family: var(--gutter); font-size: 0.8125rem; margin: 0.4rem 0; }
+.strip .job { margin: 0; }
+.job-now, .job-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.3rem 0;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+}
+.job-now:has(.job-step:empty) { display: none; }
+.job-bar { flex: 1 1 12rem; max-width: 24rem; height: 0.35rem; }
+.job-clock, .job-count { font-variant-numeric: tabular-nums; }
+
+/* Idle, the strip is a status line: where the corpus stands, and the
+   last operation as a link to it. */
+.strip-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0;
+  padding: 0.3rem 0;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+}
+
+/* A form whose request is out: htmx sets `htmx-request` on it and has
+   already disabled the button (`hx-disabled-elt`). The cursor and the
+   turning ring say the click was heard before the server answers. */
+.htmx-request button[type="submit"] {
+  cursor: progress;
+}
+.htmx-request button[type="submit"]::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-left: 0.5em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: turning 0.8s linear infinite;
+}
+@keyframes turning { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .htmx-request button[type="submit"]::after { animation: none; }
+}
+
+/* The Activity page: one row per operation kept. */
+.activity { border-collapse: collapse; font-family: var(--gutter); }
+.activity td { padding: 0.3rem 1rem 0.3rem 0; border-bottom: 1px solid var(--rule); }
+.activity .started { font-variant-numeric: tabular-nums; }
+.job-page h1 { margin-bottom: 0.5rem; }
 .job-lines {
   list-style: none;
   margin: 0.5rem 0;

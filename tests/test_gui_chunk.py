@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
@@ -43,6 +44,16 @@ from kennis.gui.words import MARK_WITHHELD
 from kennis.retrieval import EVERY_SCOPE
 
 TOKEN = "a-test-token"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
+
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
 
@@ -697,8 +708,10 @@ def test_writing_a_note_clears_the_form(corpus: Path, client: TestClient):
     again."""
     admitted(client)
 
-    written = client.post(
-        "/remember", data={"text": "Something worth keeping.", "target": "notes"}
+    written = posted(
+        client,
+        "/remember",
+        data={"text": "Something worth keeping.", "target": "notes"},
     )
 
     assert written.status_code == 200
@@ -711,7 +724,7 @@ def test_writing_a_note_clears_the_form(corpus: Path, client: TestClient):
 def test_a_refused_write_keeps_the_text(corpus: Path, client: TestClient):
     admitted(client)
 
-    refused = client.post("/remember", data={"text": "   ", "target": "notes"})
+    refused = posted(client, "/remember", data={"text": "   ", "target": "notes"})
 
     assert refused.status_code == 200
     assert "hx-swap-oob" not in refused.text

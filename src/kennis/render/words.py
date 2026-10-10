@@ -372,6 +372,23 @@ def fetching_model(model: str) -> str:
     return f"the embedding model {model}"
 
 
+def running_for(seconds: float) -> str:
+    """How long a job has been running, for a clock that ticks once a second.
+
+    Whole seconds, because it changes every second and a tenth that
+    flickers is noise; hours and minutes past an hour, because by then the
+    seconds no longer matter to anyone watching.
+    """
+    whole = int(seconds)
+    if whole < 60:
+        return f"{whole}s"
+    minutes, remainder = divmod(whole, 60)
+    if minutes < 60:
+        return f"{minutes}m{remainder:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
 def progress_label(operation: str) -> str:
     """The name on a progress bar, for an engine operation verb.
 

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
@@ -31,6 +32,15 @@ from kennis.gui.theme import CSS_COLOURS, css_variables
 from kennis.render.theme import ANSI_COLOURS, ROLES
 
 TOKEN = "a-test-token"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
 
 
 @pytest.fixture
@@ -531,7 +541,7 @@ def test_a_note_written_from_the_page_reaches_the_corpus(
 ):
     admitted(client)
 
-    answer = client.post("/remember", data={"text": "Use NNLS for the solver."})
+    answer = posted(client, "/remember", data={"text": "Use NNLS for the solver."})
 
     assert answer.status_code == 200
     assert "Remembered" in answer.text
@@ -558,7 +568,7 @@ def test_the_write_is_committed(corpus: Path, client: TestClient):
     admitted(client)
     before = commits()
 
-    client.post("/remember", data={"text": "Phase-only first, then amplitude."})
+    posted(client, "/remember", data={"text": "Phase-only first, then amplitude."})
 
     assert commits() == before + 1
 
@@ -567,7 +577,7 @@ def test_writing_is_refused_without_the_token(corpus: Path, client: TestClient):
     """A write is exactly the request the guard exists for, and a POST
     route added after the middleware was written is what middleware
     exists to cover."""
-    answer = client.post("/remember", data={"text": "Should not be written."})
+    answer = posted(client, "/remember", data={"text": "Should not be written."})
 
     assert answer.status_code == 401
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
@@ -603,7 +613,7 @@ def test_writing_nothing_is_refused_by_the_page_not_by_the_engine(
     """
     admitted(client)
 
-    answer = client.post("/remember", data={"text": "   \n  "})
+    answer = posted(client, "/remember", data={"text": "   \n  "})
 
     assert "nothing to remember" in answer.text.lower()
     assert "role-warning" in answer.text
@@ -629,10 +639,10 @@ def test_saying_the_same_thing_twice_is_reported_as_already_known(
     corpus: Path, client: TestClient
 ):
     admitted(client)
-    client.post("/remember", data={"text": "Weighting is Briggs with robust zero."})
+    posted(client, "/remember", data={"text": "Weighting is Briggs with robust zero."})
 
-    again = client.post(
-        "/remember", data={"text": "Weighting is Briggs with robust zero."}
+    again = posted(
+        client, "/remember", data={"text": "Weighting is Briggs with robust zero."}
     )
 
     assert "already remembered" in again.text.lower()
@@ -650,7 +660,7 @@ def test_a_busy_corpus_is_a_state_to_retry_from(corpus: Path, client: TestClient
     admitted(client)
 
     with corpus_lock(corpus / "corpus"):
-        answer = client.post("/remember", data={"text": "Written while busy."})
+        answer = posted(client, "/remember", data={"text": "Written while busy."})
 
     assert answer.status_code == 200
     assert "busy" in answer.text.lower()
@@ -663,7 +673,8 @@ def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(
     reporting success is worse than not recording it."""
     admitted(client)
 
-    answer = client.post(
+    answer = posted(
+        client,
         "/remember",
         data={"text": "This project images in 2 GHz sub-bands.", "target": "context"},
     )
