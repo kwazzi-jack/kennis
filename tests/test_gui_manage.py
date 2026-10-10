@@ -13,6 +13,7 @@ this unit rather than at the start of the milestone.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -188,16 +189,29 @@ def test_a_refused_add_offers_a_repair_that_can_be_submitted(
 
 def test_the_offered_repair_actually_repairs(client: TestClient, tmp_path: Path):
     """Submitting the form the refusal produced must add the document.
-    A repair that does not repair is worse than no repair."""
+    A repair that does not repair is worse than no repair.
+
+    **The form's own route and fields, read from the page.** This test
+    used to post its own fields to `/add`, and passed for three units
+    while the form itself posted to `/manage/add`, which 11a removed
+    (11e)."""
     source = a_source(tmp_path, "paper.md")
     refused = posted(
         client, "/add", data={"identifiers": str(source), "collection": "literature"}
     )
-    finished(client, job_of(refused.text))
-
-    repaired = posted(
-        client, "/add", data={"identifiers": str(source), "collection": "notes"}
+    page = finished(client, job_of(refused.text))
+    form = re.search(
+        r'<form class="repair"[^>]*hx-post="([^"]+)"[^>]*>(.*?)</form>', page, re.S
     )
+    assert form, page
+    sent = dict(
+        re.findall(
+            r'<input type="hidden" name="([^"]+)" value="([^"]*)">', form.group(2)
+        )
+    )
+    assert sent["collection"] == "notes"
+
+    repaired = posted(client, form.group(1), data=sent)
     shown = finished(client, job_of(repaired.text))
 
     assert "Added 1 document" in shown
