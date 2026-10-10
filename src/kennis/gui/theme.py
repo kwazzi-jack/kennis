@@ -643,6 +643,91 @@ details[open] > summary.node > .icon:first-child { transform: rotate(90deg); }
 }
 .state-empty { background: none; }
 
+/* A document's state in the tree: a letter, quiet when there is none.
+   The colour is the role's, set by its class; this only sets the
+   letter's face and keeps it from being squeezed by a long title. */
+.doc-state {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+/* The filter is CSS, so it works with no script: checked, it hides
+   every row and group with nothing to report. */
+.attention-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.15rem 0.4rem 0.3rem;
+  font-size: 0.75rem;
+  color: var(--role-muted);
+}
+.branch:has(.attention-only:checked) .quiet { display: none; }
+
+/* Each row's menu sits at its right-hand end, beside the thing it acts
+   on rather than inside it. Shown on hover, on focus and while open, so
+   it is reachable from the keyboard and quiet otherwise. */
+.tree li.row, .tree li.group { position: relative; }
+.tree li.row > .node, .tree li.group > details > summary.node { padding-right: 1.7rem; }
+details.menu {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.15rem;
+}
+.menu-button {
+  display: flex;
+  align-items: center;
+  padding: 0.12rem;
+  border-radius: 4px;
+  color: var(--role-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.tree li:hover > details.menu > .menu-button,
+.menu-button:focus-visible,
+details.menu[open] > .menu-button { opacity: 1; }
+.menu-button:hover { background: var(--raised); }
+.menu-items {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: 0.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--ground);
+  box-shadow: 0 4px 14px var(--rule);
+}
+.menu-items form.index { margin: 0; }
+.menu-items .item {
+  display: block;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-items .item:hover, .menu-items .item:focus-visible { background: var(--raised); }
+.menu-items form.move {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.2rem 0.5rem 0.3rem;
+  border-block: 1px solid var(--rule);
+  margin: 0.2rem 0;
+}
+.menu-items form.move .item { padding-inline: 0; }
+.menu-items form.move input { font: inherit; font-size: 0.8rem; }
+
 .visually-hidden {
   position: absolute;
   width: 1px;

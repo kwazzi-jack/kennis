@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -41,6 +41,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context.bundle import find_bundle
@@ -70,6 +71,7 @@ from kennis.gui.adding import (
     add_kind,
     add_tabs,
     chooser_target,
+    filled,
     listing_of,
     shown_checks,
     shown_paper_preview,
@@ -94,6 +96,7 @@ from kennis.gui.pages import (
     shown_recents,
     shown_rows,
     shown_skips,
+    shown_tree,
 )
 from kennis.gui.pane import Pane, bundle_folders, pane_now
 from kennis.gui.stream import as_stream, sent_event
@@ -106,6 +109,7 @@ from kennis.operations import (
     add_in_groups,
     build_indexes,
     install_a_pack,
+    move_a_document,
     synchronise_bundle,
     synchronise_corpus,
 )
@@ -479,16 +483,40 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             )
         if collection not in COLLECTION_NAMES:
             return _refused(request, words.unknown_scope(collection, SCOPES))
-        groups, unreadable = shown_groups(existing_corpus().corpus_root, collection)
-        return _TEMPLATES.TemplateResponse(
-            request,
-            "tree.html",
-            {
-                "collection": collection,
-                "groups": groups,
-                "unreadable": words.unreadable_note(unreadable),
-            },
-        )
+        return _tree(request, collection)
+
+    @app.post("/move")
+    async def move_from_the_tree(request: Request) -> Response:
+        """Refile one document into the group typed in its menu.
+
+        htmx gets the collection's branch redrawn, so the reader sees the
+        document where it now is; a plain form returns to the collection's
+        page. A refusal - a group that leaves the collection, a docs page,
+        a busy corpus - is drawn at the head of the same branch.
+        """
+        form = await request.form()
+        collection = str(form.get("collection") or "")
+        if collection not in COLLECTION_NAMES:
+            return _refused_a_post(request, words.unknown_scope(collection, SCOPES))
+        handle = str(form.get("document") or "")
+        group = str(form.get("group") or "").strip()
+        context = existing_corpus()
+        held = Collection(root=context.corpus_root, name=collection)
+        try:
+            # A thread, because the move commits: git is a subprocess,
+            # and an `async` route waiting on one stalls every request.
+            await run_in_threadpool(
+                lambda: move_a_document(
+                    context, held, held.resolve(handle), group=group
+                )
+            )
+        except KennisError as error:
+            if _from_htmx(request):
+                return _tree(request, collection, problem=str(error))
+            return _refused_a_post(request, str(error), resolution=error.resolution)
+        if _from_htmx(request):
+            return _tree(request, collection)
+        return RedirectResponse(f"/collection/{collection}", status_code=303)
 
     @app.get("/remember")
     async def serve_remember_form(request: Request) -> HTMLResponse:
@@ -497,8 +525,17 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/add")
-    async def serve_add_form(request: Request, kind: str = "") -> HTMLResponse:
-        return _action(request, "/add", "forms/add.html", _add_context(kind))
+    async def serve_add_form(
+        request: Request,
+        kind: str = "",
+        collection: str = "",
+        group: str = "",
+        project: str = "",
+    ) -> HTMLResponse:
+        # The place is filled in when the dialog is opened from the tree's
+        # Add here; choosing the row was the reader choosing it (#431).
+        given = {"collection": collection, "group": group, "project": project}
+        return _action(request, "/add", "forms/add.html", _add_context(kind, given))
 
     @app.get("/add/block")
     async def serve_add_block(request: Request, index: int = 1) -> HTMLResponse:
@@ -1220,15 +1257,20 @@ def _lines(given: str) -> list[str]:
     return [line.strip() for line in given.splitlines() if line.strip()]
 
 
-def _add_context(asked: str) -> dict[str, object]:
-    """One tab of the Add dialog."""
+def _add_context(
+    asked: str, given: Mapping[str, str] | None = None
+) -> dict[str, object]:
+    """One tab of the Add dialog, with any place it was opened on filled in."""
     kind = add_kind(asked)
     return {
         "kind": kind,
         "tabs": add_tabs(kind),
         "preamble": words.ADD_PREAMBLES[kind],
-        "fields": add_fields(
-            kind, default_group=existing_corpus().settings.corpus.default_group
+        "fields": filled(
+            add_fields(
+                kind, default_group=existing_corpus().settings.corpus.default_group
+            ),
+            given or {},
         ),
         "fixed_collection": FIXED_COLLECTIONS.get(kind),
         "collections": COLLECTION_NAMES,
@@ -1335,6 +1377,28 @@ def _shown_result(job: Job) -> ShownJob:
             return shown_install(job.result)
         case _:
             return ShownJob(headline=words.NOTHING_TO_SHOW, role="role-muted")
+
+
+def _tree(
+    request: Request, collection: str, *, problem: str | None = None
+) -> HTMLResponse:
+    """One collection's branch of the pane, with a refusal at its head."""
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "tree.html",
+        {
+            "tree": shown_tree(existing_corpus(), collection),
+            "problem": problem,
+            "attention_only": words.ATTENTION_ONLY,
+            "menu_open": words.MENU_OPEN,
+            "menu_move": words.MENU_MOVE,
+            "menu_add_here": words.MENU_ADD_HERE,
+            "menu_index": words.MENU_INDEX,
+            "move_group_label": words.MOVE_GROUP_LABEL,
+            "move_group_empty": words.MOVE_GROUP_EMPTY,
+            "menu_for": words.menu_for,
+        },
+    )
 
 
 def _from_htmx(request: Request) -> bool:

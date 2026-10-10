@@ -1,23 +1,56 @@
-{# One collection's groups and documents, fetched when it is opened.
-   The ungrouped come first under no heading. #}
+{# One collection's branch of the pane, fetched when it is opened (11f).
+
+   Each document says where the index stands for it: nothing when it is
+   in step, a letter when not, and the sentence as its tooltip. A group
+   shows the worst beneath it. The filter is a checkbox and a `:has()`
+   rule, so it works without a script.
+
+   The menu follows the thing it acts on, as a sibling: a `<details>`
+   inside a `<summary>` is content a summary may not hold, and a menu
+   inside a closed folder's `<details>` would be hidden with its
+   contents. Every entry is a link or a form, so each works without a
+   script; `menu.js` adds right-click and Escape. #}
+{% macro mark(shown) %}{% if shown %}<span class="doc-state role-{{ shown.role }}" title="{{ shown.sentence }}">{{ shown.letter }}</span>{% endif %}{% endmacro %}
+{% macro menu(name, document_id, add_here) %}
+<details class="menu">
+<summary class="menu-button" aria-label="{{ menu_for(name) }}">{{ icon("ellipsis") }}</summary>
+<div class="menu-items">
+{% if document_id %}<a class="item" href="/document/{{ tree.collection }}/{{ document_id }}">{{ menu_open }}</a>{% endif %}
+{% if document_id and tree.movable %}<form class="move" action="/move" method="post" hx-post="/move" hx-target="closest .branch" hx-swap="innerHTML">
+<input type="hidden" name="collection" value="{{ tree.collection }}">
+<input type="hidden" name="document" value="{{ document_id }}">
+<input type="text" name="group" list="groups-{{ tree.collection }}" aria-label="{{ move_group_label }}" placeholder="{{ move_group_empty }}">
+<button type="submit" class="item">{{ menu_move }}</button>
+</form>{% endif %}
+<a class="item" href="{{ add_here }}" hx-get="{{ add_here }}" hx-target="#dialog" hx-swap="innerHTML">{{ menu_add_here }}</a>
+<form class="index" action="/index" method="post" hx-post="/index" hx-target="#job" hx-swap="innerHTML">
+<input type="hidden" name="collection" value="{{ tree.collection }}">
+<button type="submit" class="item">{{ menu_index }}</button>
+</form>
+</div>
+</details>
+{% endmacro %}
+{% macro entry(shown, add_here) %}
+<li class="row{% if not shown.mark %} quiet{% endif %}"{% if shown.document_id %} data-document="{{ shown.document_id }}"{% endif %} data-state="{{ shown.state }}">
+{% if shown.document_id %}<a class="node leaf" href="/document/{{ tree.collection }}/{{ shown.document_id }}" title="{{ shown.title }}">{{ icon("file-text") }}<span class="name">{{ shown.title }}</span>{{ mark(shown.mark) }}</a>
+{{ menu(shown.title, shown.document_id, add_here) }}
+{% else %}<span class="node leaf" title="{{ shown.title }}">{{ icon("file-text") }}<span class="name">{{ shown.title }}</span>{{ mark(shown.mark) }}</span>{% endif %}
+</li>
+{% endmacro %}
+{% if problem %}<p class="pane-note role-error">{{ problem }}</p>{% endif %}
+{% if tree.attention %}<label class="attention-filter"><input type="checkbox" class="attention-only"> {{ attention_only }}</label>{% endif %}
+{% if tree.movable %}<datalist id="groups-{{ tree.collection }}">{% for name in tree.groups %}<option value="{{ name }}">{% endfor %}</datalist>{% endif %}
 <ul class="tree">
-{% for group, documents in groups %}
-  {% if group %}
-  <li>
-    <details open>
-      <summary class="node">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ group }}</span><span class="count">{{ documents | length }}</span></summary>
-      <ul class="tree">
-        {% for document in documents %}
-        <li><a class="node leaf" href="/document/{{ collection }}/{{ document.document_id }}" title="{{ document.title }}">{{ icon("file-text") }}<span class="name">{{ document.title }}</span></a></li>
-        {% endfor %}
-      </ul>
-    </details>
-  </li>
-  {% else %}
-  {% for document in documents %}
-  <li><a class="node leaf" href="/document/{{ collection }}/{{ document.document_id }}" title="{{ document.title }}">{{ icon("file-text") }}<span class="name">{{ document.title }}</span></a></li>
-  {% endfor %}
-  {% endif %}
+{% for shown in tree.top.entries %}{{ entry(shown, tree.top.add_here) }}{% endfor %}
+{% for branch in tree.branches %}
+<li class="group{% if not branch.mark %} quiet{% endif %}" data-group="{{ branch.group }}" data-state="{{ branch.state }}">
+<details open>
+<summary class="node">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ branch.group }}</span><span class="count">{{ branch.entries | length }}</span>{{ mark(branch.mark) }}</summary>
+<ul class="tree">
+{% for shown in branch.entries %}{{ entry(shown, branch.add_here) }}{% endfor %}
+</ul>
+</details>
+{{ menu(branch.group, "", branch.add_here) }}
+</li>
 {% endfor %}
 </ul>
-{% if unreadable %}<p class="pane-note role-error">{{ unreadable }}</p>{% endif %}

@@ -16,6 +16,7 @@
 <script defer src="/static/hint.js"></script>
 <script defer src="/static/passage.js"></script>
 <script defer src="/static/chooser.js"></script>
+<script defer src="/static/menu.js"></script>
 </head>
 {# **No client-side history snapshot.** htmx's snapshot does not carry
    the search form, so Back-then-Forward left a control disagreeing
@@ -95,7 +96,9 @@
            opened. `toggle` does not bubble, so the trigger sits on
            the `<details>` itself. The name is also a link: the way
            in for a reader without a script. #}
-        <details hx-get="/tree/{{ row.collection }}" hx-trigger="toggle once" hx-target="find .branch">
+        {# `hx-disinherit`: the branch holds forms of its own, and each
+           would otherwise inherit this target and swap into itself (#430). #}
+        <details hx-get="/tree/{{ row.collection }}" hx-trigger="toggle once" hx-target="find .branch" hx-disinherit="*">
           <summary class="node top">
             {{ icon("chevron-right") }}{{ icon(collection_icons[row.collection]) }}
             <a class="name" href="/collection/{{ row.collection }}">{{ row.collection }}</a>

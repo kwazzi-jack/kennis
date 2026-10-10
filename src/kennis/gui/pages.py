@@ -15,16 +15,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from urllib.parse import quote
+from typing import Final
+from urllib.parse import quote, urlencode
 
 import yaml
 
+from kennis.context import Context
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document
+from kennis.engine.corpus.document import Document, DocumentFacts
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import DocumentNotFound
@@ -37,7 +39,7 @@ from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
 from kennis.gui.snippet import Passage, passage_of, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
-from kennis.holdings import Holding
+from kennis.holdings import Holding, document_marks
 from kennis.operations import IndexBuild
 from kennis.render.hits import (
     LEG_LABELS,
@@ -536,18 +538,25 @@ def _refers_remotely(markdown: str) -> bool:
 
 
 __all__ = [
+    "STATE_ORDER",
+    "STATE_ROLES",
+    "ShownBranch",
     "ShownDocument",
     "ShownEntry",
     "ShownGroup",
     "ShownHit",
     "ShownKey",
     "ShownKeyLine",
+    "ShownMark",
     "ShownMeasure",
     "ShownOrder",
     "ShownOutcome",
     "ShownRecent",
     "ShownRow",
     "ShownSkip",
+    "ShownTree",
+    "ShownTreeEntry",
+    "add_here_address",
     "ordered_by",
     "shown_bundle_document",
     "shown_document",
@@ -559,6 +568,7 @@ __all__ = [
     "shown_orders",
     "shown_rows",
     "shown_skips",
+    "shown_tree",
 ]
 
 
@@ -606,9 +616,9 @@ def shown_groups(
     contents = Collection(root=corpus_root, name=collection).contents()
     grouped: dict[str, list[ShownEntry]] = {}
     for document in sorted(contents.documents, key=_sort_key):
-        grouped.setdefault(_group_of(corpus_root, collection, document), []).append(
-            ShownEntry(title=document.frontmatter.title, document_id=document.id)
-        )
+        grouped.setdefault(
+            _group_of(corpus_root, collection, _anchor(document)), []
+        ).append(ShownEntry(title=document.frontmatter.title, document_id=document.id))
     ordered = sorted(grouped.items(), key=lambda pair: (pair[0] != "", pair[0]))
     return ordered, len(contents.unreadable)
 
@@ -617,16 +627,189 @@ def _sort_key(document: Document) -> str:
     return document.frontmatter.title.casefold()
 
 
-def _group_of(corpus_root: Path, collection: str, document: Document) -> str:
-    """The directory below the collection that this document sits in.
+def _anchor(document: Document | DocumentFacts) -> Path:
+    """What names a document on disk: its wrapper, or its file.
 
-    The wrapper is the anchor for a wrapped document, because its own
-    directory *is* the document rather than a group - the same rule
-    the index loader follows.
+    The wrapper for a wrapped document, because its own directory *is*
+    the document rather than a group - the same rule the index loader
+    follows, and the spelling `document_of` gives a flagged path.
     """
-    anchor = document.wrapper_dir or document.md_path
+    return document.wrapper_dir or document.md_path
+
+
+def _group_of(corpus_root: Path, collection: str, anchor: Path) -> str:
+    """The directory below the collection that this document sits in."""
     relative = anchor.relative_to(corpus_root / collection)
     return relative.parent.as_posix() if relative.parent.name else ""
+
+
+# Which tab adds to a place in each collection, and the field that names
+# the place there: a docs page's directory is its project (#101).
+_ADD_HERE: Final[dict[str, tuple[str, str]]] = {
+    "literature": ("paper", "group"),
+    "docs": ("site", "project"),
+    "notes": ("file", "group"),
+}
+
+
+def add_here_address(collection: str, group: str) -> str:
+    """The Add dialog opened on the tab that adds to `group` in `collection`.
+
+    The File tab offers three collections, so it is told which one; the
+    other two tabs each fix theirs.
+    """
+    kind, field = _ADD_HERE[collection]
+    asked = {"kind": kind}
+    if kind == "file":
+        asked["collection"] = collection
+    if group:
+        asked[field] = group
+    return "/add?" + urlencode(asked)
+
+
+# A mark wears an existing role, never a new colour. Not yet indexed is
+# `added` because that is what it is to the index; unreadable is an error.
+STATE_ROLES: Final[dict[str, str]] = {
+    "unindexed": "added",
+    "changed": "changed",
+    "unreadable": "error",
+}
+
+# Worst first. Search cannot see an unreadable document at all; it finds
+# a changed one by text the document no longer has, which is a false
+# answer; a new one it merely does not find yet, which is an incomplete
+# one - the distinction `Freshness` draws between stale and behind.
+STATE_ORDER: Final[tuple[str, ...]] = ("unreadable", "changed", "unindexed")
+
+
+@dataclass(frozen=True, slots=True)
+class ShownMark:
+    """A state as the tree draws it: a letter, its role, its sentence."""
+
+    state: str
+    letter: str
+    role: str
+    sentence: str
+
+
+def _mark(state: str, sentence: str | None = None) -> ShownMark | None:
+    if not state:
+        return None
+    return ShownMark(
+        state=state,
+        letter=words.STATE_LETTERS[state],
+        role=STATE_ROLES[state],
+        sentence=sentence or words.STATE_WORDS[state],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ShownTreeEntry:
+    """One document in the pane's tree.
+
+    `document_id` is empty for an unreadable document: there is no
+    identifier kennis can vouch for, so nothing to open or move, but it
+    is listed so it can be found - a count beneath the tree could not be.
+    """
+
+    title: str
+    document_id: str
+    mark: ShownMark | None
+
+    @property
+    def state(self) -> str:
+        return self.mark.state if self.mark else ""
+
+
+@dataclass(frozen=True, slots=True)
+class ShownBranch:
+    """One group's entries, and the worst state beneath it.
+
+    `group` is empty for the collection's own top level, which is drawn
+    without a heading.
+    """
+
+    group: str
+    entries: list[ShownTreeEntry]
+    mark: ShownMark | None
+    add_here: str
+
+    @property
+    def state(self) -> str:
+        return self.mark.state if self.mark else ""
+
+
+@dataclass(frozen=True, slots=True)
+class ShownTree:
+    """A collection's branch of the pane: its groups, and what may be done.
+
+    `movable` is False for docs, whose directory is its project (#101).
+    `groups` is what the Move field offers, named as they are held.
+    """
+
+    collection: str
+    top: ShownBranch
+    branches: list[ShownBranch]
+    groups: list[str]
+    attention: int
+    movable: bool
+
+
+def shown_tree(context: Context, collection: str) -> ShownTree:
+    """One collection as the pane draws it, each document with its state."""
+    root = context.corpus_root
+    contents = Collection(root=root, name=collection).contents()
+    marks = document_marks(context, collection)
+    grouped: dict[str, list[ShownTreeEntry]] = {}
+    for document in sorted(contents.documents, key=_sort_key):
+        anchor = _anchor(document)
+        grouped.setdefault(_group_of(root, collection, anchor), []).append(
+            ShownTreeEntry(
+                title=document.frontmatter.title,
+                document_id=document.id,
+                mark=_mark(marks.state_of(root, anchor)),
+            )
+        )
+    for facts in contents.unreadable:
+        anchor = _anchor(facts)
+        grouped.setdefault(_group_of(root, collection, anchor), []).append(
+            ShownTreeEntry(
+                title=facts.title or facts.md_path.name,
+                document_id="",
+                mark=_mark("unreadable"),
+            )
+        )
+    branches = [
+        _branch(collection, group, entries)
+        for group, entries in sorted(
+            grouped.items(), key=lambda pair: (pair[0] != "", pair[0])
+        )
+    ]
+    top = (
+        branches.pop(0)
+        if branches and branches[0].group == ""
+        else _branch(collection, "", [])
+    )
+    every = [entry for branch in (top, *branches) for entry in branch.entries]
+    return ShownTree(
+        collection=collection,
+        top=top,
+        branches=branches,
+        groups=[branch.group for branch in branches],
+        attention=sum(1 for entry in every if entry.mark),
+        movable=collection != "docs",
+    )
+
+
+def _branch(collection: str, group: str, entries: list[ShownTreeEntry]) -> ShownBranch:
+    attention = [entry.state for entry in entries if entry.mark]
+    worst = next((state for state in STATE_ORDER if state in attention), "")
+    return ShownBranch(
+        group=group,
+        entries=entries,
+        mark=_mark(worst, words.attention_count(len(attention))) if worst else None,
+        add_here=add_here_address(collection, group),
+    )
 
 
 @dataclass(frozen=True, slots=True)
