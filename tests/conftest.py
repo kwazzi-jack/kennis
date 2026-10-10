@@ -162,7 +162,7 @@ def no_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An environment with no `mineru` anywhere kennis looks.
 
     Both places, not just PATH. kennis falls back to the directory of the
-    interpreter it is running on, because `uv tool install "kennis[mineru]"`
+    interpreter it is running on, because `uv tool install kennis`
     puts mineru there and never on PATH - and this checkout's own `.venv/bin`
     holds a real mineru, so emptying PATH alone left four tests asserting
     absence while the real converter ran.

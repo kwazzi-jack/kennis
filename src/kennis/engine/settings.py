@@ -191,8 +191,8 @@ class ConversionSettings(BaseModel):
             # that, and is `MineruConverter.install_hint()`. Concerns #185,
             # #195.
             "Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and "
-            "is installed with the mineru extra; datalab is hosted, needs an "
-            "API key, and sends the document to a third party."
+            "is installed with kennis; datalab is hosted, needs an API key, "
+            "and sends the document to a third party."
         ),
     )
     mode: Literal["fast", "balanced", "accurate"] = Field(

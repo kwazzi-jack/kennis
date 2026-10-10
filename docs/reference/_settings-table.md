@@ -51,7 +51,7 @@ How binary documents become markdown.
 
 | key | type | default | what it does |
 |---|---|---|---|
-| `backend` | `mineru` / `datalab` | `mineru` | Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and is installed with the mineru extra; datalab is hosted, needs an API key, and sends the document to a third party. |
+| `backend` | `mineru` / `datalab` | `mineru` | Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and is installed with kennis; datalab is hosted, needs an API key, and sends the document to a third party. |
 | `mode` | `fast` / `balanced` / `accurate` | `balanced` | How hard the datalab backend works, and what it charges. Measured per page: fast 0.4c, balanced 0.4c, accurate 1.0c. The server only reuses a conversion when the mode matches, so changing this and re-adding a document pays for it again. mineru ignores this - it runs locally and costs nothing. |
 | `repair_ligatures` | `bool` | `True` | Repair ligature damage against the PDF's own text layer, read with pypdfium2. mineru drops a letter from ff, fi and fl on some documents, which no reindex can undo. Costs 0.7ms a page and applies to mineru only - datalab showed no such damage. |
 | `batch_size` | `int` | `8` | Documents per converter run. 0 is one run. |
