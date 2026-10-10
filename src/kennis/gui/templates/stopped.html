@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme_choice(request) }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kennis</title>
+{# Inline, because the server is gone by the time a browser would ask
+   for `/static/kennis.css`. #}
+<style>{{ stylesheet }}</style>
+</head>
+<body class="stopped">
+<main><div class="column"><p>{{ stopped }}</p></div></main>
+</body>
+</html>

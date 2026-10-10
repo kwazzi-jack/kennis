@@ -64,7 +64,7 @@ FORBIDDEN_BY_THE_SERVER = (
 )
 
 # The graphical front end is the third peer. It may import its own
-# interface libraries - fastapi, uvicorn, jinja2, pywebview - and it
+# interface libraries - fastapi, uvicorn, jinja2 - and it
 # renders through `render/`. What it may not import is either of the
 # other two, for the same reason neither of them may import it.
 FORBIDDEN_BY_THE_INTERFACE = (
@@ -290,7 +290,7 @@ def test_the_command_line_builds_without_the_gui_extra():
     program = """
 import sys
 
-BLOCKED = {"fastapi", "uvicorn", "webview", "starlette"}
+BLOCKED = {"fastapi", "uvicorn", "starlette"}
 
 
 class Refuse:

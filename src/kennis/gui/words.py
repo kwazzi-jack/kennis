@@ -138,6 +138,19 @@ ACTION_TITLES: Final[dict[str, str]] = {
 
 CLOSE = "Close"
 
+# Quit is in the bar because closing a browser tab does not end the
+# process serving it (#420).
+QUIT = "Quit"
+
+QUIT_TITLE = "Stop kennis"
+
+STOPPED = "kennis has stopped. You can close this tab."
+
+QUIT_WHILE_RUNNING = (
+    "An operation is still running, and stopping now would cut it off "
+    "part of the way through. Quit once the strip says it has finished."
+)
+
 CORPUS_HEADING = "Corpus"
 
 CONTEXT_HEADING = "Context"
@@ -479,6 +492,9 @@ __all__ = [
     "PANE_HIDE",
     "PANE_SHOW",
     "PANE_STATES",
+    "QUIT",
+    "QUIT_TITLE",
+    "QUIT_WHILE_RUNNING",
     "RECENTS_CLEAR",
     "RECENTS_HEADING",
     "REMEMBER_ACTION",
@@ -488,6 +504,7 @@ __all__ = [
     "SEARCHING",
     "SEARCH_ACTION",
     "STILL_RUNNING",
+    "STOPPED",
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",

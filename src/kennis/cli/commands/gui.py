@@ -17,13 +17,13 @@ from kennis.cli.group import KennisCommand
 
 @click.command(cls=KennisCommand, name="gui")
 @click.option(
-    "--browser",
-    "browser_only",
+    "--no-browser",
+    "no_browser",
     is_flag=True,
-    help="Open in a browser rather than a window. Works over `ssh -L`.",
+    help="Print the address and open nothing. For use over `ssh -L`.",
 )
-def gui_command(browser_only: bool) -> None:
-    """Open kennis in a window, or in a browser if there is no window.
+def gui_command(no_browser: bool) -> None:
+    """Open kennis in a browser tab.
 
     The interface serves on the loopback interface only, on a port the
     operating system chooses, and needs a token that is minted for this
@@ -33,24 +33,15 @@ def gui_command(browser_only: bool) -> None:
     from kennis.gui.serve import run
 
     def announce(url: str) -> None:
-        # Said once the port is known and before the call blocks. In
-        # browser mode `webbrowser.open` can fail silently - no browser,
-        # no display, a headless session - and then this line is the
-        # only way in.
+        # Said once the port is known and before the call blocks.
+        # `webbrowser.open` can fail silently - no browser, no display,
+        # a headless session - and then this line is the only way in.
         display.operation("Serving", "the kennis interface")
         display.detail("+", url)
         display.guidance("The token is in the address and lasts for this run only.")
+        display.guidance("Stop it with Quit in the page, or Ctrl-C here.")
 
-    def no_window() -> None:
-        # Not a warning: nothing is wrong and nothing failed. The
-        # interface is open, in the place the platform allowed.
-        display.guidance(
-            "No window backend is available here, so this opened in a "
-            "browser instead. A native window on Linux needs GTK or Qt "
-            "bindings for Python."
-        )
-
-    run(announce, browser_only=browser_only, on_no_window=no_window)
+    run(announce, open_browser=not no_browser)
 
 
 __all__ = ["gui_command"]

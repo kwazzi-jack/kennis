@@ -139,6 +139,15 @@ class Jobs:
         threading.Thread(target=run, daemon=True, name=f"kennis-{kind}").start()
         return job
 
+    def running(self) -> Job | None:
+        """The job still running, if any.
+
+        Asked by Quit, which must not end the process under a job: the
+        worker is a daemon thread and dies wherever it is.
+        """
+        with self._guard:
+            return self._running()
+
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
