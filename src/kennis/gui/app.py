@@ -82,6 +82,7 @@ from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
     ShownJob,
     ShownOutcome,
+    palette_entries,
     shown_add,
     shown_bundle_document,
     shown_bundle_sync,
@@ -176,6 +177,8 @@ _TEMPLATES.env.globals.update(
         "pane_states": words.PANE_STATES,
         "icon": icon,
         "actions": words.ACTIONS,
+        "palette_title": words.PALETTE_TITLE,
+        "palette_shortcut": words.PALETTE_SHORTCUT,
         "close_label": words.CLOSE,
         "collection_icons": words.COLLECTION_ICONS,
         "corpus_heading": words.CORPUS_HEADING,
@@ -631,15 +634,33 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/index")
-    async def serve_index_form(request: Request) -> HTMLResponse:
+    async def serve_index_form(request: Request, collection: str = "") -> HTMLResponse:
+        # A collection in the address is checked, as the palette's
+        # "Index notes" asks; anything else leaves every collection.
         return _action(
             request,
             "/index",
             "forms/index.html",
             {
                 "collections": COLLECTION_NAMES,
+                "chosen": collection if collection in COLLECTION_NAMES else "",
                 "index_preamble": words.INDEX_PREAMBLE,
                 "index_action": words.INDEX_ACTION,
+            },
+        )
+
+    @app.get("/palette")
+    async def serve_palette(request: Request) -> HTMLResponse:
+        """Every action and place, as one list to type into (11g)."""
+        return _action(
+            request,
+            "/palette",
+            "forms/palette.html",
+            {
+                "entries": palette_entries(),
+                "palette_prompt": words.PALETTE_PROMPT,
+                "palette_empty": words.PALETTE_EMPTY,
+                "palette_keys": words.PALETTE_KEYS,
             },
         )
 

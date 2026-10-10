@@ -17,6 +17,7 @@
 <script defer src="/static/passage.js"></script>
 <script defer src="/static/chooser.js"></script>
 <script defer src="/static/menu.js"></script>
+<script defer src="/static/palette.js"></script>
 </head>
 {# **No client-side history snapshot.** htmx's snapshot does not carry
    the search form, so Back-then-Forward left a control disagreeing
@@ -69,6 +70,9 @@
     {% for href, label, icon_name in actions %}
     <a class="action" href="{{ href }}" hx-get="{{ href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon(icon_name) }}<span class="label">{{ label }}</span></a>
     {% endfor %}
+    {# The palette is reached from the bar but is not one of its actions:
+       it is every action and place again, under one key. #}
+    <a class="ghost palette-open" href="/palette" hx-get="/palette" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ palette_title }}" title="{{ palette_title }}">{{ icon("command") }}<span class="kbd">{{ palette_shortcut }}</span></a>
     <select class="theme" id="theme" aria-label="{{ theme_label }}">
       {% for value, label in theme_choices %}
       <option value="{{ value }}"{% if value == theme %} selected{% endif %}>{{ label }}</option>
