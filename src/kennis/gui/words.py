@@ -369,6 +369,19 @@ def group_empty_means(default_group: str | None) -> str:
 
 
 GROUP_NEEDS_A_NAME = "Each block with lines in it needs a group name."
+
+# Beside a refusal's repairs. Skipping changes nothing: the item was
+# already refused and the rest of the add went on, which is what the
+# sentence says so that Skip is not read as undoing anything.
+SKIP = "Skip"
+SKIPPED = "Skipped. Nothing was added for this one; the rest of the add went on."
+
+
+def open_candidate(value: str) -> str:
+    """The accessible name of a candidate's link to its registry."""
+    return f"Look up {value} in a new tab"
+
+
 # No collection is chosen for the reader, as `corpus add` chooses none:
 # a Markdown note sent to literature by a default is refused there for
 # having no paper identifier, which reads as kennis failing.
@@ -788,6 +801,8 @@ __all__ = [
     "SEARCH_ACTION",
     "SHOW_PASSAGE",
     "SITE_UNREACHABLE",
+    "SKIP",
+    "SKIPPED",
     "STILL_RUNNING",
     "STOPPED",
     "SYNC_CONTEXT_ACTION",
@@ -807,6 +822,7 @@ __all__ = [
     "last_job",
     "not_a_count",
     "not_a_folder",
+    "open_candidate",
     "previewed_arxiv",
     "previewed_citekey",
     "previewed_project",

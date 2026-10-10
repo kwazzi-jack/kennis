@@ -1240,6 +1240,19 @@ section { margin: 0 0 3rem; }
 section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 
 .repair { margin: 0.5rem 0 0; }
+/* A refusal's repairs and Skip, together, so Skip replaces them all. */
+.repairs { margin: 0.25rem 0 0.5rem; }
+.repairs .skip { margin: 0.4rem 0 0; }
+/* One candidate identifier and the link to its registry's page. */
+.candidate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 1rem 0 0;
+}
+.candidate a { color: var(--role-muted); }
+.candidate a:hover, .candidate a:focus-visible { color: var(--brand); }
+.skip-note { margin: 0.25rem 0; }
 
 /* ---------------------------------------------------------------- */
 /* A running operation                                              */

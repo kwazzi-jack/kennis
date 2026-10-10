@@ -225,8 +225,15 @@ _TEMPLATES.env.globals.update(
         "chooser_up": words.CHOOSER_UP,
         "chooser_cancel": words.CHOOSER_CANCEL,
         "choose_folder": words.CHOOSE_FOLDER,
+        "skip_label": words.SKIP,
+        "skipped": words.SKIPPED,
+        "open_candidate": words.open_candidate,
     }
 )
+
+# Sent with every answer: no page kennis serves tells another site where
+# its reader came from (11e).
+_REFERRER_POLICY: Final = "no-referrer"
 
 # The name the cookie is held under. Prefixed because it is kennis's
 # and a browser may be holding cookies for other things served from
@@ -277,8 +284,16 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             # refusal a client follows, and then the test that proves
             # the guard works reports 200 for a request that was
             # turned away.
-            return JSONResponse({"detail": _UNAUTHORISED}, status_code=401)
+            refusal = JSONResponse({"detail": _UNAUTHORISED}, status_code=401)
+            refusal.headers["Referrer-Policy"] = _REFERRER_POLICY
+            return refusal
         answer = await call_next(request)
+        # On every answer, so a link followed out of kennis - a candidate's
+        # registry page, a citation in a converted paper - does not tell
+        # the remote site where the reader was. The browser's default
+        # already withholds the path across sites; this states the rule
+        # rather than relying on the default (11e).
+        answer.headers["Referrer-Policy"] = _REFERRER_POLICY
         if request.query_params.get("token"):
             answer.set_cookie(
                 COOKIE_NAME,
@@ -534,6 +549,21 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         checks = check_lines(target, _lines(asked.get(f"lines-{index}", "")))
         return _TEMPLATES.TemplateResponse(
             request, "forms/add-check.html", {"checks": shown_checks(checks)}
+        )
+
+    @app.get("/skip")
+    async def serve_skip(request: Request) -> HTMLResponse:
+        """What Skip beside a refusal's repairs amounts to: nothing.
+
+        No engine change and nothing written - the item was already
+        refused and the rest of the add went on. A GET, because it
+        changes nothing, and a page without a script so the button is
+        never dead.
+        """
+        if _from_htmx(request):
+            return _TEMPLATES.TemplateResponse(request, "skipped.html", {})
+        return _TEMPLATES.TemplateResponse(
+            request, "skipped-page.html", _frame(existing_corpus())
         )
 
     @app.get("/browse")

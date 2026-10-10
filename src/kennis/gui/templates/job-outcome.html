@@ -8,17 +8,29 @@
     {% for remedy in item.remedies %}
     <p class="role-command">{{ remedy }}</p>
     {% endfor %}
+    {% if item.repairs %}
+    {# The repairs, and Skip beside them. A repair posts to the route
+       every Add tab posts to, with and without a script. No candidate
+       is checked: choosing would be kennis deciding which paper this
+       is, so the browser asks instead. Each candidate links to its
+       registry's page, in a tab that cannot reach back into kennis and
+       is not told where the reader came from (11e). #}
+    <div class="repairs">
     {% for repair in item.repairs %}
-    <form class="repair" hx-post="/manage/add" hx-target="#job" hx-swap="innerHTML">
+    <form class="repair" action="/add" method="post" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
       <input type="hidden" name="identifiers" value="{{ repair.identifiers }}">
       <input type="hidden" name="collection" value="{{ repair.collection }}">
-      {% for choice in repair.choices %}
-      <label><input type="radio" name="identifier" value="{{ choice }}"
-        {% if loop.first %}checked{% endif %}> {{ choice }}</label>
+      {% for choice, address in repair.candidates %}
+      <span class="candidate"><label><input type="radio" name="identifier" value="{{ choice }}" required> {{ choice }}</label>{% if address %} <a href="{{ address }}" target="_blank" rel="noopener noreferrer" title="{{ open_candidate(choice) }}" aria-label="{{ open_candidate(choice) }}">{{ icon("arrow-up-right") }}</a>{% endif %}</span>
       {% endfor %}
       <button type="submit">{{ repair.label }}</button>
     </form>
     {% endfor %}
+    <form class="skip" action="/skip" hx-get="/skip" hx-target="closest .repairs" hx-swap="outerHTML">
+      <button type="submit" class="ghost">{{ skip_label }}</button>
+    </form>
+    </div>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>
