@@ -32,6 +32,7 @@ from kennis.engine.corpus.intake import Converted, sha256_of, title_from_markdow
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import IndexBusy, InputError
 from kennis.engine.events import EventSink, Outcome
+from kennis.engine.groups import checked_group
 from kennis.engine.history.repository import Repository
 from kennis.engine.rag.binding import Binding
 from kennis.engine.rag.index import build_index, index_id_for, read_manifest
@@ -70,6 +71,11 @@ class RememberOptions:
 
     title: str | None = None
     group: str | None = None
+
+    def __post_init__(self) -> None:
+        # Here rather than at the join alone, so the MCP tool's refusal
+        # comes before the lock is taken.
+        checked_group(self.group)
 
 
 @dataclass(frozen=True, slots=True)

@@ -44,6 +44,7 @@ from pydantic import (
 )
 
 from kennis.engine.errors import PackInvalid
+from kennis.engine.groups import group_problem
 
 type JsonSchema = dict[str, Any]
 
@@ -135,6 +136,16 @@ class DocsEntry(BaseModel):
     base_url: str
     exclude: list[str] = Field(default_factory=list)
 
+    @field_validator("project")
+    @classmethod
+    def _names_a_folder_inside_docs(cls, value: str) -> str:
+        # A project is the directory its pages are written to, so it is a
+        # group by another name and the same rule applies.
+        problem = group_problem(value)
+        if problem is not None:
+            raise ValueError(f"the project '{value}' {problem}")
+        return value
+
 
 class ContentSource(BaseModel):
     """A directory of markdown the pack ships, copied verbatim.
@@ -167,6 +178,16 @@ class ContentSource(BaseModel):
             raise ValueError(f"'{value}' names a home directory, not the pack")
         if any(".." in path.parts for path in flavours):
             raise ValueError(f"'{value}' leaves the pack root")
+        return value
+
+    @field_validator("group")
+    @classmethod
+    def _stays_inside_its_collection(cls, value: str | None) -> str | None:
+        # The same rule every writer applies, so a pack is refused when it
+        # is read rather than part way through a sync.
+        problem = None if value is None else group_problem(value)
+        if problem is not None:
+            raise ValueError(f"the group '{value}' {problem}")
         return value
 
 
