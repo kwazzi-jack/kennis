@@ -34,6 +34,7 @@ from kennis.engine.corpus.layout import title_filename, unique_filename
 from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.groups import group_directory
 from kennis.engine.remember import title_for, titled_body
 
 
@@ -85,7 +86,7 @@ def remember_in_bundle(
         )
 
     chosen = title or title_for(body)
-    directory = bundle / group if group else bundle
+    directory = group_directory(bundle, group)
     directory.mkdir(parents=True, exist_ok=True)
     taken = {path.name for path in directory.iterdir() if path.is_file()}
     path = directory / unique_filename(title_filename(chosen), taken)

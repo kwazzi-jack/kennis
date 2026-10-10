@@ -98,6 +98,7 @@ from kennis.engine.events import (
     Severity,
     TitleDotStripped,
 )
+from kennis.engine.groups import checked_group, group_directory
 from kennis.engine.literature.citekeys import (
     derive_citekey,
     literature_stem,
@@ -182,6 +183,12 @@ class AddOptions:
     # recorded so the next sync can tell a changed declaration from an
     # unchanged one without refetching. Set only by `corpus sync`.
     pack_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        # Both name a directory beneath the collection. Here as well as at
+        # the join, so a refusal comes before a download or a conversion.
+        checked_group(self.group)
+        checked_group(self.project)
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,7 +509,7 @@ def write_note(
     if converted.original_bytes is not None and converted.original_name is not None:
         assets = {converted.original_name: converted.original_bytes}
 
-    target_dir = collection.path / group if group else collection.path
+    target_dir = group_directory(collection.path, group)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
@@ -1369,7 +1376,7 @@ def _write_paper(
     if converted.original_bytes is not None and converted.original_name is not None:
         assets = {converted.original_name: converted.original_bytes}
 
-    target_dir = collection.path / group if group else collection.path
+    target_dir = group_directory(collection.path, group)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
@@ -1714,7 +1721,7 @@ def _write_page(
         ),
     )
 
-    target_dir = collection.path / page.project
+    target_dir = group_directory(collection.path, page.project)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,

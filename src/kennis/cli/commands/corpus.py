@@ -33,8 +33,7 @@ from kennis.engine.corpus.add import (
     add_notes,
 )
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document, move_document
-from kennis.engine.corpus.layout import index_root, title_filename, unique_filename
+from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import (
     CorpusSync,
@@ -58,6 +57,7 @@ from kennis.engine.rag.index import read_manifest
 from kennis.operations import (
     add_documents,
     build_indexes,
+    move_a_document,
     restore_hand_deletions,
     synchronise_corpus,
 )
@@ -687,93 +687,13 @@ def move_command(
         raise display.CliError("nothing to change: pass --group, --title, or both.")
 
     found, document = resolve_document(context, handle, collection)
-    _refuse_regrouping_docs(found, group)
-    target = _target_path(found, document, group=group, title=title)
-
-    with corpus_lock(context.corpus_root):
-        _undo_hand_deletions(context)
-        moved = move_document(
-            document,
-            target_md_path=target,
-            updates={"title": title} if title else None,
-        )
-        _commit(
-            context,
-            "move",
-            scope=found.name,
-            summary=outcome_summary({Outcome.CHANGED: 1}),
-        )
+    restored: list[OutOfBandChange] = []
+    moved = move_a_document(
+        context, found, document, group=group, title=title, restored=restored
+    )
+    _report_restored(restored)
 
     display.operation("Moved", f"{moved.id}  {moved.md_path.relative_to(found.path)}")
-
-
-def _refuse_regrouping_docs(found: Collection, group: str | None) -> None:
-    """A docs page's directory is its project, so `--group` cannot set it.
-
-    Notes and literature are filed into whatever group the user names, and
-    their identifiers are minted independently of it. A docs page is not:
-    `add_docs` writes it to `docs/<project>/` and derives its identifier from
-    `(project, page)`, so moving the file alone would leave the directory,
-    the `docs.project` field and the identifier disagreeing about which
-    project the page belongs to.
-
-    Changing the project properly would change the derived identifier, which
-    is the one thing `move_document` refuses - every handle pointing at the
-    document addresses it by that identifier. Concern #101.
-    """
-    if found.name == "docs" and group is not None:
-        raise display.CliError(
-            "a docs page's directory is its project, which is part of its "
-            "identity; --group cannot change it."
-        )
-
-
-def _target_path(
-    found: Collection, document: Document, *, group: str | None, title: str | None
-) -> Path:
-    """Where the moved document lands, as a bare-file path.
-
-    Always the bare form, even for a wrapped document: `move_document` turns
-    `<dir>/<name>.md` into `<dir>/<name>/content.md` itself, because the unit
-    that moves is the wrapper directory and its assets travel with it.
-
-    Each half defaults to what the document already has, so `--group` alone
-    keeps the title and `--title` alone keeps the directory. Recomputing the
-    filename uses the two functions `add` uses - `title_filename` and
-    `unique_filename` - so a moved document lands where an added one would,
-    rather than the corpus having a second naming rule reachable only by
-    moving.
-    """
-    directory = found.path / group if group is not None else _holding(document)
-    if title is None:
-        return directory / f"{_stem(document)}.md"
-
-    taken = {
-        _stem(other) + ".md"
-        for other in found.contents().documents
-        if other.id != document.id
-    }
-    return directory / unique_filename(title_filename(title), taken)
-
-
-def _holding(document: Document) -> Path:
-    """The directory the document sits in, as a move would name it.
-
-    A wrapped document's own `md_path.parent` is its wrapper, which is part
-    of the document rather than where it is filed.
-    """
-    return (document.wrapper_dir or document.md_path).parent
-
-
-def _stem(document: Document) -> str:
-    """The document's name without the suffix, in bare-file terms.
-
-    A wrapped document's markdown is always `content.md`, so its own filename
-    says nothing about which document it is; the wrapper's name does.
-    """
-    if document.wrapper_dir is not None:
-        return document.wrapper_dir.name
-    return document.md_path.stem
 
 
 # ---------------------------------------------------------------------------

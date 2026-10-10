@@ -43,11 +43,13 @@ from kennis.engine.corpus.add import (
     add_notes,
 )
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.document import Document, move_document
 from kennis.engine.corpus.layout import index_root
+from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync, sync_corpus
 from kennis.engine.errors import CorpusBusy, IndexBusy
-from kennis.engine.events import EventSink
+from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.history import commit_summary, outcome_summary
 from kennis.engine.history.outofband import (
     OutOfBandChange,
@@ -207,6 +209,41 @@ def add_in_groups(
     )
 
 
+def move_a_document(
+    context: Context,
+    collection: Collection,
+    document: Document,
+    *,
+    group: str | None,
+    title: str | None = None,
+    restored: list[OutOfBandChange] | None = None,
+) -> Document:
+    """Refile or rename one document: lock, restore, move, commit.
+
+    The sequence `corpus move` ran inside the command line, here so the
+    window's tree runs the same one. A docs page is refused a group
+    before the lock is taken (#101). `restored` is filled in place, as
+    `add_documents` fills it, for a caller that says what came back.
+    """
+    refuse_regrouping_docs(collection, group)
+    target = move_target(collection, document, group=group, title=title)
+    with corpus_lock(context.corpus_root):
+        put_back = restore_hand_deletions(context)
+        if restored is not None:
+            restored.extend(put_back)
+        moved = move_document(
+            document,
+            target_md_path=target,
+            updates={"title": title} if title else None,
+        )
+        Repository(context.corpus_root).commit(
+            "move",
+            scope=collection.name,
+            summary=outcome_summary({Outcome.CHANGED: 1}),
+        )
+    return moved
+
+
 def build_indexes(
     context: Context,
     collection: str | None = None,
@@ -354,6 +391,7 @@ __all__ = [
     "add_in_groups",
     "build_indexes",
     "install_a_pack",
+    "move_a_document",
     "restore_hand_deletions",
     "synchronise_bundle",
     "synchronise_corpus",
