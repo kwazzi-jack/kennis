@@ -36,6 +36,7 @@ from kennis.gui.theme import (
     DARK_GROUND,
     LIGHT_GROUND,
     css_variables,
+    layout_css,
     stylesheet,
 )
 from kennis.render.html import to_html
@@ -271,6 +272,21 @@ def test_every_class_the_templates_use_is_styled():
     styled = set(re.findall(r"\.([A-Za-z0-9_-]+)", css))
     unstyled = sorted(name for name in template_classes() if name not in styled)
     assert not unstyled, f"no rule for: {unstyled}"
+
+
+def test_no_class_is_given_a_second_meaning_in_the_layout():
+    """A bare class declared twice in the layout is two components
+    sharing a name, and the later one wins over the earlier on every
+    page. `.bar` was the header when the results' cell group took the
+    name too, and its `display: inline-flex` reached the header; a
+    screenshot showed it and no test could. A component that extends
+    another's rule does it with a compound selector, never by
+    redeclaring the bare class."""
+    heads = re.findall(r"^(\.[A-Za-z0-9_-]+)\s*\{", layout_css(), re.MULTILINE)
+
+    assert len(heads) == len(set(heads)), sorted(
+        head for head in set(heads) if heads.count(head) > 1
+    )
 
 
 def test_the_reading_column_has_a_measure():

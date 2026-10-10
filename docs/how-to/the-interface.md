@@ -61,9 +61,23 @@ route that does not exist.
 ## Searching and reading
 
 The four scopes - `notes`, `literature`, `docs` and this project's
-`.context/` bundle - are the same four `kennis search` offers, and a hit is
-rendered by the same code, so what you see here and what you see in a
-terminal agree line for line.
+`.context/` bundle - are the same four `kennis search` offers, and a hit's
+words come from the same code, so the window and a terminal never disagree
+about a title, a level or a handle.
+
+Each hit shows its measures above its title: an icon for the measure
+(keywords, or meaning), a bar of five cells and the level in words. The
+bar's colour is a third way of reading the level, after the number of cells
+filled and the word, so nothing depends on telling the colours apart. The
+key at the head of the results says what each measure is measured against;
+open it for the details. Hits are listed in the order the search ranked
+them, which combines both measures by rank, so a hit with weaker bars can
+be listed first.
+
+The passage under a hit shows the part around the first match. **Show the
+whole passage** opens it in place to the whole chunk, the text before and
+after appearing around what was already shown, and the arrow beside the
+title opens the document at that passage.
 
 Opening a hit renders the document as HTML: headings, tables, code blocks,
 and mathematics typeset with KaTeX.

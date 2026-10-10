@@ -160,7 +160,7 @@ def test_each_group_names_its_collection_and_its_relevance_basis(
 
     assert result.exit_code == 0, result.output
     assert "Notes" in result.output
-    assert "lexical as a fraction of the best match here" in result.output
+    assert "keywords as a fraction of the best match here" in result.output
     assert hits_in(result.output, "notes") == 1
 
 
@@ -215,7 +215,7 @@ def test_a_hybrid_search_of_a_lexical_index_falls_back_and_says_so(
     result = run.invoke(main, ["search", "sediment", "--mode", "hybrid"])
 
     assert result.exit_code == 0, result.output
-    assert "lexical" in result.output.lower() or "bm25" in result.output.lower()
+    assert "matched keywords only" in result.output
 
 
 def test_top_k_bounds_the_answer(corpus: Path, run: CliRunner, tmp_path: Path):
@@ -311,7 +311,7 @@ def test_a_lexical_band_is_relative_to_its_own_group(
 
     assert result.exit_code == 0, result.output
     notes = group_of(result.output, "notes")
-    assert "lexical: very high" in notes, notes
+    assert "keywords: very high" in notes, notes
 
 
 def test_a_collection_with_no_hits_gets_no_group(
@@ -929,7 +929,7 @@ def test_a_context_group_says_its_band_is_relative(workspace: Path, run: CliRunn
         main, ["search", "four-minute chunks", "--collection", "context"]
     )
 
-    assert "lexical as a fraction of the best match here" in result.output
+    assert "keywords as a fraction of the best match here" in result.output
     assert "absolute cosine" not in result.output
 
 
@@ -946,7 +946,7 @@ def test_a_context_search_does_not_report_a_missing_dense_leg(
 
     assert result.exit_code == 0, result.output
     assert hits_in(result.output, "context") >= 1
-    assert "no dense leg" not in result.output
+    assert "no meaning leg" not in result.output
 
 
 def test_the_group_filter_reaches_a_bundle_subdirectory(
@@ -1091,7 +1091,7 @@ def test_a_lexical_corpus_index_still_reports_the_downgrade(
     result = run.invoke(main, ["search", "calibration", "--collection", "notes"])
 
     assert result.exit_code == 0, result.output
-    assert "the notes index has no dense leg" in result.output
+    assert "the notes index has no meaning leg" in result.output
 
 
 def test_the_default_hit_count_applies_to_each_scope(

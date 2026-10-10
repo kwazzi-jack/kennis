@@ -87,14 +87,14 @@ Because the scale is absolute, `high` means the same thing for every query.
 A search where everything comes back `very low` is telling you the corpus
 does not contain the answer - which a relative scale could never say.
 
-### The lexical band is relative, and says so
+### The keywords band is relative, and says so
 
-With no dense leg - `--mode bm25`, or an index built with
-`embedding.backend = none` - there is no absolute scale. kennis falls back to
-banding each hit as a fraction of that query's own best hit, at 0.8, 0.6, 0.4
-and 0.2. The summary line then reads `relevance relative to the best lexical
-match` rather than `relevance by cosine similarity`, because the top hit of a
-lexical search is `very high` by construction.
+The lexical leg's band - reported as `keywords`, in both the command line and
+the window - has no absolute scale. kennis bands each hit as a fraction of the
+same query's best match in the same collection, at 0.8, 0.6, 0.4 and 0.2, and
+the line above each group reads `keywords as a fraction of the best match
+here`, because the top hit is `very high` by construction. Where the meaning
+leg also ran, both bands are shown, each labelled, and each on its own scale.
 
 ### An unmeasured model gets no band at all
 

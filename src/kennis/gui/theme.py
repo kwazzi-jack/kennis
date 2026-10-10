@@ -92,8 +92,59 @@ for _map, _mode in ((CSS_COLOURS, "light"), (CSS_COLOURS_DARK, "dark")):
         )
 
 
+# How strongly a hit matched, as five colours from weakest to strongest.
+#
+# **The one place the window chooses colours by meaning rather than by
+# role**, so it lives here beside the role adapter and not in
+# `render/theme.py`, whose nine names are a terminal's (#416). Sequential
+# scales, because an ordered strength is a sequential quantity, and not
+# red against green, which is the pair the commonest colour-vision
+# deficiency cannot separate.
+#
+# The four named maps are matplotlib's, sampled at five even steps over
+# [0, 0.82] for a light ground and [0.3, 1] for a dark one, so the
+# weakest step is never the end of the map that vanishes into the page.
+# matplotlib's Greys flattens near white, so both grey scales are
+# written by hand at even steps of CIE lightness: L* 12 to 84 light, 40
+# to 96 dark. `tests/test_gui_results.py` holds every scale, in both
+# themes, to monotone lightness and to adjacent steps that stay apart
+# under a simulated deuteranopia - which is what makes this table safe
+# to edit.
+#
+# Only the bar wears these. The level's word stays in ink (#421).
+type StrengthScale = dict[str, tuple[str, str, str, str, str]]
+
+STRENGTH_SCALES: Final[dict[str, StrengthScale]] = {
+    "viridis": {
+        "light": ("#440154", "#404588", "#297a8e", "#25ac82", "#86d549"),
+        "dark": ("#355f8d", "#238a8d", "#2fb47c", "#8bd646", "#fde725"),
+    },
+    "cividis": {
+        "light": ("#00224e", "#36466c", "#686a71", "#989277", "#cebc63"),
+        "dark": ("#4f576c", "#777776", "#a19975", "#d0be62", "#fee838"),
+    },
+    "plasma": {
+        "light": ("#0d0887", "#6c00a8", "#b32c8e", "#e4695e", "#fdae32"),
+        "dark": ("#8f0da4", "#c5407e", "#ea7457", "#fdb130", "#f0f921"),
+    },
+    "magma": {
+        "light": ("#000004", "#3d0f71", "#902a81", "#e34e65", "#fea973"),
+        "dark": ("#641a80", "#ab337c", "#ed5a5f", "#feac76", "#fcfdbf"),
+    },
+    "greys": {
+        "light": ("#1f1f1f", "#474747", "#727272", "#a0a0a0", "#d1d1d1"),
+        "dark": ("#5e5e5e", "#818181", "#a6a6a6", "#cccccc", "#f3f3f3"),
+    },
+}
+
+# Viridis until milestone 12 lets the reader choose.
+DEFAULT_STRENGTH_SCALE: Final = "viridis"
+
+
 def css_variables(
-    colours: dict[AnsiColour, str] | None = None, ground: str | None = None
+    colours: dict[AnsiColour, str] | None = None,
+    ground: str | None = None,
+    strengths: tuple[str, ...] | None = None,
 ) -> str:
     """One custom property per role, plus the ground and the rule.
 
@@ -128,6 +179,13 @@ def css_variables(
     # The surface of the pane and the strip: the muted grey at a low
     # alpha, so it works on both grounds without a tenth colour.
     lines.append(f"  --raised: {table['bright_black']}14;")
+    steps = (
+        STRENGTH_SCALES[DEFAULT_STRENGTH_SCALE]["light"]
+        if strengths is None
+        else strengths
+    )
+    for step, colour in enumerate(steps, start=1):
+        lines.append(f"  --strength-{step}: {colour};")
     for name, role in ROLES.items():
         lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)
@@ -272,7 +330,9 @@ def stylesheet() -> str:
     Generated rather than a static file because the roles are, and a
     static copy would be the second place a colour lives.
     """
-    dark = css_variables(CSS_COLOURS_DARK, DARK_GROUND)
+    dark = css_variables(
+        CSS_COLOURS_DARK, DARK_GROUND, STRENGTH_SCALES[DEFAULT_STRENGTH_SCALE]["dark"]
+    )
     return (
         f":root {{\n{css_variables()}\n}}\n\n"
         # The guard is the load-bearing part. This block is later in
@@ -733,7 +793,6 @@ a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
    underlined lines per hit was the loudest thing on the page. */
 .hits a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .hits a:hover, .hits a:focus-visible { text-decoration: underline; }
-.hits .body { color: var(--role-muted); }
 /* Where the query matched. A wash rather than a block of colour:
    the marked words are still the corpus's prose and should read as
    prose with something behind them, not as a separate element. */
@@ -769,13 +828,153 @@ mark {
 .back a { color: var(--role-muted); }
 .back a:hover { color: var(--ink); }
 
-/* The scale a group's bands are measured on. Relevance is never
-   shown without it. */
-.basis {
+/* ---- search results ---- */
+
+/* The key: one line until it is opened, then what each measure is
+   measured against. Relevance is never shown without its scale, and
+   this is where the scale is (#408). */
+.key {
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--role-muted);
+  margin: 1.5rem 0 0;
+}
+.key summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+.key summary::-webkit-details-marker { display: none; }
+.key summary:hover .label { color: var(--ink); text-decoration: underline; }
+.key[open] summary .label { color: var(--ink); }
+.ramp { display: inline-flex; align-items: center; gap: 0.4rem; }
+.ramp .end { font-size: 0.75rem; }
+.key-lines { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.key-lines li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0 0 0.35rem;
+}
+.key p { margin: 0.5rem 0 0; max-width: var(--measure); }
+
+/* One measure's own order, within each collection. Links, so it works
+   without a script; the current one is marked as chosen. */
+.order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.9rem;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--role-muted);
+  margin: 0.75rem 0 0;
+}
+.order a { color: var(--role-muted); }
+.order a:hover, .order a:focus-visible { color: var(--ink); }
+.order a[aria-current="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.order .limit { flex-basis: 100%; font-size: 0.75rem; }
+
+/* A collection's name over its hits. */
+.place {
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--role-muted);
+  margin: 2rem 0 0;
+}
+
+.results { list-style: none; margin: 0; padding: 0; }
+.hit {
+  padding: 1rem 0 1.25rem;
+  border-top: 1px solid var(--rule);
+  max-width: var(--measure);
+}
+.hit > * { margin: 0 0 0.4rem; }
+
+/* The measures, above the title: an icon naming each, a bar of five
+   cells and the level's word. The cells and the word carry the level
+   without colour; the colour is a third cue (#421). */
+.measures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  font-family: var(--gutter);
+  font-size: 0.75rem;
+  color: var(--ink);
+}
+.measure { display: inline-flex; align-items: center; gap: 0.4rem; }
+.measure .icon { color: var(--role-muted); }
+/* The level in ink, never in the strength colour: the light end of
+   every scale is too pale to read as text on a light page (#421). */
+.measure .level { color: var(--ink); }
+.cells { display: inline-flex; gap: 2px; }
+.cell {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.5rem;
+  border-radius: 1px;
+  background: var(--rule);
+}
+.measure[data-step="1"] .cell.on,
+.cell.on[data-step="1"] { background: var(--strength-1); }
+.measure[data-step="2"] .cell.on,
+.cell.on[data-step="2"] { background: var(--strength-2); }
+.measure[data-step="3"] .cell.on,
+.cell.on[data-step="3"] { background: var(--strength-3); }
+.measure[data-step="4"] .cell.on,
+.cell.on[data-step="4"] { background: var(--strength-4); }
+.measure[data-step="5"] .cell.on,
+.cell.on[data-step="5"] { background: var(--strength-5); }
+
+.heading { display: flex; align-items: baseline; gap: 0.4rem; }
+.title { color: var(--ink); font-weight: 600; text-decoration: none; }
+.title:hover, .title:focus-visible { text-decoration: underline; }
+.open { color: var(--role-muted); }
+.open:hover, .open:focus-visible { color: var(--brand); }
+
+/* One passage. Drawn whole; `passage.js` adds `closed`, which hides
+   the text on either side of the window and shows an ellipsis where
+   it was. Without the script the whole chunk reads, and no text is on
+   the page twice (#415). */
+.passage { color: var(--role-muted); }
+.passage .window { color: var(--ink); }
+.passage .gap { display: none; }
+.passage.closed .gap { display: inline; }
+.passage.closed .before, .passage.closed .after { display: none; }
+.passage .before, .passage .after { color: var(--role-muted); }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: none;
+  border: none;
+  padding: 0;
   font-family: var(--gutter);
   font-size: 0.75rem;
   color: var(--role-muted);
-  margin: 2rem 0 0;
+  cursor: pointer;
+}
+.toggle:hover, .toggle:focus-visible { color: var(--ink); }
+.toggle .icon { transition: transform 0.15s; }
+.toggle[aria-expanded="true"] .icon { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .toggle .icon { transition: none; }
+}
+
+/* `kennis read`'s coordinates, to copy. */
+.handle {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--role-muted);
 }
 
 .count { font-family: var(--gutter); font-size: 0.8125rem; margin: 0; }
@@ -1067,7 +1266,10 @@ __all__ = [
     "CSS_COLOURS",
     "CSS_COLOURS_DARK",
     "DARK_GROUND",
+    "DEFAULT_STRENGTH_SCALE",
     "LIGHT_GROUND",
+    "STRENGTH_SCALES",
+    "StrengthScale",
     "css_variables",
     "css_weights",
     "layout_css",

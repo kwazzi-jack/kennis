@@ -69,8 +69,8 @@ SEARCHING = "Searching"
 
 SCOPE_LABEL = "Where to look"
 
-# How to match, and **the labels are the band's labels**. A hit's
-# margin reads `lexical: very high  meaning: low`, so a control
+# How to match, and **the labels are the band's labels**. A hit
+# reads `keywords: very high  meaning: low`, so a control
 # offering "bm25" and "dense" beside it would give the reader two
 # vocabularies for one distinction. Those are the engine's names for
 # the mechanism; these name what it measures.
@@ -85,14 +85,69 @@ MODE_LABEL = "How to match"
 MODE_DEFAULT = ""
 MODE_CHOICES: Final[tuple[tuple[str, str], ...]] = (
     (MODE_DEFAULT, "As configured"),
-    ("hybrid", "Lexical and meaning"),
-    ("bm25", "Lexical only"),
+    ("hybrid", "Keywords and meaning"),
+    ("bm25", "Keywords only"),
     ("dense", "Meaning only"),
 )
 
 EVERYWHERE_LABEL = "everywhere"
 
 BACK_TO_SEARCH = "Back to the results"
+
+# A hit's passage opens in place, and the button says which way it
+# goes. Both are handed to `static/passage.js` in `data-` attributes,
+# because a sentence in a script is one a wording pass cannot find.
+SHOW_PASSAGE = "Show the whole passage"
+HIDE_PASSAGE = "Show less"
+
+# The link from a hit into its document is an icon, so this is its
+# accessible name and its tooltip (#415).
+OPEN_AT_PASSAGE = "Open the document at this passage"
+
+# Which icon names each measure, from Lucide. The tooltip is the
+# measure's own word from `render/hits.py::LEG_LABELS`; milestone 12
+# lets the reader choose icons, words or both.
+MEASURE_ICONS: Final[dict[str, str]] = {"lexical": "whole-word", "meaning": "brain"}
+
+# Reordering one collection's hits by one measure's own rank (#406).
+# The values are the engine's leg names, as `mode`'s are its method
+# names; the labels are the measures' words. The first is empty, which
+# is the order the search returned.
+ORDER_LABEL = "Order"
+ORDER_CHOICES: Final[tuple[tuple[str, str], ...]] = (
+    ("", "As ranked"),
+    ("lexical", "By keywords"),
+    ("meaning", "By meaning"),
+)
+# The limit, said beside the control: a reorder acts on the hits already
+# returned, which the fused rank chose.
+ORDER_LIMIT = (
+    "Reordering sorts the hits this search returned. To search by one "
+    f"measure, choose it under {MODE_LABEL}."
+)
+
+
+def unknown_order(asked: str) -> str:
+    """Named rather than quietly replaced, as `unknown_mode` is."""
+    offered = [label.lower() for value, label in ORDER_CHOICES if value]
+    return f"There is no order called '{asked}'. The orders are {joined(offered)}."
+
+
+# The key at the head of the results (#408, #416). The ramp between
+# these two ends is the five strength colours.
+KEY_SUMMARY = "What the measures mean"
+KEY_LOW = "very low"
+KEY_HIGH = "very high"
+KEY_ORDER = (
+    "Hits are listed in the order the search ranked them, which combines "
+    "both measures by rank, so a hit with weaker bars can be listed first."
+)
+
+
+def key_models(models: Sequence[str]) -> str:
+    """Which model the meaning cuts were measured for."""
+    return f"Meaning cuts measured for {joined(list(models))}."
+
 
 THEME_LABEL = "Colours"
 
@@ -501,6 +556,7 @@ __all__ = [
     "CORPUS_UNREADABLE",
     "EVERYWHERE_LABEL",
     "GROUP_HINT",
+    "HIDE_PASSAGE",
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
     "INDEX_PREAMBLE",
@@ -509,8 +565,13 @@ __all__ = [
     "JOB_KINDS",
     "JOB_RUNNING",
     "KENNIS_HEADING",
+    "KEY_HIGH",
+    "KEY_LOW",
+    "KEY_ORDER",
+    "KEY_SUMMARY",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
+    "MEASURE_ICONS",
     "MODE_CHOICES",
     "MODE_DEFAULT",
     "MODE_LABEL",
@@ -527,6 +588,10 @@ __all__ = [
     "NO_CONTEXT",
     "NO_PACKS",
     "NO_SUCH_JOB",
+    "OPEN_AT_PASSAGE",
+    "ORDER_CHOICES",
+    "ORDER_LABEL",
+    "ORDER_LIMIT",
     "PACK_ACTION",
     "PACK_PREAMBLE",
     "PANE_HIDE",
@@ -543,6 +608,7 @@ __all__ = [
     "SCOPE_LABEL",
     "SEARCHING",
     "SEARCH_ACTION",
+    "SHOW_PASSAGE",
     "STILL_RUNNING",
     "STOPPED",
     "SYNC_CONTEXT_ACTION",
@@ -556,10 +622,12 @@ __all__ = [
     "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
+    "key_models",
     "last_job",
     "search_hint_for",
     "searchable_summary",
     "unknown_mode",
+    "unknown_order",
     "unknown_scope",
     "unreadable_note",
 ]

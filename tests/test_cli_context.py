@@ -720,7 +720,7 @@ def test_a_default_context_search_reports_no_downgrade(bundle: Path, run: CliRun
     result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
 
     assert result.exit_code == 0, result.output
-    assert "no dense leg" not in result.output
+    assert "no meaning leg" not in result.output
 
 
 def test_asking_for_a_dense_context_search_reports_the_downgrade(
@@ -735,7 +735,7 @@ def test_asking_for_a_dense_context_search_reports_the_downgrade(
     result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
 
     assert result.exit_code == 0, result.output
-    assert "no dense leg" in result.output
+    assert "no meaning leg" in result.output
 
 
 def test_a_corpus_method_of_hybrid_does_not_reach_the_bundle(
@@ -751,7 +751,7 @@ def test_a_corpus_method_of_hybrid_does_not_reach_the_bundle(
     result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
 
     assert result.exit_code == 0, result.output
-    assert "no dense leg" not in result.output
+    assert "no meaning leg" not in result.output
 
 
 # ---------------------------------------------------------------------------

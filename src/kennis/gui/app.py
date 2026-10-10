@@ -75,6 +75,8 @@ from kennis.gui.pages import (
     shown_groups_of,
     shown_index,
     shown_install,
+    shown_key,
+    shown_orders,
     shown_recents,
     shown_rows,
     shown_skips,
@@ -162,6 +164,16 @@ _TEMPLATES.env.globals.update(
         "corpus_unreadable": words.CORPUS_UNREADABLE,
         "no_context": words.NO_CONTEXT,
         "recents_heading": words.RECENTS_HEADING,
+        # The words a hit and the key carry. Globals because `hits.html`
+        # is drawn by two routes, the page and the fragment.
+        "show_passage": words.SHOW_PASSAGE,
+        "hide_passage": words.HIDE_PASSAGE,
+        "open_at_passage": words.OPEN_AT_PASSAGE,
+        "key_summary": words.KEY_SUMMARY,
+        "key_low": words.KEY_LOW,
+        "key_high": words.KEY_HIGH,
+        "key_order": words.KEY_ORDER,
+        "key_models": words.key_models,
         "corpus_changed": words.CORPUS_CHANGED,
         "quit_label": words.QUIT,
         "quit_title": words.QUIT_TITLE,
@@ -313,8 +325,9 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         q: str = "",
         scope: str = EVERY_SCOPE,
         mode: str = words.MODE_DEFAULT,
+        order: str = "",
     ) -> HTMLResponse:
-        context = _hits_context(q, scope, mode)
+        context = _hits_context(q, scope, mode, order)
         # Only with no query. With one, the results have that space -
         # a page showing both would put what was looked for before
         # beside what was just found, which is two answers to one
@@ -344,12 +357,13 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         q: str = "",
         scope: str = EVERY_SCOPE,
         mode: str = words.MODE_DEFAULT,
+        order: str = "",
     ) -> HTMLResponse:
         # The partial htmx swaps in. The same context as the page, so
         # a first load and a keystroke cannot disagree about what a
         # result looks like.
         answer = _TEMPLATES.TemplateResponse(
-            request, "hits.html", _hits_context(q, scope, mode)
+            request, "hits.html", _hits_context(q, scope, mode, order)
         )
         # **The address the reader should end up at, not the one that
         # was fetched.** `hx-push-url="true"` pushes the request URL,
@@ -928,7 +942,9 @@ def _frame(context: Context) -> dict[str, object]:
     }
 
 
-def _hits_context(question: str, scope: str, mode: str) -> dict[str, object]:
+def _hits_context(
+    question: str, scope: str, mode: str, order: str = ""
+) -> dict[str, object]:
     """What a search page and its partial both need.
 
     A failure becomes fields rather than an exception: a search box
@@ -955,6 +971,10 @@ def _hits_context(question: str, scope: str, mode: str) -> dict[str, object]:
         "groups": [],
         "skips": [],
         "fallbacks": [],
+        "key": None,
+        "orders": [],
+        "order_label": words.ORDER_LABEL,
+        "order_limit": words.ORDER_LIMIT,
         "nothing": words.NOTHING_FOUND,
         "problem": None,
         "resolution": None,
@@ -971,6 +991,9 @@ def _hits_context(question: str, scope: str, mode: str) -> dict[str, object]:
     if mode not in {value for value, _ in words.MODE_CHOICES}:
         context["problem"] = words.unknown_mode(mode)
         return context
+    if order not in {value for value, _ in words.ORDER_CHOICES}:
+        context["problem"] = words.unknown_order(order)
+        return context
     asked = SCOPE_NAMES if scope == EVERY_SCOPE else (scope,)
     try:
         found = sweep(
@@ -982,7 +1005,16 @@ def _hits_context(question: str, scope: str, mode: str) -> dict[str, object]:
             # lexical by design.
             mode=mode or None,
         )
-        context["groups"] = shown_groups_of(found, question)
+        context["groups"] = shown_groups_of(found, question, order)
+        key = shown_key(found)
+        context["key"] = key
+        # Only when both measures scored: with one, the results are
+        # already in that measure's own order and a choice would change
+        # nothing.
+        if key is not None and len(key.lines) > 1:
+            context["orders"] = shown_orders(
+                question=question, scope=scope, mode=mode, order=order
+            )
         context["skips"] = shown_skips(found)
         # The command line has printed this since milestone 1 and the
         # page never did. A control offering "Meaning only" that

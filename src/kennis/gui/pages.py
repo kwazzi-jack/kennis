@@ -35,15 +35,20 @@ from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
 from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
-from kennis.gui.snippet import marked_snippet, terms_of
+from kennis.gui.snippet import Passage, passage_of, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import Holding
 from kennis.operations import IndexBuild
 from kennis.render.hits import (
+    LEG_LABELS,
+    LEGS,
     Hit,
+    Leg,
+    Relevance,
     ScoreStyle,
-    basis_phrase,
     best_lexical,
+    relevance_phrase,
+    relevances,
     rendered_hit,
     score_style_for,
 )
@@ -67,30 +72,56 @@ from kennis.retrieval import Sweep
 _STYLE: ScoreStyle = "human"
 
 
+# The five levels from the strongest down, as the bar counts them: a
+# hit at "very high" fills all five cells and one at "very low" fills
+# one. A cell count is how the level reads without colour, which is
+# what lets the colour be a third cue rather than the only one (#421).
+_STEPS: dict[Relevance, int] = {
+    "very high": 5,
+    "high": 4,
+    "medium": 3,
+    "low": 2,
+    "very low": 1,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ShownMeasure:
+    """One leg's band on one hit, in the pieces a bar is drawn from.
+
+    `label` is `render/hits.py::LEG_LABELS`'s word, so the tooltip on
+    the icon is the word the command line prints. `step` is the number
+    of filled cells and the strength colour they wear.
+    """
+
+    leg: Leg
+    label: str
+    icon: str
+    level: Relevance
+    step: int
+
+
 @dataclass(frozen=True, slots=True)
 class ShownHit:
     """One hit, in the pieces a page arranges.
 
-    The three text fields come from `render/hits.py::rendered_hit`, so
-    what is read here is what `kennis search` prints and what an agent
-    is handed. The two extra fields are coordinates, not words: a page
-    needs them to build a link, and a link is not something `render/`
-    should be composing.
+    `title` and `handle` come from `render/hits.py::rendered_hit`, and
+    each measure is a band that function also printed into `detail`,
+    so what is read here is what `kennis search` prints and what an
+    agent is handed - arranged, not reworded. There is no rank: in a
+    fused list it is a position and not a measurement, and the list's
+    own order already shows position (#342, #406).
     """
 
-    headline: str
-    # The margin's fields, one per line, because the gutter is about
-    # twenty characters wide and a CSS wrap broke `meaning:` from
-    # `medium`. Joined by two spaces they are `rendered.detail`, which
-    # is what the command line prints. Concern #380.
-    detail_parts: tuple[str, ...]
-    # **HTML, unlike the other two.** `headline` and `detail` are the
-    # fields `rendered_hit` hands every front end and they stay
-    # byte-identical; the snippet is the same source text rendered
-    # for this medium, because leaving `##` and `[[35](https://...)]`
-    # on the page is what the terminal's rule yields in a browser.
-    # Concerns #336 and #297.
-    body: str | None
+    title: str
+    measures: tuple[ShownMeasure, ...]
+    handle: str
+    # **HTML, unlike the words.** The chunk rendered for this medium,
+    # because leaving `##` and `[[35](https://...)]` on the page is
+    # what the terminal's rule yields in a browser. Concerns #336 and
+    # #297. Three parts, so one element can show the window closed and
+    # the whole chunk opened without repeating any text (#415).
+    passage: Passage
     collection: str
     document_id: str
     # The whole link, not its parts. A corpus hit and a bundle hit are
@@ -98,6 +129,26 @@ class ShownHit:
     # that chose between them with an `{% if %}` would be a template
     # deciding where a document lives.
     href: str
+
+    @property
+    def opens(self) -> bool:
+        """Whether the passage holds more than its window."""
+        return bool(self.passage.before or self.passage.after)
+
+
+def shown_measures(
+    measures: Sequence[tuple[Leg, Relevance]],
+) -> tuple[ShownMeasure, ...]:
+    return tuple(
+        ShownMeasure(
+            leg=leg,
+            label=LEG_LABELS[leg],
+            icon=words.MEASURE_ICONS[leg],
+            level=level,
+            step=_STEPS[level],
+        )
+        for leg, level in measures
+    )
 
 
 def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
@@ -109,19 +160,20 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
     best = best_lexical(hits)
     shown: list[ShownHit] = []
     for rank, hit in enumerate(hits, start=1):
-        rendered = rendered_hit(hit, rank=rank, style=style, best=best, snippet="short")
+        rendered = rendered_hit(hit, rank=rank, style=style, best=best, snippet="none")
         shown.append(
             ShownHit(
-                headline=rendered.headline,
-                detail_parts=rendered.detail_parts,
+                title=rendered.title,
+                measures=shown_measures(rendered.measures),
+                # The handle is the last field of `detail` in every
+                # style, which is the line `kennis read` takes.
+                handle=rendered.detail_parts[-1],
                 # From the chunk rather than from `rendered.body`:
                 # `snippet_of` collapses the whitespace before
                 # truncating, so by then the heading and the
                 # paragraph after it are one line and a markdown
                 # parse would make a heading of both.
-                body=marked_snippet(hit.result.chunk.text, terms=terms)
-                if rendered.body is not None
-                else None,
+                passage=passage_of(hit.result.chunk.text, terms=terms),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
                 href=_href(
@@ -137,16 +189,19 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
 
 @dataclass(frozen=True, slots=True)
 class ShownGroup:
-    """One collection's answer, with the scale its bands are on.
+    """One collection's answer.
 
     A group per collection and never one merged list, which is the
     same rule the command line follows for the same reason: there is
     no common quality scale between collections indexed differently,
     so any single ordering is a policy presented as a measurement.
+
+    No scale line of its own any more: the key at the head of the
+    results says what each measure is measured against, once (#408).
     """
 
     collection: str
-    basis: str
+    heading: str
     hits: list[ShownHit]
 
 
@@ -158,16 +213,69 @@ class ShownSkip:
     resolution: str
 
 
-def shown_groups_of(found: Sweep, question: str) -> list[ShownGroup]:
+def shown_groups_of(found: Sweep, question: str, order: str = "") -> list[ShownGroup]:
     """A sweep, in the pieces a page arranges."""
     return [
         ShownGroup(
             collection=name,
-            basis=shown_basis(hits, name),
-            hits=shown_hits(hits, question=question),
+            heading=name.capitalize(),
+            hits=shown_hits(ordered_by(hits, order), question=question),
         )
         for name, hits in found.groups.items()
     ]
+
+
+def ordered_by(hits: Sequence[Hit], order: str) -> list[Hit]:
+    """One collection's hits by one leg's own rank, or as returned.
+
+    **Within the hits returned, which is the limit.** The fused rank
+    chose them, so ordering by meaning reorders the three a combined
+    search found; the best meaning-only hit may not be among them, and
+    the mode control is what searches by one leg (#406). A hit the leg
+    did not find goes last, keeping the fused order among those. Never
+    across collections, which have no common scale (#342).
+    """
+    if order not in ("lexical", "meaning"):
+        return list(hits)
+
+    def leg_rank(hit: Hit) -> int | None:
+        result = hit.result
+        return result.bm25_rank if order == "lexical" else result.dense_rank
+
+    def by_rank(placed: tuple[int, Hit]) -> tuple[bool, int, int]:
+        position, hit = placed
+        rank = leg_rank(hit)
+        return (rank is None, 0 if rank is None else rank, position)
+
+    return [hit for _, hit in sorted(enumerate(hits), key=by_rank)]
+
+
+@dataclass(frozen=True, slots=True)
+class ShownOrder:
+    """One way to order the results, as a link to the same search."""
+
+    label: str
+    href: str
+    current: bool
+
+
+def shown_orders(
+    *, question: str, scope: str, mode: str, order: str
+) -> list[ShownOrder]:
+    """The orders on offer, each a link carrying the search it reorders.
+
+    Links rather than a select, so it works without a script: each is
+    the search's own address with `order` added.
+    """
+    shown: list[ShownOrder] = []
+    for value, label in words.ORDER_CHOICES:
+        query = f"/?q={quote(question)}&scope={quote(scope)}"
+        if mode:
+            query += f"&mode={quote(mode)}"
+        if value:
+            query += f"&order={value}"
+        shown.append(ShownOrder(label=label, href=query, current=value == order))
+    return shown
 
 
 def shown_skips(found: Sweep) -> list[ShownSkip]:
@@ -184,29 +292,60 @@ def shown_skips(found: Sweep) -> list[ShownSkip]:
     ]
 
 
-def shown_basis(hits: list[Hit], collection: str) -> str:
-    """What this group's relevance levels are a band of.
+@dataclass(frozen=True, slots=True)
+class ShownKeyLine:
+    """One measure as the key explains it: its icon and its scale."""
 
-    `kennis search` prints this above each group and the window
-    printed nothing, so a reader saw "low" five times with nothing
-    saying what low was relative to. **Relevance is never shown
-    without its scale**: the two bands mean genuinely different
-    things - an absolute cosine against measured cuts, or a position
-    relative to this query's own best lexical hit - and a level
-    without its scale is a number with no units.
+    icon: str
+    label: str
+    scale: str
 
-    `render/hits.py::basis_phrase` composes the phrase and returns
-    nothing when no level is printed at all. It no longer refuses a
-    group carrying both scales: each leg is labelled now, so two
-    clauses describe two scales. Concern #379. Only the subject is
-    added here, because the command line's report has a margin to
-    carry it and a page does not.
+
+@dataclass(frozen=True, slots=True)
+class ShownKey:
+    """What the bars on this page are measured against, said once.
+
+    **Relevance is never shown without its scale**, and it was said per
+    group, which repeated one sentence above every collection (#408,
+    agreed 2026-10-09: the scale is shown once and systematically). One
+    line per measure that some hit on the page carries, because a key
+    explaining a measure the page does not show is a sentence to skip.
     """
-    if not hits:
-        return ""
-    style, _ = score_style_for(hits, _STYLE)
-    phrase = basis_phrase(hits, style)
-    return f"{collection.capitalize()} {phrase}" if phrase else ""
+
+    lines: tuple[ShownKeyLine, ...]
+    # The embedding models the meaning bands were measured for, since a
+    # cosine's cuts belong to one model (`render/hits.py::_COSINE_CUTS`).
+    models: tuple[str, ...]
+
+
+def shown_key(found: Sweep) -> ShownKey | None:
+    """The key for every band on the page, or nothing when none is shown."""
+    present: set[Leg] = set()
+    models: set[str] = set()
+    for hits in found.groups.values():
+        style, _ = score_style_for(hits, _STYLE)
+        if style != "human":
+            continue
+        best = best_lexical(hits)
+        for hit in hits:
+            for leg, _ in relevances(hit.result, model=hit.model, best=best):
+                present.add(leg)
+                if leg == "meaning" and hit.model is not None:
+                    models.add(hit.model)
+    if not present:
+        return None
+    return ShownKey(
+        lines=tuple(
+            ShownKeyLine(
+                icon=words.MEASURE_ICONS[leg],
+                label=LEG_LABELS[leg],
+                scale=relevance_phrase({leg}),
+            )
+            for leg in LEGS
+            if leg in present
+        ),
+        models=tuple(sorted(models)),
+    )
 
 
 def _href(
@@ -401,16 +540,23 @@ __all__ = [
     "ShownEntry",
     "ShownGroup",
     "ShownHit",
+    "ShownKey",
+    "ShownKeyLine",
+    "ShownMeasure",
+    "ShownOrder",
     "ShownOutcome",
     "ShownRecent",
     "ShownRow",
     "ShownSkip",
-    "shown_basis",
+    "ordered_by",
     "shown_bundle_document",
     "shown_document",
     "shown_groups",
     "shown_groups_of",
     "shown_hits",
+    "shown_key",
+    "shown_measures",
+    "shown_orders",
     "shown_rows",
     "shown_skips",
 ]

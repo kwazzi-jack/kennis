@@ -523,6 +523,7 @@ def icons_named() -> set[str]:
     for _, _, icon_name in words.ACTIONS:
         named.add(icon_name)
     named |= set(words.COLLECTION_ICONS.values())
+    named |= set(words.MEASURE_ICONS.values())
     return named
 
 
