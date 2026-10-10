@@ -31,12 +31,22 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.gui import history
 from kennis.gui.app import build_app
 
 TOKEN = "a-test-token"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
 
 
 @pytest.fixture
@@ -250,7 +260,7 @@ def test_clearing_the_history_is_a_post(corpus: Path, client: TestClient):
     assert refused.status_code in (404, 405)
     assert history.recent() != []
 
-    cleared = client.post("/history/clear")
+    cleared = posted(client, "/history/clear")
     assert cleared.status_code == 200
     assert history.recent() == []
 

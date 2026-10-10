@@ -39,11 +39,12 @@ Lucide 0.460.0 (lucide-static)
   Icons for the bar, the pane and the dialogs. Only the icons the
   interface uses are carried, as the SVG files Lucide publishes,
   inlined by the server so they take the text colour.
-  icons/book-open.svg, icons/chevron-right.svg, icons/database.svg,
-  icons/file-plus.svg, icons/file-text.svg, icons/folder.svg,
-  icons/globe.svg, icons/history.svg, icons/package.svg,
-  icons/panel-left.svg, icons/pencil.svg, icons/power.svg,
-  icons/refresh-cw.svg, icons/sticky-note.svg, icons/x.svg
+  icons/activity.svg, icons/book-open.svg, icons/chevron-right.svg,
+  icons/database.svg, icons/file-plus.svg, icons/file-text.svg,
+  icons/folder.svg, icons/globe.svg, icons/history.svg,
+  icons/package.svg, icons/panel-left.svg, icons/pencil.svg,
+  icons/power.svg, icons/refresh-cw.svg, icons/sticky-note.svg,
+  icons/x.svg
   https://github.com/lucide-icons/lucide
   Retrieved from https://unpkg.com/lucide-static@0.460.0/icons/
   ISC, which requires its notice in all copies. Full text in

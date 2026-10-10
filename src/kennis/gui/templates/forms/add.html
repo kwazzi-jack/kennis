@@ -1,5 +1,5 @@
 <p class="role-muted">{{ add_preamble }}</p>
-<form hx-post="/add" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+<form hx-disabled-elt="find button" hx-post="/add" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
   <textarea name="identifiers" rows="4" autofocus></textarea>
   <div class="fields">
     {% for name in collections %}

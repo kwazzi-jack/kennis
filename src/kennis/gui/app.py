@@ -22,7 +22,9 @@ window by accident.
 from __future__ import annotations
 
 import secrets
+import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 from urllib.parse import quote
@@ -33,6 +35,7 @@ from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -76,7 +79,7 @@ from kennis.gui.pages import (
     shown_rows,
     shown_skips,
 )
-from kennis.gui.pane import bundle_folders, pane_now
+from kennis.gui.pane import Pane, bundle_folders, pane_now
 from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
 from kennis.holdings import freshness_of, holdings, installed_packs, revision
@@ -162,6 +165,7 @@ _TEMPLATES.env.globals.update(
         "corpus_changed": words.CORPUS_CHANGED,
         "quit_label": words.QUIT,
         "quit_title": words.QUIT_TITLE,
+        "activity_heading": words.ACTIVITY_HEADING,
         # The search form is the bar's, on every page, so what it
         # offers is invariant and global; only the search page passes
         # what was asked.
@@ -321,11 +325,13 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _TEMPLATES.TemplateResponse(request, "search.html", context)
 
     @app.post("/history/clear")
-    async def clear_history(request: Request) -> HTMLResponse:
+    async def clear_history(request: Request) -> Response:
         # A POST, because a GET that writes is one a prefetcher will
         # follow and this one destroys. The reader's own words are
         # in here and there has to be a way to remove them.
         history.clear()
+        if not _from_htmx(request):
+            return RedirectResponse("/", status_code=303)
         context = _hits_context("", EVERY_SCOPE, words.MODE_DEFAULT)
         context["recents"] = []
         context["recents_heading"] = words.RECENTS_HEADING
@@ -499,6 +505,10 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         outcome = _remembered(
             text_given, title=title, group=group, to_context=to_context
         )
+        if not _from_htmx(request):
+            return _action(
+                request, "/remember", "forms/remember.html", _remember_context(outcome)
+            )
         return _TEMPLATES.TemplateResponse(
             request, "outcome.html", {"outcome": outcome}
         )
@@ -548,7 +558,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
 
     def _started(
         request: Request, kind: str, work: Callable[[EventSink], object]
-    ) -> HTMLResponse:
+    ) -> Response:
         """Hand the work to a thread and answer with the panel watching it.
 
         A second operation is refused rather than queued, and says so:
@@ -558,6 +568,8 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         try:
             job = app.state.jobs.start(kind, work)
         except AlreadyRunning as busy:
+            if not _from_htmx(request):
+                return RedirectResponse(f"/job/{busy.running}", status_code=303)
             return _TEMPLATES.TemplateResponse(
                 request,
                 "job.html",
@@ -567,6 +579,11 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                     "problem": words.BUSY_WITH_ANOTHER,
                 },
             )
+        if not _from_htmx(request):
+            # 303: the answer to a POST that tells the browser to GET,
+            # so a reload shows the job rather than starting it again
+            # (#412).
+            return RedirectResponse(f"/job/{job.id}", status_code=303)
         return _TEMPLATES.TemplateResponse(
             request, "job.html", {"job_id": job.id, "kind": job.kind}
         )
@@ -616,7 +633,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/add")
-    async def start_add(request: Request) -> HTMLResponse:
+    async def start_add(request: Request) -> Response:
         """Start an add and answer with somewhere to watch it.
 
         Answers at once rather than when the work is done: one PDF is
@@ -628,9 +645,9 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         identifiers = _lines(str(form.get("identifiers") or ""))
         destination = str(form.get("collection") or "notes")
         if not identifiers:
-            return _refused(request, words.NOTHING_TO_ADD)
+            return _refused_a_post(request, words.NOTHING_TO_ADD)
         if destination not in COLLECTION_NAMES:
-            return _refused(request, words.unknown_collection(destination))
+            return _refused_a_post(request, words.unknown_collection(destination))
         context = existing_corpus()
         options = _add_options(context, form)
         return _started(
@@ -642,7 +659,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/index")
-    async def start_index(request: Request) -> HTMLResponse:
+    async def start_index(request: Request) -> Response:
         form = await request.form()
         chosen = str(form.get("collection") or "")
         collection = chosen if chosen in COLLECTION_NAMES else None
@@ -654,14 +671,14 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/sync")
-    async def start_corpus_sync(request: Request) -> HTMLResponse:
+    async def start_corpus_sync(request: Request) -> Response:
         context = existing_corpus()
         return _started(
             request, "sync", lambda events: synchronise_corpus(context, events=events)
         )
 
     @app.post("/context-sync")
-    async def start_bundle_sync(request: Request) -> HTMLResponse:
+    async def start_bundle_sync(request: Request) -> Response:
         context = existing_corpus()
         bundle = find_bundle()
         if bundle is None:
@@ -670,7 +687,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             # own resolution: the advice was chosen where the problem
             # is known.
             refusal = ContextNotFound()
-            return _refused(request, str(refusal), resolution=refusal.resolution)
+            return _refused_a_post(request, str(refusal), resolution=refusal.resolution)
         return _started(
             request,
             "context-sync",
@@ -678,12 +695,12 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/pack")
-    async def start_pack_install(request: Request) -> HTMLResponse:
+    async def start_pack_install(request: Request) -> Response:
         form = await request.form()
         given = str(form.get("path") or "").strip()
         path = Path(given).expanduser()
         if not given or not path.is_file():
-            return _refused(request, words.no_such_pack(given))
+            return _refused_a_post(request, words.no_such_pack(given))
         context = existing_corpus()
         return _started(
             request, "pack", lambda events: install_a_pack(context, path, events=events)
@@ -691,11 +708,38 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
 
     @app.get("/job/{job_id}")
     async def serve_job(request: Request, job_id: str) -> HTMLResponse:
+        """One job: its panel for htmx, the panel inside the shell otherwise.
+
+        The page is where a scriptless POST is sent (#412), where the
+        strip's last-job link and the Activity page lead, and a reload
+        of it watches the same job rather than starting another.
+        """
         job = app.state.jobs.get(job_id)
         if job is None:
-            return _refused(request, words.NO_SUCH_JOB)
+            return _refused_a_post(request, words.NO_SUCH_JOB)
+        shown = {"job_id": job.id, "kind": job.kind}
+        if _from_htmx(request):
+            return _TEMPLATES.TemplateResponse(request, "job.html", shown)
         return _TEMPLATES.TemplateResponse(
-            request, "job.html", {"job_id": job.id, "kind": job.kind}
+            request,
+            "job-page.html",
+            {**shown, "title": words.JOB_KINDS.get(job.kind, job.kind)},
+        )
+
+    @app.get("/activity")
+    async def serve_activity(request: Request) -> HTMLResponse:
+        """What has run since kennis started, newest first.
+
+        The registry keeps a job for an hour; this lists what it has,
+        and says so when that is nothing.
+        """
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "activity.html",
+            {
+                "rows": [_activity_row(job) for job in app.state.jobs.recent()],
+                "nothing_run": words.NOTHING_RUN,
+            },
         )
 
     @app.get("/job/{job_id}/events")
@@ -1043,6 +1087,84 @@ def _shown_result(job: Job) -> ShownJob:
             return shown_install(job.result)
         case _:
             return ShownJob(headline=words.NOTHING_TO_SHOW, role="role-muted")
+
+
+def _from_htmx(request: Request) -> bool:
+    """Whether htmx sent this, and so wants a fragment rather than a page."""
+    return request.headers.get("hx-request") == "true"
+
+
+def _refused_a_post(
+    request: Request, problem: str, *, resolution: str | None = None
+) -> HTMLResponse:
+    """A refusal in the panel for htmx, and as a page for a plain form.
+
+    A plain form's browser replaces the page with whatever comes back,
+    so a fragment there is a page with no window around it (#412).
+    """
+    if _from_htmx(request):
+        return _refused(request, problem, resolution=resolution)
+    return _TEMPLATES.TemplateResponse(
+        request, "problem.html", {"problem": problem, "resolution": resolution}
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityRow:
+    """One job as the Activity page lists it."""
+
+    job_id: str
+    kind: str
+    state: str
+    started: str
+
+
+def _job_state(job: Job) -> str:
+    if not job.done.is_set():
+        return words.JOB_RUNNING
+    return words.JOB_FAILED if job.failed else words.JOB_FINISHED
+
+
+def _activity_row(job: Job) -> ActivityRow:
+    return ActivityRow(
+        job_id=job.id,
+        kind=words.JOB_KINDS.get(job.kind, job.kind),
+        state=_job_state(job),
+        started=time.strftime("%H:%M", time.localtime(job.started_wall)),
+    )
+
+
+def _job_now(request: Request) -> Job | None:
+    """The running job, for the strip on every page."""
+    jobs: Jobs = request.app.state.jobs
+    return jobs.running()
+
+
+def _last_job(request: Request) -> tuple[str, str] | None:
+    """The newest job that has ended, as an address and the strip's words."""
+    jobs: Jobs = request.app.state.jobs
+    for job in jobs.recent():
+        if job.done.is_set():
+            return f"/job/{job.id}", words.last_job(job.kind, _job_state(job))
+    return None
+
+
+def _strip_summary(pane: Pane) -> str:
+    """Where the corpus stands, from the pane the page already drew."""
+    states = [row.state for row in pane.collections]
+    return words.searchable_summary(
+        searchable=sum(state in ("current", "behind") for state in states),
+        total=len(states),
+        behind=states.count("behind"),
+    )
+
+
+# The strip, on every page: the running job if there is one, otherwise
+# where the corpus stands and what ran last (#405). Functions taking the
+# request, registered here because they are defined above.
+_TEMPLATES.env.globals.update(
+    {"job_now": _job_now, "last_job": _last_job, "strip_summary": _strip_summary}
+)
 
 
 def _refused(

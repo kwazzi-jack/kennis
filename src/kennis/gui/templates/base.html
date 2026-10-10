@@ -121,6 +121,7 @@
     <h2 class="pane-head">{{ kennis_heading }}</h2>
     <ul class="tree">
       <li><a class="node" href="/">{{ icon("history") }}<span class="name">{{ recents_heading }}</span></a></li>
+      <li><a class="node" href="/activity">{{ icon("activity") }}<span class="name">{{ activity_heading }}</span></a></li>
     </ul>
   </section>
 </nav>
@@ -136,7 +137,16 @@
 <footer class="strip">
   {# Where every operation reports. Every page has it, so a dialog
      opened anywhere has somewhere to put its job (#405). #}
-  <div id="job" aria-live="polite"></div>
+  {% set running = job_now(request) %}
+  <div id="job" aria-live="polite">{% if running %}{% with job_id = running.id, kind = running.kind %}{% include "job.html" %}{% endwith %}{% endif %}</div>
+  {% if not running %}
+  {# Idle, the strip is a status line. Every word in it is Python's. #}
+  <p class="strip-status role-muted">
+    <span>{{ strip_summary(pane) }}</span>
+    {% set last = last_job(request) %}
+    {% if last %}<a href="{{ last[0] }}">{{ last[1] }}</a>{% endif %}
+  </p>
+  {% endif %}
 </footer>
 <div id="dialog"></div>
 </body>

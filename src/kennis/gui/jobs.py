@@ -21,12 +21,12 @@ the work runs and never while the interface is idle.
 
 from __future__ import annotations
 
-import queue
 import secrets
 import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Final
 
 from kennis.engine.errors import KennisError
@@ -38,11 +38,26 @@ from kennis.logs import FanOut, LogSink
 # still in memory at the end of it.
 _KEEP_SECONDS: Final = 3600.0
 
-# How long the stream waits on an empty queue before looking again at
-# whether the work has finished. Not a poll of anything expensive - it
-# is a `queue.get` that wakes to re-check one flag, and without it a
-# job that finishes while the queue is empty never closes its stream.
+# How long a stream waits for a new event before looking at the clock.
+# A new event and the job's end both wake it at once, through the
+# condition; this bound exists so the elapsed time is said on time.
 _TICK_SECONDS: Final = 0.25
+
+
+# How often a running job's stream says how long it has run. A second,
+# because that is the unit the clock shows.
+_ELAPSED_EVERY_SECONDS: Final = 1.0
+
+
+@dataclass(frozen=True, slots=True)
+class Elapsed:
+    """How long a job has been running, from the stream's own clock.
+
+    The stream's record, not an engine event: the engine does not know
+    that a page is watching, and a clock is about the watching.
+    """
+
+    seconds: float
 
 
 class AlreadyRunning(Exception):
@@ -65,9 +80,18 @@ class Job:
     id: str
     kind: str
     started_at: float = field(default_factory=time.monotonic)
+    # Wall-clock time as well, because the Activity page says when, and
+    # a monotonic reading is not a time of day.
+    started_wall: float = field(default_factory=time.time)
     result: object | None = None
     error: KennisError | None = None
-    events: queue.SimpleQueue[Event | None] = field(default_factory=queue.SimpleQueue)
+    # Every event the job has emitted, in order, appended and never
+    # taken from: each watcher reads from its own position, so a page
+    # drawn mid-job sees what was already reported and two pages watching
+    # at once both see everything. It was a queue each watcher consumed,
+    # which was correct only while one page ever watched (#424).
+    history: list[Event] = field(default_factory=list)
+    changed: threading.Condition = field(default_factory=threading.Condition)
     done: threading.Event = field(default_factory=threading.Event)
 
     @property
@@ -75,19 +99,26 @@ class Job:
         return self.error is not None
 
 
-class _QueueSink:
-    """An `EventSink` that puts each event where the stream can find it.
+def _has_news(job: Job, seen: int) -> bool:
+    """Whether a watcher that has read `seen` events has more to do."""
+    return len(job.history) > seen or job.done.is_set()
 
-    `SimpleQueue` because it is the one queue whose `put` is
-    documented not to block and not to need the GIL released: the
-    engine thread must never be slowed by a reader that has gone away.
+
+class _HistorySink:
+    """An `EventSink` that appends each event to the job's history.
+
+    The lock is held for one append and one notify, never while anyone
+    waits, so the engine thread is not slowed by a reader that has gone
+    away - which was the reason the queue it replaces was chosen.
     """
 
-    def __init__(self, into: queue.SimpleQueue[Event | None]) -> None:
-        self._into = into
+    def __init__(self, job: Job) -> None:
+        self._job = job
 
     def emit(self, event: Event) -> None:
-        self._into.put(event)
+        with self._job.changed:
+            self._job.history.append(event)
+            self._job.changed.notify_all()
 
 
 class Jobs:
@@ -122,7 +153,7 @@ class Jobs:
         # window left no trace at all - not even the item lines section
         # 14 requires - because the only subscriber was a browser that
         # closes its connection when the page is closed. Concern #326.
-        sink = FanOut(_QueueSink(job.events), LogSink())
+        sink = FanOut(_HistorySink(job), LogSink())
 
         def run() -> None:
             try:
@@ -133,8 +164,9 @@ class Jobs:
                 # on this thread to collect an exception from.
                 job.error = error
             finally:
-                job.done.set()
-                job.events.put(None)
+                with job.changed:
+                    job.done.set()
+                    job.changed.notify_all()
 
         threading.Thread(target=run, daemon=True, name=f"kennis-{kind}").start()
         return job
@@ -151,24 +183,43 @@ class Jobs:
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
-    def stream(self, job: Job) -> Iterator[Event]:
-        """Every event this job emits, until it ends.
+    def stream(self, job: Job) -> Iterator[Event | Elapsed]:
+        """Every event this job emits, and its running time, until it ends.
 
-        Ends when the sentinel arrives, and not merely when `done` is
-        set: events already on the queue when the work finished must
-        still be delivered, or the last item of a batch is the one
-        nobody sees.
+        **From the start, whenever the watcher arrives.** The history is
+        read from this watcher's own position, so a page drawn mid-job
+        sees what was already reported (#424). It ends once the job is
+        done *and* everything in the history has been yielded: the last
+        item of a batch must still reach the page.
+
+        **The clock rides the wake-up the stream already had.** The wait
+        has a short timeout so a finished job is noticed promptly; the
+        same wake-up says how long the job has run, once a second.
+        Nothing new polls.
         """
+        position = 0
+        next_tick = time.monotonic() + _ELAPSED_EVERY_SECONDS
         while True:
-            try:
-                event = job.events.get(timeout=_TICK_SECONDS)
-            except queue.Empty:
-                if job.done.is_set():
-                    return
-                continue
-            if event is None:
+            with job.changed:
+                job.changed.wait_for(
+                    partial(_has_news, job, position), timeout=_TICK_SECONDS
+                )
+                fresh = job.history[position:]
+                finished = job.done.is_set()
+            position += len(fresh)
+            yield from fresh
+            if finished and not fresh:
                 return
-            yield event
+            now = time.monotonic()
+            if now >= next_tick and not finished:
+                yield Elapsed(seconds=now - job.started_at)
+                next_tick = now + _ELAPSED_EVERY_SECONDS
+
+    def recent(self) -> list[Job]:
+        """The jobs kept, newest first - what the Activity page lists."""
+        with self._guard:
+            self._forget_the_old()
+            return sorted(self._jobs.values(), key=lambda job: -job.started_at)
 
     def _running(self) -> Job | None:
         for job in self._jobs.values():
@@ -183,4 +234,4 @@ class Jobs:
                 del self._jobs[job_id]
 
 
-__all__ = ["AlreadyRunning", "Job", "Jobs"]
+__all__ = ["AlreadyRunning", "Elapsed", "Job", "Jobs"]

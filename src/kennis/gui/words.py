@@ -157,6 +157,40 @@ CONTEXT_HEADING = "Context"
 
 KENNIS_HEADING = "kennis"
 
+ACTIVITY_HEADING = "Activity"
+
+NOTHING_RUN = "Nothing has run since kennis started. Operations are kept for an hour."
+
+# What each kind of job is called where a person reads it: the strip,
+# the Activity page. The keys are the kinds `app.py` starts jobs under.
+JOB_KINDS: Final[dict[str, str]] = {
+    "add": "Add",
+    "index": "Index",
+    "sync": "Corpus sync",
+    "context-sync": "Context sync",
+    "pack": "Pack install",
+}
+
+JOB_RUNNING = "running"
+
+JOB_FINISHED = "finished"
+
+JOB_FAILED = "failed"
+
+
+def searchable_summary(searchable: int, total: int, behind: int) -> str:
+    """Where the corpus stands, for the strip when nothing is running."""
+    summary = f"{searchable} of {total} collections searchable"
+    if behind:
+        summary += f", {behind} behind"
+    return summary
+
+
+def last_job(kind: str, state: str) -> str:
+    """The most recent operation, as the strip's link text."""
+    return f"Last: {JOB_KINDS.get(kind, kind)}, {state}"
+
+
 CORPUS_OVERVIEW = "Overview"
 
 NO_CONTEXT = "No project here. Run kennis context init in one."
@@ -450,6 +484,7 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
+    "ACTIVITY_HEADING",
     "ADD_ACTION",
     "ADD_PREAMBLE",
     "BACK_TO_SEARCH",
@@ -469,6 +504,10 @@ __all__ = [
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
     "INDEX_PREAMBLE",
+    "JOB_FAILED",
+    "JOB_FINISHED",
+    "JOB_KINDS",
+    "JOB_RUNNING",
     "KENNIS_HEADING",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
@@ -479,6 +518,7 @@ __all__ = [
     "NOTHING_FOUND",
     "NOTHING_HELD",
     "NOTHING_MATERIALISED",
+    "NOTHING_RUN",
     "NOTHING_TO_ADD",
     "NOTHING_TO_INDEX",
     "NOTHING_TO_REMEMBER",
@@ -516,7 +556,9 @@ __all__ = [
     "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
+    "last_job",
     "search_hint_for",
+    "searchable_summary",
     "unknown_mode",
     "unknown_scope",
     "unreadable_note",
