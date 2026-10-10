@@ -461,6 +461,10 @@ body {
 }
 .searchbox .searching { margin: 0; }
 
+/* Quit is a form so it works without a script; `contents` lets its
+   button sit in the row of actions as if the form were not there. */
+.quit { display: contents; }
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -606,6 +610,10 @@ main {
 }
 
 .action-page h2 { font-size: 1.3rem; margin: 0 0 0.5rem; }
+
+/* The page Quit answers with: no shell around it, because nothing in
+   the shell would work any more. */
+.stopped main { padding-top: 4rem; }
 
 /* ---- an action's dialog ---- */
 

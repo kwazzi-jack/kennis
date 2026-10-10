@@ -1,6 +1,6 @@
 # The graphical interface
 
-`kennis gui` opens the corpus in a window: search, read, browse, write a
+`kennis gui` opens the corpus in a browser tab: search, read, browse, write a
 note, and run the whole of corpus management without a terminal.
 
 ```
@@ -14,25 +14,27 @@ package:
 uv tool install "kennis[gui]"
 ```
 
-## A window, or a browser tab
+## A browser tab
 
-kennis serves a local web interface and then tries to show it in the
-operating system's own webview - WebView2 on Windows, WKWebView on macOS,
-WebKitGTK or Qt on Linux. Where the platform provides one you get a window.
+kennis serves a local web interface and opens it in your own browser.
+There is no separate window: everything the interface does happens in
+the tab.
 
-**Where it does not, you get a browser tab, and that is not an error.**
-Nothing installs a webview backend by default on Linux, so this is the
-ordinary case there. kennis says so rather than letting a browser appear
-with no explanation; a native window on Linux needs GTK or Qt bindings for
-Python.
+**Closing the tab does not stop kennis.** Use **Quit** at the end of the
+bar, or press Ctrl-C in the terminal that ran `kennis gui`. Quit refuses
+while an add, an index or a sync is running, because stopping then would
+cut the operation off part of the way through.
 
-`--browser` skips the window and opens a tab directly:
+On a remote machine - a cluster login node, say - forward the port and
+open the address on your own computer:
 
 ```
-kennis gui --browser
+kennis gui --no-browser
 ```
 
-That is also the form to use over SSH with a forwarded port.
+`--no-browser` prints the address and opens nothing. Without it, a
+machine with no display may start a text browser such as `lynx` in the
+terminal instead.
 
 ## The address and the token
 
@@ -125,9 +127,9 @@ and the command, and no button that would not work.
 
 ## Noticing that something changed
 
-A window left open all afternoon is looking at a corpus a terminal may have
+A tab left open all afternoon is looking at a corpus a terminal may have
 written to. Each page carries the revision it was drawn at and asks again
-when the window regains focus, so you are told to reload rather than shown
+when the tab regains focus, so you are told to reload rather than shown
 something stale.
 
 It checks **on focus, never on a timer**. A timer would spend a subprocess

@@ -37,6 +37,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context.bundle import find_bundle
@@ -159,6 +160,8 @@ _TEMPLATES.env.globals.update(
         "no_context": words.NO_CONTEXT,
         "recents_heading": words.RECENTS_HEADING,
         "corpus_changed": words.CORPUS_CHANGED,
+        "quit_label": words.QUIT,
+        "quit_title": words.QUIT_TITLE,
         # The search form is the bar's, on every page, so what it
         # offers is invariant and global; only the search page passes
         # what was asked.
@@ -195,12 +198,20 @@ def new_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def build_app(token: str) -> FastAPI:
+def _keep_running() -> None:
+    """The default `on_quit`, for an application nobody launched."""
+
+
+def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAPI:
     """The application, guarded by `token`.
 
     Taken as an argument rather than read from a global, for the reason
     concern #87 gives about the engine: a value two callers can set
     differently in one process is a value a test can set at all.
+
+    `on_quit` is how a POST to `/quit` reaches whoever is running the
+    server. The application cannot stop the server itself - uvicorn owns
+    it - so it says it has been asked to and the launcher does the rest.
     """
     app = FastAPI(title="kennis", docs_url=None, redoc_url=None)
     # On the application rather than in a module-level variable, so a
@@ -246,6 +257,37 @@ def build_app(token: str) -> FastAPI:
     @app.get("/static/kennis.css")
     async def serve_stylesheet() -> PlainTextResponse:
         return PlainTextResponse(stylesheet(), media_type="text/css")
+
+    @app.post("/quit")
+    async def quit_interface(request: Request) -> HTMLResponse:
+        """Answer, then ask the launcher to stop.
+
+        **Refused while a job runs.** The worker is a daemon thread, and
+        ending the process ends it wherever it is - inside the corpus
+        lock, or between writing a document and committing it.
+
+        **The stop is a background task**, which Starlette runs only
+        once the response has been sent. uvicorn would deliver the page
+        either way - its shutdown waits for requests already in flight,
+        and an injection that asked first was not caught for that
+        reason - so this states the order rather than relying on a
+        server's grace. What uvicorn will not do is answer the *next*
+        request, so the page carries its stylesheet inline: a `<link>`
+        would be fetched from a server that has gone.
+        """
+        if app.state.jobs.running() is not None:
+            return _TEMPLATES.TemplateResponse(
+                request,
+                "problem.html",
+                {"problem": words.QUIT_WHILE_RUNNING, "resolution": None},
+                status_code=409,
+            )
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "stopped.html",
+            {"stopped": words.STOPPED, "stylesheet": stylesheet()},
+            background=BackgroundTask(on_quit),
+        )
 
     @app.get("/static/{name}.js")
     async def serve_script(name: str) -> PlainTextResponse:

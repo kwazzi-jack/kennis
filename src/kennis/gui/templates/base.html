@@ -71,6 +71,12 @@
       <option value="{{ value }}"{% if value == theme %} selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
+    {# A plain form, not htmx: it works without a script, and what it
+       answers with is a whole page, because nothing will be left to
+       swap a fragment into. #}
+    <form class="quit" action="/quit" method="post">
+      <button type="submit" class="ghost action" title="{{ quit_title }}">{{ icon("power") }}<span class="label">{{ quit_label }}</span></button>
+    </form>
   </div>
 </header>
 

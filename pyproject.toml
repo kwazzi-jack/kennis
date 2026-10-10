@@ -110,7 +110,6 @@ gui = [
     "fastapi>=0.115",
     "jinja2>=3.1",
     "markdown-it-py>=3",
-    "pywebview>=6.2,<7",
     "uvicorn>=0.30",
 ]
 
