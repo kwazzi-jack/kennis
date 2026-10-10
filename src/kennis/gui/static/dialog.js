@@ -35,8 +35,13 @@
     if (close) { close.closest("dialog").close(); }
   });
 
+  // Only the form's own POST closes it. A control inside the form - a
+  // preview, Browse, Another group - makes GET requests of its own, and
+  // htmx can report one of those against the form; closing on it shut
+  // the Add dialog under the reader's hands (11d).
   document.body.addEventListener("htmx:afterRequest", function (event) {
     var form = event.detail.elt;
+    if (event.detail.requestConfig.verb !== "post") { return; }
     if (!form.matches || !form.matches("form[data-closes-dialog]")) { return; }
     var dialog = form.closest("dialog");
     if (dialog && event.detail.successful) { dialog.close(); }

@@ -91,18 +91,32 @@ as a placeholder rather than a broken image.
 
 ## Managing the corpus
 
-The **manage** page runs the operations that change things:
+The bar along the top holds the operations that change things. Each opens
+a dialog, or a page if scripts are off:
 
-| section | what it does |
+| action | what it does |
 |---|---|
-| Add | files, directories, URLs or identifiers, one per line, into one collection |
+| Add | a paper, a documentation site, a file or folder, or several groups at once |
+| Note | write a note into the corpus or this project's bundle |
 | Index | build the search index for one collection or all three |
-| Synchronise | converge the corpus, or this project's bundle, with every installed pack |
-| Packs | install a pack from the path to its `.ken.yml` |
+| Sync | converge the corpus, or this project's bundle, with every installed pack |
+| Pack | install a pack from the path to its `.ken.yml` |
 
-Each one runs in the background and streams its progress as it goes, so a
-document conversion or a documentation crawl shows what it is doing rather
-than appearing to hang.
+**Add has a tab for each kind of thing.** Paper takes an arXiv identifier,
+a DOI, an ADS bibcode or a PDF; Documentation site takes the address of
+its first page; File takes a file or a folder and asks which collection;
+Several by group takes a block per group, one item per line. Every field
+says whether it is required, and an optional one says what an empty field
+becomes. As you type, the dialog previews what the add would do: the
+paper's title and the citekey it would get, a paper you already hold, or
+the reason the add would refuse. It asks arXiv only once the identifier is
+complete. **Browse** lists the folders of the computer kennis is running
+on, which is the computer the add reads from - not necessarily the one
+your browser is on.
+
+Each operation runs in the background and reports in the strip at the
+bottom of every page, so a document conversion or a documentation crawl
+shows what it is doing rather than appearing to hang.
 
 **One operation runs at a time.** A second is refused and told which one is
 in the way. That is not an arbitrary limit: kennis takes one corpus-wide

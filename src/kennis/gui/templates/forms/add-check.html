@@ -1,0 +1,2 @@
+{% for check in checks %}<li class="check{% if not check.recognised %} role-warning{% endif %}"><code>{{ check.line }}</code> <span>{{ check.kind }}</span>{% if check.held %} <span class="held">{{ line_held }}</span>{% endif %}</li>
+{% endfor %}

@@ -1,9 +1,9 @@
 <p class="role-muted">{{ sync_preamble }}</p>
 <div class="fields">
-  <form hx-disabled-elt="find button" hx-post="/sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+  <form hx-disabled-elt="find button[type=submit]" hx-post="/sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
     <button type="submit">{{ sync_corpus_action }}</button>
   </form>
-  <form hx-disabled-elt="find button" hx-post="/context-sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+  <form hx-disabled-elt="find button[type=submit]" hx-post="/context-sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
     <button type="submit">{{ sync_context_action }}</button>
   </form>
 </div>

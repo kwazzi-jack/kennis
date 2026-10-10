@@ -1,0 +1,25 @@
+{# One group of Several by group: a name, a collection, and its lines,
+   each line checked as its own tab would check it. #}
+<fieldset class="block">
+  <legend>{{ block_heading }} {{ index }}</legend>
+  <div class="field">
+    <label class="name" for="group-{{ index }}">{{ field_labels.group }}</label>
+    <span class="need">{{ required }}</span>
+    <input id="group-{{ index }}" type="text" name="group-{{ index }}">
+  </div>
+  <div class="field">
+    <span class="name">{{ field_labels.collection }}</span>
+    <span class="need">{{ required }}</span>
+    <span class="choices">{% for choice in collections %}<label><input type="radio" name="collection-{{ index }}" value="{{ choice }}"> {{ choice }}</label>{% endfor %}</span>
+  </div>
+  <div class="field">
+    <label class="name" for="lines-{{ index }}">{{ field_labels.lines }}</label>
+    <span class="need">{{ required }}</span>
+    <span class="entry-row">
+    <textarea id="lines-{{ index }}" name="lines-{{ index }}" rows="4" hx-get="/add/check?index={{ index }}" hx-trigger="input changed delay:600ms" hx-target="#checks-{{ index }}" hx-include="closest fieldset"></textarea>
+    <button type="button" class="ghost browse" hx-get="/browse?target=lines-{{ index }}&amp;folders=1" hx-target="#chooser-lines-{{ index }}">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+    </span>
+  </div>
+  <div class="chooser" id="chooser-lines-{{ index }}"></div>
+  <ul class="checks" id="checks-{{ index }}" aria-live="polite"></ul>
+</fieldset>

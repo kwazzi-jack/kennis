@@ -30,7 +30,7 @@ printing it. Concern #324.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from kennis.context import Context
@@ -161,6 +161,50 @@ def add_documents(
             "add", scope=destination, summary=outcome_summary(report.counts)
         )
     return report
+
+
+@dataclass(frozen=True, slots=True)
+class GroupBlock:
+    """One group of the window's Several by group tab: where, under what
+    name, and what to add."""
+
+    collection: str
+    group: str
+    identifiers: tuple[str, ...]
+
+
+def add_in_groups(
+    context: Context,
+    blocks: Sequence[GroupBlock],
+    options: AddOptions,
+    *,
+    events: EventSink | None = None,
+) -> AddReport:
+    """Several adds as one job, one per group, merged into one report.
+
+    **Each block is its own add** - its own lock, restore and commit -
+    because a block can name a different collection and `add_documents`
+    commits per collection. One report, because the window shows one
+    job; each outcome names its own input, which is what says which
+    block it came from.
+    """
+    reports = [
+        add_documents(
+            context,
+            block.collection,
+            block.identifiers,
+            replace(options, group=block.group),
+            events=events,
+        )
+        for block in blocks
+    ]
+    costs = [report.cost_cents for report in reports if report.cost_cents is not None]
+    return AddReport(
+        outcomes=[outcome for report in reports for outcome in report.outcomes],
+        elapsed_seconds=sum(report.elapsed_seconds for report in reports),
+        cost_cents=sum(costs) if costs else None,
+        repairs=sum(report.repairs for report in reports),
+    )
 
 
 def build_indexes(
@@ -304,8 +348,10 @@ def install_a_pack(
 
 __all__ = [
     "BuiltIndex",
+    "GroupBlock",
     "IndexBuild",
     "add_documents",
+    "add_in_groups",
     "build_indexes",
     "install_a_pack",
     "restore_hand_deletions",
