@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from platformdirs import user_data_dir, user_state_dir
+from platformdirs import user_config_dir, user_data_dir, user_log_dir, user_state_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
@@ -425,3 +425,25 @@ def test_a_test_does_not_write_to_the_real_state_directory():
 
     assert written_to != Path(user_state_dir("kennis"))
     assert not written_to.is_relative_to(Path.home() / ".local" / "state")
+
+
+def test_a_test_does_not_read_the_real_configuration():
+    """The configuration a test reads is a test's, not Brian's.
+
+    The real directory holds a key file `credential` reads. The
+    autouse `no_real_configuration` fixture redirects it, and this is
+    what fails if that is removed. Concern #442.
+    """
+    from kennis.engine.settings import config_dir
+
+    assert config_dir() != Path(user_config_dir("kennis"))
+    assert not config_dir().is_relative_to(Path.home() / ".config")
+
+
+def test_a_test_does_not_write_to_the_real_log():
+    """The log a test writes is a test's. 311 lines of test runs were
+    found in the real one, from a subprocess with no override."""
+    from kennis.logs import log_dir
+
+    assert log_dir() != Path(user_log_dir("kennis"))
+    assert not log_dir().is_relative_to(Path.home() / ".local" / "state")
