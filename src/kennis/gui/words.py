@@ -149,8 +149,6 @@ def key_models(models: Sequence[str]) -> str:
     return f"Meaning cuts measured for {joined(list(models))}."
 
 
-THEME_LABEL = "Colours"
-
 # The three choices, in the order they are offered. `system` first
 # because it is the default and the behaviour that existed before
 # there was a choice.
@@ -159,6 +157,73 @@ THEME_CHOICES: Final[tuple[tuple[str, str], ...]] = (
     ("light", "Light"),
     ("dark", "Dark"),
 )
+
+# Settings (milestone 12). The window's own preferences are kept apart
+# from kennis's configuration on the page, and say so.
+SETTINGS_HEADING = "Settings"
+WINDOW_SETTINGS_HEADING = "This window"
+WINDOW_SETTINGS_NOTE = (
+    "Kept by this window only, in this browser. The command line and the "
+    "MCP server never see these, and each takes effect as you choose it."
+)
+APPEARANCE_HEADING = "Appearance"
+RESULTS_HEADING = "Search results"
+SAVE = "Save"
+
+# Each preference's name and the sentence beside it, by its registry name.
+PREFERENCE_WORDS: Final[dict[str, tuple[str, str]]] = {
+    "theme": ("Colours", "Follow the system, or always light or dark."),
+    "face": (
+        "Reading face",
+        "The face documents and search results are set in. Atkinson "
+        "Hyperlegible was designed to keep similar letters apart.",
+    ),
+    "size": ("Text size", "Everything in the window grows or shrinks with it."),
+    "spacing": (
+        "Spacing",
+        "Wider line, letter and word spacing in what you read. Extra "
+        "spacing has helped some readers with dyslexia more than any "
+        "special typeface.",
+    ),
+    "strength": (
+        "Match strength",
+        "How each measure shows how well a result matched: bars beside "
+        "the level, or the level alone.",
+    ),
+    "labels": (
+        "Measure labels",
+        "Name each measure by its icon, by its word, or by both.",
+    ),
+    "scale": (
+        "Bar colours",
+        "Each runs from dark to light, and stays distinguishable to the "
+        "commonest colour-vision deficiency.",
+    ),
+}
+
+PREFERENCE_CHOICES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
+    "face": (
+        ("serif", "Source Serif"),
+        ("sans", "System sans"),
+        ("hyperlegible", "Atkinson Hyperlegible"),
+    ),
+    "size": (
+        ("small", "Small"),
+        ("normal", "Normal"),
+        ("large", "Large"),
+        ("larger", "Larger"),
+    ),
+    "spacing": (("normal", "Normal"), ("wide", "Wide"), ("wider", "Wider")),
+    "strength": (("bars", "Bars and words"), ("words", "Words only")),
+    "labels": (("icons", "Icons"), ("words", "Words"), ("both", "Both")),
+    "scale": (
+        ("viridis", "Viridis"),
+        ("cividis", "Cividis"),
+        ("plasma", "Plasma"),
+        ("magma", "Magma"),
+        ("greys", "Greys"),
+    ),
+}
 
 PANE_SHOW = "Show the corpus"
 
@@ -790,6 +855,7 @@ __all__ = [
     "ADD_TABS",
     "ADD_TABS_LABEL",
     "ANOTHER_GROUP",
+    "APPEARANCE_HEADING",
     "ARXIV_SILENT",
     "ATTENTION_ONLY",
     "BACK_TO_SEARCH",
@@ -880,6 +946,8 @@ __all__ = [
     "PANE_HIDE",
     "PANE_SHOW",
     "PANE_STATES",
+    "PREFERENCE_CHOICES",
+    "PREFERENCE_WORDS",
     "PREVIEW_ADDRESS",
     "PREVIEW_FILE",
     "PREVIEW_UNRECOGNISED",
@@ -893,9 +961,12 @@ __all__ = [
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
     "REQUIRED",
+    "RESULTS_HEADING",
+    "SAVE",
     "SCOPE_LABEL",
     "SEARCHING",
     "SEARCH_ACTION",
+    "SETTINGS_HEADING",
     "SHOW_PASSAGE",
     "SITE_UNREACHABLE",
     "SKIP",
@@ -908,8 +979,9 @@ __all__ = [
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",
     "THEME_CHOICES",
-    "THEME_LABEL",
     "TITLE_HINT",
+    "WINDOW_SETTINGS_HEADING",
+    "WINDOW_SETTINGS_NOTE",
     "attention_count",
     "chooser_truncated",
     "describe_count",

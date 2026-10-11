@@ -37,7 +37,7 @@ the reason this file can be edited safely.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 from pygments.token import STANDARD_TYPES, Token, _TokenType
 
@@ -137,14 +137,15 @@ STRENGTH_SCALES: Final[dict[str, StrengthScale]] = {
     },
 }
 
-# Viridis until milestone 12 lets the reader choose.
+# What the bars wear until the reader chooses another (the `scale`
+# preference, `gui/preferences.py`).
 DEFAULT_STRENGTH_SCALE: Final = "viridis"
 
 
 def css_variables(
     colours: dict[AnsiColour, str] | None = None,
     ground: str | None = None,
-    strengths: tuple[str, ...] | None = None,
+    scheme: Literal["light", "dark"] = "light",
 ) -> str:
     """One custom property per role, plus the ground and the rule.
 
@@ -179,13 +180,17 @@ def css_variables(
     # The surface of the pane and the strip: the muted grey at a low
     # alpha, so it works on both grounds without a tenth colour.
     lines.append(f"  --raised: {table['bright_black']}14;")
-    steps = (
-        STRENGTH_SCALES[DEFAULT_STRENGTH_SCALE]["light"]
-        if strengths is None
-        else strengths
-    )
-    for step, colour in enumerate(steps, start=1):
-        lines.append(f"  --strength-{step}: {colour};")
+    # Every scale's steps for this theme, and the bars pointed at the
+    # default. `scale_css` repoints them at the reader's choice; `var()`
+    # resolves when the value is computed, after the theme block in force
+    # has set these, so the scale and the theme are independent.
+    for name, themes in STRENGTH_SCALES.items():
+        for step, colour in enumerate(themes[scheme], start=1):
+            lines.append(f"  --scale-{name}-{step}: {colour};")
+    for step in range(1, 6):
+        lines.append(
+            f"  --strength-{step}: var(--scale-{DEFAULT_STRENGTH_SCALE}-{step});"
+        )
     for name, role in ROLES.items():
         lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)
@@ -330,9 +335,7 @@ def stylesheet() -> str:
     Generated rather than a static file because the roles are, and a
     static copy would be the second place a colour lives.
     """
-    dark = css_variables(
-        CSS_COLOURS_DARK, DARK_GROUND, STRENGTH_SCALES[DEFAULT_STRENGTH_SCALE]["dark"]
-    )
+    dark = css_variables(CSS_COLOURS_DARK, DARK_GROUND, "dark")
     return (
         f":root {{\n{css_variables()}\n}}\n\n"
         # The guard is the load-bearing part. This block is later in
@@ -348,8 +351,32 @@ def stylesheet() -> str:
         # attribute matching either of these, so the default is the
         # behaviour that existed before there was a choice.
         f':root[data-theme="dark"] {{\n{dark}\n}}\n\n'
-        f"{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
+        f"{scale_css()}\n\n{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
     )
+
+
+def scale_css() -> str:
+    """The bars and the swatches, by the reader's chosen scale.
+
+    After the theme blocks, because a rule here has the specificity of
+    the dark block's own `--strength-N` and order is what lets the
+    reader's scale win in either theme. Generated, because the scales
+    are a table and a hand-written copy would be the second place one
+    is named.
+    """
+    rules: list[str] = []
+    for name in STRENGTH_SCALES:
+        steps = "\n".join(
+            f"  --strength-{step}: var(--scale-{name}-{step});" for step in range(1, 6)
+        )
+        rules.append(f':root[data-scale="{name}"] {{\n{steps}\n}}')
+    for name in STRENGTH_SCALES:
+        for step in range(1, 6):
+            rules.append(
+                f'.swatch[data-scale="{name}"][data-step="{step}"] '
+                f"{{ background: var(--scale-{name}-{step}); }}"
+            )
+    return "\n".join(rules)
 
 
 # Layout only. No colour appears here: every visible colour comes
@@ -377,6 +404,38 @@ _LAYOUT = """\
   font-weight: 200 900;
   font-display: swap;
   src: url(/static/vendor/fonts/SourceSerif4-Italic.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/static/vendor/fonts/AtkinsonHyperlegible-Regular.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/static/vendor/fonts/AtkinsonHyperlegible-Bold.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/static/vendor/fonts/AtkinsonHyperlegible-Italic.woff2) format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/static/vendor/fonts/AtkinsonHyperlegible-BoldItalic.woff2) format('woff2');
 }
 
 :root {
@@ -532,7 +591,6 @@ body {
   gap: 0.15rem;
   margin-left: auto;
 }
-.theme { font-size: 0.75rem; padding: 0.25rem 0.35rem; margin-left: 0.4rem; }
 
 /* ---- the pane: a tree, like an editor's file explorer ---- */
 
@@ -812,7 +870,93 @@ main {
 .column {
   max-width: calc(var(--margin) + var(--gap) + var(--measure));
   margin: 0 auto;
+  /* The spacing preference, on what is read rather than on the whole
+     window: wider letters in the bar would only crowd it. */
+  line-height: var(--leading);
+  letter-spacing: var(--tracking);
+  word-spacing: var(--word-gap);
 }
+
+/* ---- this window's preferences (12a) ----
+   Each is an attribute the server writes onto <html> from a cookie.
+   The default of each needs no rule: it is what the window did before
+   there was a choice. */
+:root { --leading: 1.6; --tracking: normal; --word-gap: normal; }
+:root[data-face="sans"] { --column: var(--gutter); }
+:root[data-face="hyperlegible"] {
+  --column: 'Atkinson Hyperlegible', Verdana, var(--gutter);
+}
+/* The root's size, because the interface is in rem: a reader asking
+   for larger text does not mean larger only in the column. */
+:root[data-size="small"] { font-size: 90%; }
+:root[data-size="large"] { font-size: 112.5%; }
+:root[data-size="larger"] { font-size: 125%; }
+:root[data-spacing="wide"] {
+  --leading: 1.8;
+  --tracking: 0.02em;
+  --word-gap: 0.08em;
+}
+:root[data-spacing="wider"] {
+  --leading: 2;
+  --tracking: 0.04em;
+  --word-gap: 0.16em;
+}
+:root[data-strength="words"] .cells { display: none; }
+:root[data-labels="icons"] .measure-name { display: none; }
+:root[data-labels="words"] .measure > .icon { display: none; }
+
+/* ---- the settings page ---- */
+.settings { font-family: var(--gutter); font-size: 0.875rem; }
+.settings h1 { font-family: var(--column); font-size: 1.5rem; margin: 0 0 1rem; }
+.settings h2 { font-size: 1.05rem; margin: 1.2rem 0 0.2rem; }
+.settings h3 {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--role-muted);
+  margin: 1.4rem 0 0.2rem;
+}
+/* One row per setting: its name and sentence on the left, the choices
+   on the right, stacking when the window is narrow. */
+.setting {
+  display: grid;
+  /* Both columns get a share: sized to the choices alone, five scales
+     squeezed the sentence to a word a line. */
+  grid-template-columns: minmax(12rem, 1fr) minmax(0, 1fr);
+  gap: 0.2rem 1.2rem;
+  align-items: start;
+  margin: 0;
+  padding: 0.75rem 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+.setting-name { float: left; padding: 0; font-weight: 600; }
+.setting-sentence { grid-column: 1; margin: 0; font-size: 0.8125rem; }
+.choices {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem 0.8rem;
+}
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+.swatches { display: inline-flex; gap: 1px; }
+.swatch { display: inline-block; width: 0.55rem; height: 0.85rem; border-radius: 1px; }
+.preferences { max-width: 46rem; }
+.prefs-save { margin-top: 1rem; }
+.settings-open { display: inline-flex; align-items: center; }
+@media (max-width: 760px) {
+  .setting { grid-template-columns: minmax(0, 1fr); }
+  .choices { grid-column: 1; grid-row: auto; justify-content: flex-start; }
+}
+.measure-name { color: var(--role-muted); }
 
 .action-page h2 { font-size: 1.3rem; margin: 0 0 0.5rem; }
 
@@ -1544,5 +1688,6 @@ __all__ = [
     "css_variables",
     "css_weights",
     "layout_css",
+    "scale_css",
     "stylesheet",
 ]
