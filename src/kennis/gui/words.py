@@ -301,6 +301,33 @@ def built_with(model: str | None, backend: str | None, chunk_size: int) -> str:
     return f"{searched}, in chunks of {chunk_size} characters"
 
 
+# The Backup section (13b). What the backup holds, and every sentence
+# about its state, are `render/backup.py`'s, shared with `kennis backup`.
+BACKUP_HEADING = "Backup"
+BACKUP_FOLDER_LABEL = "Folder"
+BACKUP_SAVE_FOLDER = "Save folder"
+BACKUP_NOW = "Back up now"
+BACKUP_NOW_NOTE = (
+    "Asks for a password each time and never stores it. The backup is "
+    "tested with it before it replaces the last one."
+)
+BACKUP_PASSWORD = "Password"
+BACKUP_CONFIRMATION = "Password again"
+BACKUP_TEST = "Test the backup"
+BACKUP_TEST_NOTE = "Decrypts every file in it and compares each with its checksum."
+BACKUP_RESTORE_LABEL = "Restore"
+BACKUP_RESTORE_NOTE = (
+    "Restoring replaces the corpus this window shows, so it is a command, "
+    "run with no window open:"
+)
+PASSWORD_NEEDED = "A backup needs a password."
+PASSWORDS_DIFFER = "The two passwords differ, so nothing was started."
+
+
+def not_a_backup_folder(path: str) -> str:
+    return f"'{path}' is not a folder, so it was not saved."
+
+
 PANE_SHOW = "Show the corpus"
 
 PANE_HIDE = "Hide the corpus"
@@ -409,6 +436,7 @@ JOB_KINDS: Final[dict[str, str]] = {
     "sync": "Corpus sync",
     "context-sync": "Context sync",
     "pack": "Pack install",
+    "backup": "Backup",
 }
 
 JOB_RUNNING = "running"
@@ -934,6 +962,17 @@ __all__ = [
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
     "ATTENTION_ONLY",
+    "BACKUP_CONFIRMATION",
+    "BACKUP_FOLDER_LABEL",
+    "BACKUP_HEADING",
+    "BACKUP_NOW",
+    "BACKUP_NOW_NOTE",
+    "BACKUP_PASSWORD",
+    "BACKUP_RESTORE_LABEL",
+    "BACKUP_RESTORE_NOTE",
+    "BACKUP_SAVE_FOLDER",
+    "BACKUP_TEST",
+    "BACKUP_TEST_NOTE",
     "BACK_TO_SEARCH",
     "BLOCK_HEADING",
     "BROWSE",
@@ -1035,6 +1074,8 @@ __all__ = [
     "PANE_HIDE",
     "PANE_SHOW",
     "PANE_STATES",
+    "PASSWORDS_DIFFER",
+    "PASSWORD_NEEDED",
     "PREFERENCE_CHOICES",
     "PREFERENCE_WORDS",
     "PREVIEW_ADDRESS",
@@ -1092,6 +1133,7 @@ __all__ = [
     "key_models",
     "last_job",
     "menu_for",
+    "not_a_backup_folder",
     "not_a_count",
     "not_a_folder",
     "open_candidate",

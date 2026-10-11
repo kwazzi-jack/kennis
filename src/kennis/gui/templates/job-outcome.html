@@ -1,4 +1,5 @@
 <p class="{{ shown.role }}">{{ shown.headline }}</p>
+{% if shown.redraws %}{% set element, route = shown.redraws %}<span hidden data-redraw-id="{{ element }}" data-redraw-route="{{ route }}"></span>{% endif %}
 {% if shown.items %}
 <ul class="items">
   {% for item in shown.items %}

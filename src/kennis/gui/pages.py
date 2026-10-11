@@ -21,6 +21,7 @@ from urllib.parse import quote, urlencode
 import yaml
 
 from kennis.context import Context
+from kennis.engine.backup import BackupReport
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.context.sync import BundleSync
@@ -42,6 +43,7 @@ from kennis.gui.snippet import Passage, passage_of, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import Holding, document_marks
 from kennis.operations import IndexBuild
+from kennis.render.backup import describe_written
 from kennis.render.hits import (
     LEG_LABELS,
     LEGS,
@@ -562,6 +564,7 @@ __all__ = [
     "add_here_address",
     "ordered_by",
     "palette_entries",
+    "shown_backup",
     "shown_bundle_document",
     "shown_document",
     "shown_groups",
@@ -937,6 +940,11 @@ class ShownJob:
     notes: tuple[str, ...] = ()
     next_steps: tuple[str, ...] = ()
     role: str = "role-added"
+    # A part of the page the outcome changes, as (element id, route that
+    # draws it). The outcome asks for it again on arrival, where the page
+    # has one: a backup's section otherwise kept saying no backup had
+    # been written while the strip beside it said one had.
+    redraws: tuple[str, str] | None = None
 
 
 def shown_add(report: AddReport) -> ShownJob:
@@ -1064,6 +1072,14 @@ def shown_bundle_sync(result: BundleSync) -> ShownJob:
         # one: this interface has no control that indexes a bundle, so
         # the terminal really is where that is done.
         next_steps=("kennis context index",) if acted else (),
+    )
+
+
+def shown_backup(report: BackupReport) -> ShownJob:
+    """A backup: where it was written, how large, and how many entries."""
+    return ShownJob(
+        headline=f"Backed up to {describe_written(report)}",
+        redraws=("backup", "/settings/backup"),
     )
 
 

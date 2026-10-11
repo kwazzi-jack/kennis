@@ -981,6 +981,16 @@ main {
 .rebuild-actions form, .rebuild-actions .undo { margin: 0; }
 .rebuild-actions .later { color: var(--role-muted); }
 .kennis .credential code { font-size: 0.8125rem; }
+/* The Backup section: three forms, each a row like the settings above. */
+.backup .backup-folder,
+.backup .backup-now,
+.backup .backup-test { max-width: 46rem; margin: 0; }
+.backup .backup-state { grid-column: 1; margin: 0; font-size: 0.8125rem; }
+.backup .password { display: block; margin-bottom: 0.4rem; }
+.backup .password input { display: block; width: 100%; margin-top: 0.15rem; }
+.backup .setting-control > button[type=submit] { margin-top: 0.4rem; }
+.backup .entry-row { display: flex; gap: 0.4rem; }
+.backup .entry-row input { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 760px) {
   .setting-control { grid-column: 1; grid-row: auto; }
 }
