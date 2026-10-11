@@ -100,6 +100,7 @@ dependencies = [
     # Pinned below 4: version 4 is a client to a daemon and its convenient
     # path uploads documents. The pin is a decision, not staleness (#130).
     "mineru[pipeline]>=3.4,<4",
+    "py7zr>=1.1.3",
 ]
 
 [project.optional-dependencies]

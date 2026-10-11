@@ -288,3 +288,29 @@ class PackNotInstalled(KennisError):
 
     default_message = "no pack of that id is installed"
     default_resolution = "kennis pack list"
+
+
+class BackupRefused(KennisError):
+    """A backup or a restore that kennis will not start.
+
+    An empty password, a folder that is not there or cannot be written,
+    a restore onto something that is not empty, or an archive naming a
+    path outside the corpus. Each is refused before anything is written,
+    so a refusal never leaves a partial file or a half-restored corpus.
+    """
+
+    default_message = "the backup could not be started"
+    default_resolution = None
+
+
+class BackupUnreadable(KennisError):
+    """An archive that would not open, or failed its test.
+
+    One error for two causes, because they cannot be told apart: with
+    the names encrypted, a wrong password decrypts the header into
+    arbitrary bytes, and the library then fails however those bytes
+    lead it to.
+    """
+
+    default_message = "the password is wrong or the archive is damaged"
+    default_resolution = None

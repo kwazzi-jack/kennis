@@ -73,3 +73,11 @@ What is written to the log file.
 | `level` | `debug` / `info` / `warning` / `error` | `info` | Detail written to the log file. |
 | `max_bytes` | `int` | `1048576` | Size at which the log rotates. |
 | `backup_count` | `int` | `3` | Rotated log files kept. |
+
+### `[backup]`
+
+Where the encrypted backup of the corpus is written.
+
+| key | type | default | what it does |
+|---|---|---|---|
+| `folder` | `str` | `""` | Folder the encrypted backup is written to, often one a cloud client synchronises. The backup holds the full text of every document. |
