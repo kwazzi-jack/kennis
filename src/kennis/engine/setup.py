@@ -28,10 +28,12 @@ from typing import Final, Literal, get_args, get_origin
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
+from kennis.engine.corpus.converters import DATALAB_KEY_VARIABLE
 from kennis.engine.errors import SettingsError
 from kennis.engine.settings import (
     Settings,
     config_path,
+    credential,
     credentials_path,
     load_settings,
 )
@@ -172,6 +174,37 @@ def apply_answers(answers: Mapping[str, str]) -> Settings:
     if secrets:
         _write_credentials(secrets)
     return settings
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialStatus:
+    """Which variable a key is read from, and whether anything holds it.
+
+    Never the value: a status is drawn on a page and written to a log, and a
+    key that reached either would be a key sent somewhere it was not meant
+    to go.
+    """
+
+    variable: str
+    is_set: bool
+
+
+def credential_status(key: str) -> CredentialStatus:
+    """The variable `key`'s value is read from, and whether it is set.
+
+    The variable is the one the reader of the key consults, which for
+    embedding is `embedding.api_key_env` - a setting - and for conversion is
+    the converter's own constant. Asking `_KEY_VARIABLES` instead would name
+    where `apply_answers` writes, which is not the same once
+    `embedding.api_key_env` has been changed (#440).
+    """
+    if key == "embedding.api_key":
+        variable = load_settings().embedding.api_key_env
+    elif key == "conversion.api_key":
+        variable = DATALAB_KEY_VARIABLE
+    else:
+        raise KeyError(key)
+    return CredentialStatus(variable=variable, is_set=bool(credential(variable)))
 
 
 # ---------------------------------------------------------------------------
@@ -438,9 +471,11 @@ def _as_toml_value(value: object) -> str:
 
 
 __all__ = [
+    "CredentialStatus",
     "Question",
     "QuestionKind",
     "apply_answers",
+    "credential_status",
     "questions_for",
     "setup_questions",
     "validate_answer",

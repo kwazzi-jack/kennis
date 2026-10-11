@@ -348,6 +348,25 @@ def read_manifest(index_root: Path, collection: str) -> IndexManifest | None:
     )
 
 
+def read_binding(index_root: Path, collection: str) -> Binding | None:
+    """How the published index for `collection` was built, or None.
+
+    Without loading the chunks, the BM25 tables or the vectors: a settings
+    page asks this of every collection to say which model each index keeps
+    using after the setting has changed, and the binding is a few hundred
+    bytes beside megabytes. None on the same terms as `read_manifest`.
+    """
+    collection_root = index_root / collection
+    pointer_path = collection_root / _POINTER_FILE
+    if not pointer_path.is_file():
+        return None
+    index_id = str(json.loads(pointer_path.read_text(encoding="utf-8"))["index_id"])
+    binding_path = collection_root / index_id / _BINDING_FILE
+    if not binding_path.is_file():
+        return None
+    return Binding.from_recorded(json.loads(binding_path.read_text(encoding="utf-8")))
+
+
 def load_index(index_root: Path, collection: str) -> LoadedIndex:
     """Read back the published index for `collection`."""
     collection_root = index_root / collection

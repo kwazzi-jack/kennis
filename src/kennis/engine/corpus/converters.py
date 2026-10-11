@@ -409,7 +409,7 @@ class MineruConverter:
 # would want batching because "one request beats several" was wrong.
 
 _DATALAB_URL: Final = "https://www.datalab.to/api/v1/convert"
-_DATALAB_KEY_VARIABLE: Final = "DATALAB_API_KEY"
+DATALAB_KEY_VARIABLE: Final = "DATALAB_API_KEY"
 
 # What the API accepts. Narrower than its marketing copy, which says "PDFs,
 # Word documents, spreadsheets and images" without naming extensions, so this
@@ -457,7 +457,7 @@ class DatalabConverter:
         max_polls: int = _MAX_POLLS,
         mode: ConversionMode = _DEFAULT_MODE,
     ) -> None:
-        self.api_key = credential(_DATALAB_KEY_VARIABLE) if api_key is None else api_key
+        self.api_key = credential(DATALAB_KEY_VARIABLE) if api_key is None else api_key
         self._client = client
         self._poll_seconds = poll_seconds
         self._max_polls = max_polls

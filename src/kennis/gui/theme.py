@@ -957,6 +957,33 @@ main {
   .choices { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 }
 .measure-name { color: var(--role-muted); }
+/* kennis's configuration: the control in the right column beside
+   everything said about it, which reads down the left. */
+.kennis-settings { max-width: 46rem; }
+.setting-group { margin-bottom: 0.4rem; }
+.kennis .setting > p { grid-column: 1; margin: 0; font-size: 0.8125rem; }
+.setting-control { grid-column: 2; grid-row: 1 / span 6; }
+.setting-control select, .setting-control input { width: 100%; }
+.setting-control .role-error { margin: 0.3rem 0 0; font-size: 0.8125rem; }
+.kennis .cost { font-style: italic; }
+.setting-key code { font-size: 0.75rem; color: var(--role-muted); }
+.kennis .outcome { margin: 0.6rem 0; }
+.rebuild {
+  max-width: 46rem;
+  margin: 0.6rem 0 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--role-warning);
+}
+.rebuild h3 { margin-top: 0.2rem; }
+.rebuild ul { margin: 0.3rem 0 0.6rem; padding-left: 1.2rem; }
+.rebuild-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.rebuild-actions form, .rebuild-actions .undo { margin: 0; }
+.rebuild-actions .later { color: var(--role-muted); }
+.kennis .credential code { font-size: 0.8125rem; }
+@media (max-width: 760px) {
+  .setting-control { grid-column: 1; grid-row: auto; }
+}
 
 .action-page h2 { font-size: 1.3rem; margin: 0 0 0.5rem; }
 
