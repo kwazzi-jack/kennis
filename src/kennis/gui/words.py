@@ -225,6 +225,82 @@ PREFERENCE_CHOICES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
     ),
 }
 
+# kennis's own configuration (12b): the same file `kennis config set`
+# writes, so the note says who else reads it. `corpus.root` is not
+# offered and not named: it moves the corpus from under an open window.
+KENNIS_SETTINGS_HEADING = "kennis"
+KENNIS_SETTINGS_NOTE = (
+    "kennis's own configuration. The command line and the MCP server read "
+    "it too, from their next command."
+)
+KENNIS_SAVE = "Save configuration"
+# The configuration's headings, in page order, by the group each
+# setting's section belongs to.
+KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
+    ("searching", "Searching and indexing"),
+    ("converting", "Converting documents"),
+)
+KENNIS_SAVED = "Saved."
+KENNIS_UNCHANGED = "Nothing was changed, so nothing was written."
+KENNIS_NOT_SAVED = "Nothing was saved. Each value that was refused says why."
+# Each setting's name in the window, by its configuration key. The
+# sentence beside it is the field's own description, as `config init`
+# prints it.
+SETTING_NAMES: Final[dict[str, str]] = {
+    "embedding.backend": "Embedding",
+    "embedding.model": "Embedding model",
+    "embedding.dimensions": "Dimensions",
+    "embedding.base_url": "Ollama address",
+    "embedding.api_key": "OpenAI key",
+    "conversion.backend": "Converter",
+    "conversion.mode": "Datalab mode",
+    "conversion.api_key": "Datalab key",
+    "retrieval.corpus_method": "Default matching",
+    "retrieval.default_top_k": "Results per collection",
+    "chunking.size": "Chunk size",
+}
+CONVERTER_NAMES: Final[dict[str, str]] = {
+    "mineru": "MinerU (local)",
+    "datalab": "Datalab (hosted)",
+}
+SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
+    "embedding.backend": {
+        "fastembed": "FastEmbed (local)",
+        "ollama": "Ollama (a local server)",
+        "openai": "OpenAI (hosted)",
+        "none": "None: keywords only",
+    },
+    "conversion.backend": CONVERTER_NAMES,
+    "conversion.mode": {
+        "fast": "Fast",
+        "balanced": "Balanced",
+        "accurate": "Accurate",
+    },
+    "retrieval.corpus_method": {value: label for value, label in MODE_CHOICES if value},
+}
+CONVERTER_MISSING = "MinerU is not installed on this machine. To install it:"
+# Completed by the variable's name: "DATALAB_API_KEY is set". Neither
+# is inside the other, so a test can tell them apart.
+CREDENTIAL_SET = "is set"
+CREDENTIAL_UNSET = "is not set"
+CREDENTIAL_KEEP = "Leave it empty to keep the key there is."
+REBUILD_HEADING = "The indexes need rebuilding"
+REBUILD_NOTE = (
+    "Until it is rebuilt, each index keeps searching with what it was built with:"
+)
+REBUILD_NONE = "No collection has an index yet, so nothing needs rebuilding."
+REBUILD_NOW = "Rebuild now"
+REBUILD_LATER = "Later"
+UNDO = "Undo"
+LEXICAL_ONLY_INDEX = "keywords only"
+
+
+def built_with(model: str | None, backend: str | None, chunk_size: int) -> str:
+    """What an index was built with, as the rebuild panel names it."""
+    searched = LEXICAL_ONLY_INDEX if model is None else f"{model} ({backend})"
+    return f"{searched}, in chunks of {chunk_size} characters"
+
+
 PANE_SHOW = "Show the corpus"
 
 PANE_HIDE = "Hide the corpus"
@@ -873,12 +949,17 @@ __all__ = [
     "CLOSE",
     "COLLECTION_ICONS",
     "CONTEXT_HEADING",
+    "CONVERTER_MISSING",
+    "CONVERTER_NAMES",
     "CORPUS_BUSY",
     "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
     "CORPUS_HEADING",
     "CORPUS_OVERVIEW",
     "CORPUS_UNREADABLE",
+    "CREDENTIAL_KEEP",
+    "CREDENTIAL_SET",
+    "CREDENTIAL_UNSET",
     "DISCOVERY_WORDS",
     "EMPTY_MEANS",
     "EMPTY_PREFIX",
@@ -894,11 +975,19 @@ __all__ = [
     "JOB_FINISHED",
     "JOB_KINDS",
     "JOB_RUNNING",
+    "KENNIS_GROUPS",
     "KENNIS_HEADING",
+    "KENNIS_NOT_SAVED",
+    "KENNIS_SAVE",
+    "KENNIS_SAVED",
+    "KENNIS_SETTINGS_HEADING",
+    "KENNIS_SETTINGS_NOTE",
+    "KENNIS_UNCHANGED",
     "KEY_HIGH",
     "KEY_LOW",
     "KEY_ORDER",
     "KEY_SUMMARY",
+    "LEXICAL_ONLY_INDEX",
     "LINE_HELD",
     "LINE_KINDS",
     "LOAD_IMAGES",
@@ -955,6 +1044,11 @@ __all__ = [
     "QUIT",
     "QUIT_TITLE",
     "QUIT_WHILE_RUNNING",
+    "REBUILD_HEADING",
+    "REBUILD_LATER",
+    "REBUILD_NONE",
+    "REBUILD_NOTE",
+    "REBUILD_NOW",
     "RECENTS_CLEAR",
     "RECENTS_HEADING",
     "REMEMBER_ACTION",
@@ -967,6 +1061,8 @@ __all__ = [
     "SEARCHING",
     "SEARCH_ACTION",
     "SETTINGS_HEADING",
+    "SETTING_CHOICES",
+    "SETTING_NAMES",
     "SHOW_PASSAGE",
     "SITE_UNREACHABLE",
     "SKIP",
@@ -980,9 +1076,11 @@ __all__ = [
     "SYNC_PREAMBLE",
     "THEME_CHOICES",
     "TITLE_HINT",
+    "UNDO",
     "WINDOW_SETTINGS_HEADING",
     "WINDOW_SETTINGS_NOTE",
     "attention_count",
+    "built_with",
     "chooser_truncated",
     "describe_count",
     "describe_holding",

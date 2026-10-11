@@ -81,6 +81,7 @@ swatches follow the theme like the bars do.
   and the alternative - one packed cookie - is a format to parse.
 
 ## What actually happened that I did not expect
+
 - **The `var()` worry was unfounded, and measured rather than argued.**
   All 30 combinations of system scheme, theme and scale gave the
   scale's step for the theme in force: a custom property on `:root`

@@ -58,11 +58,13 @@ from kennis.engine.errors import (
     ContextNotFound,
     CorpusBusy,
     KennisError,
+    SettingsError,
     UnknownCollection,
 )
 from kennis.engine.events import EventSink
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
+from kennis.engine.setup import apply_answers, validate_answer
 from kennis.gui import history, words
 from kennis.gui.adding import (
     FIRST_BLOCKS,
@@ -76,6 +78,14 @@ from kennis.gui.adding import (
     shown_checks,
     shown_paper_preview,
     shown_site_preview,
+)
+from kennis.gui.configuration import (
+    answers_in,
+    changed_answers,
+    needs_rebuild,
+    offered,
+    shown_indexes,
+    shown_settings,
 )
 from kennis.gui.icons import icon
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
@@ -656,23 +666,68 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
 
     @app.get("/settings")
     async def serve_settings(request: Request) -> HTMLResponse:
-        """The settings page: this window's preferences (12a)."""
-        return _TEMPLATES.TemplateResponse(
-            request,
-            "settings.html",
-            {
-                "chosen": preferences_of(request),
-                "sections": (
-                    ("appearance", words.APPEARANCE_HEADING),
-                    ("results", words.RESULTS_HEADING),
-                ),
-                "preference_list": list(PREFERENCES.values()),
-                "window_heading": words.WINDOW_SETTINGS_HEADING,
-                "window_note": words.WINDOW_SETTINGS_NOTE,
-                "save_label": words.SAVE,
-                **_frame(existing_corpus()),
-            },
-        )
+        """The settings page: this window's preferences (12a) and
+        kennis's own configuration (12b)."""
+        return _settings_page(request, _kennis_section({}))
+
+    @app.get("/settings/kennis")
+    async def redraw_kennis_settings(request: Request) -> HTMLResponse:
+        """The configuration section for the values in the address.
+
+        What a changed choice asks, so the rows that apply are the
+        engine's answer for what the form holds rather than for what
+        is saved. Nothing is written.
+        """
+        section = _kennis_section(answers_in(request.query_params))
+        if _from_htmx(request):
+            return _TEMPLATES.TemplateResponse(request, "settings-kennis.html", section)
+        return _settings_page(request, section)
+
+    @app.post("/settings/kennis")
+    async def save_kennis_settings(request: Request) -> HTMLResponse:
+        """Check every changed answer, and write them together or not at all.
+
+        Each refusal is drawn beside its field, which is why the answers
+        are checked one at a time before `apply_answers` checks them as a
+        set: the page should say which value, not only that one was wrong.
+        """
+        answers = answers_in(await request.form())
+        problems = {
+            question.key: problem
+            for question in offered(answers)
+            if (problem := validate_answer(question, answers.get(question.key, "")))
+        }
+        changed = {} if problems else changed_answers(answers)
+        previous: dict[str, str] = {}
+        if changed:
+            previous = {
+                question.key: question.current
+                for question in offered({})
+                if question.key in changed and question.kind != "secret"
+            }
+            try:
+                apply_answers(changed)
+            except SettingsError as error:
+                problems = {"": str(error)}
+        if problems:
+            section = _kennis_section(
+                answers,
+                problems=problems,
+                outcome=problems.get("", words.KENNIS_NOT_SAVED),
+                outcome_is_problem=True,
+            )
+        elif changed:
+            section = _kennis_section(
+                {},
+                outcome=words.KENNIS_SAVED,
+                rebuild=needs_rebuild(changed),
+                previous=previous,
+            )
+        else:
+            section = _kennis_section({}, outcome=words.KENNIS_UNCHANGED)
+        if _from_htmx(request):
+            return _TEMPLATES.TemplateResponse(request, "settings-kennis.html", section)
+        return _settings_page(request, section)
 
     @app.post("/settings")
     async def save_settings(request: Request) -> Response:
@@ -1157,6 +1212,60 @@ def _marked_in_bundle(
         return None, False
     start, end = found
     return MarkedRange(start=start, end=end, anchor=f"chunk-{index}"), False
+
+
+def _settings_page(request: Request, kennis: dict[str, object]) -> HTMLResponse:
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "chosen": preferences_of(request),
+            "sections": (
+                ("appearance", words.APPEARANCE_HEADING),
+                ("results", words.RESULTS_HEADING),
+            ),
+            "preference_list": list(PREFERENCES.values()),
+            "window_heading": words.WINDOW_SETTINGS_HEADING,
+            "window_note": words.WINDOW_SETTINGS_NOTE,
+            "save_label": words.SAVE,
+            **kennis,
+            **_frame(existing_corpus()),
+        },
+    )
+
+
+def _kennis_section(
+    answers: Mapping[str, str],
+    *,
+    problems: Mapping[str, str] | None = None,
+    outcome: str = "",
+    outcome_is_problem: bool = False,
+    rebuild: bool = False,
+    previous: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    """What the configuration section draws, for a page or for htmx."""
+    return {
+        "kennis_settings": shown_settings(answers, problems),
+        "kennis_heading": words.KENNIS_SETTINGS_HEADING,
+        "kennis_note": words.KENNIS_SETTINGS_NOTE,
+        "kennis_save": words.KENNIS_SAVE,
+        "kennis_groups": words.KENNIS_GROUPS,
+        "outcome": outcome,
+        "outcome_is_problem": outcome_is_problem,
+        "rebuild": rebuild,
+        "indexes": shown_indexes(existing_corpus().corpus_root) if rebuild else [],
+        "previous": dict(previous or {}),
+        "rebuild_heading": words.REBUILD_HEADING,
+        "rebuild_note": words.REBUILD_NOTE,
+        "rebuild_none": words.REBUILD_NONE,
+        "rebuild_now": words.REBUILD_NOW,
+        "rebuild_later": words.REBUILD_LATER,
+        "undo_label": words.UNDO,
+        "credential_keep": words.CREDENTIAL_KEEP,
+        "credential_set": words.CREDENTIAL_SET,
+        "credential_unset": words.CREDENTIAL_UNSET,
+        "converter_missing": words.CONVERTER_MISSING,
+    }
 
 
 def _frame(context: Context) -> dict[str, object]:
