@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="{{ theme_choice(request) }}">
+<html lang="en"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

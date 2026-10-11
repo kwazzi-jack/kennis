@@ -100,6 +100,12 @@ from kennis.gui.pages import (
     shown_tree,
 )
 from kennis.gui.pane import Pane, bundle_folders, pane_now
+from kennis.gui.preferences import (
+    COOKIE_SECONDS,
+    PREFERENCES,
+    chosen_in,
+    preferences_of,
+)
 from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
 from kennis.holdings import freshness_of, holdings, installed_packs, revision
@@ -144,26 +150,9 @@ def _pane_state(request: Request) -> str:
     return _CLOSED if request.cookies.get(_PANE_COOKIE) == _CLOSED else _OPEN
 
 
-_THEME_COOKIE: Final = "theme"
-_SYSTEM: Final = "system"
-
-
-def _theme_choice(request: Request) -> str:
-    """Which palette this reader asked for, defaulting to the system.
-
-    Only a value the interface actually offers. Anything can be in a
-    cookie, and `data-theme="chartreuse"` would match neither rule -
-    which happens to be harmless, but relying on that is relying on
-    the cascade to absorb bad input.
-    """
-    asked = request.cookies.get(_THEME_COOKIE, _SYSTEM)
-    offered = {value for value, _ in words.THEME_CHOICES}
-    return asked if asked in offered else _SYSTEM
-
-
-_TEMPLATES.env.globals["theme_choice"] = _theme_choice
-_TEMPLATES.env.globals["theme_choices"] = words.THEME_CHOICES
-_TEMPLATES.env.globals["theme_label"] = words.THEME_LABEL
+# Every preference of this window, rendered onto `<html>` from its
+# cookie (`gui/preferences.py`), for the reason the pane's is.
+_TEMPLATES.env.globals["preferences"] = preferences_of
 # The scopes a person may search, in the order they are offered. The
 # bundle last because it is the one that is not always there.
 SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION)
@@ -178,6 +167,7 @@ _TEMPLATES.env.globals.update(
         "icon": icon,
         "actions": words.ACTIONS,
         "palette_title": words.PALETTE_TITLE,
+        "settings_heading": words.SETTINGS_HEADING,
         "palette_shortcut": words.PALETTE_SHORTCUT,
         "close_label": words.CLOSE,
         "collection_icons": words.COLLECTION_ICONS,
@@ -663,6 +653,42 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 "palette_keys": words.PALETTE_KEYS,
             },
         )
+
+    @app.get("/settings")
+    async def serve_settings(request: Request) -> HTMLResponse:
+        """The settings page: this window's preferences (12a)."""
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "settings.html",
+            {
+                "chosen": preferences_of(request),
+                "sections": (
+                    ("appearance", words.APPEARANCE_HEADING),
+                    ("results", words.RESULTS_HEADING),
+                ),
+                "preference_list": list(PREFERENCES.values()),
+                "window_heading": words.WINDOW_SETTINGS_HEADING,
+                "window_note": words.WINDOW_SETTINGS_NOTE,
+                "save_label": words.SAVE,
+                **_frame(existing_corpus()),
+            },
+        )
+
+    @app.post("/settings")
+    async def save_settings(request: Request) -> Response:
+        """Where the form posts without a script; with one, `prefs.js`
+        has already written each cookie as it was chosen."""
+        form = await request.form()
+        answer = RedirectResponse("/settings", status_code=303)
+        for name, value in chosen_in(form).items():
+            answer.set_cookie(
+                name,
+                value,
+                max_age=COOKIE_SECONDS,
+                path="/",
+                samesite="strict",
+            )
+        return answer
 
     @app.get("/sync")
     async def serve_sync_form(request: Request) -> HTMLResponse:
@@ -1191,7 +1217,7 @@ def _hits_context(
     # Checked against what the window offers rather than by letting
     # `retrieval.as_mode` raise: its resolution is `kennis config get
     # retrieval.corpus_method`, which is the wrong remedy for someone
-    # who edited an address. The same shape `_theme_choice` uses.
+    # who edited an address. The same shape `preference_of` uses.
     if mode not in {value for value, _ in words.MODE_CHOICES}:
         context["problem"] = words.unknown_mode(mode)
         return context

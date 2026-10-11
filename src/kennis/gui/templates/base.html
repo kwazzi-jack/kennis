@@ -1,5 +1,5 @@
-{% set pane_open = pane_state(request) %}{% set theme = theme_choice(request) %}{% set pane = pane_now() %}<!doctype html>
-<html lang="en" data-pane="{{ pane_open }}" data-theme="{{ theme }}">
+{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}<!doctype html>
+<html lang="en" data-pane="{{ pane_open }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,7 +12,7 @@
 <script defer src="/static/revision.js"></script>
 <script defer src="/static/pane.js"></script>
 <script defer src="/static/dialog.js"></script>
-<script defer src="/static/theme.js"></script>
+<script defer src="/static/prefs.js"></script>
 <script defer src="/static/hint.js"></script>
 <script defer src="/static/passage.js"></script>
 <script defer src="/static/chooser.js"></script>
@@ -73,11 +73,7 @@
     {# The palette is reached from the bar but is not one of its actions:
        it is every action and place again, under one key. #}
     <a class="ghost palette-open" href="/palette" hx-get="/palette" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ palette_title }}" title="{{ palette_title }}">{{ icon("command") }}<span class="kbd">{{ palette_shortcut }}</span></a>
-    <select class="theme" id="theme" aria-label="{{ theme_label }}">
-      {% for value, label in theme_choices %}
-      <option value="{{ value }}"{% if value == theme %} selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
+    <a class="ghost settings-open" href="/settings" aria-label="{{ settings_heading }}" title="{{ settings_heading }}">{{ icon("settings") }}</a>
     {# A plain form, not htmx: it works without a script, and what it
        answers with is a whole page, because nothing will be left to
        swap a fragment into. #}

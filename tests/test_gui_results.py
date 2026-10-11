@@ -515,10 +515,12 @@ def test_viridis_is_the_scale_the_page_carries():
     light = sheet[: sheet.index("@media")]
     dark = sheet[sheet.index("@media") :]
 
-    assert "--strength-1: #440154" in light
-    assert "--strength-5: #86d549" in light
-    assert "--strength-1: #355f8d" in dark
-    assert "--strength-5: #fde725" in dark
+    assert "--scale-viridis-1: #440154" in light
+    assert "--scale-viridis-5: #86d549" in light
+    assert "--scale-viridis-1: #355f8d" in dark
+    assert "--scale-viridis-5: #fde725" in dark
+    # And the bars point at it until the reader chooses another (12a).
+    assert "--strength-1: var(--scale-viridis-1);" in light
 
 
 # ---------------------------------------------------------------------------

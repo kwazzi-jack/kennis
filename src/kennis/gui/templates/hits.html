@@ -56,7 +56,7 @@
       {% for measure in hit.measures %}
       {# The colour is the level's, on every filled cell; the count of
          filled cells and the word say the same without colour (#421). #}
-      <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
+      <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="measure-name">{{ measure.label }}</span><span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
       {% endfor %}
     </p>
     {% endif %}

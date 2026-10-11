@@ -131,7 +131,7 @@ def test_choosing_the_system_asks_for_no_rule_at_all():
 def test_the_page_offers_the_three_choices(corpus: Path, client: TestClient):
     admitted(client)
 
-    page = client.get("/").text
+    page = client.get("/settings").text
 
     for value, label in words.THEME_CHOICES:
         assert f'value="{value}"' in page, value
@@ -154,27 +154,29 @@ def test_the_choice_is_rendered_by_the_server_from_the_cookie(
     assert 'data-theme="dark"' in page
 
 
-def theme_select(page: str) -> str:
-    """Just the colour control.
+def theme_control(page: str) -> str:
+    """Just the colour control, on the settings page since 12a.
 
-    Named rather than found by excluding what the scope's options
-    carry. That version excluded them by `data-hint`, so the mode
-    control - which has no hints - was read as the theme's the day it
-    arrived. Scoping by exclusion is what concern #375 was, and this
-    is the second time: the fix is to say which select, not which
-    options to skip."""
-    found = re.search(r'<select class="theme".*?</select>', page, re.DOTALL)
-    assert found is not None, "no theme select on the page"
+    Named rather than found by excluding what other controls carry:
+    scoping by exclusion is what concern #375 was, twice."""
+    found = re.search(
+        r'<fieldset class="setting" data-preference="theme">.*?</fieldset>',
+        page,
+        re.DOTALL,
+    )
+    assert found is not None, "no theme control on the page"
     return found.group(0)
 
 
-def test_the_chosen_option_is_the_one_marked_selected(corpus: Path, client: TestClient):
+def test_the_chosen_option_is_the_one_marked_checked(corpus: Path, client: TestClient):
     """Otherwise the control says `system` while the page is dark."""
     admitted(client)
     client.cookies.set("theme", "dark")
 
-    control = theme_select(client.get("/").text)
-    chosen = re.findall(r'<option value="([^"]*)"[^>]*\sselected', control)
+    control = theme_control(client.get("/settings").text)
+    chosen = re.findall(
+        r'<input type="radio" name="theme" value="([^"]*)"[^>]*\schecked', control
+    )
 
     assert chosen == ["dark"], control
 
@@ -201,13 +203,13 @@ def test_every_page_carries_the_choice(corpus: Path, client: TestClient):
         assert 'data-theme="dark"' in page.text, path
 
 
-def test_the_theme_script_composes_nothing_and_scopes_its_cookie():
-    code = code_of("theme.js")
+def test_the_preference_script_composes_nothing_and_scopes_its_cookie():
+    code = code_of("prefs.js")
 
     for _, label in words.THEME_CHOICES:
         assert label not in code, label
     assert "samesite=strict" in code.lower()
-    assert "path=/" in code
+    assert "; path=/;" in code
 
 
 def test_the_three_choices_are_what_they_claim_to_be():
