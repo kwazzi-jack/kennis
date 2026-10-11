@@ -22,6 +22,7 @@ window by accident.
 from __future__ import annotations
 
 import secrets
+import shlex
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -44,6 +45,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from kennis.context import Context, existing_corpus, resolve_context
+from kennis.engine.backup import SET_FOLDER_COMMAND, BackupReport, check_backup
 from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.status import bundle_freshness
@@ -64,6 +66,7 @@ from kennis.engine.errors import (
 from kennis.engine.events import EventSink
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
+from kennis.engine.settings import load_settings
 from kennis.engine.setup import apply_answers, validate_answer
 from kennis.gui import history, words
 from kennis.gui.adding import (
@@ -94,6 +97,7 @@ from kennis.gui.pages import (
     ShownOutcome,
     palette_entries,
     shown_add,
+    shown_backup,
     shown_bundle_document,
     shown_bundle_sync,
     shown_corpus_sync,
@@ -124,11 +128,19 @@ from kennis.operations import (
     IndexBuild,
     add_documents,
     add_in_groups,
+    back_up_corpus,
     build_indexes,
     install_a_pack,
     move_a_document,
     synchronise_bundle,
     synchronise_corpus,
+)
+from kennis.render.backup import (
+    BACKUP_CONTENTS,
+    NO_BACKUP_FOLDER,
+    describe_archive,
+    describe_folder,
+    describe_verified,
 )
 from kennis.render.html import MarkedRange
 from kennis.render.packs import describe_holdings
@@ -745,6 +757,88 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             )
         return answer
 
+    @app.get("/settings/backup")
+    async def serve_backup_section(request: Request) -> HTMLResponse:
+        """The Backup section as it stands, for a finished job to redraw."""
+        return _backup_answer(request, _backup_section())
+
+    @app.post("/settings/backup")
+    async def save_backup_folder(request: Request) -> HTMLResponse:
+        """The folder, written through `apply_answers` like any setting.
+
+        Refused when it is not a folder, because the chooser lists files
+        too and a file would only be found out at the next backup.
+        """
+        given = str((await request.form()).get("backup.folder") or "").strip()
+        if not given:
+            return _backup_answer(
+                request, _backup_section(about="folder", outcome=words.KENNIS_UNCHANGED)
+            )
+        folder = Path(given).expanduser()
+        if not folder.is_dir():
+            return _backup_answer(
+                request,
+                _backup_section(
+                    about="folder", problem=words.not_a_backup_folder(given)
+                ),
+            )
+        apply_answers({"backup.folder": str(folder)})
+        return _backup_answer(
+            request, _backup_section(about="folder", outcome=words.KENNIS_SAVED)
+        )
+
+    @app.post("/settings/backup/test")
+    async def test_backup(request: Request) -> HTMLResponse:
+        """Every member decrypted against its checksum, with this password."""
+        password = str((await request.form()).get("password") or "")
+        folder = _backup_folder()
+        if folder is None:
+            return _backup_answer(
+                request, _backup_section(about="test", problem=NO_BACKUP_FOLDER)
+            )
+        if not password:
+            return _backup_answer(
+                request, _backup_section(about="test", problem=words.PASSWORD_NEEDED)
+            )
+        verified = check_backup(folder, password).verified
+        if verified is None:
+            return _backup_answer(
+                request,
+                _backup_section(
+                    about="test", problem=describe_archive(check_backup(folder))
+                ),
+            )
+        if verified:
+            return _backup_answer(
+                request, _backup_section(about="test", outcome=describe_verified(True))
+            )
+        return _backup_answer(
+            request, _backup_section(about="test", problem=describe_verified(False))
+        )
+
+    @app.post("/backup")
+    async def start_backup(request: Request) -> Response:
+        """Back up now: a job, so it is in the strip and refused while
+        another runs. The password reaches the job as an argument only."""
+        form = await request.form()
+        password = str(form.get("password") or "")
+        confirmation = str(form.get("confirmation") or "")
+        folder = _backup_folder()
+        if folder is None:
+            return _refused_a_post(
+                request, NO_BACKUP_FOLDER, resolution=SET_FOLDER_COMMAND
+            )
+        if not password:
+            return _refused_a_post(request, words.PASSWORD_NEEDED)
+        if password != confirmation:
+            return _refused_a_post(request, words.PASSWORDS_DIFFER)
+        context = existing_corpus()
+        return _started(
+            request,
+            "backup",
+            lambda events: back_up_corpus(context, folder, password, events=events),
+        )
+
     @app.get("/sync")
     async def serve_sync_form(request: Request) -> HTMLResponse:
         return _action(
@@ -1214,7 +1308,11 @@ def _marked_in_bundle(
     return MarkedRange(start=start, end=end, anchor=f"chunk-{index}"), False
 
 
-def _settings_page(request: Request, kennis: dict[str, object]) -> HTMLResponse:
+def _settings_page(
+    request: Request,
+    kennis: dict[str, object],
+    backup: dict[str, object] | None = None,
+) -> HTMLResponse:
     return _TEMPLATES.TemplateResponse(
         request,
         "settings.html",
@@ -1229,6 +1327,7 @@ def _settings_page(request: Request, kennis: dict[str, object]) -> HTMLResponse:
             "window_note": words.WINDOW_SETTINGS_NOTE,
             "save_label": words.SAVE,
             **kennis,
+            **(backup if backup is not None else _backup_section()),
             **_frame(existing_corpus()),
         },
     )
@@ -1266,6 +1365,60 @@ def _kennis_section(
         "credential_unset": words.CREDENTIAL_UNSET,
         "converter_missing": words.CONVERTER_MISSING,
     }
+
+
+def _backup_folder() -> Path | None:
+    configured = load_settings().backup.folder
+    return Path(configured).expanduser() if configured else None
+
+
+def _backup_section(
+    *, outcome: str = "", problem: str = "", about: str = ""
+) -> dict[str, object]:
+    """What the Backup section draws: 13a's check, in 13a's words.
+
+    `about` names the form an outcome answers, `folder` or `test`, so it
+    is drawn under the control that produced it rather than at the head
+    of the section.
+    """
+    folder = _backup_folder()
+    checked = check_backup(folder) if folder is not None else None
+    archive = checked.archive if checked is not None else None
+    return {
+        "backup_heading": words.BACKUP_HEADING,
+        "backup_contents": BACKUP_CONTENTS,
+        "backup_outcome": outcome,
+        "backup_problem": problem,
+        "backup_about": about,
+        "backup_folder_label": words.BACKUP_FOLDER_LABEL,
+        "backup_folder": str(folder) if folder is not None else "",
+        "backup_save_folder": words.BACKUP_SAVE_FOLDER,
+        "backup_folder_state": (
+            describe_folder(checked) if checked is not None else NO_BACKUP_FOLDER
+        ),
+        "backup_archive_state": describe_archive(checked)
+        if checked is not None
+        else "",
+        "backup_now_label": words.BACKUP_NOW,
+        "backup_now_note": words.BACKUP_NOW_NOTE,
+        "backup_password": words.BACKUP_PASSWORD,
+        "backup_confirmation": words.BACKUP_CONFIRMATION,
+        "backup_test_label": words.BACKUP_TEST,
+        "backup_test_note": words.BACKUP_TEST_NOTE,
+        "restore_label": words.BACKUP_RESTORE_LABEL,
+        "backup_restore_note": words.BACKUP_RESTORE_NOTE,
+        "restore_command": (
+            f"kennis backup restore {shlex.quote(str(archive))}"
+            if archive is not None
+            else "kennis backup restore <file>"
+        ),
+    }
+
+
+def _backup_answer(request: Request, section: dict[str, object]) -> HTMLResponse:
+    if _from_htmx(request):
+        return _TEMPLATES.TemplateResponse(request, "settings-backup.html", section)
+    return _settings_page(request, _kennis_section({}), section)
 
 
 def _frame(context: Context) -> dict[str, object]:
@@ -1531,6 +1684,8 @@ def _shown_result(job: Job) -> ShownJob:
             return shown_bundle_sync(job.result)
         case PackInstall():
             return shown_install(job.result)
+        case BackupReport():
+            return shown_backup(job.result)
         case _:
             return ShownJob(headline=words.NOTHING_TO_SHOW, role="role-muted")
 

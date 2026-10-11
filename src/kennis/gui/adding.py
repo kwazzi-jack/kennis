@@ -36,10 +36,11 @@ ADD_KINDS: Final[tuple[str, ...]] = tuple(kind for kind, _ in words.ADD_TABS)
 # The collection a tab adds to, where the tab decides it.
 FIXED_COLLECTIONS: Final[dict[str, str]] = {"paper": "literature", "site": "docs"}
 
-# The field names the chooser may write into. Echoed into an attribute,
-# so only names kennis drew are taken rather than escaping whatever was
-# sent and hoping.
-_TARGET: Final = re.compile(r"identifiers|lines-[0-9]{1,3}")
+# The field names the chooser may write into: the add form's, and the
+# backup folder on the settings page. Echoed into an attribute, so only
+# names kennis drew are taken rather than escaping whatever was sent and
+# hoping.
+_TARGET: Final = re.compile(r"identifiers|lines-[0-9]{1,3}|backup\.folder")
 
 # How many blocks the group tab draws before "Another group" is used.
 FIRST_BLOCKS: Final[tuple[int, ...]] = (1, 2)

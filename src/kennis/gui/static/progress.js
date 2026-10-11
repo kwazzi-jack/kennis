@@ -50,6 +50,22 @@
       lines.appendChild(item);
     }
 
+    // A part of the page the outcome changed - a backup's section - is
+    // asked for again, where this page has one. In code rather than as
+    // an `hx-trigger` filter, because htmx 2.0.4 never fires `load`
+    // with a filter (measured: `load[...]` sent nothing, `load` did).
+    function redraw(within) {
+      var hooks = within.querySelectorAll("[data-redraw-id]");
+      Array.prototype.forEach.call(hooks, function (hook) {
+        var target = document.getElementById(hook.dataset.redrawId);
+        if (!target || !window.htmx) { return; }
+        window.htmx.ajax("GET", hook.dataset.redrawRoute, {
+          target: target,
+          swap: "outerHTML",
+        });
+      });
+    }
+
     function finish() {
       source.close();
       bar.hidden = true;
@@ -64,6 +80,7 @@
         .then(function (html) {
           outcome.innerHTML = html;
           if (window.htmx) { window.htmx.process(outcome); }
+          redraw(outcome);
         })
         .catch(function () {
           // The operation still happened; only this page's account of
