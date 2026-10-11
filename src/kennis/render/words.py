@@ -28,11 +28,15 @@ from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.rag.search import DocumentSpan
 from kennis.engine.remember import IndexOutcome
 
-# What a bar says while an operation runs. Two entries, because the engine
-# emits two operation verbs; a third would have to be added here and that is
+# What a bar says while an operation runs. One entry per verb the engine
+# emits with a `Progress`; a new verb has to be added here, and that is
 # the point - the words are not derived from the verb by a rule that would
 # produce "Statusing" the day a third verb appears.
-_PARTICIPLES: Final[dict[str, str]] = {"add": "Adding", "index": "Indexing"}
+_PARTICIPLES: Final[dict[str, str]] = {
+    "add": "Adding",
+    "index": "Indexing",
+    "backup": "Backing up",
+}
 
 # How much of a hit to show by default. Long enough to recognise the passage,
 # short enough that ten hits fit on a screen.

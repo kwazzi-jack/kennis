@@ -34,6 +34,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from kennis.context import Context
+from kennis.engine.backup import BackupReport, write_backup
 from kennis.engine.context.sync import BundleSync, sync_bundle
 from kennis.engine.corpus.add import (
     AddOptions,
@@ -383,12 +384,31 @@ def install_a_pack(
         return install_pack(context.corpus_root, path, events=events)
 
 
+def back_up_corpus(
+    context: Context,
+    folder: Path,
+    password: str,
+    *,
+    events: EventSink | None = None,
+) -> BackupReport:
+    """Write the encrypted backup: lock, write, test, replace.
+
+    The lock is held throughout, as for anything that reads the
+    repository: a commit landing during the write would put half of it
+    in the archive's `.git`. No commit, because nothing in the corpus
+    changes.
+    """
+    with corpus_lock(context.corpus_root):
+        return write_backup(context.corpus_root, folder, password, events=events)
+
+
 __all__ = [
     "BuiltIndex",
     "GroupBlock",
     "IndexBuild",
     "add_documents",
     "add_in_groups",
+    "back_up_corpus",
     "build_indexes",
     "install_a_pack",
     "move_a_document",

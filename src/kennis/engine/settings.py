@@ -247,6 +247,19 @@ class LoggingSettings(BaseModel):
     )
 
 
+class BackupSettings(BaseModel):
+    """Where the encrypted backup of the corpus is written."""
+
+    folder: str = Field(
+        default="",
+        description=(
+            "Folder the encrypted backup is written to, often one a cloud "
+            "client synchronises. The backup holds the full text of every "
+            "document."
+        ),
+    )
+
+
 class Settings(BaseSettings):
     """Every setting kennis honours."""
 
@@ -259,6 +272,7 @@ class Settings(BaseSettings):
     conversion: ConversionSettings = ConversionSettings()
     literature: LiteratureSettings = LiteratureSettings()
     logging: LoggingSettings = LoggingSettings()
+    backup: BackupSettings = BackupSettings()
 
     @classmethod
     def settings_customise_sources(
