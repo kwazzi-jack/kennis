@@ -115,10 +115,11 @@ MEASURE_ICONS: Final[dict[str, str]] = {"lexical": "whole-word", "meaning": "bra
 # names; the labels are the measures' words. The first is empty, which
 # is the order the search returned.
 ORDER_LABEL = "Order"
+# Short, because they are drawn as one segmented row after "Order".
 ORDER_CHOICES: Final[tuple[tuple[str, str], ...]] = (
     ("", "As ranked"),
-    ("lexical", "By keywords"),
-    ("meaning", "By meaning"),
+    ("lexical", "Keywords"),
+    ("meaning", "Meaning"),
 )
 # The limit, said beside the control: a reorder acts on the hits already
 # returned, which the fused rank chose.
@@ -126,6 +127,21 @@ ORDER_LIMIT = (
     "Reordering sorts the hits this search returned. To search by one "
     f"measure, choose it under {MODE_LABEL}."
 )
+
+
+def results_for(count: int, *, capped: bool, question: str) -> str:
+    """How many hits a search found and what was asked, at the head.
+
+    A floor when any scope returned all it was asked for, as the recent
+    searches say it (#348).
+    """
+    found = f"{count}+ results" if capped else count_of(count, "result")
+    return f'{found} for "{question}"'
+
+
+# The key hint inside the search box: the key itself is drawn, and this
+# is its tooltip.
+SEARCH_KEY_TITLE = "Press / to search from anywhere on the page"
 
 
 def unknown_order(asked: str) -> str:
@@ -1167,6 +1183,7 @@ __all__ = [
     "SCOPE_LABEL",
     "SEARCHING",
     "SEARCH_ACTION",
+    "SEARCH_KEY_TITLE",
     "SETTINGS_HEADING",
     "SETTING_CHOICES",
     "SETTING_NAMES",
@@ -1210,6 +1227,7 @@ __all__ = [
     "previewed_arxiv",
     "previewed_citekey",
     "previewed_project",
+    "results_for",
     "search_hint_for",
     "searchable_summary",
     "time_ago",

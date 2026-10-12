@@ -206,8 +206,13 @@ class ShownGroup:
     """
 
     collection: str
-    heading: str
+    icon: str
     hits: list[ShownHit]
+
+    @property
+    def count(self) -> int:
+        """How many hits this collection gave, which is all of them shown."""
+        return len(self.hits)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +228,8 @@ def shown_groups_of(found: Sweep, question: str, order: str = "") -> list[ShownG
     return [
         ShownGroup(
             collection=name,
-            heading=name.capitalize(),
+            # The bundle is drawn as a folder in the pane, so here too.
+            icon=words.COLLECTION_ICONS.get(name, "folder"),
             hits=shown_hits(ordered_by(hits, order), question=question),
         )
         for name, hits in found.groups.items()

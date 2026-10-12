@@ -30,6 +30,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.rag.models import Chunk, SearchResult
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.icons import icon
 from kennis.gui.pages import ordered_by
 from kennis.gui.snippet import passage_of
 from kennis.gui.theme import STRENGTH_SCALES, stylesheet
@@ -427,7 +428,7 @@ def test_one_key_heads_the_results_and_no_group_repeats_a_basis(
 
     page = client.get("/hits", params={"q": "antenna", "scope": "all"}).text
 
-    assert page.count('<h2 class="place">') == 2, page
+    assert page.count('<h2 class="group-head">') == 2, page
     assert page.count('<details class="key">') == 1
     assert 'class="basis"' not in page
     assert page.index('<details class="key">') < page.index('<li class="hit">')
@@ -698,16 +699,19 @@ def test_the_order_control_names_each_order_and_the_current_one(
         assert "q=antenna" in attributes and "scope=notes" in attributes
 
 
-def test_the_order_control_states_its_limit(
+def test_the_order_control_states_its_limit_once_it_has_reordered(
     corpus: Path, client: TestClient, hybrid: None
 ):
     """Reordering three returned hits is not searching by one measure,
-    and the best meaning-only hit may not be among them (#406)."""
-    control = order_of(
-        client.get("/hits", params={"q": "antenna", "scope": "notes"}).text
-    )
+    and the best meaning-only hit may not be among them (#406). Said
+    when the page is reordered, which is when it describes the page."""
+    ranked = client.get("/hits", params={"q": "antenna", "scope": "notes"}).text
+    reordered = client.get(
+        "/hits", params={"q": "antenna", "scope": "notes", "order": "meaning"}
+    ).text
 
-    assert words.ORDER_LIMIT in control
+    assert words.ORDER_LIMIT not in ranked
+    assert words.ORDER_LIMIT in reordered
     assert words.MODE_LABEL in words.ORDER_LIMIT
 
 
@@ -725,3 +729,92 @@ def test_an_unknown_order_is_named(corpus: Path, client: TestClient, hybrid: Non
 
     assert escape(words.unknown_order("loudness")) in page
     assert '<li class="hit">' not in page
+
+
+# ---------------------------------------------------------------------------
+# The head of the results and of each group (#447)
+# ---------------------------------------------------------------------------
+
+
+def head_of(page: str) -> Tag:
+    found = BeautifulSoup(page, "html.parser").find(class_="results-head")
+    assert isinstance(found, Tag), page
+    return found
+
+
+def test_the_count_is_said_as_found_or_as_a_floor():
+    assert words.results_for(1, capped=False, question="antenna") == (
+        '1 result for "antenna"'
+    )
+    assert words.results_for(9, capped=True, question="selfcal") == (
+        '9+ results for "selfcal"'
+    )
+
+
+def test_the_head_says_how_many_were_found_and_for_what(
+    corpus: Path, client: TestClient
+):
+    a_note(corpus, "calibration", "Calibration solves for antenna gains.")
+
+    text = " ".join(head_of(hits_of(client, "antenna")).get_text(" ").split())
+
+    assert words.results_for(1, capped=False, question="antenna") in text
+
+
+def test_a_scope_that_filled_its_quota_makes_the_count_a_floor(
+    corpus: Path, client: TestClient
+):
+    """`default_top_k` is 3 per scope, so three hits in one scope say
+    nothing about a fourth (#348)."""
+    for name in ("one", "two", "three"):
+        a_note(corpus, name, f"The antenna note called {name}.")
+
+    text = " ".join(head_of(hits_of(client, "antenna")).get_text(" ").split())
+
+    assert words.results_for(3, capped=True, question="antenna") in text
+
+
+def test_the_order_control_is_in_the_head(
+    corpus: Path, client: TestClient, hybrid: None
+):
+    head = head_of(client.get("/hits", params={"q": "antenna", "scope": "notes"}).text)
+
+    assert head.find("nav", class_="order") is not None
+
+
+def test_a_group_is_headed_by_its_collections_icon_name_and_count(
+    corpus: Path, client: TestClient
+):
+    a_note(corpus, "calibration", "Calibration solves for antenna gains.")
+
+    page = hits_of(client, "antenna")
+    raw = re.search(r'<h2 class="group-head">(.*?)</h2>', page, re.S)
+    assert raw, page
+    head = BeautifulSoup(raw.group(0), "html.parser")
+    name = head.find(class_="name")
+    count = head.find(class_="count")
+
+    assert str(icon(words.COLLECTION_ICONS["notes"])) in raw.group(1)
+    assert isinstance(name, Tag) and name.get_text(strip=True) == "notes"
+    assert isinstance(count, Tag) and count.get_text(strip=True) == "1"
+
+
+def test_the_handle_is_on_the_measures_row(corpus: Path, client: TestClient):
+    """Where the mockup puts the citekey: beside the measures, not under
+    the passage. The words are the command line's last field (#297)."""
+    a_note(corpus, "calibration", "Calibration solves for antenna gains.")
+
+    item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
+    row = item.find(class_="measures")
+
+    assert isinstance(row, Tag)
+    handle = row.find(class_="handle")
+    assert isinstance(handle, Tag)
+    assert handle.get_text(strip=True).startswith("id=")
+    assert len(item.find_all(class_="handle")) == 1
+
+
+def test_a_title_is_drawn_in_the_operation_colour(client: TestClient):
+    css = client.get("/static/kennis.css").text
+
+    assert re.search(r"\.hit \.title\s*\{[^}]*color: var\(--role-operation\)", css)

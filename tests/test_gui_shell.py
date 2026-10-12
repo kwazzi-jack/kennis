@@ -399,7 +399,7 @@ def test_the_hit_carries_every_field_the_command_line_prints(
     for line in lines:
         *bands, handle = line.split("  ")
         assert bands, line
-        assert f'<p class="handle">{handle}</p>' in served.text, handle
+        assert f'<span class="handle">{handle}</span>' in served.text, handle
         for band in bands:
             label, level = band.split(": ")
             assert re.search(

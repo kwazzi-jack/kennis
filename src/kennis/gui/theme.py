@@ -556,29 +556,48 @@ body {
   color: var(--ink);
 }
 
+/* One control, as the mockup drew it: the icon, the field, the key
+   that reaches it, and the two selects, inside one border. The ring is
+   the box's while the field has the focus; a select keeps its own, so
+   it is clear which part a key will change. */
 .searchbox {
   flex: 1 1 24rem;
   max-width: 40rem;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
   margin: 0;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--ground);
 }
+.searchbox:has(input:focus-visible) {
+  outline: 2px solid var(--role-hint);
+  outline-offset: 2px;
+}
+.searchbox > .icon { margin-left: 0.6rem; color: var(--role-muted); flex: none; }
 .searchbox input[type="search"] {
   flex: 1 1 10rem;
-  min-width: 0;
   font-family: var(--column);
+  border: 0;
+  background: none;
 }
+.searchbox input[type="search"]:focus-visible { outline: none; }
 /* The box keeps room to type in; the selects give way first. On a
    phone they took the row and left the box a sliver. */
 .searchbox input[type="search"] { min-width: 7rem; }
-.searchbox select, .searchbox button {
+.searchbox .kbd { margin-right: 0.5rem; flex: none; }
+.searchbox select {
   font-size: 0.75rem;
   min-width: 0;
   flex: 0 1 auto;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--role-muted);
 }
-.searchbox .searching { margin: 0; }
+.searchbox .searching { margin: 0 0.5rem; }
 
 /* Quit is a form so it works without a script; `contents` lets its
    button sit in the row of actions as if the form were not there. */
@@ -806,6 +825,10 @@ details.menu[open] > .menu-button { opacity: 1; }
   position: absolute;
   width: 1px;
   height: 1px;
+  /* A button's own padding and border would otherwise give it a box
+     larger than the pixel it is meant to occupy. */
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
@@ -1213,35 +1236,68 @@ mark {
 }
 .key p { margin: 0.5rem 0 0; max-width: var(--measure); }
 
-/* One measure's own order, within each collection. Links, so it works
-   without a script; the current one is marked as chosen. */
-.order {
+/* How many were found and for what, with the order beside it. */
+.results-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.9rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
   font-family: var(--gutter);
   font-size: 0.8125rem;
-  color: var(--role-muted);
-  margin: 0.75rem 0 0;
+  margin: 0 0 1rem;
+  max-width: var(--measure);
 }
-.order a { color: var(--role-muted); }
-.order a:hover, .order a:focus-visible { color: var(--ink); }
-.order a[aria-current="true"] {
+.results-head .summary { margin: 0; color: var(--role-muted); }
+
+/* One measure's own order, within each collection. Links, so it works
+   without a script; the current one is marked as chosen, by weight and
+   by the wash, so it does not rest on colour alone. */
+.order {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--role-muted);
+}
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.segmented a {
+  padding: 0.2rem 0.65rem;
+  border-right: 1px solid var(--rule);
+  font-size: 0.75rem;
   color: var(--ink);
-  font-weight: 600;
   text-decoration: none;
 }
-.order .limit { flex-basis: 100%; font-size: 0.75rem; }
+.segmented a:last-child { border-right: 0; }
+.segmented a:hover { background: var(--raised); }
+.segmented a[aria-current="true"] {
+  background: var(--brand-wash);
+  font-weight: 600;
+}
+.limit { font-family: var(--gutter); font-size: 0.75rem; margin: 0.5rem 0 0; }
 
-/* A collection's name over its hits. */
-.place {
+/* A collection's icon, name and count over its hits, on a rule in ink:
+   the strongest line on the page, because it is the one division the
+   results have no common scale across (#342). */
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   font-family: var(--gutter);
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--role-muted);
+  color: var(--ink);
   margin: 2rem 0 0;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--ink);
+  max-width: var(--measure);
 }
+.group-head .count { font-weight: 400; color: var(--role-muted); }
+.group-head + .results > .hit:first-child { border-top: 0; }
 
 .results { list-style: none; margin: 0; padding: 0; }
 .hit {
@@ -1287,8 +1343,8 @@ mark {
 .cell.on[data-step="5"] { background: var(--strength-5); }
 
 .heading { display: flex; align-items: baseline; gap: 0.4rem; }
-.title { color: var(--ink); font-weight: 600; text-decoration: none; }
-.title:hover, .title:focus-visible { text-decoration: underline; }
+.hit .title { color: var(--role-operation); font-weight: 600; text-decoration: none; }
+.hit .title:hover, .hit .title:focus-visible { text-decoration: underline; }
 .open { color: var(--role-muted); }
 .open:hover, .open:focus-visible { color: var(--brand); }
 

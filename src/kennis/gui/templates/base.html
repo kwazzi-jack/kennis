@@ -42,9 +42,11 @@
   <form class="searchbox" role="search" action="/" method="get"
         {% if searching_here %}hx-get="/hits" hx-target="#hits"
         hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope], change from:select[name=mode]"{% endif %}>
+    {{ icon("search") }}
     <input type="search" name="q" value="{{ question | default('') }}"
            placeholder="{{ scope_hints[asked_scope] }}" aria-label="{{ search_action }}"
            {% if searching_here %}autofocus{% endif %}>
+    <kbd class="kbd" title="{{ search_key_title }}">/</kbd>
     <select name="scope" aria-label="{{ scope_label }}">
       <option value="{{ everywhere }}" data-hint="{{ scope_hints[everywhere] }}"{% if asked_scope == everywhere %} selected{% endif %}>{{ everywhere_label }}</option>
       {% for name in scopes %}
@@ -59,7 +61,9 @@
       <option value="{{ value }}"{% if value == mode | default(mode_default) %} selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <button type="submit">{{ search_action }}</button>
+    {# Not drawn, as the mockup has none, but kept: a browser submits on
+       Enter through it, and a reader without a script needs it. #}
+    <button type="submit" class="visually-hidden">{{ search_action }}</button>
     {% if searching_here %}<p class="searching role-muted" id="searching" aria-live="polite" hidden>{{ searching }}</p>{% endif %}
   </form>
   <div class="actions">

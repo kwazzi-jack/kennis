@@ -23,4 +23,15 @@
   }
 
   where.addEventListener("change", follow);
+
+  // `/` reaches the box from anywhere on the page, as the key drawn
+  // inside it says - except where `/` is something being typed.
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) { return; }
+    var here = document.activeElement;
+    if (here && (here.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(here.tagName))) { return; }
+    event.preventDefault();
+    box.focus();
+    box.select();
+  });
 })();

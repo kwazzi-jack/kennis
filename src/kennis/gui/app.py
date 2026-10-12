@@ -230,6 +230,7 @@ _TEMPLATES.env.globals.update(
         "mode_label": words.MODE_LABEL,
         "mode_default": words.MODE_DEFAULT,
         "search_action": words.SEARCH_ACTION,
+        "search_key_title": words.SEARCH_KEY_TITLE,
         "searching": words.SEARCHING,
         # The Add dialog's words, global because its fragments - a
         # preview, a block, a chooser - are drawn by routes of their own.
@@ -1467,6 +1468,8 @@ def _hits_context(
         # into `#hits`, which no other page has.
         "searching_here": True,
         "groups": [],
+        "summary": None,
+        "order": order,
         "skips": [],
         "fallbacks": [],
         "key": None,
@@ -1504,6 +1507,16 @@ def _hits_context(
             mode=mode or None,
         )
         context["groups"] = shown_groups_of(found, question, order)
+        found_count = sum(len(hits) for hits in found.groups.values())
+        # Any scope that filled its quota had more to give, so the
+        # total is a floor. `default_top_k` is 3 per scope, which is
+        # why this is the usual case rather than the exception.
+        wanted = existing_corpus().settings.retrieval.default_top_k
+        capped = any(len(hits) >= wanted for hits in found.groups.values())
+        if found_count:
+            context["summary"] = words.results_for(
+                found_count, capped=capped, question=question
+            )
         key = shown_key(found)
         context["key"] = key
         # Only when both measures scored: with one, the results are
@@ -1527,17 +1540,12 @@ def _hits_context(
         # same way. A refused search is not recorded: it found
         # nothing because it could not run, which is not something to
         # offer the reader again.
-        wanted = existing_corpus().settings.retrieval.default_top_k
         history.record(
             question,
             scope=scope,
             mode=mode,
-            hits=sum(len(hits) for hits in found.groups.values()),
-            # Any scope that filled its quota had more to give, so
-            # the total is a floor. `default_top_k` is 3 per scope,
-            # which is why this is the usual case rather than the
-            # exception.
-            capped=any(len(hits) >= wanted for hits in found.groups.values()),
+            hits=found_count,
+            capped=capped,
         )
     except KennisError as error:
         context["problem"] = str(error)

@@ -25,6 +25,19 @@
 {# The scale, once, ahead of every group (#408). A `<details>`, so it
    opens without a script. The ramp is the five strength colours, one
    cell each, and the same cells the bars below are drawn from. #}
+{# How many and for what, with the order beside it: the mockup's head.
+   The order is links, so it works without a script. #}
+{% if summary %}
+<div class="results-head">
+  <p class="summary">{{ summary }}</p>
+  {% if orders %}
+  <nav class="order" aria-label="{{ order_label }}">
+    <span class="label">{{ order_label }}</span>
+    <span class="segmented">{% for choice in orders %}<a href="{{ choice.href }}"{% if choice.current %} aria-current="true"{% endif %}>{{ choice.label }}</a>{% endfor %}</span>
+  </nav>
+  {% endif %}
+</div>
+{% endif %}
 {% if key %}
 <details class="key">
   <summary>{{ icon("info") }}<span class="label">{{ key_summary }}</span>
@@ -39,27 +52,23 @@
   <p>{{ key_order }}</p>
 </details>
 {% endif %}
-{% if orders %}
-<nav class="order" aria-label="{{ order_label }}">
-  <span class="label">{{ order_label }}</span>
-  {% for choice in orders %}<a href="{{ choice.href }}"{% if choice.current %} aria-current="true"{% endif %}>{{ choice.label }}</a>{% endfor %}
-  <span class="limit">{{ order_limit }}</span>
-</nav>
-{% endif %}
+{# The limit, when it describes the page: a reorder acts on the hits
+   the search returned (#406). #}
+{% if orders and order %}<p class="limit role-muted">{{ order_limit }}</p>{% endif %}
 {% for group in groups %}
-<h2 class="place">{{ group.heading }}</h2>
+<h2 class="group-head">{{ icon(group.icon) }}<span class="name">{{ group.collection }}</span><span class="count">{{ group.count }}</span></h2>
 <ol class="results">
 {% for hit in group.hits %}
   <li class="hit">
-    {% if hit.measures %}
+    {# The handle ends the row, where the mockup puts the citekey. #}
     <p class="measures">
       {% for measure in hit.measures %}
       {# The colour is the level's, on every filled cell; the count of
          filled cells and the word say the same without colour (#421). #}
       <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="measure-name">{{ measure.label }}</span><span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
       {% endfor %}
+      <span class="handle">{{ hit.handle }}</span>
     </p>
-    {% endif %}
     <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
       <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
     {# Closed, the window; opened, the whole chunk in its place, so no
@@ -77,7 +86,6 @@
     {% else %}
     <p class="passage"><span class="snippet">{{ hit.passage.window | safe }}</span></p>
     {% endif %}
-    <p class="handle">{{ hit.handle }}</p>
   </li>
 {% endfor %}
 </ol>
