@@ -84,9 +84,10 @@
         <div class="body">{{ hit.passage.body | safe }}</div>
       </div>
       {% if hit.opens %}
+      {# A chevron alone on the card's edge; its words are for a screen
+         reader. The title's arrow is the one way to the document. #}
       <div class="passage-foot">
-        <details name="passages"><summary><span class="when-closed">{{ show_passage }}</span><span class="when-open">{{ hide_passage }}</span>{{ icon("chevron-down") }}</summary></details>
-        <a class="go" href="{{ hit.href }}">{{ open_in_document }}</a>
+        <details name="passages"><summary><span class="visually-hidden when-closed">{{ show_passage }}</span><span class="visually-hidden when-open">{{ hide_passage }}</span>{{ icon("chevron-down") }}</summary></details>
       </div>
       {% endif %}
     </div>

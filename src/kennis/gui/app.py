@@ -231,7 +231,6 @@ _TEMPLATES.env.globals.update(
         "show_passage": words.SHOW_PASSAGE,
         "hide_passage": words.HIDE_PASSAGE,
         "open_at_passage": words.OPEN_AT_PASSAGE,
-        "open_in_document": words.OPEN_IN_DOCUMENT,
         "key_summary": words.KEY_SUMMARY,
         "key_low": words.KEY_LOW,
         "key_high": words.KEY_HIGH,

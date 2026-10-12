@@ -97,7 +97,6 @@ EVERYWHERE_LABEL = "everywhere"
 # goes. Both are drawn by the server and CSS shows the one that applies.
 SHOW_PASSAGE = "Show the whole passage"
 HIDE_PASSAGE = "Show less"
-OPEN_IN_DOCUMENT = "Open it in the document"
 
 # ---- an opened document: its bar and its inspector (#447) ----
 
@@ -1232,7 +1231,6 @@ __all__ = [
     "NO_PACKS",
     "NO_SUCH_JOB",
     "OPEN_AT_PASSAGE",
-    "OPEN_IN_DOCUMENT",
     "OPTIONAL",
     "ORDER_CHOICES",
     "ORDER_LABEL",
