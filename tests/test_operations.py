@@ -17,9 +17,10 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kennis import operations
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
-from kennis.engine.corpus.add import AddOptions
+from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.errors import CorpusBusy
 from kennis.engine.history.git import git
@@ -136,6 +137,30 @@ def test_writing_a_note_restores_a_hand_deletion_first(isolated: Path):
         ["show", "--name-status", "--format=", "HEAD"], cwd=context.corpus_root
     ).lines()
     assert not [line for line in touched if line.startswith("D\t")], touched
+
+
+def test_an_add_that_fails_part_way_commits_what_it_wrote_as_its_own(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Without this the next command's `git add --all .` commits the add's
+    documents under the next command's name."""
+    context = existing_corpus()
+
+    def writes_then_fails(*arguments: object, **options: object) -> object:
+        add_notes(
+            Collection(root=context.corpus_root, name="notes"),
+            [str(a_source(isolated, "trees.md"))],
+        )
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setitem(operations._ADDERS, "notes", writes_then_fails)
+
+    with pytest.raises(OSError):
+        add_documents(context, "notes", ["anything"], AddOptions())
+
+    assert Repository(context.corpus_root).is_clean()
+    subject = git(["log", "-1", "--format=%s"], cwd=context.corpus_root).stdout
+    assert subject.strip() == f"add(notes): {operations.INTERRUPTED}"
 
 
 def test_the_restore_reports_what_it_put_back(isolated: Path):

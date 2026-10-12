@@ -33,7 +33,7 @@ from kennis.engine.remember import (
     RememberReport,
 )
 from kennis.engine.remember import remember as remember_in_notes
-from kennis.operations import restore_hand_deletions
+from kennis.operations import committed_if_interrupted, restore_hand_deletions
 
 
 def write_note(
@@ -81,17 +81,18 @@ def write_note(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        report = remember_in_notes(
-            context.corpus_root,
-            text,
-            binding=binding,
-            options=RememberOptions(title=title, group=group),
-            origin=origin,
-            index=index,
-            embed_batch_size=context.settings.embedding.batch_size,
-            repository=Repository(context.corpus_root),
-            events=events,
-        )
+        with committed_if_interrupted(context, "remember", scope="notes"):
+            report = remember_in_notes(
+                context.corpus_root,
+                text,
+                binding=binding,
+                options=RememberOptions(title=title, group=group),
+                origin=origin,
+                index=index,
+                embed_batch_size=context.settings.embedding.batch_size,
+                repository=Repository(context.corpus_root),
+                events=events,
+            )
         if report.outcome is not Outcome.UNCHANGED:
             Repository(context.corpus_root).commit(
                 "remember",
