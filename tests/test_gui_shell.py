@@ -26,13 +26,15 @@ from httpx import Response
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.history.repository import Repository
 from kennis.gui import words
-from kennis.gui.app import build_app
+from kennis.gui.app import REVISION_HEADER, build_app
 from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
 from kennis.render.theme import ANSI_COLOURS, ROLES
 
 TOKEN = "a-test-token"
+STATIC_SCRIPTS = Path(__file__).parents[1] / "src" / "kennis" / "gui" / "static"
 
 
 def posted(client: TestClient, path: str, **kwargs: object) -> Response:
@@ -576,6 +578,69 @@ def test_the_revision_changes_when_a_terminal_writes(corpus: Path, client: TestC
     a_note(corpus, "imaging", "Deconvolution.")
 
     assert client.get("/revision").json()["revision"] != before
+
+
+def test_this_window_s_own_note_answers_with_the_revision_it_left(
+    corpus: Path, client: TestClient
+):
+    """The banner compares against the page's revision, which a note
+    written here - no reload - left behind, so on the next focus it said
+    something else had changed the corpus."""
+    admitted(client)
+    before = client.get("/revision").json()["revision"]
+
+    answer = posted(client, "/remember", data={"text": "Antenna gains drift."})
+
+    after = client.get("/revision").json()["revision"]
+    assert after != before
+    assert answer.headers[REVISION_HEADER] == after
+
+
+def test_a_finished_index_job_answers_with_the_revision_it_left(
+    corpus: Path, client: TestClient
+):
+    """A job's write lands after its POST has answered, so the outcome,
+    fetched once it has ended, is what carries the revision."""
+    admitted(client)
+    root = existing_corpus().corpus_root
+
+    def writes_and_commits(events: object) -> None:
+        (root / "notes" / "written.md").write_text("Written.\n", encoding="utf-8")
+        Repository(root).commit("index", scope="notes", summary="1 document")
+
+    job = client.app.state.jobs.start("index", writes_and_commits)
+    assert job.done.wait(10)
+
+    answer = client.get(f"/job/{job.id}/outcome", headers={"HX-Request": "true"})
+
+    assert answer.headers[REVISION_HEADER] == client.get("/revision").json()["revision"]
+
+
+def test_a_search_does_not_answer_with_the_revision(corpus: Path, client: TestClient):
+    """Only a write of this window's moves the page's revision: a search
+    that did would hide a terminal's write behind a keystroke."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    answer = client.get(
+        "/hits", params={"q": "antenna"}, headers={"HX-Request": "true"}
+    )
+
+    assert REVISION_HEADER not in answer.headers
+
+
+def test_the_script_takes_the_revision_from_a_write_and_reads_it_on_each_check():
+    script = "\n".join(
+        line
+        for line in (STATIC_SCRIPTS / "revision.js")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if not line.strip().startswith("//")
+    )
+
+    assert f'getResponseHeader("{REVISION_HEADER}")' in script
+    assert "banner.dataset.revision = " in script
+    assert "body.revision === banner.dataset.revision" in script
 
 
 def test_the_revision_is_not_readable_without_the_token(
