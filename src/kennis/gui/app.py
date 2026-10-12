@@ -1252,6 +1252,8 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             return _refused(request, words.NO_SUCH_JOB)
         if not job.done.is_set():
             return _refused(request, words.STILL_RUNNING)
+        if job.crash is not None:
+            return _refused(request, words.job_crashed(job.crash))
         if job.error is not None:
             return _refused(
                 request,

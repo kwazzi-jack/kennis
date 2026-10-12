@@ -21,6 +21,7 @@ the work runs and never while the interface is idle.
 
 from __future__ import annotations
 
+import logging
 import secrets
 import threading
 import time
@@ -85,6 +86,12 @@ class Job:
     started_wall: float = field(default_factory=time.time)
     result: object | None = None
     error: KennisError | None = None
+    # Anything else the work raised: a defect, a full disk, a library's own
+    # exception. Kept apart from `error` because a `KennisError` carries a
+    # sentence and a resolution for the reader and this does not, so a page
+    # words it differently - but it is a failure all the same, and an
+    # operation that died is never reported as one that finished.
+    crash: Exception | None = None
     # Every event the job has emitted, in order, appended and never
     # taken from: each watcher reads from its own position, so a page
     # drawn mid-job sees what was already reported and two pages watching
@@ -96,7 +103,7 @@ class Job:
 
     @property
     def failed(self) -> bool:
-        return self.error is not None
+        return self.error is not None or self.crash is not None
 
 
 def _has_news(job: Job, seen: int) -> bool:
@@ -163,6 +170,13 @@ class Jobs:
                 # thread that raised would lose it: nothing is waiting
                 # on this thread to collect an exception from.
                 job.error = error
+            except Exception as crash:
+                # Anything else too, for the same reason: uncaught, it
+                # reached the terminal through the thread's excepthook and
+                # the page called the job finished. The traceback goes to
+                # the log, where a defect report can find it.
+                job.crash = crash
+                logging.getLogger("kennis.gui").exception("the %s job failed", kind)
             finally:
                 with job.changed:
                     job.done.set()

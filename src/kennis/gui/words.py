@@ -901,6 +901,20 @@ STILL_RUNNING = "This is still running."
 
 NOTHING_TO_SHOW = "That operation finished without reporting anything."
 
+
+def job_crashed(crash: Exception) -> str:
+    """A job that died of something kennis has no sentence for.
+
+    The exception's own words are quoted, because they are the only
+    account there is of what happened; where the rest is kept is said, so
+    the reader knows there is more than this line.
+    """
+    detail = str(crash) or type(crash).__name__
+    return (
+        f"That operation stopped part-way: {detail}. The details are in kennis's log."
+    )
+
+
 MARK_WITHHELD = (
     "This document has changed since the index was built, so the passage "
     "the search matched can no longer be placed in it. Rebuild the index "
@@ -1343,6 +1357,7 @@ __all__ = [
     "documents_waiting",
     "group_empty_means",
     "index_collection",
+    "job_crashed",
     "key_models",
     "last_change",
     "last_job",

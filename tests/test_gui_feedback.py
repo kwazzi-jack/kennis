@@ -539,3 +539,28 @@ def test_a_note_written_from_the_dialog_redraws_them_too(
         assert found.get("hx-swap-oob") == "true", element
     count = swapped.find(id="pane-documents")
     assert count is not None and "1" in count.get_text()
+
+
+# ---------------------------------------------------------------------------
+# A job that dies of something that is not a KennisError
+# ---------------------------------------------------------------------------
+
+
+def test_a_job_that_crashes_is_reported_as_failed(app: FastAPI, client: TestClient):
+    """A full disk is an `OSError`, not a `KennisError`. Uncaught, the
+    thread died, the traceback went to the terminal, and the page said the
+    operation finished without reporting anything."""
+
+    def fills_the_disk(events: EventSink) -> object:
+        raise OSError(28, "No space left on device")
+
+    job = app.state.jobs.start("add", fills_the_disk)
+    assert job.done.wait(5)
+
+    outcome = client.get(f"/job/{job.id}/outcome", headers=HTMX).text
+    activity = BeautifulSoup(client.get("/activity").text, "html.parser")
+
+    assert "No space left on device" in outcome
+    assert words.NOTHING_TO_SHOW not in outcome
+    assert words.JOB_FAILED in activity.get_text()
+    assert words.JOB_FINISHED not in activity.get_text()
