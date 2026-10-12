@@ -220,3 +220,67 @@ def test_quit_from_the_page_stops_a_real_server(
     assert words.STOPPED in answer.text
     runner.join(10)
     assert not runner.is_alive()
+
+
+# ---------------------------------------------------------------------------
+# The browser's own messages
+# ---------------------------------------------------------------------------
+
+
+def test_what_the_browser_prints_does_not_reach_kenniss_terminal(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+):
+    """Brave wrote "Opening in existing browser session." and a zygote
+    ERROR under kennis's address. A real child process stands in for it,
+    because only a child inherits the descriptors - a Python write in
+    this process would prove nothing about what a browser sees."""
+    import os
+    import subprocess
+    import sys
+
+    import kennis.gui.serve as serving
+
+    def a_browser(url: str) -> bool:
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; print('browser out'); sys.stderr.write('browser err')",
+            ],
+            check=True,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+        )
+        return True
+
+    monkeypatch.setattr(serving.webbrowser, "open", a_browser)
+
+    # Written to the descriptors themselves: under `capfd` a `print`
+    # goes to pytest's file directly and would pass with 1 and 2 left
+    # pointing at the null device.
+    os.write(1, b"kennis before\n")
+    serving._open_quietly("http://127.0.0.1:1/")
+    os.write(1, b"kennis after\n")
+    os.write(2, b"kennis err after\n")
+    captured = capfd.readouterr()
+
+    assert "browser" not in captured.out + captured.err
+    assert "kennis before" in captured.out and "kennis after" in captured.out
+    assert "kennis err after" in captured.err
+
+
+def test_run_opens_the_browser_quietly(corpus: Path, monkeypatch: pytest.MonkeyPatch):
+    import kennis.gui.serve as serving
+
+    quietly: list[str] = []
+    loudly: list[str] = []
+    monkeypatch.setattr(serving, "_open_quietly", quietly.append)
+    # Replaced too, so that opening loudly fails this test rather than
+    # starting the real browser.
+    monkeypatch.setattr(serving.webbrowser, "open", loudly.append)
+    monkeypatch.setattr(serving, "_wait_for_quit", lambda quitting: None)
+
+    serving.run(lambda url: None)
+
+    assert len(quietly) == 1
+    assert loudly == []
