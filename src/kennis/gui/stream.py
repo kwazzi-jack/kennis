@@ -23,6 +23,8 @@ import json
 from collections.abc import Iterator
 from typing import Final
 
+from kennis.engine.context.sync import OPERATION as CONTEXT_SYNC
+from kennis.engine.corpus.sync import OPERATION as CORPUS_SYNC
 from kennis.engine.events import (
     Diagnostic,
     Event,
@@ -33,8 +35,10 @@ from kennis.engine.events import (
     Progress,
 )
 from kennis.engine.rag.embedding import FETCH_MODEL
+from kennis.engine.refusals import Quoted
 from kennis.gui.jobs import Elapsed
 from kennis.render.diagnostics import describe_diagnostic
+from kennis.render.packs import verdict_word
 from kennis.render.refusals import describe_refusal
 from kennis.render.words import count_of, fetching_model, progress_label, running_for
 
@@ -88,6 +92,18 @@ def as_message(event: Event | Elapsed) -> dict[str, object] | None:
             return {
                 "kind": "current",
                 "text": f"{progress_label(event.operation)} {event.item}",
+            }
+        case ItemFinished(operation=operation, refusal=Quoted(text=verdict)) if (
+            operation in {CORPUS_SYNC, CONTEXT_SYNC}
+        ):
+            # A sync quotes its verdict's name; the reader is told the
+            # word the outcome's lines use for it.
+            return {
+                "kind": "item",
+                "marker": MARKERS[event.outcome],
+                "outcome": event.outcome.value,
+                "text": event.item,
+                "detail": verdict_word(verdict),
             }
         case ItemFinished():
             return {

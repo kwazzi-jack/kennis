@@ -470,7 +470,7 @@ def test_index_builds_and_status_then_reads_it(
 
     status = run.invoke(main, ["corpus", "status"])
     assert status.exit_code == 0, status.output
-    assert "in step" in status.output
+    assert "up to date" in status.output
 
 
 def test_status_does_not_claim_an_unindexed_corpus_is_indexed(
@@ -481,7 +481,7 @@ def test_status_does_not_claim_an_unindexed_corpus_is_indexed(
     added(run, a_source(tmp_path, "trees.md"))
     status = run.invoke(main, ["corpus", "status"])
     assert status.exit_code == 0, status.output
-    assert "in step" not in status.output
+    assert "up to date" not in status.output
 
 
 def test_status_reports_a_stale_index_after_an_edit(
