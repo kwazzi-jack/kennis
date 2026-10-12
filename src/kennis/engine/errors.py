@@ -107,6 +107,20 @@ class IndexBusy(KennisError):
     default_resolution = "kennis corpus index"
 
 
+class HistoryUnwritable(KennisError):
+    """Git refused to record a change kennis made.
+
+    Not `CorpusBusy`, which it was: that says another process holds the
+    lock and nothing was changed, so the front ends offer a retry. Here the
+    documents were already written and only their commit failed, for a
+    reason git states - which is carried in the message - and retrying
+    meets the same reason again.
+    """
+
+    default_message = "the corpus history could not be written"
+    default_resolution = None
+
+
 class GitUnavailable(KennisError):
     """The `git` binary is missing.
 

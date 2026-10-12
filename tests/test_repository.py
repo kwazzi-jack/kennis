@@ -11,7 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.errors import CorpusBusy, CorpusNotFound, GitUnavailable
+from kennis.engine.errors import (
+    CorpusBusy,
+    CorpusNotFound,
+    GitUnavailable,
+    HistoryUnwritable,
+)
 from kennis.engine.history.git import git
 from kennis.engine.history.repository import (
     Repository,
@@ -328,3 +333,63 @@ def test_a_committed_rename_is_read_in_the_right_direction(corpus: Path):
 
     assert changes[UMLAUT_NAME] == "D"
     assert changes["notes/renamed.md"] == "A"
+
+
+# ---------------------------------------------------------------------------
+# The person's own git configuration
+# ---------------------------------------------------------------------------
+
+
+def a_global_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    configuration = tmp_path / "gitconfig"
+    configuration.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(configuration))
+
+
+def test_a_signing_configuration_does_not_stop_a_commit(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`commit.gpgsign = true` in `~/.gitconfig` is common, and with it
+    every corpus commit failed: there is no key for `kennis@localhost`."""
+    a_global_configuration(tmp_path, monkeypatch, "[commit]\n\tgpgsign = true\n")
+    repository = initialise_corpus(corpus)
+    (corpus / "notes" / "a.md").write_text("A note.\n", encoding="utf-8")
+
+    assert repository.commit("add", scope="notes", summary="1 added") is not None
+
+
+def test_a_hook_in_the_global_configuration_does_not_run(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    refusing = hooks / "pre-commit"
+    refusing.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    refusing.chmod(0o755)
+    a_global_configuration(
+        tmp_path, monkeypatch, f"[core]\n\thooksPath = {hooks.as_posix()}\n"
+    )
+    repository = initialise_corpus(corpus)
+    (corpus / "notes" / "a.md").write_text("A note.\n", encoding="utf-8")
+
+    assert repository.commit("add", scope="notes", summary="1 added") is not None
+
+
+def test_a_commit_git_refuses_is_not_called_busy(corpus: Path):
+    """`CorpusBusy` tells the front ends nothing was changed and to try
+    again. A commit that fails has written its documents, and retrying
+    meets the same refusal - so it is its own error, with git's reason in
+    it and a command that shows the state it left."""
+    repository = initialise_corpus(corpus)
+    (corpus / "notes" / "a.md").write_text("A note.\n", encoding="utf-8")
+    (corpus / ".git" / "index.lock").write_text("", encoding="utf-8")
+
+    with pytest.raises(HistoryUnwritable) as raised:
+        repository.commit("add", scope="notes", summary="1 added")
+
+    assert not isinstance(raised.value, CorpusBusy)
+    assert "index.lock" in str(raised.value)
+    assert raised.value.resolution is not None
+    assert raised.value.resolution.startswith("git -C ")
