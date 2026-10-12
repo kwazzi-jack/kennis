@@ -26,6 +26,8 @@ from kennis.render.html import (
     IMAGE_MISSING,
     MarkedRange,
     headings_of,
+    passage_html,
+    terms_of,
     to_html,
 )
 
@@ -506,3 +508,76 @@ def test_headings_carry_no_id_unless_asked():
     """A results page draws several passages, and one id twice is not
     HTML."""
     assert "id=" not in to_html(OUTLINED, without_title="The title")
+
+
+# ---------------------------------------------------------------------------
+# A passage: one rendering, in two parts (#454)
+# ---------------------------------------------------------------------------
+
+THREE_BLOCKS = (
+    "An opening paragraph.\n\nThe antenna paragraph.\n\nA closing paragraph.\n"
+)
+
+
+def test_a_passage_parts_at_the_first_block_the_words_occur_in():
+    parts = passage_html(THREE_BLOCKS, terms=["antenna"], fits=1000)
+
+    assert "opening" in parts.lead and "antenna" not in parts.lead
+    assert parts.body.lstrip().startswith("<p>The <mark>antenna</mark>")
+    assert "closing" in parts.body
+
+
+def test_the_two_parts_are_the_whole_rendering():
+    """Nothing is lost or repeated at the seam."""
+    parts = passage_html(THREE_BLOCKS, terms=["antenna"], fits=1000)
+
+    assert parts.lead + parts.body == to_html(THREE_BLOCKS, terms=["antenna"])
+
+
+def test_a_passage_the_words_do_not_occur_in_has_no_lead():
+    """A meaning-only hit: shown from its start."""
+    parts = passage_html(THREE_BLOCKS, terms=["calibration"], fits=1000)
+
+    assert parts.lead == ""
+    assert "opening" in parts.body
+
+
+def test_a_word_only_in_a_link_address_does_not_part_the_passage():
+    """The part is decided by where a mark was drawn, not by the source,
+    whose link addresses the reader never sees."""
+    body = "See [the page](https://example.org/antenna).\n\nThe antenna is here.\n"
+
+    parts = passage_html(body, terms=["antenna"], fits=1000)
+
+    assert "example.org" in parts.lead
+
+
+def test_a_short_plain_passage_fits_and_a_long_one_does_not():
+    assert passage_html(THREE_BLOCKS, terms=[], fits=1000).fits
+    assert not passage_html(THREE_BLOCKS, terms=[], fits=20).fits
+
+
+def test_the_lead_counts_towards_fitting():
+    """A passage that fits is drawn whole, lead included, so a long lead
+    has to be something the reader opens."""
+    body = "Weather " * 40 + "\n\nThe antenna.\n"
+    parts = passage_html(body, terms=["antenna"], fits=100)
+
+    assert parts.lead and not parts.fits
+
+
+def test_a_table_before_the_match_is_tall_too():
+    body = "| a | b |\n| --- | --- |\n| 1 | 2 |\n\nThe antenna.\n"
+
+    assert not passage_html(body, terms=["antenna"], fits=1000).fits
+
+
+def test_a_table_never_fits_a_closed_passage():
+    """Its height is not its character count."""
+    body = "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+
+    assert not passage_html(body, terms=[], fits=1000).fits
+
+
+def test_the_readers_words_are_their_own_words():
+    assert terms_of("  antenna   gains ") == ("antenna", "gains")

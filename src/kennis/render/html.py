@@ -191,6 +191,80 @@ def headings_of(markdown: str, *, without_title: str | None = None) -> list[Head
     ]
 
 
+@dataclass(frozen=True, slots=True)
+class PassageHtml:
+    """A chunk rendered once, parted where the reader's words first occur.
+
+    `lead` is the blocks before the first block holding a mark, and
+    `body` the rest; together they are exactly `to_html(markdown,
+    terms=...)`. `fits` says whether both could be shown whole with
+    nothing to open: short enough, and holding nothing - a table, a code
+    block, a display equation - whose height its characters do not say.
+    It counts the lead too, since a passage that fits shows its lead; a
+    note's title heading alone is no reason to offer an opening.
+    """
+
+    lead: str
+    body: str
+    fits: bool
+
+
+# Blocks whose height is not their length in characters.
+_TALL: Final = frozenset(
+    {"table_open", "fence", "code_block", "math_block", "math_block_label"}
+)
+
+
+def passage_html(markdown: str, *, terms: Sequence[str], fits: int) -> PassageHtml:
+    """`markdown` rendered as `to_html` would, in two parts (#454).
+
+    The part is decided after marking, by where a mark was drawn, so a
+    term that occurs only in a link's address - which the reader never
+    sees - does not move it. With no mark at all everything is `body`:
+    a hit found by meaning alone is shown from its start.
+    """
+    parser = _parser(load_remote_images=False)
+    tokens = parser.parse(markdown)
+    pattern = query_pattern(terms)
+    if pattern is not None:
+        _mark_text(tokens, pattern)
+    starts = [
+        at for at, token in enumerate(tokens) if token.level == 0 and token.nesting >= 0
+    ]
+    first = next(
+        (
+            start
+            for start, end in zip(starts, [*starts[1:], len(tokens)], strict=True)
+            if any(_holds_a_mark(token) for token in tokens[start:end])
+        ),
+        0,
+    )
+    length = sum(len(token.content) for token in tokens if token.type == "inline")
+    return PassageHtml(
+        lead=str(parser.renderer.render(tokens[:first], parser.options, {})),
+        body=str(parser.renderer.render(tokens[first:], parser.options, {})),
+        fits=length <= fits and not any(token.type in _TALL for token in tokens),
+    )
+
+
+def _holds_a_mark(token: Token) -> bool:
+    """Whether `_mark_text` drew a mark in this token."""
+    return any(
+        child.type == "html_inline" and "<mark>" in child.content
+        for child in token.children or ()
+    )
+
+
+def terms_of(question: str) -> tuple[str, ...]:
+    """The reader's words, as the marker looks for them.
+
+    Split on whitespace and nothing cleverer. The index tokenises its
+    own way and this does not pretend to match it - what is marked is
+    what was typed.
+    """
+    return tuple(question.split())
+
+
 # Below this a term matches most of the page. Two characters is not
 # a judgement about which words are worth marking - it is the point
 # at which the mark stops carrying information.
@@ -443,15 +517,8 @@ _MATHS_ELEMENTS: Final[tuple[tuple[str, str, str], ...]] = (
 _EMPTY_OPTION: Final = re.compile(r"(\\begin\{[A-Za-z*]+\})\[\s*\]")
 
 
-def without_empty_options(maths: str) -> str:
-    """`maths` with an empty `\\begin{...}[]` option removed.
-
-    Public because `gui/snippet.py` renders the same TeX with its own
-    parser and needs the same repair - otherwise an expression fails
-    to parse in the search results and renders in the document, from
-    one string. The dependency runs `gui -> render -> engine`, so
-    this is the layer both can read.
-    """
+def _without_empty_options(maths: str) -> str:
+    """`maths` with an empty `\\begin{...}[]` option removed."""
     return _EMPTY_OPTION.sub(r"\1", maths)
 
 
@@ -473,7 +540,7 @@ def _maths_rule(element: str, classes: str) -> RenderRule:
         env: EnvType,
     ) -> str:
         token = tokens[index]
-        maths = without_empty_options(token.content)
+        maths = _without_empty_options(token.content)
         drawn = f'<{element} class="{classes}">{_escaped(maths)}</{element}>'
         if token.info:
             # `$$ ... $$ (eq1)` - the label is what the document's own
@@ -571,9 +638,11 @@ __all__ = [
     "IMAGE_MISSING",
     "Heading",
     "MarkedRange",
+    "PassageHtml",
     "headings_of",
     "marked_text",
+    "passage_html",
     "query_pattern",
+    "terms_of",
     "to_html",
-    "without_empty_options",
 ]

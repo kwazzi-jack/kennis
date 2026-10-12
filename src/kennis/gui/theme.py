@@ -896,6 +896,10 @@ details.menu[open] > .menu-button { opacity: 1; }
 
 /* ---- the centre ---- */
 
+/* Lets a height move to and from `max-content`, so a passage grows
+   rather than jumps. Browsers without it change at once. */
+:root { interpolate-size: allow-keywords; }
+
 main {
   grid-area: main;
   overflow-y: auto;
@@ -1441,54 +1445,83 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .open { color: var(--role-muted); }
 .open:hover, .open:focus-visible { color: var(--brand); }
 
-/* One passage, as the mockup drew it. Closed, the window; opened, the
-   whole chunk in its place, in ink and as blocks, with the highlighter
-   rule the document uses for "here". The snippet is hidden rather
-   than shown beside it, so no text is on the page twice. */
+/* One passage, drawn once and windowed (#454). Closed, the part from
+   the reader's words, cut at about six lines and faded where it is cut,
+   and faded at the top too when there is text above it. Opened, the
+   part above grows in, the cut grows to the whole, and the rule the
+   document uses for "here" appears. The heights transition where the
+   browser can interpolate to `max-content` and change at once where it
+   cannot. Everything is in ink: an opened passage is one text. */
 .passage { color: var(--ink); }
-.passage summary { list-style: none; cursor: pointer; }
-.passage summary::-webkit-details-marker { display: none; }
-.passage[open] .snippet { display: none; }
-.passage .snippet { display: block; }
-/* `\\00b7` is CSS's escape for a middle dot: the file stays ASCII. */
-.passage .cell-gap::before {
-  content: "\\00b7";
-  color: var(--role-muted);
-  margin: 0 0.3em;
+.passage .full {
+  border-left: 3px solid transparent;
+  padding: 0.1rem 0 0.1rem 0.85rem;
+  margin: 0.15rem 0 0.2rem -0.85rem;
+  transition: border-color 0.25s ease;
 }
-.passage .row-gap::before { content: "/"; color: var(--role-muted); margin: 0 0.3em; }
+.passage .full > * > :first-child { margin-top: 0; }
+.passage .full p { margin: 0 0 0.7rem; }
+.passage .full :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+.passage .body > :last-child { margin-bottom: 0; }
+.passage.clamped .lead {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+.passage.clamped .body {
+  max-height: 6lh;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, currentColor 45%, transparent);
+  transition: max-height 0.35s ease;
+}
+.passage.clamped:has(.lead) .body,
+.passage.clamped .body[data-shifted] {
+  mask-image: linear-gradient(
+    to bottom, transparent, currentColor 1.4em, currentColor 45%, transparent
+  );
+}
+.passage.clamped:has(details[open]) .lead,
+.passage.clamped:has(details[open]) .body {
+  max-height: max-content;
+  mask-image: none;
+}
+.passage:has(details[open]) .full { border-left-color: var(--brand); }
 
-.toggle {
+.passage-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 1.2rem;
+  margin-top: 0.3rem;
+  font-family: var(--gutter);
+  font-size: 0.75rem;
+}
+.passage-foot summary {
+  list-style: none;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: 0.35rem;
-  font-family: var(--gutter);
-  font-size: 0.75rem;
   color: var(--role-command);
 }
-.passage summary:hover .toggle { color: var(--ink); }
-.toggle .icon { width: 0.85rem; height: 0.85rem; transition: transform 0.15s; }
-.passage[open] .toggle .icon { transform: rotate(180deg); }
-.passage .when-open { display: none; }
-.passage[open] .when-open { display: inline; }
-.passage[open] .when-closed { display: none; }
-@media (prefers-reduced-motion: reduce) {
-  .toggle .icon { transition: none; }
+.passage-foot summary::-webkit-details-marker { display: none; }
+.passage-foot summary:hover { color: var(--ink); }
+.passage-foot .icon {
+  width: 0.85rem; height: 0.85rem; transition: transform 0.2s ease;
 }
+.passage-foot details[open] .icon { transform: rotate(180deg); }
+.passage-foot .when-open { display: none; }
+.passage-foot details[open] .when-open { display: inline; }
+.passage-foot details[open] .when-closed { display: none; }
+/* Into the document only once the passage is open: closed, the title
+   and the arrow beside it already lead there. */
+.passage-foot .go { display: none; color: var(--role-command); }
+.passage-foot:has(details[open]) .go { display: inline; }
 
-.full {
-  border-left: 3px solid var(--brand);
-  padding: 0.1rem 0 0.1rem 0.85rem;
-  margin: 0.15rem 0 0.2rem;
-}
-.full > :first-child { margin-top: 0; }
-.full p { margin: 0 0 0.7rem; }
-.full .go {
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  color: var(--role-command);
-}
 /* A table in a passage scrolls inside it rather than widening the
    column, for the reason `article table` gives. */
 .full table {

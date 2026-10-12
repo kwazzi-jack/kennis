@@ -46,7 +46,6 @@ from kennis.engine.rag.models import Chunk
 from kennis.gui import words
 from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
-from kennis.gui.snippet import Passage, passage_of, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import DocumentMarks, DocumentState, Holding, document_marks
 from kennis.operations import IndexBuild
@@ -67,8 +66,11 @@ from kennis.render.hits import (
 from kennis.render.html import (
     Heading,
     MarkedRange,
+    PassageHtml,
     headings_of,
+    passage_html,
     query_pattern,
+    terms_of,
     to_html,
 )
 from kennis.render.packs import (
@@ -134,12 +136,11 @@ class ShownHit:
     title: str
     measures: tuple[ShownMeasure, ...]
     handle: str
-    # **HTML, unlike the words.** The chunk rendered for this medium,
-    # because leaving `##` and `[[35](https://...)]` on the page is
-    # what the terminal's rule yields in a browser. Concerns #336 and
-    # #297. The window a closed passage shows and the whole chunk an
-    # opened one shows in its place.
-    passage: Passage
+    # **HTML, unlike the words.** The chunk rendered once, by the
+    # document's renderer, parted where the reader's words first occur:
+    # a closed passage shows the second part faded, an opened one both
+    # (#454). Concerns #336 and #297.
+    passage: PassageHtml
     collection: str
     document_id: str
     # The whole link, not its parts. A corpus hit and a bundle hit are
@@ -150,8 +151,9 @@ class ShownHit:
 
     @property
     def opens(self) -> bool:
-        """Whether the passage holds more than its window."""
-        return self.passage.cut_before or self.passage.cut_after
+        """Whether the passage is too long or too tall to show whole. A
+        passage that fits is drawn whole, its lead included."""
+        return not self.passage.fits
 
 
 def shown_measures(
@@ -167,6 +169,11 @@ def shown_measures(
         )
         for leg, level in measures
     )
+
+
+# About the characters of prose a closed passage shows before its fade:
+# six lines at the reading measure. More, and the passage opens.
+_PASSAGE_FITS: Final = 360
 
 
 def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
@@ -191,7 +198,9 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
                 # truncating, so by then the heading and the
                 # paragraph after it are one line and a markdown
                 # parse would make a heading of both.
-                passage=passage_of(hit.result.chunk.text, terms=terms),
+                passage=passage_html(
+                    hit.result.chunk.text, terms=terms, fits=_PASSAGE_FITS
+                ),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
                 href=_href(
