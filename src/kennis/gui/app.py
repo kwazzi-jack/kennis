@@ -296,13 +296,55 @@ _TEMPLATES.env.globals.update(
 # its reader came from (11e).
 _REFERRER_POLICY: Final = "no-referrer"
 
-# The name the cookie is held under. Prefixed because it is kennis's
-# and a browser may be holding cookies for other things served from
-# loopback on another port - a notebook, someone else's dev server -
+# The name the cookie is held under, before its port. Prefixed because it
+# is kennis's and a browser may be holding cookies for other things served
+# from loopback on another port - a notebook, someone else's dev server -
 # and an unprefixed `token` is exactly the collision that produces.
 COOKIE_NAME: Final = "kennis_gui_token"
 
 _UNAUTHORISED: Final = "this interface needs the token it was started with"
+_CROSS_ORIGIN: Final = "this interface accepts changes only from its own pages"
+
+# The methods that change nothing, and so need not come from kennis's own
+# pages. Every write is a POST (11e).
+_SAFE_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def cookie_name(request: Request) -> str:
+    """The token cookie's name for the address this request was sent to.
+
+    **Per port, because a cookie is not.** A browser sends a cookie set by
+    `127.0.0.1:A` to `127.0.0.1:B` as well, so a second `kennis gui` - one
+    per project is the ordinary case (#407) - overwrote the first one's
+    token, and every request from the first tab was refused. The port is
+    the one the browser addressed, read from `Host`, which over `ssh -L` is
+    the forwarded port rather than the server's own.
+    """
+    port = request.url.port
+    return COOKIE_NAME if port is None else f"{COOKIE_NAME}_{port}"
+
+
+def from_elsewhere(request: Request) -> bool:
+    """Whether a request that writes was sent by a page kennis did not serve.
+
+    **`samesite=strict` is not enough on loopback.** A site is a scheme and
+    a host, with no port, so a page served from `127.0.0.1` on any other
+    port - a notebook, another account's server on a shared machine - is the
+    same site, and the browser sends the token cookie with its POSTs. The
+    browser states where a request came from in `Origin`, which every
+    current browser sends with a POST, and in `Sec-Fetch-Site`; either one
+    naming somewhere other than this address refuses the write. A request
+    carrying neither came from no browser, and a client outside a browser
+    with the token is the person.
+    """
+    if request.method in _SAFE_METHODS:
+        return False
+    origin = request.headers.get("origin")
+    if origin is not None:
+        here = f"{request.url.scheme}://{request.headers.get('host', '')}"
+        return origin != here
+    fetched = request.headers.get("sec-fetch-site")
+    return fetched is not None and fetched not in {"same-origin", "none"}
 
 
 def new_token() -> str:
@@ -356,13 +398,18 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
     async def require_token(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        supplied = request.query_params.get("token") or request.cookies.get(COOKIE_NAME)
+        cookie = cookie_name(request)
+        supplied = request.query_params.get("token") or request.cookies.get(cookie)
         if not secrets.compare_digest(supplied or "", token):
             # 401 and not a redirect. A refusal that redirects is a
             # refusal a client follows, and then the test that proves
             # the guard works reports 200 for a request that was
             # turned away.
             refusal = JSONResponse({"detail": _UNAUTHORISED}, status_code=401)
+            refusal.headers["Referrer-Policy"] = _REFERRER_POLICY
+            return refusal
+        if from_elsewhere(request):
+            refusal = JSONResponse({"detail": _CROSS_ORIGIN}, status_code=403)
             refusal.headers["Referrer-Policy"] = _REFERRER_POLICY
             return refusal
         answer = await call_next(request)
@@ -374,7 +421,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         answer.headers["Referrer-Policy"] = _REFERRER_POLICY
         if request.query_params.get("token"):
             answer.set_cookie(
-                COOKIE_NAME,
+                cookie,
                 token,
                 httponly=True,
                 samesite="strict",
@@ -925,10 +972,10 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         entry - and each of those would write a note nobody asked
         for.
 
-        Cross-site protection is the token cookie's `samesite=strict`:
-        a form on another site cannot make the browser send it, so
-        such a request arrives without the token and the guard in
-        `require_token` refuses it before this runs.
+        Cross-site protection is the guard's: the token cookie's
+        `samesite=strict` keeps it from other sites, and `from_elsewhere`
+        refuses a POST from another page on loopback, which the browser
+        counts as the same site.
         """
         text_given = str(form.get("text") or "")
         title = str(form.get("title") or "") or None
@@ -1696,7 +1743,7 @@ def _problem(request: Request, error: KennisError) -> HTMLResponse:
     )
 
 
-__all__ = ["COOKIE_NAME", "build_app", "new_token"]
+__all__ = ["COOKIE_NAME", "build_app", "cookie_name", "from_elsewhere", "new_token"]
 
 
 def _lines(given: str) -> list[str]:
