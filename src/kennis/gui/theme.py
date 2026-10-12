@@ -594,7 +594,7 @@ body {
   border: 0;
   border-left: 1px solid var(--rule);
   border-radius: 0;
-  background: none;
+  background-color: transparent;
   color: var(--role-muted);
 }
 .searchbox .searching { margin: 0 0.5rem; }
@@ -982,21 +982,20 @@ main {
 }
 .setting-name { float: left; padding: 0; font-weight: 600; }
 .setting-sentence { grid-column: 1; margin: 0; font-size: 0.8125rem; }
-/* `.setting` in the selector: the Add form uses `choices` too, and a
-   bare rule put its radios in row 1, above their label (#451). */
-.setting .choices {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+/* A list of radios, one to a line, for options carrying more than a
+   word: the bar colours' swatches. */
+.radio-list {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.3rem 0.8rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
 }
 .choice {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.5rem;
   white-space: nowrap;
+  cursor: pointer;
 }
 .swatches { display: inline-flex; gap: 1px; }
 .swatch { display: inline-block; width: 0.55rem; height: 0.85rem; border-radius: 1px; }
@@ -1005,7 +1004,6 @@ main {
 .settings-open { display: inline-flex; align-items: center; }
 @media (max-width: 760px) {
   .setting { grid-template-columns: minmax(0, 1fr); }
-  .setting .choices { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 }
 .measure-name { color: var(--role-muted); }
 /* kennis's configuration: the control in the right column beside
@@ -1362,18 +1360,41 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   border-radius: 5px;
   overflow: hidden;
 }
-.segmented a {
+.segmented a, .segmented label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   padding: 0.2rem 0.65rem;
   border-right: 1px solid var(--rule);
+  font-family: var(--gutter);
   font-size: 0.75rem;
   color: var(--ink);
   text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
-.segmented a:last-child { border-right: 0; }
-.segmented a:hover { background: var(--raised); }
-.segmented a[aria-current="true"] {
+.segmented > :last-child { border-right: 0; }
+.segmented a:hover, .segmented label:hover { background: var(--raised); }
+.segmented a[aria-current="true"],
+.segmented label:has(input:checked) {
   background: var(--brand-wash);
   font-weight: 600;
+}
+/* The radio stays in the form - it is what posts, what the arrow keys
+   move between and what `required` is checked on - with no box of its
+   own; its label is the button. */
+.segmented input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--role-hint);
+  outline-offset: -2px;
 }
 .limit { font-family: var(--gutter); font-size: 0.75rem; margin: 0.5rem 0 0; }
 
@@ -1669,9 +1690,71 @@ input, select, textarea, button {
   color: var(--ink);
   background: var(--ground);
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: 5px;
   padding: 0.4rem 0.6rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
+input:hover, select:hover, textarea:hover { border-color: var(--role-muted); }
+
+/* A select draws its own chevron: two gradients in the text colour,
+   so it follows the theme and the muted search bar alike. */
+select {
+  appearance: none;
+  padding-right: 1.8rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 0.85rem center,
+    right 0.55rem center;
+  background-size: 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* A radio and a checkbox drawn rather than the browser's: a box in the
+   muted border, the brand when chosen. The dot and the tick are a
+   `::before` grown from nothing, the tick cut by a polygon, so no image
+   and no colour is named. */
+input[type="radio"],
+input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--role-muted);
+  background: var(--ground);
+  vertical-align: -0.15em;
+  cursor: pointer;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="radio"]::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--brand);
+  transform: scale(0);
+  transition: transform 0.15s ease;
+}
+input[type="radio"]:checked { border-color: var(--brand); }
+input[type="radio"]:checked::before { transform: scale(1); }
+input[type="checkbox"] { border-radius: 4px; }
+input[type="checkbox"]::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  background: var(--ground);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+  transition: transform 0.15s ease;
+}
+input[type="checkbox"]:checked { background: var(--brand); border-color: var(--brand); }
+input[type="checkbox"]:checked::before { transform: scale(1); }
 
 textarea { width: 100%; font-family: var(--column); resize: vertical; }
 
@@ -1764,7 +1847,7 @@ button:focus-visible, a:focus-visible {
   flex: 1 1 auto;
   min-width: 0;
 }
-.add-tab .choices { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+.add-tab .choices { justify-self: start; flex-wrap: wrap; }
 .add-tab .empty { color: var(--role-muted); font-size: 0.75rem; }
 .add-tab .empty b { color: var(--ink); font-weight: 600; }
 .add-tab .browse { display: inline-flex; align-items: center; gap: 0.3rem; }

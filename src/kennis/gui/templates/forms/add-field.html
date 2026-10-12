@@ -5,7 +5,7 @@
   {% if field.widget == "choice" %}<span class="name">{{ field.label }}</span>{% else %}<label class="name" for="add-{{ field.name }}">{{ field.label }}</label>{% endif %}
   <span class="need">{% if field.required %}{{ required }}{% else %}{{ optional }}{% endif %}</span>
   {% if field.widget == "choice" %}
-  <span class="choices">{% for choice in field.choices %}<label><input type="radio" name="{{ field.name }}" value="{{ choice }}" required{% if choice == field.value %} checked{% endif %}> {{ choice }}</label>{% endfor %}</span>
+  <span class="choices segmented" role="radiogroup">{% for choice in field.choices %}<label><input type="radio" name="{{ field.name }}" value="{{ choice }}" required{% if choice == field.value %} checked{% endif %}>{{ choice }}</label>{% endfor %}</span>
   {% else %}
   <span class="entry-row">
   <input id="add-{{ field.name }}" type="{{ 'number' if field.widget == 'number' else 'text' }}" name="{{ field.name }}"{% if field.value %} value="{{ field.value }}"{% endif %}{% if field.widget == "number" %} min="1" step="1"{% endif %}{% if field.name == "identifiers" %} autofocus{% endif %}{% if field.preview %} hx-get="{{ field.preview }}" hx-trigger="input changed delay:600ms" hx-target="#add-preview" hx-include="closest form"{% endif %}>
