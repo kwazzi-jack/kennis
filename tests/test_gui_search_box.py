@@ -30,12 +30,14 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.icons import icon
 from kennis.retrieval import EVERY_SCOPE, SCOPE_NAMES
 
 TOKEN = "a-test-token"
@@ -313,3 +315,35 @@ def test_the_indicator_is_hidden_when_the_hits_match_the_box(
     indicator = indicator[: indicator.index(">") + 1]
 
     assert "hidden" in indicator
+
+
+def test_the_search_box_is_one_control_with_its_button_out_of_sight(
+    corpus: Path, client: TestClient
+):
+    """The mockup's box: an icon, the field, the key that reaches it and
+    the two selects, inside one border. The button stays, because the
+    Enter key and the scriptless path need it, but is not drawn (#447)."""
+    admitted(client)
+
+    page = client.get("/").text
+    raw = page[page.index('<form class="searchbox"') : page.index("</form>")]
+    form = BeautifulSoup(raw, "html.parser")
+    button = form.find("button", attrs={"type": "submit"})
+    key = form.find("kbd")
+
+    assert str(icon("search")) in raw
+    assert raw.index(str(icon("search"))) < raw.index("<input")
+    assert isinstance(key, Tag) and key.get_text(strip=True) == "/"
+    assert isinstance(button, Tag)
+    assert "visually-hidden" in (button.get("class") or [])
+
+
+def test_the_slash_key_reaches_the_search_box():
+    """Asserted against the code with its comments removed (#373)."""
+    script = (STATIC / "hint.js").read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("//")
+    )
+
+    assert 'event.key !== "/"' in code
+    assert "box.focus()" in code
