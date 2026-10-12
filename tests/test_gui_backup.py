@@ -18,7 +18,9 @@ from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
 from kennis.engine.backup import BACKUP_NAME, check_backup
+from kennis.engine.errors import SettingsError
 from kennis.engine.settings import load_settings
+from kennis.gui import app as app_module
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.render.backup import (
@@ -352,3 +354,44 @@ def test_without_a_script_the_section_address_is_the_page(client: TestClient):
 
     assert answer.status_code == 200
     assert 'class="shell"' in answer.text
+
+
+# ---------------------------------------------------------------------------
+# A setting that will not be written, or will not be read
+# ---------------------------------------------------------------------------
+
+
+def test_a_folder_the_settings_refuse_is_said_beside_the_field(
+    client: TestClient, folder: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def refused(answers: object) -> None:
+        raise SettingsError("the configuration file could not be written")
+
+    monkeypatch.setattr(app_module, "apply_answers", refused)
+
+    answer = client.post(
+        "/settings/backup",
+        data={"backup.folder": str(folder)},
+        headers={"HX-Request": "true"},
+    )
+
+    assert answer.status_code == 200
+    assert "the configuration file could not be written" in section_of(answer.text).text
+
+
+def test_a_setting_out_of_range_is_named_on_the_page_not_a_server_error(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Nearly every route reads the settings, so one value out of range in
+    a hand-edited file answered every page with "Internal Server Error"."""
+    configuration = tmp_path / "edited-config"
+    configuration.mkdir()
+    (configuration / "config.toml").write_text(
+        "[retrieval]\ndefault_top_k = 0\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(configuration))
+
+    for path in ("/", "/settings", "/corpus"):
+        page = client.get(path)
+        assert "retrieval.default_top_k" in page.text, path
+        assert "kennis config show" in page.text, path
