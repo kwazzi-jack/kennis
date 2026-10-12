@@ -1176,6 +1176,9 @@ mark {
   color: var(--ink);
   border-radius: 0.15em;
   padding: 0 0.1em;
+  /* The mockup's underline: inside a marked chunk the wash behind a
+     word is the chunk's own, and the rule is what still tells it. */
+  box-shadow: inset 0 -2px 0 var(--brand);
 }
 
 /* A scope the sweep could not reach, and the command that fixes it.
@@ -1189,19 +1192,107 @@ mark {
   gap: 0.75rem;
 }
 
-/* Back to the results, and to the collection. A document reached
-   from a search had no way to anything: its only links were the
-   figures control and the citations in its own text. */
-.back {
+/* ---- an opened document (#447) ---- */
+/* The centre on a document page: the bar, then the text and the
+   inspector side by side, each scrolling on its own. `main` stops
+   scrolling and padding here, and `.reading` takes both over. */
+main.document {
+  /* `clip`, not `hidden`: a fragment link may still scroll an element
+     whose overflow is hidden, and following one to a chunk scrolled
+     the bar out of sight. `clip` cannot be scrolled at all. */
+  overflow: clip;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
+
+/* Where the document is: back to the search, the collection, its
+   group, and the handle it is cited by. */
+.doc-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.5rem 0.3rem 1rem;
+  border-bottom: 1px solid var(--rule);
   font-family: var(--gutter);
   font-size: 0.75rem;
+  color: var(--role-muted);
+}
+.crumbs {
   display: flex;
-  gap: 1rem;
-  margin: 0 0 1.5rem;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.crumbs a { color: var(--role-muted); text-decoration: none; }
+.crumbs a:hover { color: var(--ink); text-decoration: underline; }
+.crumbs .sep { color: var(--rule); }
+.crumbs .here { color: var(--ink); font-family: var(--mono); }
+
+.document-body { flex: 1; min-height: 0; display: flex; }
+.reading {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2rem 1.5rem 4rem;
 }
 
-.back a { color: var(--role-muted); }
-.back a:hover { color: var(--ink); }
+/* Beside the column rather than over it, so it never covers text. */
+.inspector {
+  flex: none;
+  width: 17rem;
+  overflow-y: auto;
+  background: var(--raised);
+  border-left: 1px solid var(--rule);
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  padding: 0.3rem 0 1rem;
+}
+:root[data-inspector="closed"] .inspector { display: none; }
+.inspector details { border-bottom: 1px solid var(--rule); }
+.inspector summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--role-muted);
+}
+.inspector summary::-webkit-details-marker { display: none; }
+.inspector summary .icon { width: 0.8rem; height: 0.8rem; }
+.inspector details[open] > summary .icon { transform: rotate(90deg); }
+.details dl {
+  margin: 0;
+  padding: 0 0.9rem 0.8rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem 0.8rem;
+}
+.details dt { color: var(--role-muted); }
+.details dd { margin: 0; overflow-wrap: anywhere; }
+.details dd.verbatim { font-family: var(--mono); font-size: 0.75rem; }
+.matches ol, .outline ul {
+  margin: 0;
+  padding: 0 0.9rem 0.8rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.outline ul { list-style: none; padding-left: 0.9rem; }
+.outline li[data-level="3"] { padding-left: 0.8rem; }
+.outline li[data-level="4"], .outline li[data-level="5"],
+.outline li[data-level="6"] { padding-left: 1.6rem; }
+.inspector a { color: var(--role-command); }
+.inspector details > p { margin: 0; padding: 0 0.9rem 0.8rem; }
 
 /* ---- search results ---- */
 
@@ -1438,33 +1529,32 @@ article h1 { margin: 0 0 0.5rem; }
 article p { margin: 0 0 1rem; }
 article img { max-width: 100%; height: auto; }
 
-.provenance {
+/* Who wrote it and when, under the title; the rest of what the
+   frontmatter says is in the inspector. */
+.byline {
   font-family: var(--gutter);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--role-muted);
-  margin: 0 0 2rem;
-  /* The three facts on three lines. A row of them joined by
-     separators is the shape every generated page reaches for, and it
-     reads as decoration rather than as three different answers. */
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  margin: 0 0 1.6rem;
 }
 
-/* The passage a search hit pointed at. A rule in the margin rather
-   than a background wash: the mark has to be findable at a glance
-   while a paper is scrolled, and a wash behind body text competes
-   with the text for the eight colours available here.
+/* The passage a search hit pointed at, as the mockup marks it: the
+   highlighter wash with the amber rule in the margin, which is also
+   an opened passage's rule, so "here" is one colour everywhere. This
+   reverses an earlier choice of a cyan rule alone, made before the
+   brand colour existed (#450).
 
-   `scroll-margin-top` is what makes the fragment land correctly -
-   without it the browser puts the anchor at the top of the viewport,
-   where the header sits over it. */
+   `scroll-margin-top` keeps the fragment from landing flush against
+   the top of the scrolling region. */
 .chunk {
-  border-left: 2px solid var(--role-hint);
-  padding-left: 1rem;
-  margin-left: -1.25rem;
+  background: var(--mark);
+  border-left: 3px solid var(--brand);
+  padding: 0.3rem 0.7rem 0.3rem 1rem;
+  margin: 0 -0.7rem 1rem -1.3rem;
+  border-radius: 0 3px 3px 0;
   scroll-margin-top: 2rem;
 }
+.chunk > :last-child { margin-bottom: 0; }
 
 code, pre {
   font-family: var(--mono);
@@ -1825,6 +1915,15 @@ article table {
   .palette-open .kbd { display: none; }
   .searchbox { order: 3; flex-basis: 100%; max-width: none; flex-wrap: wrap; }
   main { padding: 1.5rem 1rem 4rem; }
+}
+
+/* Too narrow for the text and the inspector side by side: one
+   scrolling column again, with the inspector after the text. */
+@media (max-width: 900px) {
+  main.document { overflow-y: auto; display: block; }
+  .document-body { display: block; }
+  .reading { overflow: visible; }
+  .inspector { width: auto; border-left: 0; border-top: 1px solid var(--rule); }
 }
 
 @media (prefers-reduced-motion: reduce) {

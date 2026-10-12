@@ -57,7 +57,7 @@ Lucide 0.460.0 (lucide-static)
   icons/command.svg,
   icons/database.svg, icons/ellipsis.svg, icons/file-plus.svg, icons/file-text.svg, icons/folder.svg,
   icons/globe.svg, icons/history.svg, icons/info.svg,
-  icons/package.svg, icons/panel-left.svg, icons/pencil.svg,
+  icons/package.svg, icons/panel-left.svg, icons/panel-right.svg, icons/pencil.svg,
   icons/power.svg, icons/refresh-cw.svg, icons/search.svg, icons/settings.svg,
   icons/sticky-note.svg,
   icons/whole-word.svg, icons/x.svg

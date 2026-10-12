@@ -44,6 +44,7 @@ import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Final
 from urllib.parse import urlparse
 
@@ -98,6 +99,7 @@ def to_html(
     marked: MarkedRange | None = None,
     without_title: str | None = None,
     terms: Sequence[str] = (),
+    heading_anchors: bool = False,
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
 
@@ -123,10 +125,19 @@ def to_html(
 
     `terms` are the reader's own words, marked on the text the corpus
     holds and never inside code or maths, by the rule a snippet uses.
+
+    `heading_anchors` gives each heading the id `headings_of` names, for
+    a page that offers an outline. Off by default, because a results
+    page draws several passages and the same id twice is not HTML.
     """
     parser = _parser(load_remote_images=load_remote_images)
     pattern = query_pattern(terms)
-    if marked is None and without_title is None and pattern is None:
+    if (
+        marked is None
+        and without_title is None
+        and pattern is None
+        and not heading_anchors
+    ):
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
     if marked is not None:
@@ -135,7 +146,49 @@ def to_html(
         tokens = _without_title(tokens, without_title)
     if pattern is not None:
         _mark_text(tokens, pattern)
+    if heading_anchors:
+        for token in tokens:
+            if token.type in _HEADINGS and token.map is not None:
+                token.attrSet("id", _heading_anchor(token.map[0]))
     return str(parser.renderer.render(tokens, parser.options, {}))
+
+
+@dataclass(frozen=True, slots=True)
+class Heading:
+    """One heading of a document, for an outline."""
+
+    level: int
+    text: str
+    anchor: str
+
+
+def _heading_anchor(line: int) -> str:
+    """A heading's id, from the source line it starts on.
+
+    The line rather than a count of headings, so the anchor is the same
+    whether or not the leading title heading was dropped from the tokens.
+    """
+    return f"heading-{line}"
+
+
+def headings_of(markdown: str, *, without_title: str | None = None) -> list[Heading]:
+    """The headings `to_html` draws, in order, with the ids it gives them.
+
+    The text is the heading's source, which is what a reader recognises;
+    inline markup in a heading is rare and is shown as written.
+    """
+    tokens = _parser(load_remote_images=False).parse(markdown)
+    if without_title is not None:
+        tokens = _without_title(tokens, without_title)
+    return [
+        Heading(
+            level=int(opening.tag.removeprefix("h")),
+            text=inline.content.strip(),
+            anchor=_heading_anchor(opening.map[0]),
+        )
+        for opening, inline in pairwise(tokens)
+        if opening.type in _HEADINGS and opening.map is not None
+    ]
 
 
 # Below this a term matches most of the page. Two characters is not
@@ -516,7 +569,9 @@ def _escaped(text: str) -> str:
 __all__ = [
     "IMAGE_BLOCKED",
     "IMAGE_MISSING",
+    "Heading",
     "MarkedRange",
+    "headings_of",
     "marked_text",
     "query_pattern",
     "to_html",

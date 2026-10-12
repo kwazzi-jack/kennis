@@ -464,7 +464,10 @@ def test_the_bundle_mark_is_the_chunk_and_not_the_header(
     page = client.get(link)
     marked = page.text[page.text.index(f'id="chunk-{number}"') :]
     marked = marked.partition(">")[2].partition("</div>")[0]
-    inside = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", marked)).split())
+    # Tags removed without a space: the reader's words are marked inline
+    # now, and a space for `</mark>` put one before the full stop after
+    # a marked word. Blocks are already apart by their newlines.
+    inside = " ".join(html.unescape(re.sub(r"<[^>]+>", "", marked)).split())
 
     # Where the mark *begins*, not what it contains. Rendering the
     # whole file puts the frontmatter inside the mark and leaves the

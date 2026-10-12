@@ -1,19 +1,32 @@
 {% extends "base.html" %}
 {% block title %}{{ document.title }}{% endblock %}
-{% block main %}
-<nav class="back">
-  {% if question %}
-  <a href="/?q={{ question | urlencode }}">{{ back_to_search }}</a>
-  {% endif %}
-  <a href="/collection/{{ document.collection }}">{{ document.collection }}</a>
+{% block main_class %} class="document"{% endblock %}
+{# The centre laid out as the mockup draws a document: a bar of
+   breadcrumbs, then the text and the inspector side by side, each
+   scrolling on its own, so the bar and the inspector stay put while
+   the text moves (#447). #}
+{% block centre %}
+<nav class="doc-bar" aria-label="{{ crumbs_label }}">
+  <span class="crumbs">
+    {% if search_crumb %}<a href="/?q={{ question | urlencode }}">{{ search_crumb }}</a><span class="sep">/</span>{% endif %}
+    <a href="/collection/{{ document.collection }}">{{ document.collection }}</a><span class="sep">/</span>
+    {% if document.group %}<span>{{ document.group }}</span><span class="sep">/</span>{% endif %}
+    <span class="here">{{ document.handle or document.document_id }}</span>
+  </span>
+  {# Both labels from the server; `inspector.js` picks one. #}
+  {% set inspector_open = inspector_state(request) != "closed" %}
+  <button type="button" class="ghost" id="inspector-toggle" aria-controls="inspector"
+          data-show="{{ inspector_show }}" data-hide="{{ inspector_hide }}"
+          aria-expanded="{{ 'true' if inspector_open else 'false' }}"
+          aria-label="{{ inspector_hide if inspector_open else inspector_show }}"
+          title="{{ inspector_hide if inspector_open else inspector_show }}">{{ icon("panel-right") }}</button>
 </nav>
+<div class="document-body">
+<div class="reading">
+<div class="column">
 <article>
   <h1>{{ document.title }}</h1>
-  <p class="provenance">
-    <span>{{ document.collection }}</span>
-    <span>{{ document.document_id }}</span>
-    <span>{{ document.path }}</span>
-  </p>
+  {% if document.byline %}<p class="byline">{{ document.byline }}</p>{% endif %}
   {% if document.has_blocked_images and not load_remote_images %}
   <p class="role-warning">
     {{ blocked_note }}
@@ -25,4 +38,38 @@
   {% endif %}
   {{ document.body_html | safe }}
 </article>
+</div>
+</div>
+{# `<details>` throughout, so each section opens without a script. #}
+<aside class="inspector" id="inspector" aria-label="{{ inspector_label }}">
+  <details class="details" open>
+    <summary>{{ icon("chevron-right") }}{{ details_heading }}</summary>
+    <dl>
+      {% for detail in document.details %}
+      <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{{ detail.value }}</dd>
+      {% endfor %}
+    </dl>
+  </details>
+  {% if question %}
+  <details class="matches" open>
+    <summary>{{ icon("chevron-right") }}{{ matches_heading }}</summary>
+    {% if matches %}
+    <ol>{% for match in matches %}<li><a href="{{ match.href }}">{{ match.label }}</a></li>{% endfor %}</ol>
+    {% elif matches_withheld %}
+    <p class="role-warning">{{ matches_withheld_note }}</p>
+    {% else %}
+    <p class="role-muted">{{ no_matches }}</p>
+    {% endif %}
+  </details>
+  {% endif %}
+  <details class="outline"{% if not question %} open{% endif %}>
+    <summary>{{ icon("chevron-right") }}{{ outline_heading }}</summary>
+    {% if document.outline %}
+    <ul>{% for heading in document.outline %}<li data-level="{{ heading.level }}"><a href="#{{ heading.anchor }}">{{ heading.text }}</a></li>{% endfor %}</ul>
+    {% else %}
+    <p class="role-muted">{{ no_headings }}</p>
+    {% endif %}
+  </details>
+</aside>
+</div>
 {% endblock %}

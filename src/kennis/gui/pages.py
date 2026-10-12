@@ -12,6 +12,7 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -29,19 +30,25 @@ from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, DocumentFacts
 from kennis.engine.corpus.layout import relative_to_corpus
-from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.corpus.schema import (
+    COLLECTION_NAMES,
+    DocsFrontmatter,
+    DocumentFrontmatter,
+    LiteratureFrontmatter,
+)
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import DocumentNotFound
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.pack.store import PackInstall
+from kennis.engine.rag.models import Chunk
 from kennis.gui import words
 from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
 from kennis.gui.snippet import Passage, passage_of, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
-from kennis.holdings import Holding, document_marks
+from kennis.holdings import DocumentMarks, DocumentState, Holding, document_marks
 from kennis.operations import IndexBuild
 from kennis.render.backup import describe_written
 from kennis.render.hits import (
@@ -57,7 +64,13 @@ from kennis.render.hits import (
     rendered_hit,
     score_style_for,
 )
-from kennis.render.html import MarkedRange, to_html
+from kennis.render.html import (
+    Heading,
+    MarkedRange,
+    headings_of,
+    query_pattern,
+    to_html,
+)
 from kennis.render.packs import (
     describe_action,
     describe_corpus_claim_needed,
@@ -427,6 +440,19 @@ def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
 
 
 @dataclass(frozen=True, slots=True)
+class ShownDetail:
+    """One row of the inspector's details.
+
+    `verbatim` is for a value that must be read or typed exactly - an
+    identifier, a path - and is drawn in the monospace face.
+    """
+
+    label: str
+    value: str
+    verbatim: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ShownDocument:
     """One document, ready to place."""
 
@@ -440,6 +466,120 @@ class ShownDocument:
     # something to load, because a control that does nothing is worse
     # than no control.
     has_blocked_images: bool
+    # The directory below the collection, for the breadcrumbs; empty at
+    # the top, and always empty in the bundle, whose folders are paths.
+    group: str = ""
+    # What the last breadcrumb calls the document: its citekey when it
+    # has one, because that is what a paper is cited by.
+    handle: str = ""
+    byline: str | None = None
+    details: tuple[ShownDetail, ...] = ()
+    outline: tuple[Heading, ...] = ()
+
+
+def byline_of(frontmatter: DocumentFrontmatter) -> str | None:
+    """Who wrote it and when, or what it documents, under the title."""
+    if isinstance(frontmatter, LiteratureFrontmatter):
+        parts = [
+            part for part in (frontmatter.bib.authors, frontmatter.bib.year) if part
+        ]
+        return ", ".join(parts) or None
+    if isinstance(frontmatter, DocsFrontmatter):
+        docs = frontmatter.docs
+        return f"{docs.project} {docs.version}" if docs.version else docs.project
+    return None
+
+
+def document_details(
+    frontmatter: DocumentFrontmatter,
+    *,
+    collection: str,
+    group: str,
+    state: DocumentState | None,
+) -> tuple[ShownDetail, ...]:
+    """What the frontmatter says, as the inspector's rows.
+
+    Only what this document has. `state` is None when the index cannot
+    be checked, and then the row is left out, as the tree draws no mark:
+    "kennis cannot check" is not "searchable".
+    """
+    label = words.DETAIL_LABELS
+    rows = [ShownDetail(label["collection"], collection)]
+    if group:
+        rows.append(ShownDetail(label["group"], group))
+    rows.append(ShownDetail(label["id"], frontmatter.id, verbatim=True))
+    if isinstance(frontmatter, LiteratureFrontmatter):
+        bib = frontmatter.bib
+        rows.append(ShownDetail(label["citekey"], bib.citekey, verbatim=True))
+        for key, value in (
+            ("arxiv", bib.arxiv_id),
+            ("doi", bib.doi),
+            ("bibcode", bib.bibcode),
+        ):
+            if value:
+                rows.append(ShownDetail(label[key], value, verbatim=True))
+    if isinstance(frontmatter, DocsFrontmatter):
+        rows.append(ShownDetail(label["project"], frontmatter.docs.project))
+        rows.append(ShownDetail(label["page"], frontmatter.docs.page, verbatim=True))
+        if frontmatter.docs.version:
+            rows.append(ShownDetail(label["version"], frontmatter.docs.version))
+    source = frontmatter.source
+    rows.append(ShownDetail(label["source"], source.origin, verbatim=True))
+    rows.append(ShownDetail(label["converted"], source.via))
+    rows.append(ShownDetail(label["added"], source.at.date().isoformat()))
+    if state is not None:
+        rows.append(ShownDetail(label["index"], words.INDEX_STATES[state]))
+    return tuple(rows)
+
+
+def state_in(
+    marks: DocumentMarks, corpus_root: Path, anchor: Path
+) -> DocumentState | None:
+    """One document's index state, or None when it cannot be checked."""
+    if marks.states is None and not marks.never_indexed:
+        return None
+    return marks.state_of(corpus_root, anchor)
+
+
+@dataclass(frozen=True, slots=True)
+class ShownMatch:
+    """A passage of this document the reader's words occur in."""
+
+    label: str
+    href: str
+
+
+def shown_matches(
+    chunks: Sequence[Chunk], *, question: str, collection: str, document_id: str
+) -> tuple[ShownMatch, ...]:
+    """The chunks the reader's words occur in, named by their section.
+
+    The words are matched by the rule that marks them on the page, so a
+    passage is listed exactly when it would show a mark.
+    """
+    pattern = query_pattern(terms_of(question))
+    if pattern is None:
+        return ()
+    matching = [chunk for chunk in chunks if pattern.search(chunk.text)]
+    in_section = Counter(chunk.section for chunk in matching if chunk.section)
+    seen: Counter[str] = Counter()
+    shown: list[ShownMatch] = []
+    for chunk in matching:
+        section = chunk.section
+        if not section:
+            label = words.passage_label(chunk.chunk_index)
+        elif in_section[section] == 1:
+            label = section
+        else:
+            seen[section] += 1
+            label = words.match_in_section(section, seen[section], in_section[section])
+        shown.append(
+            ShownMatch(
+                label=label,
+                href=_href(collection, document_id, chunk.chunk_index, question),
+            )
+        )
+    return tuple(shown)
 
 
 def shown_document(
@@ -449,6 +589,8 @@ def shown_document(
     *,
     load_remote_images: bool,
     marked: MarkedRange | None = None,
+    marks: DocumentMarks | None = None,
+    question: str = "",
 ) -> ShownDocument:
     """Read one document and render it.
 
@@ -463,8 +605,11 @@ def shown_document(
     """
     held = Collection(root=corpus_root, name=collection)
     document = held.resolve(document_id)
+    frontmatter = document.frontmatter
+    anchor = _anchor(document)
+    group = _group_of(corpus_root, collection, anchor)
     return ShownDocument(
-        title=document.frontmatter.title,
+        title=frontmatter.title,
         document_id=document.id,
         collection=collection,
         path=relative_to_corpus(document.md_path, corpus_root),
@@ -476,9 +621,25 @@ def shown_document(
             # 44 of 45 crawled pages then repeated it as their first
             # heading, so the reader saw it twice with the metadata
             # wedged between. Concern #353.
-            without_title=document.frontmatter.title,
+            without_title=frontmatter.title,
+            heading_anchors=True,
+            terms=terms_of(question),
         ),
         has_blocked_images=_refers_remotely(document.body),
+        group=group,
+        handle=(
+            frontmatter.bib.citekey
+            if isinstance(frontmatter, LiteratureFrontmatter)
+            else document.id
+        ),
+        byline=byline_of(frontmatter),
+        details=document_details(
+            frontmatter,
+            collection=collection,
+            group=group,
+            state=None if marks is None else state_in(marks, corpus_root, anchor),
+        ),
+        outline=tuple(headings_of(document.body, without_title=frontmatter.title)),
     )
 
 
@@ -488,6 +649,7 @@ def shown_bundle_document(
     *,
     load_remote_images: bool,
     marked: MarkedRange | None = None,
+    question: str = "",
 ) -> ShownDocument:
     """One note out of this project's bundle, rendered.
 
@@ -531,8 +693,22 @@ def shown_bundle_document(
             load_remote_images=load_remote_images,
             marked=marked,
             without_title=str(title),
+            heading_anchors=True,
+            terms=terms_of(question),
         ),
         has_blocked_images=_refers_remotely(body),
+        handle=relative_path,
+        # A bundle note's frontmatter is the user's own and has no
+        # model, so its details are where it is and nothing more.
+        details=(
+            ShownDetail(words.DETAIL_LABELS["collection"], CONTEXT_COLLECTION),
+            ShownDetail(
+                words.DETAIL_LABELS["path"],
+                f"{bundle.name}/{relative_path}",
+                verbatim=True,
+            ),
+        ),
+        outline=tuple(headings_of(body, without_title=str(title))),
     )
 
 
@@ -551,6 +727,7 @@ __all__ = [
     "STATE_ORDER",
     "STATE_ROLES",
     "ShownBranch",
+    "ShownDetail",
     "ShownDocument",
     "ShownEntry",
     "ShownGroup",
@@ -558,6 +735,7 @@ __all__ = [
     "ShownKey",
     "ShownKeyLine",
     "ShownMark",
+    "ShownMatch",
     "ShownMeasure",
     "ShownOrder",
     "ShownOutcome",
@@ -568,6 +746,8 @@ __all__ = [
     "ShownTree",
     "ShownTreeEntry",
     "add_here_address",
+    "byline_of",
+    "document_details",
     "ordered_by",
     "palette_entries",
     "shown_backup",
@@ -577,11 +757,13 @@ __all__ = [
     "shown_groups_of",
     "shown_hits",
     "shown_key",
+    "shown_matches",
     "shown_measures",
     "shown_orders",
     "shown_rows",
     "shown_skips",
     "shown_tree",
+    "state_in",
 ]
 
 
