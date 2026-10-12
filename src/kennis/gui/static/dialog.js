@@ -30,9 +30,13 @@
     if (event.target.tagName === "DIALOG") { event.target.remove(); }
   }, true);
 
+  // Cancel is a link, so a page without a script can leave; inside a
+  // dialog it closes the dialog instead of being followed.
   slot.addEventListener("click", function (event) {
     var close = event.target.closest("[data-close]");
-    if (close) { close.closest("dialog").close(); }
+    if (!close) { return; }
+    event.preventDefault();
+    close.closest("dialog").close();
   });
 
   // Only the form's own POST closes it. A control inside the form - a
@@ -45,5 +49,21 @@
     if (!form.matches || !form.matches("form[data-closes-dialog]")) { return; }
     var dialog = form.closest("dialog");
     if (dialog && event.detail.successful) { dialog.close(); }
+  });
+
+  // Keep the Add form's destination in step with its fields. Each part
+  // names its field, and this copies the value across: it composes no
+  // words, as `hint.js` copies the scope's hint.
+  function mirror(form) {
+    form.querySelectorAll("[data-mirror]").forEach(function (part) {
+      var field = form.elements[part.dataset.mirror];
+      part.textContent = field ? field.value.trim() : "";
+    });
+  }
+  ["input", "change"].forEach(function (kind) {
+    document.addEventListener(kind, function (event) {
+      var form = event.target.form;
+      if (form && form.querySelector("[data-mirror]")) { mirror(form); }
+    });
   });
 })();

@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -24,6 +25,7 @@ from kennis.engine.events import EventSink
 from kennis.engine.literature.metadata import ArxivMetadata
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.icons import icon
 
 TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
@@ -116,14 +118,18 @@ def test_the_tabs_are_the_four_kinds_in_order():
 def test_each_tab_links_every_tab_and_marks_its_own(
     client: TestClient, kind: str, label: str
 ):
-    dialog = dialog_of(client, kind)
-    tabs = re.findall(r'<a class="tab"([^>]*)>([^<]+)</a>', dialog)
+    dialog = BeautifulSoup(dialog_of(client, kind), "html.parser")
+    tabs = dialog.select("a.tab")
 
-    assert [text for _, text in tabs] == [text for _, text in EXPECTED_TABS]
-    current = [text for attributes, text in tabs if 'aria-current="page"' in attributes]
+    assert [tab.get_text(strip=True) for tab in tabs] == [
+        text for _, text in EXPECTED_TABS
+    ]
+    current = [
+        tab.get_text(strip=True) for tab in tabs if tab.get("aria-current") == "page"
+    ]
     assert current == [label]
-    for (attributes, _), (other, _) in zip(tabs, EXPECTED_TABS, strict=True):
-        assert f'href="/add?kind={other}"' in attributes
+    for tab, (other, _) in zip(tabs, EXPECTED_TABS, strict=True):
+        assert tab["href"] == f"/add?kind={other}"
 
 
 def test_a_tab_without_a_script_is_a_page(client: TestClient):
@@ -614,3 +620,125 @@ def test_an_add_with_no_collection_is_refused(client: TestClient, adds: list[Add
     assert adds == []
     assert words.CHOOSE_A_COLLECTION in refused.text
     assert words.CHOOSE_A_COLLECTION in grouped.text
+
+
+# ---------------------------------------------------------------------------
+# As the mockup draws it (#447)
+# ---------------------------------------------------------------------------
+
+# Written by hand: each tab's picture.
+EXPECTED_TAB_ICONS = {
+    "paper": "book-open",
+    "site": "globe",
+    "file": "file-text",
+    "group": "folder",
+}
+
+
+def foot_of(dialog: str) -> Tag:
+    foot = BeautifulSoup(dialog, "html.parser").select_one(".form-foot")
+    assert isinstance(foot, Tag), dialog
+    return foot
+
+
+def test_each_tab_carries_its_picture(client: TestClient):
+    dialog = dialog_of(client, "paper")
+    tabs = re.findall(r'<a class="tab"[^>]*kind=(\w+)[^>]*>(.*?)</a>', dialog, re.S)
+
+    assert [kind for kind, _ in tabs] == list(EXPECTED_TAB_ICONS)
+    for kind, inside in tabs:
+        assert str(icon(EXPECTED_TAB_ICONS[kind])) in inside, kind
+
+
+def test_the_foot_says_where_the_add_goes_and_offers_cancel_and_the_kinds_add(
+    client: TestClient,
+):
+    foot = foot_of(dialog_of(client, "paper"))
+    destination = foot.select_one(".destination")
+    cancel = foot.select_one("[data-close]")
+    submit = foot.select_one("button[type=submit]")
+
+    assert isinstance(destination, Tag)
+    assert words.ADDS_TO in destination.get_text(" ")
+    assert "literature" in destination.get_text(" ")
+    assert isinstance(cancel, Tag) and cancel.get_text(strip=True) == words.CANCEL
+    assert isinstance(submit, Tag)
+    assert submit.get_text(strip=True) == words.ADD_ACTIONS["paper"]
+
+
+def test_the_place_a_dialog_was_opened_on_is_where_it_says_it_adds(
+    client: TestClient,
+):
+    """11f's Add here fills the group; the foot says so before the reader
+    has typed anything."""
+    answer = client.get(
+        "/add", params={"kind": "paper", "group": "calibration"}, headers=HTMX
+    )
+
+    destination = foot_of(answer.text).select_one(".destination")
+
+    assert isinstance(destination, Tag)
+    assert "calibration" in destination.get_text(" ")
+
+
+def test_the_destination_follows_the_fields_it_names(client: TestClient):
+    """Each part names a field the form really has, so the script that
+    copies values has something to copy."""
+    for kind in ("paper", "site", "file"):
+        dialog = dialog_of(client, kind)
+        form = BeautifulSoup(dialog, "html.parser").select_one("form")
+        assert isinstance(form, Tag)
+        names = {str(field.get("name")) for field in form.select("[name]")}
+        mirrored = [str(part["data-mirror"]) for part in form.select("[data-mirror]")]
+        assert mirrored, kind
+        assert set(mirrored) <= names, kind
+
+
+def test_several_by_group_names_no_single_destination(client: TestClient):
+    assert foot_of(dialog_of(client, "group")).select_one(".destination") is None
+
+
+def test_the_dialog_script_copies_values_and_composes_no_words():
+    code = code_of("dialog.js")
+
+    # The call, not only the function: a function nothing calls copies
+    # nothing, and the walk in a browser is what shows it copies.
+    assert "data-mirror" in code
+    assert re.search(r"\{ mirror\(form\); \}", code)
+    assert "preventDefault" in code
+    assert not re.search(r'"[A-Z][a-z]+ [a-z]', code), "a sentence in the script"
+
+
+def test_an_optional_field_says_what_empty_becomes_with_the_value_set_apart(
+    client: TestClient,
+):
+    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    empty = dialog.select_one(".field .empty")
+
+    assert isinstance(empty, Tag)
+    assert empty.get_text(" ").startswith(words.EMPTY_PREFIX)
+    assert empty.find("b") is not None
+
+
+def test_a_required_field_takes_the_whole_row(client: TestClient):
+    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    css = client.get("/static/kennis.css").text
+
+    needs = {str(row.get("data-need")) for row in dialog.select(".field")}
+    assert needs == {"required", "optional"}
+    assert re.search(
+        r'\.field\[data-need="required"\]\s*\{[^}]*grid-column: 1 / -1', css
+    )
+
+
+def test_the_settings_pages_choices_rule_does_not_reach_the_add_form(
+    client: TestClient,
+):
+    """A bare `.choices` placed the settings page's choices in grid row 1,
+    and the File tab's collection radios rose above their own label: a
+    bare class declared once, for one page, used by another (#451)."""
+    css = client.get("/static/kennis.css").text
+
+    for selector, body in re.findall(r"([^{}]*)\{([^}]*)\}", css):
+        if "grid-row" in body and re.search(r"\.choices\b", selector):
+            assert ".setting" in selector, selector
