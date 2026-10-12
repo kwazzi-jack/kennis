@@ -190,6 +190,8 @@ _TEMPLATES.env.globals.update(
         "actions": words.ACTIONS,
         "palette_title": words.PALETTE_TITLE,
         "settings_heading": words.SETTINGS_HEADING,
+        "packs_heading": words.PACKS_HEADING,
+        "documents_held": words.documents_held,
         "palette_shortcut": words.PALETTE_SHORTCUT,
         "close_label": words.CLOSE,
         "collection_icons": words.COLLECTION_ICONS,
@@ -1776,21 +1778,50 @@ def _last_job(request: Request) -> tuple[str, str] | None:
     return None
 
 
-def _strip_summary(pane: Pane) -> str:
-    """Where the corpus stands, from the pane the page already drew."""
+def _strip_status(pane: Pane) -> list[tuple[str, str]]:
+    """Where the corpus stands, from the pane the page already drew.
+
+    Plan 11b's four, as `(text, role)`: the commit, what is searchable,
+    what needs indexing, and the last change. The second and third are
+    one collection count and one document count, because a person deciding
+    whether to index asks how much, and a collection that is behind may be
+    behind by one note. A role is empty for ordinary muted text.
+    """
     states = [row.state for row in pane.collections]
-    return words.searchable_summary(
-        searchable=sum(state in ("current", "behind") for state in states),
-        total=len(states),
-        behind=states.count("behind"),
-    )
+    items = [
+        (
+            words.searchable_summary(
+                searchable=sum(state in ("current", "behind") for state in states),
+                total=len(states),
+                behind=states.count("behind"),
+            ),
+            "",
+        )
+    ]
+    if pane.waiting:
+        items.append((words.documents_waiting(pane.waiting), "warning"))
+    change = pane.last_change
+    if change is not None:
+        items.insert(0, (words.corpus_at(change.commit[:7]), ""))
+        items.append(
+            (
+                words.last_change(
+                    change.operation,
+                    change.scope,
+                    change.summary,
+                    time.time() - change.when.timestamp(),
+                ),
+                "",
+            )
+        )
+    return items
 
 
 # The strip, on every page: the running job if there is one, otherwise
 # where the corpus stands and what ran last (#405). Functions taking the
 # request, registered here because they are defined above.
 _TEMPLATES.env.globals.update(
-    {"job_now": _job_now, "last_job": _last_job, "strip_summary": _strip_summary}
+    {"job_now": _job_now, "last_job": _last_job, "strip_status": _strip_status}
 )
 
 

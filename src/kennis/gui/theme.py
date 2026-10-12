@@ -632,6 +632,22 @@ body {
   color: var(--ink);
 }
 .pane-note { margin: 0 0.4rem; font-size: 0.75rem; }
+/* The corpus's total, beside its heading, in the case it is written in. */
+.pane-head .count {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* What the dots mean, at the foot of the pane rather than after its
+   last section. */
+.legend {
+  margin: auto 0.4rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  font-size: 0.6875rem;
+}
+.legend > span { display: inline-flex; align-items: center; gap: 0.3rem; }
 
 .tree { list-style: none; margin: 0; padding: 0; }
 .tree .tree {
@@ -862,6 +878,12 @@ main {
   overflow-y: auto;
   padding: 2rem 1.5rem 4rem;
   min-width: 0;
+  /* The containing block for what is positioned inside it. Without
+     this a visually hidden label deep in a long document was placed
+     against the whole page, which then measured 37,000px tall, and
+     following a link to a passage scrolled the page itself - bar and
+     all - rather than this pane. */
+  position: relative;
 }
 /* The column keeps its measure inside whatever the pane leaves. One
    element owns the centring: on `main > *` it was undone by any later

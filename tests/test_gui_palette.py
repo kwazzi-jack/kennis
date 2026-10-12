@@ -44,6 +44,8 @@ EXPECTED_ENTRIES = [
     ("Corpus", "/corpus", "page"),
     ("Recent searches", "/", "page"),
     ("Activity", "/activity", "page"),
+    ("Packs", "/corpus#packs", "page"),
+    ("Settings", "/settings", "page"),
 ]
 
 # And which role each kind wears, so the list is not grey.

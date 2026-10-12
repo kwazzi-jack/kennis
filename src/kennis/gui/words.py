@@ -419,11 +419,15 @@ KENNIS_HEADING = "kennis"
 
 ACTIVITY_HEADING = "Activity"
 
+PACKS_HEADING = "Packs"
+
 # The palette's places beyond the collections, by the pane's own names.
 PALETTE_PAGES: Final[tuple[tuple[str, str, str], ...]] = (
     ("/corpus", CORPUS_HEADING, "database"),
     ("/", RECENTS_HEADING, "history"),
     ("/activity", ACTIVITY_HEADING, "activity"),
+    ("/corpus#packs", PACKS_HEADING, "package"),
+    ("/settings", SETTINGS_HEADING, "settings"),
 )
 
 NOTHING_RUN = "Nothing has run since kennis started. Operations are kept for an hour."
@@ -452,6 +456,65 @@ def searchable_summary(searchable: int, total: int, behind: int) -> str:
     if behind:
         summary += f", {behind} behind"
     return summary
+
+
+def corpus_at(commit: str) -> str:
+    """The commit the corpus is at, for the strip."""
+    return f"Corpus at {commit}"
+
+
+def documents_held(count: int) -> str:
+    """How many documents the corpus holds, beside its heading."""
+    return count_of(count, "document")
+
+
+def documents_waiting(count: int) -> str:
+    """How many documents a search cannot find until an index is rebuilt."""
+    verb = "needs" if count == 1 else "need"
+    return f"{count_of(count, 'document')} {verb} indexing"
+
+
+def time_ago(seconds: float) -> str:
+    """How long ago something happened, to the unit a person would say.
+
+    A negative interval is a clock on another machine ahead of this
+    one, and reads as now rather than as the future.
+    """
+    whole = int(seconds)
+    if whole < 60:
+        return "just now"
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if whole >= size:
+            return f"{count_of(whole // size, unit)} ago"
+    return "just now"
+
+
+# What each operation kennis records was, by the verb in its commit
+# subject, and the word joining it to the scope it acted on.
+CHANGE_KINDS: Final[dict[str, str]] = {
+    "init": "created",
+    "add": "add to",
+    "move": "move in",
+    "index": "index of",
+    "sync": "sync of",
+    "remember": "note in",
+    "restore": "restore in",
+}
+
+
+def last_change(
+    operation: str | None, scope: str | None, summary: str, seconds: float
+) -> str:
+    """The corpus's newest commit, for the strip.
+
+    A subject kennis did not write is quoted whole, because a commit a
+    person made by hand is a change too (`read_history` keeps it).
+    """
+    ago = time_ago(seconds)
+    if operation is None or scope is None:
+        return f"Last change: {summary}, {ago}"
+    kind = CHANGE_KINDS.get(operation, operation)
+    return f"Last change: {kind} {scope} ({summary}), {ago}"
 
 
 def last_job(kind: str, state: str) -> str:
@@ -978,6 +1041,7 @@ __all__ = [
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
     "BUSY_WITH_ANOTHER",
+    "CHANGE_KINDS",
     "CHECK_SITE",
     "CHOOSER_CANCEL",
     "CHOOSER_HEADING",
@@ -1061,6 +1125,7 @@ __all__ = [
     "ORDER_CHOICES",
     "ORDER_LABEL",
     "ORDER_LIMIT",
+    "PACKS_HEADING",
     "PACK_ACTION",
     "PACK_PREAMBLE",
     "PALETTE_ACTIONS_AFTER_INDEX",
@@ -1124,14 +1189,18 @@ __all__ = [
     "attention_count",
     "built_with",
     "chooser_truncated",
+    "corpus_at",
     "describe_count",
     "describe_holding",
     "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
+    "documents_held",
+    "documents_waiting",
     "group_empty_means",
     "index_collection",
     "key_models",
+    "last_change",
     "last_job",
     "menu_for",
     "not_a_backup_folder",
@@ -1143,6 +1212,7 @@ __all__ = [
     "previewed_project",
     "search_hint_for",
     "searchable_summary",
+    "time_ago",
     "unknown_mode",
     "unknown_order",
     "unknown_scope",

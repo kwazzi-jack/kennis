@@ -20,12 +20,14 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
 from kennis.engine.events import EventSink, ItemStarted
+from kennis.engine.history.repository import Repository
 from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.gui import words
 from kennis.gui.app import build_app
@@ -235,6 +237,63 @@ def test_an_idle_strip_says_where_the_corpus_stands(client: TestClient):
 
     assert "data-job" not in strip
     assert "0 of 3 collections searchable" in strip
+
+
+def test_an_idle_strip_says_the_commit_what_waits_and_the_last_change(
+    corpus: Path, client: TestClient
+):
+    """Plan 11b's four: the corpus's commit, what is searchable, what needs
+    indexing and the last change, which is read from the corpus history
+    so that it survives a restart and covers the command line too."""
+    source = corpus / "a.md"
+    source.write_text("# A\n\nSome words.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    head = Repository(corpus / "corpus").head()
+    assert head is not None
+
+    strip = BeautifulSoup(strip_of(client.get("/").text), "html.parser")
+    text = " ".join(strip.get_text(" ").split())
+
+    assert words.corpus_at(head[:7]) in text
+    assert words.documents_waiting(1) in text
+    assert "1 added" in text and "notes" in text
+
+
+def test_the_strip_counts_what_was_added_since_the_last_index(
+    corpus: Path, client: TestClient
+):
+    """A collection with an index waits for what was added since, not
+    for every document it holds - and an index that holds everything
+    leaves nothing waiting."""
+    for name in ("a", "b"):
+        (corpus / f"{name}.md").write_text(f"# {name}\n\nWords.\n", encoding="utf-8")
+    adding = ["corpus", "add", "-n", str(corpus / "a.md")]
+    assert CliRunner().invoke(main, adding).exit_code == 0
+    indexing = ["corpus", "index", "--collection", "notes"]
+    assert CliRunner().invoke(main, indexing).exit_code == 0
+    current = " ".join(strip_of(client.get("/").text).split())
+
+    adding = ["corpus", "add", "-n", str(corpus / "b.md")]
+    assert CliRunner().invoke(main, adding).exit_code == 0
+    behind = " ".join(strip_of(client.get("/").text).split())
+
+    assert "need" not in current
+    assert words.documents_waiting(1) in behind
+
+
+def test_how_long_ago_is_said_in_the_largest_whole_unit():
+    assert words.time_ago(-5) == "just now"
+    assert words.time_ago(59) == "just now"
+    assert words.time_ago(60) == "1 minute ago"
+    assert words.time_ago(3599) == "59 minutes ago"
+    assert words.time_ago(7200) == "2 hours ago"
+    assert words.time_ago(3 * 86400 + 5) == "3 days ago"
+
+
+def test_a_change_kennis_did_not_record_is_quoted_whole():
+    assert words.last_change(None, None, "tidy up by hand", 120) == (
+        "Last change: tidy up by hand, 2 minutes ago"
+    )
 
 
 def test_an_idle_strip_links_the_last_job(app: FastAPI, client: TestClient):
