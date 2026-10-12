@@ -12,12 +12,13 @@ half-made corpus on a machine without git is worse than a clear refusal.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusBusy, CorpusNotFound
+from kennis.engine.errors import CorpusBusy, CorpusNotFound, HistoryUnwritable
 from kennis.engine.history.git import git, git_binary
 
 _GITATTRIBUTES: Final = """\
@@ -138,9 +139,10 @@ class Repository:
         self._require_repository()
         staged = git(["add", "--all", "."], cwd=self.root)
         if not staged.ok:
-            raise CorpusBusy(
-                f"the corpus at {self.root} could not be staged: "
-                f"{staged.stderr.strip()}"
+            raise HistoryUnwritable(
+                f"the corpus at {self.root} was written but could not be "
+                f"staged: {staged.stderr.strip()}",
+                resolution=self._status_command(),
             )
         if not git(["diff", "--cached", "--name-only"], cwd=self.root).lines():
             return None
@@ -148,11 +150,18 @@ class Repository:
         message = f"{operation}({scope}): {summary}"
         recorded = git(["commit", "-m", message], cwd=self.root)
         if not recorded.ok:
-            raise CorpusBusy(
-                f"the corpus at {self.root} could not be committed: "
-                f"{recorded.stderr.strip() or recorded.stdout.strip()}"
+            raise HistoryUnwritable(
+                f"the corpus at {self.root} was written but could not be "
+                "committed: "
+                f"{recorded.stderr.strip() or recorded.stdout.strip()}",
+                resolution=self._status_command(),
             )
         return self.head()
+
+    def _status_command(self) -> str:
+        """What shows the uncommitted state a failed commit left, as a
+        command that runs as printed wherever the corpus is."""
+        return f"git -C {shlex.quote(str(self.root))} status"
 
     def has_commit(self, commit: str) -> bool:
         """Whether this repository holds `commit`.
@@ -303,7 +312,7 @@ def initialise_corpus(root: Path) -> Repository:
 
     started = git(["init"], cwd=root)
     if not started.ok:
-        raise CorpusBusy(
+        raise HistoryUnwritable(
             f"git could not initialise a repository at {root}: {started.stderr.strip()}"
         )
 

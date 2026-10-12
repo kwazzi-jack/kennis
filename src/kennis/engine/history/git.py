@@ -45,6 +45,21 @@ _AUTHOR_NAME: Final = "kennis"
 _AUTHOR_EMAIL: Final = "kennis@localhost"
 
 
+# Settings from the person's own git configuration that would make a corpus
+# commit fail or do something kennis did not ask for. `GIT_CONFIG_NOSYSTEM`
+# below drops only the system file; these come from `~/.gitconfig`, where
+# `commit.gpgsign = true` is common and made every corpus commit fail for
+# want of a key for `kennis@localhost`. A hook directory that does not exist
+# runs no hook, global or the corpus's own. Given as `-c` so they win over
+# every file, and on every call so no call site can forget them.
+_OVERRIDES: Final = (
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    f"core.hooksPath={os.devnull}",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class GitResult:
     """What one git invocation did."""
@@ -94,7 +109,7 @@ def git(
     timeout: float = _TIMEOUT_SECONDS,
 ) -> GitResult:
     """Run one git command in `cwd` and return what it did."""
-    command = (git_binary(), *arguments)
+    command = (git_binary(), *_OVERRIDES, *arguments)
     try:
         completed = subprocess.run(
             command,
@@ -154,9 +169,10 @@ def _environment() -> dict[str, str]:
             "GIT_AUTHOR_EMAIL": _AUTHOR_EMAIL,
             "GIT_COMMITTER_NAME": _AUTHOR_NAME,
             "GIT_COMMITTER_EMAIL": _AUTHOR_EMAIL,
-            # A global hook firing inside a corpus commit is a class of
-            # surprise kennis could not diagnose and the user would not
-            # expect, since they never ran git.
+            # A system-wide setting is a class of surprise kennis could not
+            # diagnose and the user would not expect, since they never ran
+            # git. Hooks and signing, which a person's own file sets, are
+            # `_OVERRIDES`.
             "GIT_CONFIG_NOSYSTEM": "1",
         }
     )
