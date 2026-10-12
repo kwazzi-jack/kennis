@@ -60,7 +60,9 @@ def test_a_different_overlap_is_a_different_binding():
 def test_a_different_chunker_version_is_a_different_binding():
     """A changed packing algorithm with unchanged parameters produces
     different chunks, so the version has to count."""
-    assert a_binding().digest != a_binding(parameters=ChunkParameters(version=2)).digest
+    first = a_binding(parameters=ChunkParameters(version=1))
+    second = a_binding(parameters=ChunkParameters(version=2))
+    assert first.digest != second.digest
 
 
 def test_a_different_backend_is_a_different_binding():
