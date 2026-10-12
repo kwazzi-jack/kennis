@@ -25,6 +25,7 @@ from kennis.engine.setup import (
     QuestionKind,
     credential_status,
     questions_for,
+    setup_questions,
 )
 from kennis.gui import words
 from kennis.render.settings import describe_costs
@@ -86,10 +87,39 @@ def shown_settings(
     answers: Answers, problems: Mapping[str, str] | None = None
 ) -> list[ShownSetting]:
     found = problems or {}
+    offers = _offers()
     return [
-        _shown(question, answers, found.get(question.key, ""))
+        _shown(
+            question,
+            _typed(question, answers, offers.get(question.key, set())),
+            found.get(question.key, ""),
+        )
         for question in offered(answers)
     ]
+
+
+def _offers() -> dict[str, set[str]]:
+    """Every value the page may have offered for each key, under any backend.
+
+    The value in force and each other backend's own model and width.
+    """
+    offers: dict[str, set[str]] = {}
+    for question in setup_questions():
+        offers.setdefault(question.key, set()).add(question.suggested)
+    return offers
+
+
+def _typed(question: Question, answers: Answers, offers: set[str]) -> str:
+    """What the person typed into `question`'s field, or `""`.
+
+    A redraw sends every field back, so a field still holding one of the
+    page's own offers carries no answer: it follows the backend. Read as an
+    answer, choosing OpenAI kept fastembed's model, and choosing ollama and
+    then OpenAI kept ollama's (#441). Anything else was typed, and a redraw
+    keeps it.
+    """
+    value = answers.get(question.key, "")
+    return "" if value in offers else value
 
 
 def changed_answers(answers: Answers) -> dict[str, str]:
@@ -133,9 +163,9 @@ def shown_indexes(corpus_root: Path) -> list[ShownIndex]:
     return shown
 
 
-def _shown(question: Question, answers: Answers, problem: str) -> ShownSetting:
+def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     secret = question.kind == "secret"
-    value = "" if secret else answers.get(question.key) or question.current
+    value = "" if secret else typed or question.suggested
     labels = words.SETTING_CHOICES.get(question.key, {})
     costs = costs_of(question.key, value)
     return ShownSetting(

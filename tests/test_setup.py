@@ -161,6 +161,76 @@ def test_turning_embedding_off_asks_nothing_more_about_it():
     assert not any(question.startswith("embedding.") for question in asked[1:])
 
 
+def asked_under(backend: str) -> dict[str, Question]:
+    return {
+        question.key: question
+        for question in questions_for({"embedding.backend": backend})
+    }
+
+
+@pytest.mark.parametrize(
+    ("backend", "model", "width"),
+    [
+        # Written by hand rather than read from the table, so a wrong entry
+        # there is not agreed with by its own test (#373).
+        ("ollama", "nomic-embed-text", "768"),
+        ("openai", "text-embedding-3-small", "1536"),
+    ],
+)
+def test_another_backend_offers_its_own_model_and_width(
+    backend: str, model: str, width: str
+):
+    """A model name means something only to its backend, so the one in force
+    belongs to fastembed and offering it under another failed at the next
+    index. The value in force stays `current`, because that is what a front
+    end compares an answer with to decide whether to write it. Concern #441."""
+    asked = asked_under(backend)
+
+    assert asked["embedding.model"].suggested == model
+    assert asked["embedding.dimensions"].suggested == width
+    assert asked["embedding.model"].current == "BAAI/bge-small-en-v1.5"
+    assert asked["embedding.dimensions"].current == "384"
+
+
+def test_the_backend_in_force_offers_the_model_in_force(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Including one that is not the default: it was chosen for this backend."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text(
+        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-large"\n'
+        "dimensions = 3072\n",
+        encoding="utf-8",
+    )
+
+    asked = asked_under("openai")
+
+    assert asked["embedding.model"].suggested == "text-embedding-3-large"
+    assert asked["embedding.dimensions"].suggested == "3072"
+
+
+def test_going_back_to_the_local_backend_offers_its_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text(
+        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-small"\n'
+        "dimensions = 1536\n",
+        encoding="utf-8",
+    )
+
+    asked = asked_under("fastembed")
+
+    assert asked["embedding.model"].suggested == "BAAI/bge-small-en-v1.5"
+    assert asked["embedding.dimensions"].suggested == "384"
+
+
+def test_a_question_with_no_backend_offers_what_is_in_force():
+    for question in setup_questions():
+        if question.kind != "secret" and not question.when:
+            assert question.suggested == question.current, question.key
+
+
 def test_a_condition_is_a_value_a_form_can_evaluate():
     """Not a callback. A GUI binds field visibility to this predicate and
     shows every question at once; a terminal walks the list and skips."""
