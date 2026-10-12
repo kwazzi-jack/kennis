@@ -479,3 +479,14 @@ def test_the_stylesheet_holds_no_control_character():
     as a NUL and a stray `b7`. The ASCII check cannot see it, because NUL
     is ASCII."""
     assert not re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", stylesheet())
+
+
+def test_the_centre_pane_is_the_containing_block_of_what_it_positions():
+    """Without it a visually hidden label deep in a long document was
+    placed against the page, the page grew to 37,000px, and following a
+    link to a passage scrolled the bar out of the window. Measured in
+    the headless shell; this keeps the declaration from going unnoticed."""
+    main = re.search(r"(?m)^main \{([^}]*)\}", stylesheet())
+
+    assert main is not None
+    assert "position: relative" in main.group(1)

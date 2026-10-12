@@ -84,7 +84,7 @@
 
 <nav class="pane" aria-label="{{ corpus_heading }}">
   <section>
-    <h2 class="pane-head"><a href="/corpus">{{ corpus_heading }}</a></h2>
+    <h2 class="pane-head"><a href="/corpus">{{ corpus_heading }}</a>{% if pane.readable %} <span class="count">{{ documents_held(pane.documents) }}</span>{% endif %}</h2>
     {% if not pane.readable %}
     <p class="role-error">{{ corpus_unreadable }}</p>
     {% endif %}
@@ -126,8 +126,16 @@
     <ul class="tree">
       <li><a class="node" href="/">{{ icon("history") }}<span class="name">{{ recents_heading }}</span></a></li>
       <li><a class="node" href="/activity">{{ icon("activity") }}<span class="name">{{ activity_heading }}</span></a></li>
+      <li><a class="node" href="/corpus#packs">{{ icon("package") }}<span class="name">{{ packs_heading }}</span><span class="count">{{ pane.packs }}</span></a></li>
+      <li><a class="node" href="/settings">{{ icon("settings") }}<span class="name">{{ settings_heading }}</span></a></li>
     </ul>
   </section>
+  {# What the two coloured dots mean; the other two states draw no
+     colour, and each dot's own title names its state. #}
+  <p class="legend role-muted">
+    <span><span class="state state-current"></span>{{ pane_states["current"] }}</span>
+    <span><span class="state state-behind"></span>{{ pane_states["behind"] }}</span>
+  </p>
 </nav>
 
 <main>
@@ -146,7 +154,8 @@
   {% if not running %}
   {# Idle, the strip is a status line. Every word in it is Python's. #}
   <p class="strip-status role-muted">
-    <span>{{ strip_summary(pane) }}</span>
+    {% for text, role in strip_status(pane) %}<span{% if role %} class="role-{{ role }}"{% endif %}>{{ text }}</span>
+    {% endfor %}
     {% set last = last_job(request) %}
     {% if last %}<a href="{{ last[0] }}">{{ last[1] }}</a>{% endif %}
   </p>

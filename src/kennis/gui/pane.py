@@ -23,18 +23,25 @@ from kennis.context import existing_corpus
 from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.errors import KennisError
-from kennis.holdings import Holding, holdings
+from kennis.engine.history.history import HistoryEntry
+from kennis.holdings import Holding, holdings, installed_packs, last_change
 
 type PaneState = Literal["empty", "none", "behind", "current"]
 
 
 @dataclass(frozen=True, slots=True)
 class PaneCollection:
-    """One collection's row."""
+    """One collection's row.
+
+    `waiting` is how many of its documents a search cannot find yet:
+    every document when it has never been indexed, otherwise those added
+    or changed since. A document gone since does not wait for anything.
+    """
 
     collection: str
     documents: int
     state: PaneState
+    waiting: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,11 +52,26 @@ class Pane:
     pane then says so in place of its rows rather than failing the page
     around it: a reader who opened the window to fix exactly that needs
     the rest of the window.
+
+    `last_change` is the corpus's newest commit, which the strip reads
+    too, so a page asks git for it once.
     """
 
     collections: tuple[PaneCollection, ...]
     project: str | None
     readable: bool = True
+    packs: int = 0
+    last_change: HistoryEntry | None = None
+
+    @property
+    def documents(self) -> int:
+        """Every document the corpus holds."""
+        return sum(row.documents for row in self.collections)
+
+    @property
+    def waiting(self) -> int:
+        """Every document a search cannot find yet."""
+        return sum(row.waiting for row in self.collections)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,10 +94,20 @@ def state_of(holding: Holding) -> PaneState:
     return "current" if holding.is_current else "behind"
 
 
+def waiting_in(holding: Holding) -> int:
+    """How many of a collection's documents a search cannot find yet."""
+    if holding.freshness is None:
+        return holding.documents
+    return holding.freshness.added + holding.freshness.changed
+
+
 def pane_now() -> Pane:
     """The pane as it is at this request."""
     try:
-        held = holdings(existing_corpus())
+        context = existing_corpus()
+        held = holdings(context)
+        packs = len(installed_packs(context))
+        newest = last_change(context)
     except KennisError:
         return Pane(collections=(), project=project_name(), readable=False)
     return Pane(
@@ -84,10 +116,13 @@ def pane_now() -> Pane:
                 collection=holding.collection,
                 documents=holding.documents,
                 state=state_of(holding),
+                waiting=waiting_in(holding),
             )
             for holding in held
         ),
         project=project_name(),
+        packs=packs,
+        last_change=newest,
     )
 
 
@@ -130,4 +165,5 @@ __all__ = [
     "pane_now",
     "project_name",
     "state_of",
+    "waiting_in",
 ]

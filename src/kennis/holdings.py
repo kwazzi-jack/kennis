@@ -30,6 +30,7 @@ from kennis.engine.history.freshness import (
     document_states,
     index_freshness,
 )
+from kennis.engine.history.history import HistoryEntry, read_history
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.installed import InstalledPack, list_installed
 from kennis.engine.rag.index import read_manifest
@@ -170,6 +171,17 @@ def revision(context: Context) -> str | None:
     return Repository(context.corpus_root).head()
 
 
+def last_change(context: Context) -> HistoryEntry | None:
+    """The corpus's newest commit, or None before its first.
+
+    Read from the history rather than from this launch's jobs, because
+    the history survives a restart and records what the command line
+    did as well. Its `commit` is also the head.
+    """
+    newest = read_history(Repository(context.corpus_root), limit=1)
+    return newest[0] if newest else None
+
+
 __all__ = [
     "DocumentMarks",
     "DocumentState",
@@ -178,5 +190,6 @@ __all__ = [
     "freshness_of",
     "holdings",
     "installed_packs",
+    "last_change",
     "revision",
 ]

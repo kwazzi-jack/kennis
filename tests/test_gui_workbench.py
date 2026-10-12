@@ -23,6 +23,7 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
@@ -306,6 +307,47 @@ def test_the_pane_lists_every_collection(corpus: Path, client: TestClient):
         "docs",
         "notes",
     ]
+
+
+# Written by hand: the places the pane's kennis section offers, as the
+# mockup lists them, and where each leads (#373).
+EXPECTED_KENNIS_PLACES = [
+    ("/", "Recent searches"),
+    ("/activity", "Activity"),
+    ("/corpus#packs", "Packs"),
+    ("/settings", "Settings"),
+]
+
+
+def test_the_pane_offers_the_mockups_places(corpus: Path, client: TestClient):
+    admitted(client)
+    pane = BeautifulSoup(pane_of(client.get("/").text), "html.parser")
+    section = pane.find_all("section")[-1]
+    places = [
+        (str(link["href"]), link.find(class_="name").get_text(strip=True))
+        for link in section.select("a.node")
+    ]
+
+    assert places == EXPECTED_KENNIS_PLACES
+    for href, _ in places:
+        assert client.get(href.split("#")[0]).status_code == 200
+
+
+def test_the_pane_says_how_much_is_held_and_what_its_dots_mean(
+    corpus: Path, client: TestClient
+):
+    admitted(client)
+    write_note("Calibration converged after three rounds.")
+
+    pane = BeautifulSoup(pane_of(client.get("/").text), "html.parser")
+    text = " ".join(pane.get_text(" ").split())
+
+    assert words.documents_held(1) in text
+    legend = pane.find(class_="legend")
+    assert isinstance(legend, Tag)
+    shown = legend.get_text(" ")
+    assert words.PANE_STATES["current"] in shown
+    assert words.PANE_STATES["behind"] in shown
 
 
 def test_the_pane_says_which_collections_need_indexing(
