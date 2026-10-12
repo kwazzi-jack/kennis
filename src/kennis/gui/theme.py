@@ -1111,6 +1111,10 @@ main {
 .hits .detail span { display: block; }
 
 a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
+/* A link in the corpus's own text, in a document or an opened passage.
+   Left to the browser it was its default blue, which on the dark ground
+   is barely visible. */
+article a, .full a { color: var(--role-command); }
 
 /* A result's title is underlined on hover and not before. An inline
    link inside prose keeps its underline, because there it is the only
@@ -1266,35 +1270,72 @@ mark {
 .open { color: var(--role-muted); }
 .open:hover, .open:focus-visible { color: var(--brand); }
 
-/* One passage. Drawn whole; `passage.js` adds `closed`, which hides
-   the text on either side of the window and shows an ellipsis where
-   it was. Without the script the whole chunk reads, and no text is on
-   the page twice (#415). */
-.passage { color: var(--role-muted); }
-.passage .window { color: var(--ink); }
-.passage .gap { display: none; }
-.passage.closed .gap { display: inline; }
-.passage.closed .before, .passage.closed .after { display: none; }
-.passage .before, .passage .after { color: var(--role-muted); }
+/* One passage, as the mockup drew it. Closed, the window; opened, the
+   whole chunk in its place, in ink and as blocks, with the highlighter
+   rule the document uses for "here". The snippet is hidden rather
+   than shown beside it, so no text is on the page twice. */
+.passage { color: var(--ink); }
+.passage summary { list-style: none; cursor: pointer; }
+.passage summary::-webkit-details-marker { display: none; }
+.passage[open] .snippet { display: none; }
+.passage .snippet { display: block; }
+/* `\\00b7` is CSS's escape for a middle dot: the file stays ASCII. */
+.passage .cell-gap::before {
+  content: "\\00b7";
+  color: var(--role-muted);
+  margin: 0 0.3em;
+}
+.passage .row-gap::before { content: "/"; color: var(--role-muted); margin: 0 0.3em; }
 
 .toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  background: none;
-  border: none;
-  padding: 0;
+  margin-top: 0.35rem;
   font-family: var(--gutter);
   font-size: 0.75rem;
-  color: var(--role-muted);
-  cursor: pointer;
+  color: var(--role-command);
 }
-.toggle:hover, .toggle:focus-visible { color: var(--ink); }
-.toggle .icon { transition: transform 0.15s; }
-.toggle[aria-expanded="true"] .icon { transform: rotate(90deg); }
+.passage summary:hover .toggle { color: var(--ink); }
+.toggle .icon { width: 0.85rem; height: 0.85rem; transition: transform 0.15s; }
+.passage[open] .toggle .icon { transform: rotate(180deg); }
+.passage .when-open { display: none; }
+.passage[open] .when-open { display: inline; }
+.passage[open] .when-closed { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .toggle .icon { transition: none; }
 }
+
+.full {
+  border-left: 3px solid var(--brand);
+  padding: 0.1rem 0 0.1rem 0.85rem;
+  margin: 0.15rem 0 0.2rem;
+}
+.full > :first-child { margin-top: 0; }
+.full p { margin: 0 0 0.7rem; }
+.full .go {
+  font-family: var(--gutter);
+  font-size: 0.75rem;
+  color: var(--role-command);
+}
+/* A table in a passage scrolls inside it rather than widening the
+   column, for the reason `article table` gives. */
+.full table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  margin: 0 0 0.7rem;
+}
+.full th, .full td {
+  padding: 0.2rem 0.75rem 0.2rem 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+.full th { font-weight: 600; }
 
 /* `kennis read`'s coordinates, to copy. */
 .handle {

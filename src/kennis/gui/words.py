@@ -99,6 +99,7 @@ BACK_TO_SEARCH = "Back to the results"
 # because a sentence in a script is one a wording pass cannot find.
 SHOW_PASSAGE = "Show the whole passage"
 HIDE_PASSAGE = "Show less"
+OPEN_IN_DOCUMENT = "Open it in the document"
 
 # The link from a hit into its document is an icon, so this is its
 # accessible name and its tooltip (#415).
@@ -1055,6 +1056,7 @@ __all__ = [
     "NO_PACKS",
     "NO_SUCH_JOB",
     "OPEN_AT_PASSAGE",
+    "OPEN_IN_DOCUMENT",
     "OPTIONAL",
     "ORDER_CHOICES",
     "ORDER_LABEL",

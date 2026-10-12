@@ -62,14 +62,20 @@
     {% endif %}
     <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
       <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
-    {# Three parts that join to the whole chunk. Drawn whole; only
-       `passage.js` closes it, so a reader without a script reads it
-       all. `safe` because `passage_of` escaped every character of the
-       corpus's text itself and emitted only the tags it chose. #}
-    <div class="passage"><span class="gap" aria-hidden="true">{% if hit.passage.before %}... {% endif %}</span><span class="before">{{ hit.passage.before | safe }}</span><span class="window">{{ hit.passage.window | safe }}</span><span class="after">{{ hit.passage.after | safe }}</span><span class="gap" aria-hidden="true">{% if hit.passage.after %} ...{% endif %}</span></div>
+    {# Closed, the window; opened, the whole chunk in its place, so no
+       text is on the page twice. `<details>` opens with no script, and
+       `name` closes the others. `safe` because `passage_of` escaped
+       every character of the corpus's text and emitted only the tags it
+       chose. #}
     {% if hit.opens %}
-    <button type="button" class="toggle" hidden aria-expanded="false"
-            data-open="{{ show_passage }}" data-close="{{ hide_passage }}">{{ icon("chevron-right") }}<span class="label">{{ show_passage }}</span></button>
+    <details class="passage" name="passages">
+      <summary><span class="snippet">{% if hit.passage.cut_before %}... {% endif %}{{ hit.passage.window | safe }}{% if hit.passage.cut_after %} ...{% endif %}</span>
+        <span class="toggle"><span class="when-closed">{{ show_passage }}</span><span class="when-open">{{ hide_passage }}</span>{{ icon("chevron-down") }}</span></summary>
+      <div class="full">{{ hit.passage.whole | safe }}
+        <p><a class="go" href="{{ hit.href }}">{{ open_in_document }}</a></p></div>
+    </details>
+    {% else %}
+    <p class="passage"><span class="snippet">{{ hit.passage.window | safe }}</span></p>
     {% endif %}
     <p class="handle">{{ hit.handle }}</p>
   </li>

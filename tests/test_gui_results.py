@@ -19,6 +19,7 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from markupsafe import escape
@@ -249,36 +250,119 @@ def test_the_document_is_opened_by_a_named_icon(corpus: Path, client: TestClient
 # ---------------------------------------------------------------------------
 
 
-def test_the_passage_is_the_whole_chunk_once(corpus: Path, client: TestClient):
-    """Drawn whole and closed by the script, so opening it reveals text
-    that was already there, around the window, rather than fetching or
-    repeating it (#415). The last sentence is past any snippet's cut."""
+TABLE_BODY = (
+    "The scores are in the table.\n\n"
+    "| Model | Score |\n"
+    "| --- | --- |\n"
+    "| antenna-7B | 50.3 |\n"
+    "| antenna-8B | 72.9 |\n\n" + LONG_BODY
+)
+
+
+def passage_in(item: str) -> Tag:
+    found = BeautifulSoup(item, "html.parser").find("details", class_="passage")
+    assert isinstance(found, Tag), item
+    return found
+
+
+def test_a_passage_is_a_disclosure_that_opens_without_a_script(
+    corpus: Path, client: TestClient
+):
+    """The mockup's structure: closed, the snippet; opened, the whole
+    chunk in its place. `<details>` opens natively and `name` closes the
+    others, so no script is involved and none is loaded (Brian,
+    2026-10-12, replacing #415's script-closed passage)."""
     a_note(corpus, "calibration", LONG_BODY)
 
-    item = items_of(hits_of(client, "antenna"))[0]
-    passage = re.search(r'<div class="passage"[^>]*>(.*?)</div>', item, re.S)
+    passage = passage_in(items_of(hits_of(client, "antenna"))[0])
 
-    assert passage, item
-    text = re.sub(r'<span class="gap"[^>]*>.*?</span>', "", passage.group(1))
-    text = re.sub(r"<[^>]+>", "", text)
-    assert "would have cut off before it ever reached the reader." in text
-    assert "..." not in text
+    assert passage.get("name") == "passages"
+    assert not passage.has_attr("open")
+    summary = passage.find("summary")
+    assert isinstance(summary, Tag)
+    assert summary.find(class_="snippet") is not None
+    assert "/static/passage.js" not in client.get("/").text
+
+
+def test_the_whole_chunk_is_in_the_body_once(corpus: Path, client: TestClient):
+    """The last sentence is past any snippet's cut."""
+    a_note(corpus, "calibration", LONG_BODY)
+
+    whole = passage_in(items_of(hits_of(client, "antenna"))[0]).find(class_="full")
+
+    assert isinstance(whole, Tag)
+    text = " ".join(whole.get_text(" ").split())
     for sentence in LONG_BODY.split(". "):
-        assert text.count(sentence) == 1, sentence
+        assert text.count(sentence.rstrip(".")) == 1, sentence
 
 
-def test_the_window_holds_the_first_match_and_the_rest_is_around_it():
-    """A match deep in a chunk is still in what a closed passage shows."""
+def test_an_opened_passage_is_one_colour(client: TestClient):
+    """Brian, 2026-10-12: the text around the window was drawn muted, so an
+    opened passage read as two kinds of text. Nothing inside it is muted,
+    and the snippet it replaces is hidden rather than shown beside it."""
+    css = client.get("/static/kennis.css").text
+    rules = re.findall(r"([^{}]*\.full\b[^{}]*)\{([^}]*)\}", css)
+
+    assert rules
+    for selector, body in rules:
+        assert "muted" not in body, selector
+    assert re.search(r"\.passage\[open\] \.snippet[^{]*\{[^}]*display: none", css)
+
+
+def test_a_table_in_a_chunk_is_a_table_when_opened(corpus: Path, client: TestClient):
+    a_note(corpus, "scores", TABLE_BODY)
+
+    passage = passage_in(items_of(hits_of(client, "antenna"))[0])
+    whole = passage.find(class_="full")
+    snippet = passage.find(class_="snippet")
+
+    assert isinstance(whole, Tag) and isinstance(snippet, Tag)
+    table = whole.find("table")
+    assert isinstance(table, Tag)
+    assert [cell.get_text(strip=True) for cell in table.find_all("th")] == [
+        "Model",
+        "Score",
+    ]
+    assert len(table.find_all("tr")) == 3
+    # Closed, the cells read as text, without the table's syntax.
+    shown = snippet.get_text()
+    assert "|" not in shown and "---" not in shown
+    # Apart for anything reading the text, not only for the eye.
+    assert {"Model", "Score", "50.3"} <= set(shown.split())
+
+
+def test_the_readers_words_are_marked_in_the_whole_passage_as_in_the_snippet(
+    corpus: Path, client: TestClient
+):
+    """In text and in inline code, as the snippet marks them, because a
+    search for `antenna` names the code too; never inside maths, where a
+    `<mark>` is markup KaTeX renders or refuses."""
+    a_note(
+        corpus,
+        "calibration",
+        LONG_BODY + "\n\nThe antenna gain, see `antenna` and $antenna$ here.",
+    )
+
+    whole = passage_in(items_of(hits_of(client, "antenna"))[0]).find(class_="full")
+
+    assert isinstance(whole, Tag)
+    code = whole.find("code")
+    assert isinstance(code, Tag) and code.find("mark") is not None
+    maths = whole.find(class_="math")
+    assert isinstance(maths, Tag) and maths.find("mark") is None
+    assert whole.find("p") is not None and whole.find("p").find("mark") is not None
+
+
+def test_the_window_holds_the_first_match():
+    """A match deep in a chunk is still in what a closed passage shows,
+    and each side says whether text was left out."""
     body = "Opening words. " * 40 + "The antenna is here. " + "Closing words. " * 40
 
     passage = passage_of(body, terms=["antenna"])
 
     assert "<mark>antenna</mark>" in passage.window
-    assert passage.before and passage.after
-    assert (
-        passage.before + passage.window + passage.after
-        == passage_of(body, terms=["antenna"], limit=len(body)).window
-    )
+    assert passage.cut_before and passage.cut_after
+    assert "<mark>antenna</mark>" in passage.whole
 
 
 def test_a_passage_that_fits_has_nothing_to_open(corpus: Path, client: TestClient):
@@ -289,66 +373,37 @@ def test_a_passage_that_fits_has_nothing_to_open(corpus: Path, client: TestClien
 
     item = items_of(hits_of(client, "antenna"))[0]
 
-    assert 'class="toggle"' not in item
-    assert re.search(r'<span class="before"></span>', item)
+    assert "<details" not in item
+    assert "..." not in BeautifulSoup(item, "html.parser").get_text()
 
 
-def test_a_tag_open_at_a_boundary_is_closed_on_both_sides():
+def test_a_tag_open_at_the_window_edge_is_closed_inside_it():
     body = "Lead text here. *" + "emphasised words " * 30 + "end* tail."
 
     passage = passage_of(body, terms=[], limit=60)
 
-    # The fixture has to put a boundary inside the emphasis, or the
+    # The fixture has to put the edge inside the emphasis, or the
     # property holds for want of a tag to unbalance (#352).
-    assert "<em>" in passage.window and "<em>" in passage.after
-    for part in (passage.before, passage.window, passage.after):
-        assert part.count("<em>") == part.count("</em>"), part
+    assert "<em>" in passage.window and passage.cut_after
+    assert passage.window.count("<em>") == passage.window.count("</em>")
 
 
-def test_without_a_script_nothing_is_hidden(corpus: Path, client: TestClient):
-    """The server never closes a passage: only `passage.js` adds
-    `closed`, so a reader without a script reads the whole chunk."""
-    a_note(corpus, "calibration", LONG_BODY)
+def test_the_passage_is_worded_in_python_and_links_to_the_document(
+    corpus: Path, client: TestClient
+):
+    document_id = a_note(corpus, "calibration", LONG_BODY)
 
-    page = hits_of(client, "antenna")
+    passage = passage_in(items_of(hits_of(client, "antenna"))[0])
+    summary = passage.find("summary")
+    whole = passage.find(class_="full")
 
-    # On class attributes, not the page: the fixture's own prose says
-    # "closed", and a textual negative is satisfied by prose (#337).
-    classes = " ".join(re.findall(r'class="([^"]*)"', page)).split()
-    assert "closed" not in classes
-    assert re.search(
-        r"\.passage\.closed \.before[^{]*\{[^}]*display: none",
-        client.get("/static/kennis.css").text,
-    )
-
-
-def test_the_toggle_is_worded_in_python(corpus: Path, client: TestClient):
-    a_note(corpus, "calibration", LONG_BODY)
-
-    item = items_of(hits_of(client, "antenna"))[0]
-    toggle = re.search(r'<button[^>]*class="toggle"[^>]*>', item)
-
-    assert toggle, item
-    assert f'data-open="{words.SHOW_PASSAGE}"' in toggle.group(0)
-    assert f'data-close="{words.HIDE_PASSAGE}"' in toggle.group(0)
-    assert toggle.group(0).count("hidden") >= 1
-
-
-def test_the_passage_script_composes_no_words():
-    code = code_of("passage.js")
-
-    assert "dataset.open" in code
-    assert "dataset.close" in code
-    # A string literal holding a space is a sentence, and words belong
-    # to Python.
-    assert not re.search(r"\"[A-Za-z]+ [A-Za-z ]+\"", code)
-
-
-def test_the_passage_script_is_loaded_and_opens_one_at_a_time(client: TestClient):
-    page = client.get("/").text
-
-    assert '<script defer src="/static/passage.js">' in page
-    assert 'aria-expanded="true"' in code_of("passage.js")
+    assert isinstance(summary, Tag) and isinstance(whole, Tag)
+    shown = summary.get_text(" ")
+    assert words.SHOW_PASSAGE in shown and words.HIDE_PASSAGE in shown
+    link = whole.find("a", class_="go")
+    assert isinstance(link, Tag)
+    assert link.get_text(strip=True) == words.OPEN_IN_DOCUMENT
+    assert f"/document/notes/{document_id}" in str(link["href"])
 
 
 # ---------------------------------------------------------------------------

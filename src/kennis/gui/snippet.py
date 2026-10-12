@@ -41,17 +41,17 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 
-from kennis.render.html import without_empty_options
+from kennis.render.html import (
+    marked_text,
+    query_pattern,
+    to_html,
+    without_empty_options,
+)
 
 # The same default `render/words.py::snippet_of` uses, so the two
 # front ends cut at about the same place even though one counts
 # source characters and the other counts characters the reader sees.
 _SNIPPET_CHARACTERS: Final = 280
-
-# Below this a term matches most of the page. Two characters is not
-# a judgement about which words are worth marking - it is the point
-# at which the mark stops carrying information.
-_SHORTEST_TERM: Final = 2
 
 _MATHS_INLINE: Final = frozenset({"math_inline", "math_inline_double"})
 _MATHS_BLOCKS: Final = frozenset({"math_block", "math_block_label"})
@@ -110,7 +110,7 @@ def marked_snippet(
     search did not make.
     """
     runs = _truncated(list(_runs(_tokens(chunk))), limit)
-    pattern = _pattern(terms)
+    pattern = query_pattern(terms)
     return "".join(_rendered(runs, pattern))
 
 
@@ -123,42 +123,49 @@ _LEAD_CHARACTERS: Final = 60
 
 @dataclass(frozen=True, slots=True)
 class Passage:
-    """A hit's whole chunk as HTML, in three parts that join to it.
+    """A hit's chunk twice over: the window a closed passage shows, and
+    the whole of it as blocks, which an opened one shows in its place.
 
-    `window` is what a closed passage shows: the snippet, placed so the
-    first match is in it. `before` and `after` are the rest of the chunk
-    on either side, which an opened passage shows *around* the window,
-    so no text is ever shown twice (Brian, 2026-10-09; concern #415).
-    Each part is balanced HTML on its own - a tag open at a boundary is
-    closed there and opened again on the other side - so a page can put
-    each in its own element.
+    `window` is inline - the snippet, placed so the first match is in
+    it - and `cut_before` and `cut_after` say whether text was left out
+    on either side, which is where its ellipses go. `whole` is the chunk
+    as the document renderer draws it, tables and all, with the same
+    words marked. The page shows one or the other, never both, so no
+    text is on it twice (Brian, 2026-10-12, after #415).
     """
 
-    before: str
     window: str
-    after: str
+    whole: str
+    cut_before: bool
+    cut_after: bool
 
 
 def passage_of(
     chunk: str, *, terms: Sequence[str], limit: int = _SNIPPET_CHARACTERS
 ) -> Passage:
-    """The chunk split around a window of about `limit` visible characters.
+    """The chunk's window of about `limit` visible characters, and the
+    whole chunk.
 
     The window starts at the top unless the first match would fall
     outside it, in which case it starts a short lead before the match.
     The same runs `marked_snippet` reads, so the maths and marking rules
-    are the same ones and TeX is never split between two parts.
+    are the same ones and TeX is never cut.
     """
     runs = list(_runs(_tokens(chunk)))
-    pattern = _pattern(terms)
+    pattern = query_pattern(terms)
     start = _window_start(runs, pattern, limit)
     before, rest = _split(runs, start)
     window, after = _split(rest, limit)
     return Passage(
-        before="".join(_rendered(before, pattern)),
         window="".join(_rendered(window, pattern)),
-        after="".join(_rendered(after, pattern)),
+        whole=to_html(chunk, terms=terms),
+        cut_before=_shows_text(before),
+        cut_after=_shows_text(after),
     )
+
+
+def _shows_text(runs: Sequence[_Run]) -> bool:
+    return any(run.tag is None and run.text.strip() for run in runs)
 
 
 def _window_start(
@@ -235,9 +242,12 @@ def _split(runs: Sequence[_Run], offset: int) -> tuple[list[_Run], list[_Run]]:
 
 def _tokens(chunk: str) -> list[Token]:
     # A parser of its own rather than `render/html.py`'s: this one
-    # wants no fences, no images and no tables, because none of them
-    # can be shown in four lines of prose.
+    # wants no fences and no images, because neither can be shown in
+    # four lines of prose. Tables are parsed so that their cells can be
+    # read as text: left to the paragraph rule, a table arrived as a
+    # row of pipes and `| --- |` (Brian, 2026-10-12).
     parser = MarkdownIt("commonmark", {"html": False, "linkify": False})
+    parser.enable("table")
     # The same protection `render/html.py` has, for the same reason
     # and by the same route. Two parsers is deliberate - concern
     # #336 - but the maths rule is not one of the things they should
@@ -259,10 +269,42 @@ def _runs(tokens: Sequence[Token]) -> Iterator[_Run]:
     """
     first = True
     heading = False
+    in_cell = False
+    cells_in_row = 0
+    rows_in_table = 0
     for token in tokens:
         if token.type == "heading_open":
             heading = True
             continue
+        # A table is read across: its cells apart, its rows apart, an
+        # empty cell adding nothing. Each separator is a space in an
+        # element the stylesheet draws a mark beside, so no character
+        # outside the corpus's own text is added.
+        if token.type == "table_open":
+            rows_in_table = 0
+            continue
+        if token.type == "tr_open":
+            cells_in_row = 0
+            continue
+        if token.type in _CELL_OPENS:
+            in_cell = True
+            continue
+        if token.type in _CELL_CLOSES:
+            in_cell = False
+            continue
+        if in_cell and token.type == "inline":
+            if not _visible(token):
+                continue
+            if cells_in_row:
+                yield from _gap("cell-gap")
+            elif rows_in_table:
+                yield from _gap("row-gap")
+            elif not first:
+                yield _Run(" ")
+            if not cells_in_row:
+                rows_in_table += 1
+            cells_in_row += 1
+            first = True
         if token.type in _MATHS_BLOCKS:
             if not first:
                 yield _Run(" ")
@@ -353,23 +395,21 @@ def _truncated(runs: list[_Run], limit: int) -> list[_Run]:
     return kept
 
 
-def _pattern(terms: Sequence[str]) -> re.Pattern[str] | None:
-    """One expression matching any term, whole and regardless of case.
+_CELL_OPENS: Final = frozenset({"th_open", "td_open"})
+_CELL_CLOSES: Final = frozenset({"th_close", "td_close"})
 
-    `re.escape`, because these are a person's words and a query of
-    `.*` must match those two characters rather than everything.
-    """
-    wanted = sorted(
-        {term for term in terms if len(term) >= _SHORTEST_TERM},
-        key=len,
-        reverse=True,
-    )
-    if not wanted:
-        return None
-    joined = "|".join(re.escape(term) for term in wanted)
-    # `\b` alone fails on a term ending in a non-word character, so
-    # the boundary is asserted by lookaround on word characters.
-    return re.compile(rf"(?<!\w)(?:{joined})(?!\w)", re.IGNORECASE)
+
+def _gap(kind: str) -> Iterator[_Run]:
+    # Opened and closed as two runs, so a cut between them is balanced
+    # like any other element. The space is what separates the words for
+    # anything reading the text; the stylesheet draws the mark.
+    yield _Run("", f'<span class="{kind}">')
+    yield _Run(" ")
+    yield _Run("", "</span>")
+
+
+def _visible(token: Token) -> bool:
+    return any(child.content.strip() for child in token.children or ())
 
 
 def _rendered(runs: Sequence[_Run], pattern: re.Pattern[str] | None) -> Iterator[str]:
@@ -385,25 +425,7 @@ def _rendered(runs: Sequence[_Run], pattern: re.Pattern[str] | None) -> Iterator
         elif pattern is None:
             yield escape(run.text)
         else:
-            yield _marked(run.text, pattern)
-
-
-def _marked(text: str, pattern: re.Pattern[str]) -> str:
-    """Escape the text and wrap each match, keeping the corpus's spelling.
-
-    The replacement uses what was matched rather than what was
-    searched for, so "ASTRONOMY" in the document stays "ASTRONOMY"
-    when the query said "astronomy". The text kennis quotes is not
-    kennis's to re-spell.
-    """
-    out: list[str] = []
-    last = 0
-    for found in pattern.finditer(text):
-        out.append(escape(text[last : found.start()]))
-        out.append(f"<mark>{escape(found.group(0))}</mark>")
-        last = found.end()
-    out.append(escape(text[last:]))
-    return "".join(out)
+            yield marked_text(run.text, pattern)
 
 
 def terms_of(question: str) -> tuple[str, ...]:
