@@ -191,10 +191,10 @@ def _undo_hand_deletions(context: Context) -> None:
     the command's own commit carries a tree the deletion never touched.
     Concern #128.
     """
-    _report_restored(restore_hand_deletions(context))
+    report_restored(restore_hand_deletions(context))
 
 
-def _report_restored(restored: Sequence[OutOfBandChange]) -> None:
+def report_restored(restored: Sequence[OutOfBandChange]) -> None:
     """What a restore put back, or nothing at all when it put back nothing."""
     if not restored:
         return
@@ -404,7 +404,7 @@ def add_command(
             restored=restored,
         )
 
-    _report_restored(restored)
+    report_restored(restored)
     _report_add(report)
 
 
@@ -556,7 +556,7 @@ def sync_command() -> None:
     restored: list[OutOfBandChange] = []
     with reporting() as events:
         result = synchronise_corpus(context, events=events, restored=restored)
-    _report_restored(restored)
+    report_restored(restored)
     display.operation("Synchronised", describe_sync(result.counts, noun="document"))
     for action in result.actions:
         display.detail(display.sync_marker(action.verdict), describe_action(action))
@@ -698,7 +698,7 @@ def move_command(
     moved = move_a_document(
         context, found, document, group=group, title=title, restored=restored
     )
-    _report_restored(restored)
+    report_restored(restored)
 
     display.operation("Moved", f"{moved.id}  {moved.md_path.relative_to(found.path)}")
 
@@ -732,7 +732,7 @@ def index_command(collection: str | None) -> None:
     with reporting() as events:
         result = build_indexes(context, collection, events=events, restored=restored)
 
-    _report_restored(restored)
+    report_restored(restored)
     for index in result.built:
         display.operation(
             "Indexed",

@@ -23,6 +23,7 @@ from kennis.engine.context.notes import BundleNote, remember_in_bundle
 from kennis.engine.errors import ContextNotFound
 from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.history import commit_summary
+from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
 from kennis.engine.rag.binding import binding_from
@@ -32,6 +33,7 @@ from kennis.engine.remember import (
     RememberReport,
 )
 from kennis.engine.remember import remember as remember_in_notes
+from kennis.operations import restore_hand_deletions
 
 
 def write_note(
@@ -42,10 +44,16 @@ def write_note(
     origin: str = INLINE_ORIGIN,
     index: bool = True,
     events: EventSink | None = None,
+    restored: list[OutOfBandChange] | None = None,
 ) -> RememberReport:
-    """Write into notes: lock, write, index, commit.
+    """Write into notes: lock, restore, write, index, commit.
 
-    The order every mutating command uses. The lock has `timeout=0`,
+    The order every mutating command uses, hand deletions included: the
+    commit stages with `git add --all .`, so a document deleted by hand
+    and not put back first would be recorded as deleted, under
+    `remember(notes)`, by whoever wrote a note - an agent included.
+    Concern #128. `restored` is filled in place, as `add_documents`
+    fills it, for a caller that says what came back. The lock has `timeout=0`,
     so a corpus another process is writing answers `CorpusBusy`
     immediately rather than holding the caller open.
 
@@ -70,6 +78,9 @@ def write_note(
     context = existing_corpus()
     binding = binding_from(context.settings.chunking, context.settings.embedding)
     with corpus_lock(context.corpus_root):
+        put_back = restore_hand_deletions(context)
+        if restored is not None:
+            restored.extend(put_back)
         report = remember_in_notes(
             context.corpus_root,
             text,
