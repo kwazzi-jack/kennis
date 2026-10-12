@@ -491,12 +491,13 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "bar bar" "pane main" "strip strip";
   overflow: hidden;
+  transition: grid-template-columns 0.2s ease;
 }
 
 /* Collapsed, the pane takes no width at all: its toggle is in the
    bar, which never collapses, so there is nothing to leave behind. */
 :root[data-pane="closed"] { --pane: 0px; }
-:root[data-pane="closed"] .pane { visibility: hidden; }
+:root[data-pane="closed"] .pane { opacity: 0; visibility: hidden; }
 
 .bar {
   grid-area: bar;
@@ -617,6 +618,7 @@ body {
 .pane {
   grid-area: pane;
   view-transition-name: pane;
+  transition: opacity 0.2s ease, visibility 0.2s;
   overflow-y: auto;
   background: var(--raised);
   border-right: 1px solid var(--rule);
@@ -1253,14 +1255,22 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .inspector {
   flex: none;
   width: 17rem;
+  overflow-x: hidden;
   overflow-y: auto;
+  transition: width 0.2s ease, opacity 0.2s ease, visibility 0.2s;
   background: var(--raised);
   border-left: 1px solid var(--rule);
   font-family: var(--gutter);
   font-size: 0.8125rem;
   padding: 0.3rem 0 1rem;
 }
-:root[data-inspector="closed"] .inspector { display: none; }
+:root[data-inspector="closed"] .inspector {
+  width: 0;
+  padding: 0;
+  border-left-width: 0;
+  opacity: 0;
+  visibility: hidden;
+}
 .inspector details { border-bottom: 1px solid var(--rule); }
 .inspector summary {
   list-style: none;
@@ -1276,7 +1286,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   color: var(--role-muted);
 }
 .inspector summary::-webkit-details-marker { display: none; }
-.inspector summary .icon { width: 0.8rem; height: 0.8rem; }
+.inspector summary .icon { width: 0.8rem; height: 0.8rem; transition: transform 0.15s; }
 .inspector details[open] > summary .icon { transform: rotate(90deg); }
 .details dl {
   margin: 0;
@@ -1479,10 +1489,17 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
    browser can interpolate to `max-content` and change at once where it
    cannot. Everything is in ink: an opened passage is one text. */
 .passage { color: var(--ink); }
+/* A card, as search interfaces set a quoted excerpt apart from the
+   result's own title: the raised surface, a hairline, and a rule down
+   the left as a block quotation has, which turns to the brand - the
+   colour of "here" in a document - when the passage is open. */
 .passage .full {
-  border-left: 3px solid transparent;
-  padding: 0.1rem 0 0.1rem 0.85rem;
-  margin: 0.15rem 0 0.2rem -0.85rem;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--role-muted);
+  border-radius: 8px;
+  padding: 0.75rem 1rem 0.8rem;
+  margin: 0.5rem 0 0;
   transition: border-color 0.25s ease;
 }
 .passage .full > * > :first-child { margin-top: 0; }
@@ -1519,34 +1536,35 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 
 .passage-foot {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.2rem 1.2rem;
-  margin-top: 0.3rem;
-  font-family: var(--gutter);
-  font-size: 0.75rem;
+  justify-content: center;
+  margin-top: -0.85rem;
+  position: relative;
 }
 .passage-foot summary {
   list-style: none;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--role-command);
+  display: grid;
+  place-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--ground);
+  color: var(--role-muted);
+  transition: color 0.15s ease, border-color 0.15s ease, translate 0.15s ease;
 }
 .passage-foot summary::-webkit-details-marker { display: none; }
-.passage-foot summary:hover { color: var(--ink); }
+.passage-foot summary:hover { color: var(--brand); border-color: var(--brand); }
+.passage-foot summary:hover .icon { translate: 0 1px; }
+.passage-foot details[open] summary:hover .icon { translate: 0 -1px; }
 .passage-foot .icon {
   width: 0.85rem; height: 0.85rem; transition: transform 0.2s ease;
 }
 .passage-foot details[open] .icon { transform: rotate(180deg); }
-.passage-foot .when-open { display: none; }
-.passage-foot details[open] .when-open { display: inline; }
+.passage-foot details:not([open]) .when-open,
 .passage-foot details[open] .when-closed { display: none; }
 /* Into the document only once the passage is open: closed, the title
    and the arrow beside it already lead there. */
-.passage-foot .go { display: none; color: var(--role-command); }
-.passage-foot:has(details[open]) .go { display: inline; }
 
 /* A table in a passage scrolls inside it rather than widening the
    column, for the reason `article table` gives. */
@@ -2161,6 +2179,23 @@ article table {
 .strip .job { transition: opacity 0.2s ease; }
 @starting-style {
   .strip .job { opacity: 0; }
+}
+
+/* Every disclosure grows open and shrinks shut. Not a row's menu: its
+   items are positioned outside its box, and the clip would hide them. */
+details:not(.menu)::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition: block-size 0.2s ease, content-visibility 0.2s allow-discrete;
+}
+details:not(.menu)[open]::details-content { block-size: auto; }
+
+/* What a fetch puts on the page fades in where it lands. */
+.branch > *, #add-preview > *, .chooser > *, #outcome > * {
+  transition: opacity 0.2s ease;
+}
+@starting-style {
+  .branch > *, #add-preview > *, .chooser > *, #outcome > * { opacity: 0; }
 }
 
 button, a.button, .action { transition: translate 0.08s ease, border-color 0.15s ease; }

@@ -89,3 +89,45 @@ def test_a_button_presses_down():
     rule = re.search(r"button:active,\s*a\.button:active\s*\{([^}]*)\}", code())
 
     assert rule and "translate: 0 1px" in rule.group(1)
+
+
+def test_the_pane_slides_rather_than_vanishing():
+    css = code()
+    shell = re.search(r"^\.shell \{([^}]*)\}", css, re.M)
+
+    assert shell and "transition: grid-template-columns" in shell.group(1)
+    closed = re.search(r':root\[data-pane="closed"\] \.pane \{([^}]*)\}', css)
+    assert closed and "opacity: 0" in closed.group(1)
+    assert "visibility: hidden" in closed.group(1), "or Tab still reaches it"
+
+
+def test_the_inspector_slides_and_is_still_unreachable_when_closed():
+    css = code()
+    closed = re.search(r':root\[data-inspector="closed"\] \.inspector \{([^}]*)\}', css)
+
+    assert closed, css
+    assert "width: 0" in closed.group(1)
+    assert "visibility: hidden" in closed.group(1)
+    assert "display: none" not in closed.group(1)
+
+
+def test_every_disclosure_but_a_menu_grows_open():
+    """A menu's items are positioned outside its box, so clipping its
+    content while it grows would hide them."""
+    css = code()
+    grows = re.search(r"(details:not\(\.menu\))::details-content \{([^}]*)\}", css)
+    opened = re.search(
+        r"details:not\(\.menu\)\[open\]::details-content \{([^}]*)\}", css
+    )
+
+    assert grows and "block-size: 0" in grows.group(2)
+    assert "overflow: hidden" in grows.group(2)
+    assert "allow-discrete" in grows.group(2)
+    assert opened and "block-size: auto" in opened.group(1)
+
+
+def test_fetched_content_fades_in_where_it_lands():
+    starts = starting_styles(code())
+
+    for selector in (".branch > *", "#add-preview > *", ".chooser > *", "#outcome > *"):
+        assert selector in starts, selector

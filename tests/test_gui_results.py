@@ -380,7 +380,8 @@ def test_an_opened_passage_is_one_colour(client: TestClient):
     assert rules
     for selector, body in rules:
         if ".passage" in selector or ".full" in selector:
-            assert "muted" not in body, selector
+            # The text's colour; the card's rule may be the muted grey.
+            assert not re.search(r"(?<![-\w])color:[^;]*muted", body), selector
 
 
 def test_a_table_in_a_chunk_is_a_table_closed_or_open(corpus: Path, client: TestClient):
@@ -432,20 +433,54 @@ def test_a_passage_that_fits_has_nothing_to_open(corpus: Path, client: TestClien
     assert "clamped" not in (passage.get("class") or [])
 
 
-def test_the_passage_is_worded_in_python_and_links_to_the_document(
+def test_a_hit_has_one_way_to_its_document_and_a_chevron_to_open_it(
     corpus: Path, client: TestClient
 ):
+    """Brian, 2026-10-12: the arrow by the title opened the document and
+    so did a line of text under the passage; symbols, and one of each.
+    The toggle's words stay in Python and on the page for a screen
+    reader, hidden from sight; only the chevron is drawn."""
     document_id = a_note(corpus, "calibration", LONG_BODY)
 
-    passage = passage_in(items_of(hits_of(client, "antenna"))[0])
-    foot = part_of(passage, "passage-foot")
+    item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
+    links = [
+        link
+        for link in item.find_all("a")
+        if f"/document/notes/{document_id}" in str(link.get("href"))
+    ]
+    passage = item.find(class_="passage")
+    assert isinstance(passage, Tag)
+    summary = passage.find("summary")
+    assert isinstance(summary, Tag)
 
-    shown = foot.get_text(" ")
-    assert words.SHOW_PASSAGE in shown and words.HIDE_PASSAGE in shown
-    link = foot.find("a", class_="go")
-    assert isinstance(link, Tag)
-    assert link.get_text(strip=True) == words.OPEN_IN_DOCUMENT
-    assert f"/document/notes/{document_id}" in str(link["href"])
+    assert {" ".join(link.get("class") or []) for link in links} == {"title", "open"}
+    assert passage.find("a") is None or not any(
+        f"/document/notes/{document_id}" in str(link.get("href"))
+        for link in passage.find_all("a")
+    )
+    assert summary.find("svg") is not None
+    hidden = [span.get_text(strip=True) for span in summary.select(".visually-hidden")]
+    assert hidden == [words.SHOW_PASSAGE, words.HIDE_PASSAGE]
+    assert summary.get_text(strip=True) == "".join(hidden), "no visible words"
+
+
+def test_the_passage_is_a_card_set_apart_from_its_title(client: TestClient):
+    """Brian, 2026-10-12: "a little hard to see that it is quoted text".
+    A surface, a border and a rule down the left, as a quotation has;
+    the rule turns to the brand when the passage is open."""
+    css = client.get("/static/kennis.css").text
+    card = re.search(r"^\.passage \.full \{([^}]*)\}", css, re.M)
+
+    assert card, css
+    for declaration in ("background: var(--raised)", "border: 1px solid var(--rule)"):
+        assert declaration in card.group(1)
+    assert "border-radius" in card.group(1)
+    assert re.search(r"border-left: 3px solid var\(--role-muted\)", card.group(1))
+    assert re.search(
+        r"\.passage:has\(details\[open\]\) \.full \{[^}]*border-left-color: "
+        r"var\(--brand\)",
+        css,
+    )
 
 
 # ---------------------------------------------------------------------------
