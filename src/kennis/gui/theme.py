@@ -464,11 +464,21 @@ _LAYOUT = """\
             'DejaVu Sans', Arial, sans-serif;
   --mono: ui-monospace, 'DejaVu Sans Mono', 'Cascadia Mono', Menlo, monospace;
 
-  /* The pane's width, which is the whole of what collapsing changes. */
-  --pane: 16rem;
+  /* The pane's width, which is the whole of what collapsing changes;
+     the open width is the reader's to drag (`gui/layout.py`), drawn on
+     `<html>` from a cookie, as are the inspector's and the strip's. */
+  --pane-width: 16rem;
+  --pane: var(--pane-width);
+  --inspector-width: 17rem;
+  --strip-height: 40dvh;
+  /* Scrollbars in the theme: a thin thumb in the muted grey on no
+     track. Inherited, so this one declaration reaches every scroller. */
+  --scrollbar: color-mix(in srgb, var(--role-muted) 55%, transparent);
+  scrollbar-color: var(--scrollbar) transparent;
 }
 
-* { box-sizing: border-box; }
+/* `scrollbar-width` is not inherited, so it is set on everything. */
+* { box-sizing: border-box; scrollbar-width: thin; }
 
 body {
   margin: 0;
@@ -1096,8 +1106,9 @@ main {
 .strip {
   grid-area: strip;
   view-transition-name: strip;
-  max-height: 40dvh;
+  max-height: var(--strip-height);
   overflow-y: auto;
+  position: relative;
   background: var(--raised);
   border-top: 1px solid var(--rule);
   padding: 0 1rem;
@@ -1266,7 +1277,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 /* Beside the column rather than over it, so it never covers text. */
 .inspector {
   flex: none;
-  width: 17rem;
+  width: var(--inspector-width);
   overflow-x: hidden;
   overflow-y: auto;
   transition: width 0.2s ease, opacity 0.2s ease, visibility 0.2s;
@@ -1276,6 +1287,73 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   font-size: 0.8125rem;
   padding: 0.3rem 0 1rem;
 }
+/* ---- the drag handles (`resize.js`) ----
+   A thin band over the edge it moves, unseen until pointed at or
+   focused, when it shows the brand. Each sits where it will not scroll
+   with what it sizes. */
+.resize {
+  z-index: 3;
+  background: transparent;
+  transition: background-color 0.15s ease;
+  touch-action: none;
+}
+.resize:hover, .resize:focus-visible, :root.resizing .resize:active {
+  background: var(--brand);
+  outline: none;
+}
+.resize-pane {
+  grid-area: pane;
+  justify-self: end;
+  width: 6px;
+  margin-right: -3px;
+  cursor: col-resize;
+}
+.resize-inspector {
+  flex: none;
+  width: 6px;
+  margin: 0 -3px;
+  position: relative;
+  cursor: col-resize;
+}
+.resize-strip {
+  position: sticky;
+  top: 0;
+  height: 6px;
+  margin: 0 -1rem -6px;
+  cursor: row-resize;
+}
+:root[data-pane="closed"] .resize-pane { display: none; }
+:root[data-inspector="closed"] .resize-inspector { display: none; }
+/* While dragging: no transition to lag the pointer, no text selected. */
+:root.resizing .shell { transition: none; user-select: none; }
+:root.resizing .inspector { transition: none; }
+
+/* The strip's collapse: offered when there is a job, and collapsed it
+   keeps the first line - the step while running, the headline after. */
+#strip-toggle {
+  float: right;
+  margin: 0.3rem 0 0 0.5rem;
+  padding: 0.15rem;
+}
+#strip-toggle .icon { transition: transform 0.2s ease; }
+:root[data-strip="closed"] #strip-toggle .icon { transform: rotate(180deg); }
+.strip:has(#job:empty) #strip-toggle { display: none; }
+/* A height the reader dragged is the strip's height while it shows a
+   job, not only its limit: a drag that changed nothing would read as a
+   broken handle. Idle, the strip stays one line. The size is on
+   `<html>`'s inline style, from the server or `resize.js`. */
+:root[style*="--strip-height"] .strip:has(#job:not(:empty)) {
+  height: var(--strip-height);
+}
+/* Collapsed wins over a dragged height; same specificity, so it is
+   the later rule. */
+:root[data-strip="closed"] .strip:has(#job:not(:empty)) { height: auto; }
+:root[data-strip="closed"] .strip :is(
+  .job-lines, .job-progress, .job-outcome > :not(:first-child)
+) {
+  display: none;
+}
+
 :root[data-inspector="closed"] .inspector {
   width: 0;
   padding: 0;
@@ -2179,6 +2257,7 @@ article table {
   }
   .pane { display: none; }
   #pane-toggle { display: none; }
+  .resize-pane { display: none; }
   .action .label { display: none; }
   .palette-open .kbd { display: none; }
   .searchbox { order: 3; flex-basis: 100%; max-width: none; flex-wrap: wrap; }

@@ -40,6 +40,8 @@
 </article>
 </div>
 </div>
+{% from "resize.html" import handle %}
+{{ handle("inspector-width", "inspector", ".inspector", "left") }}
 {# `<details>` throughout, so each section opens without a script. #}
 <aside class="inspector" id="inspector" aria-label="{{ inspector_label }}">
   <details class="details" open>
