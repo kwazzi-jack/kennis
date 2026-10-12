@@ -60,17 +60,25 @@
 <ol class="results">
 {% for hit in group.hits %}
   <li class="hit">
-    {# The handle ends the row, where the mockup puts the citekey. #}
-    <p class="measures">
-      {% for measure in hit.measures %}
-      {# The colour is the level's, on every filled cell; the count of
-         filled cells and the word say the same without colour (#421). #}
-      <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="measure-name">{{ measure.label }}</span><span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
-      {% endfor %}
-      <span class="handle">{{ hit.handle }}</span>
-    </p>
-    <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
-      <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+    {# The card's head (Brian, 2026-10-12): what kennis says about the
+       hit - how well it matched, its handle, the document and the
+       section - in a band over the passage it quotes. #}
+    <div class="hit-head">
+      {# The handle ends the row, where the mockup puts the citekey. #}
+      <p class="measures">
+        {% for measure in hit.measures %}
+        {# The colour is the level's, on every filled cell; the count of
+           filled cells and the word say the same without colour (#421). #}
+        <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="measure-name">{{ measure.label }}</span><span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
+        {% endfor %}
+        <span class="handle">{{ hit.handle }}</span>
+      </p>
+      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
+        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+      {# Which section the passage is from; the title is the document's
+         alone. Marked, so `safe`. #}
+      {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
+    </div>
     {# One rendering of the chunk, parted where the reader's words first
        occur (#454). Closed, the part from the match, faded where it is
        cut; opened, the part before it grows in above and the fade goes.
@@ -80,9 +88,6 @@
        emitted only the tags it chose. #}
     <div class="passage{% if hit.opens %} clamped{% endif %}">
       <div class="full">
-        {# Which section the passage is from, as the card's own header;
-           the title above is the document's alone. Marked, so `safe`. #}
-        {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
         {% if hit.passage.lead %}<div class="lead">{{ hit.passage.lead | safe }}</div>{% endif %}
         <div class="body">{{ hit.passage.body | safe }}</div>
       </div>

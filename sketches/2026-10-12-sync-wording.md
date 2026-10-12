@@ -72,7 +72,7 @@ which no reader sees.
   the live lines came from. **The first version removed the whole live
   list, warnings included**, and an outcome repeats no warning; checked
   only after committing. Now each item line is marked `data-item` and
-  only those go (amended into the next commit).
+  only those go (a follow-up commit, `ffc25ba`).
 - Not walked against Brian's corpus: a sync fetches and may commit, and
   a scratch corpus has no pack to sync. The script's rule is tested by
   reading it; the words by calling them.
