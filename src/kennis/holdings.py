@@ -16,6 +16,7 @@ reintroduce that.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -30,10 +31,11 @@ from kennis.engine.history.freshness import (
     document_states,
     index_freshness,
 )
+from kennis.engine.history.git import git
 from kennis.engine.history.history import HistoryEntry, read_history
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.installed import InstalledPack, list_installed
-from kennis.engine.rag.index import read_manifest
+from kennis.engine.rag.index import published_files, read_manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,11 +68,71 @@ class Holding:
 
 
 def holdings(context: Context) -> list[Holding]:
-    """Every collection, in the order the schema names them."""
-    repository = Repository(context.corpus_root)
-    return [
+    """Every collection, in the order the schema names them.
+
+    **Recomputed only when the corpus has changed.** Counting reads every
+    document's frontmatter - about a second at a thousand documents - and
+    the window asks on every page and five times after every job. Whether
+    anything changed is `corpus_state`, about fifteen milliseconds, so the
+    answer is still derived from the corpus on each request rather than
+    latched; it is only not derived twice from the same corpus.
+    """
+    root = context.corpus_root
+    state = corpus_state(context)
+    with _HELD_GUARD:
+        held = _HELD.get(root)
+    if held is not None and held[0] == state:
+        return list(held[1])
+    repository = Repository(root)
+    counted = [
         _holding(context, repository, collection) for collection in COLLECTION_NAMES
     ]
+    with _HELD_GUARD:
+        _HELD[root] = (state, counted)
+    return list(counted)
+
+
+# What `holdings` last counted, per corpus, and the state it counted. Read
+# before counting, so a write landing during the count leaves a state that
+# differs from the next one read and is counted again, never kept.
+type CorpusState = tuple[object, ...]
+_HELD: dict[Path, tuple[CorpusState, list[Holding]]] = {}
+_HELD_GUARD = threading.Lock()
+
+
+def corpus_state(context: Context) -> CorpusState:
+    """Everything a holding is computed from, cheaply enough to ask each time.
+
+    - **the commit**, for everything recorded;
+    - **every path git reports as uncommitted, with its size and time**:
+      `--untracked-files=all` so a new file inside a new directory is named
+      rather than its directory, and the time because a second edit to an
+      already-modified document leaves the status line as it was;
+    - **each index's pointer and manifest**, which git ignores and which
+      freshness reads.
+    """
+    root = context.corpus_root
+    head = git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=root).stdout
+    listed = git(
+        ["status", "--porcelain", "-z", "--untracked-files=all"], cwd=root
+    ).records()
+    uncommitted = tuple(
+        (record, _stamp(root / record[3:])) for record in listed if len(record) > 3
+    )
+    indexes = tuple(
+        _stamp(path)
+        for collection in COLLECTION_NAMES
+        for path in published_files(index_root(root), collection)
+    )
+    return (head, uncommitted, indexes)
+
+
+def _stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        found = path.stat()
+    except OSError:
+        return None
+    return (found.st_mtime_ns, found.st_size)
 
 
 def _holding(context: Context, repository: Repository, collection: str) -> Holding:
