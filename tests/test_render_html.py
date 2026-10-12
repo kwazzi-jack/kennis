@@ -25,6 +25,7 @@ from kennis.render.html import (
     IMAGE_BLOCKED,
     IMAGE_MISSING,
     MarkedRange,
+    headings_of,
     to_html,
 )
 
@@ -476,3 +477,32 @@ def test_dropping_the_title_does_not_move_a_chunk_mark():
     before, _, after = shown.partition('<div class="chunk" id="c">')
     assert "First paragraph." in before
     assert "Second paragraph." in after
+
+
+# ---------------------------------------------------------------------------
+# Headings, for the outline (#447)
+# ---------------------------------------------------------------------------
+
+OUTLINED = "# The title\n\nOpening words.\n\n## Method\n\nHow.\n\n### Detail\n\nMore.\n"
+
+
+def test_the_outline_leaves_out_the_title_the_page_already_shows():
+    headings = headings_of(OUTLINED, without_title="The title")
+
+    assert [(heading.level, heading.text) for heading in headings] == [
+        (2, "Method"),
+        (3, "Detail"),
+    ]
+
+
+def test_every_heading_carries_the_anchor_the_outline_names():
+    shown = to_html(OUTLINED, without_title="The title", heading_anchors=True)
+
+    for heading in headings_of(OUTLINED, without_title="The title"):
+        assert f'id="{heading.anchor}"' in shown
+
+
+def test_headings_carry_no_id_unless_asked():
+    """A results page draws several passages, and one id twice is not
+    HTML."""
+    assert "id=" not in to_html(OUTLINED, without_title="The title")

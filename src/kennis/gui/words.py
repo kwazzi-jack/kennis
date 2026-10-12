@@ -92,14 +92,79 @@ MODE_CHOICES: Final[tuple[tuple[str, str], ...]] = (
 
 EVERYWHERE_LABEL = "everywhere"
 
-BACK_TO_SEARCH = "Back to the results"
 
-# A hit's passage opens in place, and the button says which way it
-# goes. Both are handed to `static/passage.js` in `data-` attributes,
-# because a sentence in a script is one a wording pass cannot find.
+# A hit's passage opens in place, and the summary says which way it
+# goes. Both are drawn by the server and CSS shows the one that applies.
 SHOW_PASSAGE = "Show the whole passage"
 HIDE_PASSAGE = "Show less"
 OPEN_IN_DOCUMENT = "Open it in the document"
+
+# ---- an opened document: its bar and its inspector (#447) ----
+
+
+def search_crumb(question: str) -> str:
+    """The first breadcrumb, back to the search that led here."""
+    return f"Search: {question}"
+
+
+INSPECTOR_LABEL = "About this document"
+CRUMBS_LABEL = "Where this document is"
+INSPECTOR_SHOW = "Show details, matches and outline"
+INSPECTOR_HIDE = "Hide details, matches and outline"
+DETAILS_HEADING = "Details"
+OUTLINE_HEADING = "Outline"
+NO_HEADINGS = "This document has no headings."
+
+
+def matches_heading(question: str) -> str:
+    """The inspector's list of passages the reader's words occur in."""
+    return f'Matches for "{question}"'
+
+
+NO_MATCHES = "None of these words occurs in a passage of this document."
+
+MATCHES_WITHHELD = (
+    "The document has changed since it was indexed, so its passages cannot be placed."
+)
+
+
+def passage_label(chunk_index: int) -> str:
+    """A match before the document's first heading, by its position."""
+    return f"Passage {chunk_index + 1}"
+
+
+def match_in_section(section: str, ordinal: int, count: int) -> str:
+    """One of several matches under one heading, told apart by place."""
+    return f"{section} ({ordinal} of {count})"
+
+
+# The inspector's rows, keyed by what each is. Only the rows a document
+# has are drawn.
+DETAIL_LABELS: Final[dict[str, str]] = {
+    "collection": "Collection",
+    "group": "Group",
+    "id": "Identifier",
+    "path": "Path",
+    "citekey": "Citekey",
+    "arxiv": "arXiv",
+    "doi": "DOI",
+    "bibcode": "Bibcode",
+    "project": "Project",
+    "page": "Page",
+    "version": "Version",
+    "source": "Source",
+    "converted": "Converted",
+    "added": "Added",
+    "index": "Index",
+}
+
+# Whether the index holds a document, by `holdings.DocumentState`: the
+# tree's marks, in words.
+INDEX_STATES: Final[dict[str, str]] = {
+    "": "Searchable",
+    "unindexed": "Not indexed yet",
+    "changed": "Changed since it was indexed",
+}
 
 # The link from a hit into its document is an icon, so this is its
 # accessible name and its tooltip (#415).
@@ -1052,7 +1117,6 @@ __all__ = [
     "BACKUP_SAVE_FOLDER",
     "BACKUP_TEST",
     "BACKUP_TEST_NOTE",
-    "BACK_TO_SEARCH",
     "BLOCK_HEADING",
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
@@ -1079,6 +1143,9 @@ __all__ = [
     "CREDENTIAL_KEEP",
     "CREDENTIAL_SET",
     "CREDENTIAL_UNSET",
+    "CRUMBS_LABEL",
+    "DETAILS_HEADING",
+    "DETAIL_LABELS",
     "DISCOVERY_WORDS",
     "EMPTY_MEANS",
     "EMPTY_PREFIX",
@@ -1090,6 +1157,10 @@ __all__ = [
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
     "INDEX_PREAMBLE",
+    "INDEX_STATES",
+    "INSPECTOR_HIDE",
+    "INSPECTOR_LABEL",
+    "INSPECTOR_SHOW",
     "JOB_FAILED",
     "JOB_FINISHED",
     "JOB_KINDS",
@@ -1111,6 +1182,7 @@ __all__ = [
     "LINE_KINDS",
     "LOAD_IMAGES",
     "MARK_WITHHELD",
+    "MATCHES_WITHHELD",
     "MEASURE_ICONS",
     "MENU_ADD_HERE",
     "MENU_INDEX",
@@ -1133,6 +1205,8 @@ __all__ = [
     "NOT_A_FIELD",
     "NOT_SEARCHABLE_YET",
     "NO_CONTEXT",
+    "NO_HEADINGS",
+    "NO_MATCHES",
     "NO_PACKS",
     "NO_SUCH_JOB",
     "OPEN_AT_PASSAGE",
@@ -1141,6 +1215,7 @@ __all__ = [
     "ORDER_CHOICES",
     "ORDER_LABEL",
     "ORDER_LIMIT",
+    "OUTLINE_HEADING",
     "PACKS_HEADING",
     "PACK_ACTION",
     "PACK_PREAMBLE",
@@ -1219,15 +1294,19 @@ __all__ = [
     "key_models",
     "last_change",
     "last_job",
+    "match_in_section",
+    "matches_heading",
     "menu_for",
     "not_a_backup_folder",
     "not_a_count",
     "not_a_folder",
     "open_candidate",
+    "passage_label",
     "previewed_arxiv",
     "previewed_citekey",
     "previewed_project",
     "results_for",
+    "search_crumb",
     "search_hint_for",
     "searchable_summary",
     "time_ago",

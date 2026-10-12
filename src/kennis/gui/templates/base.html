@@ -1,5 +1,5 @@
 {% set pane_open = pane_state(request) %}{% set pane = pane_now() %}<!doctype html>
-<html lang="en" data-pane="{{ pane_open }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}>
+<html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,6 +11,7 @@
 <script defer src="/static/typeset.js"></script>
 <script defer src="/static/revision.js"></script>
 <script defer src="/static/pane.js"></script>
+<script defer src="/static/inspector.js"></script>
 <script defer src="/static/dialog.js"></script>
 <script defer src="/static/prefs.js"></script>
 <script defer src="/static/hint.js"></script>
@@ -142,12 +143,16 @@
   </p>
 </nav>
 
-<main>
+<main{% block main_class %}{% endblock %}>
 <p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision | default('') }}"
    data-message="{{ corpus_changed }}"></p>
+{# A page that lays the centre out itself - the document, with its bar
+   and inspector - replaces this block rather than the column. #}
+{% block centre %}
 <div class="column">
 {% block main %}{% endblock %}
 </div>
+{% endblock %}
 </main>
 
 <footer class="strip">

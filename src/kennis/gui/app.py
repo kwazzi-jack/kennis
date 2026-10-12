@@ -66,6 +66,7 @@ from kennis.engine.errors import (
 from kennis.engine.events import EventSink
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
+from kennis.engine.rag.models import Chunk
 from kennis.engine.settings import load_settings
 from kennis.engine.setup import apply_answers, validate_answer
 from kennis.gui import history, words
@@ -93,6 +94,7 @@ from kennis.gui.configuration import (
 from kennis.gui.icons import icon
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
+    ShownDocument,
     ShownJob,
     ShownOutcome,
     palette_entries,
@@ -107,6 +109,7 @@ from kennis.gui.pages import (
     shown_index,
     shown_install,
     shown_key,
+    shown_matches,
     shown_orders,
     shown_recents,
     shown_rows,
@@ -122,7 +125,13 @@ from kennis.gui.preferences import (
 )
 from kennis.gui.stream import as_stream, sent_event
 from kennis.gui.theme import stylesheet
-from kennis.holdings import freshness_of, holdings, installed_packs, revision
+from kennis.holdings import (
+    document_marks,
+    freshness_of,
+    holdings,
+    installed_packs,
+    revision,
+)
 from kennis.operations import (
     GroupBlock,
     IndexBuild,
@@ -145,7 +154,13 @@ from kennis.render.backup import (
 from kennis.render.html import MarkedRange
 from kennis.render.packs import describe_holdings
 from kennis.render.words import describe_lexical_fallback
-from kennis.retrieval import EVERY_SCOPE, SCOPE_NAMES, chunk_range, sweep
+from kennis.retrieval import (
+    EVERY_SCOPE,
+    SCOPE_NAMES,
+    chunk_range,
+    document_chunks,
+    sweep,
+)
 from kennis.writing import write_context_note, write_note
 
 _HERE: Final = Path(__file__).parent
@@ -166,10 +181,18 @@ _CLOSED: Final = "closed"
 _OPEN: Final = "open"
 
 
+_INSPECTOR_COOKIE: Final = "inspector"
+
+
 def _pane_state(request: Request) -> str:
     """`closed` only for exactly that value. Anything can be in a
     cookie, and the default is the state that shows what is there."""
     return _CLOSED if request.cookies.get(_PANE_COOKIE) == _CLOSED else _OPEN
+
+
+def _inspector_state(request: Request) -> str:
+    """The document inspector's, by the pane's rule."""
+    return _CLOSED if request.cookies.get(_INSPECTOR_COOKIE) == _CLOSED else _OPEN
 
 
 # Every preference of this window, rendered onto `<html>` from its
@@ -182,6 +205,7 @@ SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION)
 _TEMPLATES.env.globals.update(
     {
         "pane_state": _pane_state,
+        "inspector_state": _inspector_state,
         "pane_now": pane_now,
         "pane_show": words.PANE_SHOW,
         "pane_hide": words.PANE_HIDE,
@@ -924,21 +948,29 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 document_id,
                 load_remote_images=load_remote,
                 marked=marked,
+                marks=document_marks(context, collection),
+                question=q,
             )
         except KennisError as error:
             return _problem(request, error)
+        freshness = (
+            freshness_of(context, Repository(context.corpus_root), collection)
+            if q
+            else None
+        )
         return _TEMPLATES.TemplateResponse(
             request,
             "document.html",
-            {
-                "document": document,
-                "load_remote_images": load_remote,
-                "blocked_note": words.IMAGES_BLOCKED,
-                "blocked_action": words.LOAD_IMAGES,
-                "mark_withheld": words.MARK_WITHHELD if withheld else None,
-                "question": q,
-                "back_to_search": words.BACK_TO_SEARCH,
-            },
+            _document_context(
+                document,
+                question=q,
+                load_remote=load_remote,
+                withheld=withheld,
+                placeable=None if freshness is None else freshness.state == "in step",
+                chunks=lambda: document_chunks(
+                    context, collection, document.document_id
+                ),
+            ),
         )
 
     def _started(
@@ -1000,21 +1032,24 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 relative_path,
                 load_remote_images=load_remote,
                 marked=marked,
+                question=q,
             )
         except KennisError as error:
             return _problem(request, error)
+        freshness = bundle_freshness(bundle) if q else None
         return _TEMPLATES.TemplateResponse(
             request,
             "document.html",
-            {
-                "document": document,
-                "load_remote_images": load_remote,
-                "blocked_note": words.IMAGES_BLOCKED,
-                "blocked_action": words.LOAD_IMAGES,
-                "mark_withheld": words.MARK_WITHHELD if withheld else None,
-                "question": q,
-                "back_to_search": words.BACK_TO_SEARCH,
-            },
+            _document_context(
+                document,
+                question=q,
+                load_remote=load_remote,
+                withheld=withheld,
+                placeable=None if freshness is None else freshness.state == "in step",
+                chunks=lambda: document_chunks(
+                    resolve_context(), CONTEXT_COLLECTION, relative_path
+                ),
+            ),
         )
 
     @app.post("/add")
@@ -1235,6 +1270,56 @@ def _remembered(
         return ShownOutcome(
             message=str(error), role="role-error", resolution=error.resolution
         )
+
+
+def _document_context(
+    document: ShownDocument,
+    *,
+    question: str,
+    load_remote: bool,
+    withheld: bool,
+    placeable: bool | None,
+    chunks: Callable[[], list[Chunk]],
+) -> dict[str, object]:
+    """What a document page needs, from either store.
+
+    `placeable` is whether the index is in step with the document: None
+    when there is no index or nothing was searched, and then there are
+    no matches to list. A changed document lists none and says why, by
+    the rule that withholds the mark, because its chunks address text
+    that has moved. `chunks` is called only when they will be read.
+    """
+    matches = (
+        shown_matches(
+            chunks(),
+            question=question,
+            collection=document.collection,
+            document_id=document.document_id,
+        )
+        if question and placeable
+        else ()
+    )
+    return {
+        "document": document,
+        "load_remote_images": load_remote,
+        "blocked_note": words.IMAGES_BLOCKED,
+        "blocked_action": words.LOAD_IMAGES,
+        "mark_withheld": words.MARK_WITHHELD if withheld else None,
+        "question": question,
+        "search_crumb": words.search_crumb(question) if question else None,
+        "matches": matches,
+        "matches_withheld": bool(question) and placeable is False,
+        "matches_heading": words.matches_heading(question) if question else None,
+        "matches_withheld_note": words.MATCHES_WITHHELD,
+        "inspector_label": words.INSPECTOR_LABEL,
+        "crumbs_label": words.CRUMBS_LABEL,
+        "inspector_show": words.INSPECTOR_SHOW,
+        "inspector_hide": words.INSPECTOR_HIDE,
+        "details_heading": words.DETAILS_HEADING,
+        "outline_heading": words.OUTLINE_HEADING,
+        "no_headings": words.NO_HEADINGS,
+        "no_matches": words.NO_MATCHES,
+    }
 
 
 def _marked(

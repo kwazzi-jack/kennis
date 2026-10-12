@@ -33,7 +33,7 @@ from kennis.engine.errors import (
 )
 from kennis.engine.rag.embedding import resolve_host
 from kennis.engine.rag.index import LoadedIndex, load_index
-from kennis.engine.rag.models import Filter
+from kennis.engine.rag.models import Chunk, Filter
 from kennis.engine.rag.search import Mode, search
 from kennis.render.hits import Hit
 
@@ -137,16 +137,28 @@ def chunk_range(
     #292's other two were: every front end that shows a document
     beside a search result will ask it, and none of them owns it.
     """
-    if chunk_index < 0:
-        return None
+    for chunk in document_chunks(context, collection, document_id):
+        if chunk.chunk_index == chunk_index:
+            return (chunk.char_start, chunk.char_end)
+    return None
+
+
+def document_chunks(context: Context, collection: str, document_id: str) -> list[Chunk]:
+    """One document's chunks in the index, in order, or none.
+
+    None for the same reasons `chunk_range` finds nothing: no index, or
+    a document it does not hold. Whether the offsets can still be
+    trusted is the caller's question, because it is a question about
+    freshness and this reads only the index.
+    """
     try:
         index = index_for(context, collection)
     except KennisError:
-        return None
-    for chunk in index.chunks:
-        if chunk.document_id == document_id and chunk.chunk_index == chunk_index:
-            return (chunk.char_start, chunk.char_end)
-    return None
+        return []
+    return sorted(
+        (chunk for chunk in index.chunks if chunk.document_id == document_id),
+        key=lambda chunk: chunk.chunk_index,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,6 +448,7 @@ __all__ = [
     "as_mode",
     "chunk_range",
     "context_for",
+    "document_chunks",
     "index_for",
     "mode_for",
     "nothing_to_search",
