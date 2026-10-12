@@ -100,8 +100,7 @@ def restore_command(archive: Path, target: Path | None) -> None:
     password = click.prompt(BACKUP_PASSWORD_PROMPT, hide_input=True)
     report = restore_backup(archive, destination, password)
     display.operation("Restored", describe_restored(report))
-    if not report.index_restored:
-        display.next_step("kennis corpus index", note="before searching it")
+    display.next_step("kennis corpus index", note="before searching it")
 
 
 def _folder(given: Path | None) -> Path:

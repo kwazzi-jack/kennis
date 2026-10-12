@@ -47,26 +47,31 @@ _GITIGNORE: Final = """\
 # corpus because that is what it guards, and it is not part of it.
 .kennis.lock
 
-# The lock a build holds on one collection's index. The same kind of fact,
-# and a restore from history would otherwise check it out as corpus content.
-index/*/.lock
-
-# The per-document vector cache. A sibling of the index it accelerates, and
-# deliberately not tracked with it: the published index already holds every
-# vector once, so committing the cache would store them twice for a saving
-# that only helps the machine that built them.
+# The index is derived, and is rebuilt rather than kept (Brian, 2026-10-12).
+# History records only which index each collection is reading - its
+# pointer - and how that index was built - its binding - which are a few
+# hundred bytes. Everything else under `index/` is ignored: the chunks, the
+# BM25 tables, the vectors, the manifest, the vector cache, the build lock
+# and the directories a swap stages or retires. Tracked, a rebuild of one
+# collection added its whole index to history, and `remember` rebuilds on
+# every call: 300 notes grew `.git` by about 320 KB per note remembered.
+#
+# Git cannot re-include a file inside a directory it has excluded, so the
+# two levels of directories are re-included first, then the two files, and
+# the hidden staging and retiring directories are excluded last, because a
+# staged `binding.json` must never be committed by another process's
+# `git add --all .`.
+index/**
+!index/*/
+!index/*/latest.json
+!index/*/*/
+!index/*/*/binding.json
+index/*/.*/
 index/*/vectors/
 
 # The pack store: a cache of what each provider last handed kennis. Derived,
 # re-pushed by the provider's next run, and deliberately not history.
 packs/
-
-# The directories an atomic index swap is staging or retiring. They exist
-# for the length of one build and are never part of a commit - and a commit
-# made by another process during a build would otherwise stage a
-# half-written index, because `commit` stages with `git add --all .`.
-index/*/.*.staging-*/
-index/*/.*.retiring-*/
 """
 
 _README: Final = """\
@@ -74,7 +79,8 @@ _README: Final = """\
 
 This directory is a kennis corpus: documents, their metadata, and the search
 index built from them. It is a git repository so that every change kennis
-makes is recorded and reversible.
+makes is recorded and reversible. The index is derived, so history records
+only which index each collection reads; `kennis corpus index` rebuilds it.
 
 ## What is in here
 
