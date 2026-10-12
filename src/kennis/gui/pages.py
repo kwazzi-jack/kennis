@@ -74,11 +74,11 @@ from kennis.render.html import (
     to_html,
 )
 from kennis.render.packs import (
-    describe_action,
     describe_corpus_claim_needed,
     describe_declarations,
     describe_deferred,
     describe_install,
+    describe_outcome_of,
     describe_sync,
     describe_unfetched,
 )
@@ -1241,7 +1241,7 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
                 marker=SYNC_MARKERS.get(action.verdict, ">"),
                 name=action.address,
                 outcome=action.verdict,
-                detail=describe_action(action),
+                detail=describe_outcome_of(action),
             )
             for action in result.actions
         ),
@@ -1264,7 +1264,7 @@ def shown_bundle_sync(result: BundleSync) -> ShownJob:
                 marker=SYNC_MARKERS.get(action.verdict, ">"),
                 name=action.address,
                 outcome=action.verdict,
-                detail=describe_action(action),
+                detail=describe_outcome_of(action),
             )
             for action in result.actions
         ),

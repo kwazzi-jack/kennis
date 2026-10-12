@@ -26,12 +26,16 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
-from kennis.engine.events import EventSink, ItemStarted
+from kennis.engine.corpus.sync import CorpusSync
+from kennis.engine.events import EventSink, ItemFinished, ItemStarted, Outcome
 from kennis.engine.history.repository import Repository
+from kennis.engine.pack.resolve import Action
 from kennis.engine.rag.embedding import FETCH_MODEL
+from kennis.engine.refusals import Quoted
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.jobs import Elapsed, Jobs
+from kennis.gui.pages import shown_corpus_sync
 from kennis.gui.stream import as_message
 from kennis.render.words import running_for
 
@@ -207,6 +211,45 @@ def test_the_script_shows_the_item_and_the_clock_without_wording_either():
     assert '"elapsed"' in code
     # No unit is spelled in the script: the seconds arrive as words.
     assert not re.search(r"[\"'](s|sec|seconds|m)[\"']", code)
+
+
+def test_a_sync_line_says_what_happened_not_the_verdict_name():
+    """Brian, 2026-10-12: a corpus sync read "= c.md - keep"."""
+    for operation in ("corpus-sync", "context-sync"):
+        message = as_message(
+            ItemFinished(
+                operation=operation,
+                item="c.md",
+                outcome=Outcome.UNCHANGED,
+                refusal=Quoted("keep"),
+            )
+        )
+        assert message is not None
+        assert message["detail"] == "unchanged", operation
+
+
+def test_the_outcome_line_does_not_repeat_its_name():
+    """It read "= c.md - c.md: unchanged"; the name is first already."""
+    action = Action(address="c.md", verdict="keep", declaration=None, existing=None)
+    shown = shown_corpus_sync(
+        CorpusSync(actions=(action,), counts={"keep": 1}, deferred=(), edited=())
+    )
+
+    assert shown.items[0].detail == "unchanged"
+    assert shown.headline == "1 document unchanged"
+
+
+def test_the_live_lines_give_way_to_an_outcome_that_lists_its_items():
+    """The outcome is the record and the live lines were progress, so a
+    finished sync listed every document twice."""
+    code = code_of("progress.js")
+    finish = re.search(r"function finish\(\) \{(.*?)\n    \}\n", code, re.S)
+
+    assert finish, code
+    assert re.search(
+        r'if \(outcome\.querySelector\("\.items"\)\) \{\s*lines\.remove\(\);',
+        finish.group(1),
+    )
 
 
 # ---------------------------------------------------------------------------

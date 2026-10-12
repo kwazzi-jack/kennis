@@ -209,8 +209,12 @@ def test_a_full_snippet_is_not_cut_at_all():
     assert snippet_of(text, full=True) == text
 
 
-def test_an_index_in_step_says_so():
-    assert "in step" in describe_freshness(Freshness(state="in step"), "notes")
+def test_an_index_in_step_says_it_is_up_to_date():
+    """The engine's state is "in step"; a reader is told "up to date",
+    the same words wherever an index is current (Brian, 2026-10-12)."""
+    sentence = describe_freshness(Freshness(state="in step"), "notes")
+
+    assert sentence == "the notes index is up to date"
 
 
 def test_an_incomplete_index_reports_what_is_missing_without_calling_it_stale():

@@ -169,7 +169,9 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
             + count_of(freshness.added, "document")
             + "; nothing in it is out of date"
         )
-    return f"the {collection} index is in step"
+    # "Up to date", the words a reader is told wherever an index is
+    # current; "in step" is the engine's state and nobody reads it.
+    return f"the {collection} index is up to date"
 
 
 def describe_document(collection: str, document: Document, corpus_root: Path) -> str:

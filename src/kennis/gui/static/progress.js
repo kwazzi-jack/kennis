@@ -79,6 +79,12 @@
         .then(function (answer) { return answer.text(); })
         .then(function (html) {
           outcome.innerHTML = html;
+          // The outcome is the record and the live lines were progress:
+          // an outcome that lists its items replaces them, or a finished
+          // sync lists every document twice.
+          if (outcome.querySelector(".items")) {
+            lines.remove();
+          }
           if (window.htmx) { window.htmx.process(outcome); }
           redraw(outcome);
         })
