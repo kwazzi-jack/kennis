@@ -71,21 +71,25 @@
     </p>
     <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
       <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
-    {# Closed, the window; opened, the whole chunk in its place, so no
-       text is on the page twice. `<details>` opens with no script, and
-       `name` closes the others. `safe` because `passage_of` escaped
-       every character of the corpus's text and emitted only the tags it
-       chose. #}
-    {% if hit.opens %}
-    <details class="passage" name="passages">
-      <summary><span class="snippet">{% if hit.passage.cut_before %}... {% endif %}{{ hit.passage.window | safe }}{% if hit.passage.cut_after %} ...{% endif %}</span>
-        <span class="toggle"><span class="when-closed">{{ show_passage }}</span><span class="when-open">{{ hide_passage }}</span>{{ icon("chevron-down") }}</span></summary>
-      <div class="full">{{ hit.passage.whole | safe }}
-        <p><a class="go" href="{{ hit.href }}">{{ open_in_document }}</a></p></div>
-    </details>
-    {% else %}
-    <p class="passage"><span class="snippet">{{ hit.passage.window | safe }}</span></p>
-    {% endif %}
+    {# One rendering of the chunk, parted where the reader's words first
+       occur (#454). Closed, the part from the match, faded where it is
+       cut; opened, the part before it grows in above and the fade goes.
+       `<details>` holds only the control, so its `open` is what the
+       stylesheet reads, `name` closes the others, and no script is
+       involved. `safe`: `passage_html` escaped the corpus's text and
+       emitted only the tags it chose. #}
+    <div class="passage{% if hit.opens %} clamped{% endif %}">
+      <div class="full">
+        {% if hit.passage.lead %}<div class="lead">{{ hit.passage.lead | safe }}</div>{% endif %}
+        <div class="body">{{ hit.passage.body | safe }}</div>
+      </div>
+      {% if hit.opens %}
+      <div class="passage-foot">
+        <details name="passages"><summary><span class="when-closed">{{ show_passage }}</span><span class="when-open">{{ hide_passage }}</span>{{ icon("chevron-down") }}</summary></details>
+        <a class="go" href="{{ hit.href }}">{{ open_in_document }}</a>
+      </div>
+      {% endif %}
+    </div>
   </li>
 {% endfor %}
 </ol>
