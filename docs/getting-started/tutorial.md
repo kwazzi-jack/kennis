@@ -16,6 +16,8 @@ kennis config init
 The wizard asks only what depends on you, and every question offers what is
 already in effect, so pressing return throughout is a valid run. Accept the
 defaults: `fastembed` for embedding, which runs locally and needs no key.
+Every setting is then written to the file, including those you left at their
+default.
 
 To skip it entirely and take every default:
 

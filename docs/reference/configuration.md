@@ -42,6 +42,14 @@ kennis config set embedding.backend ollama
 kennis config init                    # the guided setup
 ```
 
+**Every write leaves every setting in the file**, including those at their
+default, whether it comes from `config set`, `config init` or the settings
+page. The file then says what is in use, and it can be copied or synced to
+another machine as it is. A value from the environment is never written into
+it: an exported variable is for the shell that set it. `config init` replaces
+the whole file, so on an existing one it asks first, and anything edited by
+hand, comments included, is lost.
+
 `kennis config show` writes the file to standard output and its warnings to
 standard error, so `kennis config show > config.toml` produces a usable file
 rather than one with a warning in the middle.

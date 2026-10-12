@@ -711,12 +711,15 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         }
         changed = {} if problems else changed_answers(answers)
         previous: dict[str, str] = {}
-        if changed:
+        if not problems:
             previous = {
                 question.key: question.current
                 for question in offered({})
                 if question.key in changed and question.kind != "secret"
             }
+            # Written even when nothing changed: saving is choosing what the
+            # page shows, and the file holds every setting (Brian,
+            # 2026-10-12).
             try:
                 apply_answers(changed)
             except SettingsError as error:

@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -509,41 +509,60 @@ def load_settings() -> Settings:
         ) from error
 
 
-def config_template() -> str:
-    """The configuration file as `config init` writes it.
+def config_document(values: Mapping[str, Mapping[str, object]] | None = None) -> str:
+    """The configuration file, with every key of every section active.
 
-    Every key, at its default, **commented out**. Writing defaults as active
-    values would freeze them at install time, so a later kennis that improves
-    a default would never reach anyone who ran this.
+    `values` overrides the defaults by section and key; anything it does not
+    name is written at its default. Every key is written, including one at
+    its default, because the value a person accepted is the value saved and
+    a complete file is one that can be synced (Brian, 2026-10-12). This
+    reverses a template that commented the defaults out so that a later
+    kennis could change them: compatibility starts at v1.0.0.
 
     The `Options`, `Range` and `Examples` lines are derived from the model, so
     they cannot drift from what it actually accepts - which is precisely what
     a hand-written comment does.
     """
+    given = values or {}
     lines = [
-        "# kennis configuration. Every key is shown at its default, commented",
-        "# out, so improving a default still reaches you. Uncomment to change.",
+        "# kennis configuration. Every setting is written, including those at",
+        "# their default, and `kennis config init` replaces the whole file.",
         "#",
         "# API keys do not belong here. kennis takes one from the environment",
         "# first, then .env.keys, then .env, then credentials.toml - the last",
         "# three in this directory. `kennis config init` writes the last of",
         "# them, readable only by you.",
     ]
-    for section_name, section_field in Settings.model_fields.items():
-        annotation = section_field.annotation
-        if not (isinstance(annotation, type) and issubclass(annotation, BaseModel)):
-            continue
+    for section_name, model in section_models().items():
+        defaults = model().model_dump()
+        section_values = {**defaults, **given.get(section_name, {})}
         lines.append("")
         lines.append(f"[{section_name}]")
         entries = [
-            _described(key, field) for key, field in annotation.model_fields.items()
+            _described(key, field, section_values[key])
+            for key, field in model.model_fields.items()
         ]
         lines.append("\n#\n".join(entries))
     return "\n".join(lines) + "\n"
 
 
-def _described(key: str, field: FieldInfo) -> str:
-    """One key: what it is for, what it accepts, and its default."""
+def section_models() -> dict[str, type[BaseModel]]:
+    """Each section's own model, by section name.
+
+    Plain models, which read no environment: `Settings` does, even through
+    `model_validate`, so a value exported for one shell would otherwise be
+    taken for a value to keep.
+    """
+    models: dict[str, type[BaseModel]] = {}
+    for section_name, section_field in Settings.model_fields.items():
+        annotation = section_field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            models[section_name] = annotation
+    return models
+
+
+def _described(key: str, field: FieldInfo, value: object) -> str:
+    """One key: what it is for, what it accepts, and its value."""
     lines = [f"# {field.description}" if field.description else f"# {key}"]
 
     options = _options_of(field.annotation)
@@ -557,7 +576,7 @@ def _described(key: str, field: FieldInfo) -> str:
             f"# Examples: {example}" if index == 0 else f"#           {example}"
         )
 
-    lines.append(f"# {key} = {_as_toml(field.default)}")
+    lines.append(f"{key} = {toml_value(value)}")
     return "\n".join(lines)
 
 
@@ -582,12 +601,14 @@ def _range_of(field: FieldInfo) -> str | None:
     return f"{lower}-{upper}"
 
 
-def _as_toml(value: object) -> str:
+def toml_value(value: object) -> str:
+    """One value as TOML. A string is escaped, because a Windows path holds
+    backslashes and a folder name may hold a quote."""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, str):
-        return f'"{value}"'
-    return str(value)
+    if isinstance(value, int | float):
+        return str(value)
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _first_problem(error: ValidationError) -> str:

@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import inspect
 import os
+import tomllib
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from kennis.engine import setup
-from kennis.engine.settings import credential
+from kennis.engine.settings import Settings, credential
 from kennis.engine.setup import (
     Question,
     apply_answers,
@@ -291,12 +293,49 @@ def test_applying_writes_a_config_file_that_loads_back(isolated: Path):
     assert settings.chunking.size == 800
 
 
-def test_an_empty_answer_writes_nothing_for_that_key(isolated: Path):
+def test_an_empty_answer_keeps_the_value_in_the_file(isolated: Path):
+    apply_answers({"embedding.backend": "ollama"})
+
     apply_answers({"embedding.backend": "", "chunking.size": "800"})
 
-    written = (isolated / "config.toml").read_text(encoding="utf-8")
-    assert "backend" not in written.replace("# backend", "")
-    assert "size = 800" in written
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["embedding"]["backend"] == "ollama"
+    assert written["chunking"]["size"] == 800
+
+
+def every_default() -> dict[str, dict[str, object]]:
+    """Each section's defaults, from its own model, which reads no
+    environment."""
+    defaults: dict[str, dict[str, object]] = {}
+    for section, field in Settings.model_fields.items():
+        model = field.annotation
+        assert isinstance(model, type) and issubclass(model, BaseModel)
+        defaults[section] = model().model_dump()
+    return defaults
+
+
+def test_every_write_leaves_every_setting_in_the_file(isolated: Path):
+    """The value a person accepted is the value saved, default or not, and
+    a complete file is one that can be synced (Brian, 2026-10-12)."""
+    apply_answers({"chunking.size": "800"})
+
+    expected = every_default()
+    expected["chunking"]["size"] = 800
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written == expected
+
+
+def test_an_environment_override_is_not_written_into_the_file(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An exported variable is a one-off. Written into the file it would
+    outlive the shell that set it, and travel wherever the file is synced."""
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "ollama")
+
+    apply_answers({"chunking.size": "800"})
+
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["embedding"]["backend"] == "fastembed"
 
 
 def test_a_secret_never_reaches_the_config_file(isolated: Path):
@@ -503,30 +542,24 @@ def test_the_mode_question_is_asked_before_the_key_is_typed():
     assert keys.index("conversion.mode") < keys.index("conversion.api_key")
 
 
-def test_a_setup_that_changes_nothing_writes_no_file(
+def test_a_setup_that_changes_nothing_writes_every_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Found by running `config init` and then `config show`, which printed
-    nothing at all.
-
-    Every answer left unchanged is filtered out before the write, which is
-    the design - but the write then happened anyway and produced a 0-byte
-    `config.toml`. A file that exists and holds no settings is worse than no
-    file: `config show` finds it, prints it verbatim, and says nothing, where
-    with no file it would have printed the defaults.
-    """
+    """Accepting every value is a choice of every value. This reverses the
+    rule that wrote nothing for it (Brian, 2026-10-12), and with it the
+    0-byte `config.toml` that rule once produced."""
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
 
     apply_answers({})
 
-    assert not (tmp_path / "config.toml").exists()
+    written = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
+    assert written == every_default()
 
 
 def test_an_answer_left_empty_does_not_rewrite_an_existing_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """The same guard, from the other side: a re-run that changes nothing
-    must leave what is there untouched rather than rewriting it."""
+    """A re-run that changes nothing writes the same file again."""
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
     apply_answers({"chunking.size": "900"})
     before = (tmp_path / "config.toml").read_bytes()
