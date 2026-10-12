@@ -45,6 +45,7 @@
         detail.textContent = " - " + message.detail;
         item.appendChild(detail);
       }
+      if (message.kind === "item") { item.dataset.item = "yes"; }
       if (message.outcome) { item.className = "role-" + message.outcome; }
       if (message.severity) { item.className = "role-" + message.severity; }
       lines.appendChild(item);
@@ -80,10 +81,13 @@
         .then(function (html) {
           outcome.innerHTML = html;
           // The outcome is the record and the live lines were progress:
-          // an outcome that lists its items replaces them, or a finished
-          // sync lists every document twice.
+          // an outcome that lists its items replaces theirs, or a finished
+          // sync lists every document twice. A warning stays: the
+          // outcome does not repeat it.
           if (outcome.querySelector(".items")) {
-            lines.remove();
+            lines.querySelectorAll("li[data-item]").forEach(function (line) {
+              line.remove();
+            });
           }
           if (window.htmx) { window.htmx.process(outcome); }
           redraw(outcome);
