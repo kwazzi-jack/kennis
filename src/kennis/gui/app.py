@@ -94,6 +94,7 @@ from kennis.gui.configuration import (
 )
 from kennis.gui.icons import icon
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
+from kennis.gui.layout import SIZES, sizes_of, strip_state
 from kennis.gui.pages import (
     ShownDocument,
     ShownJob,
@@ -207,6 +208,12 @@ _TEMPLATES.env.globals.update(
     {
         "pane_state": _pane_state,
         "inspector_state": _inspector_state,
+        "sizes": sizes_of,
+        "size_bounds": SIZES,
+        "strip_state": strip_state,
+        "resize_labels": words.RESIZE_LABELS,
+        "strip_show": words.STRIP_SHOW,
+        "strip_hide": words.STRIP_HIDE,
         "pane_now": pane_now,
         "pane_show": words.PANE_SHOW,
         "pane_hide": words.PANE_HIDE,

@@ -1,5 +1,5 @@
-{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}<!doctype html>
-<html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}>
+{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% set strip_open = strip_state(request) %}{% from "resize.html" import handle %}<!doctype html>
+<html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}" data-strip="{{ strip_open }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,6 +12,8 @@
 <script defer src="/static/passage.js"></script>
 <script defer src="/static/revision.js"></script>
 <script defer src="/static/pane.js"></script>
+<script defer src="/static/resize.js"></script>
+<script defer src="/static/strip.js"></script>
 <script defer src="/static/inspector.js"></script>
 <script defer src="/static/dialog.js"></script>
 <script defer src="/static/prefs.js"></script>
@@ -143,6 +145,9 @@
     <span><span class="state state-behind"></span>{{ pane_states["behind"] }}</span>
   </p>
 </nav>
+{# Over the pane's right edge, in the grid rather than in the pane, so
+   it does not scroll away with the pane's contents. #}
+{{ handle("pane-width", "pane", ".pane", "right") }}
 
 <main{% block main_class %}{% endblock %}>
 <p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision | default('') }}"
@@ -157,6 +162,14 @@
 </main>
 
 <footer class="strip">
+  {{ handle("strip-height", "strip", ".strip", "up") }}
+  {# Collapses the strip to its first line; drawn only when there is a
+     job to collapse. Both labels from the server; `strip.js` picks. #}
+  <button type="button" class="ghost" id="strip-toggle"
+          data-show="{{ strip_show }}" data-hide="{{ strip_hide }}"
+          aria-expanded="{{ 'false' if strip_open == 'closed' else 'true' }}"
+          aria-label="{{ strip_show if strip_open == 'closed' else strip_hide }}"
+          title="{{ strip_show if strip_open == 'closed' else strip_hide }}">{{ icon("chevron-down") }}</button>
   {# Where every operation reports. Every page has it, so a dialog
      opened anywhere has somewhere to put its job (#405). #}
   {% set running = job_now(request) %}

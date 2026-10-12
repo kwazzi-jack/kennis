@@ -418,6 +418,15 @@ def not_a_backup_folder(path: str) -> str:
     return f"'{path}' is not a folder, so it was not saved."
 
 
+# The drag handles (`gui/layout.py`), each named by what it resizes.
+RESIZE_LABELS: Final[dict[str, str]] = {
+    "pane-width": "Resize the corpus pane",
+    "inspector-width": "Resize the details",
+    "strip-height": "Resize the activity strip",
+}
+# The activity strip's collapse, by its state.
+STRIP_SHOW = "Show all of the activity"
+STRIP_HIDE = "Show only the first line of the activity"
 PANE_SHOW = "Show the corpus"
 
 PANE_HIDE = "Hide the corpus"
@@ -1283,6 +1292,7 @@ __all__ = [
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
     "REQUIRED",
+    "RESIZE_LABELS",
     "RESULTS_HEADING",
     "SAVE",
     "SCOPE_LABEL",
@@ -1300,6 +1310,8 @@ __all__ = [
     "STATE_WORDS",
     "STILL_RUNNING",
     "STOPPED",
+    "STRIP_HIDE",
+    "STRIP_SHOW",
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",

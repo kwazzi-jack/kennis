@@ -1,0 +1,10 @@
+{# A drag handle for one size in `gui/layout.py`: a separator the
+   keyboard can reach, with its bounds in pixels. `target` is the
+   element it sizes and `grow` the way the pointer moves to make that
+   larger; `resize.js` reads both and composes nothing. #}
+{% macro handle(name, which, target, grow) -%}
+<div class="resize resize-{{ which }}" data-resize="{{ name }}" data-target="{{ target }}" data-grow="{{ grow }}"
+     role="separator" tabindex="0" aria-orientation="{{ 'horizontal' if grow == 'up' else 'vertical' }}"
+     aria-label="{{ resize_labels[name] }}" title="{{ resize_labels[name] }}"
+     aria-valuemin="{{ size_bounds[name].least }}" aria-valuemax="{{ size_bounds[name].most }}"></div>
+{%- endmacro %}
