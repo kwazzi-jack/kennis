@@ -27,10 +27,10 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Annotated, Final
 from urllib.parse import quote
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.datastructures import FormData
 from fastapi.responses import (
     HTMLResponse,
@@ -42,7 +42,6 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
-from starlette.concurrency import run_in_threadpool
 
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.backup import SET_FOLDER_COMMAND, BackupReport, check_backup
@@ -315,6 +314,23 @@ def new_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+async def _form_of(request: Request) -> FormData:
+    """A request's form, read on the event loop for a route that is not.
+
+    **Every route is a plain `def`**, which FastAPI runs on a worker thread.
+    Nearly all of them touch the disk or start git: a search, a commit, the
+    pane's counts on every page (600 ms at a thousand documents), testing a
+    backup's every member. In an `async` route each of those stopped the
+    whole server, a running job's progress stream included. Reading a form
+    is the one thing that has to be awaited, so it is this dependency.
+    """
+    return await request.form()
+
+
+# A route's form, as a parameter: `form: PostedForm`.
+type PostedForm = Annotated[FormData, Depends(_form_of)]
+
+
 def _keep_running() -> None:
     """The default `on_quit`, for an application nobody launched."""
 
@@ -380,11 +396,11 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
     )
 
     @app.get("/static/kennis.css")
-    async def serve_stylesheet() -> PlainTextResponse:
+    def serve_stylesheet() -> PlainTextResponse:
         return PlainTextResponse(stylesheet(), media_type="text/css")
 
     @app.post("/quit")
-    async def quit_interface(request: Request) -> HTMLResponse:
+    def quit_interface(request: Request) -> HTMLResponse:
         """Answer, then ask the launcher to stop.
 
         **Refused while a job runs.** The worker is a daemon thread, and
@@ -415,7 +431,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/static/{name}.js")
-    async def serve_script(name: str) -> PlainTextResponse:
+    def serve_script(name: str) -> PlainTextResponse:
         # The interface's own scripts, as opposed to the vendored ones
         # under `/static/vendor`. `name` is matched against what is
         # actually there rather than joined into a path, so no request
@@ -429,7 +445,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/")
-    async def serve_search(
+    def serve_search(
         request: Request,
         q: str = "",
         scope: str = EVERY_SCOPE,
@@ -447,7 +463,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _TEMPLATES.TemplateResponse(request, "search.html", context)
 
     @app.post("/history/clear")
-    async def clear_history(request: Request) -> Response:
+    def clear_history(request: Request) -> Response:
         # A POST, because a GET that writes is one a prefetcher will
         # follow and this one destroys. The reader's own words are
         # in here and there has to be a way to remove them.
@@ -461,7 +477,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _TEMPLATES.TemplateResponse(request, "recents.html", context)
 
     @app.get("/hits")
-    async def serve_hits(
+    def serve_hits(
         request: Request,
         q: str = "",
         scope: str = EVERY_SCOPE,
@@ -488,7 +504,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return answer
 
     @app.get("/corpus")
-    async def serve_corpus(request: Request) -> HTMLResponse:
+    def serve_corpus(request: Request) -> HTMLResponse:
         context = existing_corpus()
         held = holdings(context)
         return _TEMPLATES.TemplateResponse(
@@ -505,7 +521,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/collection/{collection}")
-    async def serve_collection(request: Request, collection: str) -> HTMLResponse:
+    def serve_collection(request: Request, collection: str) -> HTMLResponse:
         context = existing_corpus()
         if collection not in COLLECTION_NAMES:
             return _problem(
@@ -526,7 +542,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/tree/{collection}")
-    async def serve_tree(request: Request, collection: str) -> HTMLResponse:
+    def serve_tree(request: Request, collection: str) -> HTMLResponse:
         """One collection's documents, or the bundle's, for the pane.
 
         Fetched when the reader opens it, never drawn with the page:
@@ -544,7 +560,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _tree(request, collection)
 
     @app.post("/move")
-    async def move_from_the_tree(request: Request) -> Response:
+    def move_from_the_tree(request: Request, form: PostedForm) -> Response:
         """Refile one document into the group typed in its menu.
 
         htmx gets the collection's branch redrawn, so the reader sees the
@@ -552,7 +568,6 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         page. A refusal - a group that leaves the collection, a docs page,
         a busy corpus - is drawn at the head of the same branch.
         """
-        form = await request.form()
         collection = str(form.get("collection") or "")
         if collection not in COLLECTION_NAMES:
             return _refused_a_post(request, words.unknown_scope(collection, SCOPES))
@@ -563,11 +578,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         try:
             # A thread, because the move commits: git is a subprocess,
             # and an `async` route waiting on one stalls every request.
-            await run_in_threadpool(
-                lambda: move_a_document(
-                    context, held, held.resolve(handle), group=group
-                )
-            )
+            move_a_document(context, held, held.resolve(handle), group=group)
         except KennisError as error:
             if _from_htmx(request):
                 return _tree(request, collection, problem=str(error))
@@ -577,13 +588,13 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return RedirectResponse(f"/collection/{collection}", status_code=303)
 
     @app.get("/remember")
-    async def serve_remember_form(request: Request) -> HTMLResponse:
+    def serve_remember_form(request: Request) -> HTMLResponse:
         return _action(
             request, "/remember", "forms/remember.html", _remember_context(None)
         )
 
     @app.get("/add")
-    async def serve_add_form(
+    def serve_add_form(
         request: Request,
         kind: str = "",
         collection: str = "",
@@ -596,7 +607,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _action(request, "/add", "forms/add.html", _add_context(kind, given))
 
     @app.get("/add/block")
-    async def serve_add_block(request: Request, index: int = 1) -> HTMLResponse:
+    def serve_add_block(request: Request, index: int = 1) -> HTMLResponse:
         """One more group, and the button that asks for the one after."""
         return _TEMPLATES.TemplateResponse(
             request,
@@ -634,7 +645,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/add/check")
-    async def check_a_block(request: Request, index: int = 1) -> HTMLResponse:
+    def check_a_block(request: Request, index: int = 1) -> HTMLResponse:
         """Each line of one group, as its own tab would recognise it."""
         asked = request.query_params
         destination = asked.get(f"collection-{index}", "notes")
@@ -647,7 +658,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/skip")
-    async def serve_skip(request: Request) -> HTMLResponse:
+    def serve_skip(request: Request) -> HTMLResponse:
         """What Skip beside a refusal's repairs amounts to: nothing.
 
         No engine change and nothing written - the item was already
@@ -662,7 +673,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/browse")
-    async def serve_chooser(
+    def serve_chooser(
         request: Request, target: str = "", path: str = "", folders: str = ""
     ) -> HTMLResponse:
         """One folder of this computer, for a field to take a path from.
@@ -689,7 +700,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/index")
-    async def serve_index_form(request: Request, collection: str = "") -> HTMLResponse:
+    def serve_index_form(request: Request, collection: str = "") -> HTMLResponse:
         # A collection in the address is checked, as the palette's
         # "Index notes" asks; anything else leaves every collection.
         return _action(
@@ -705,7 +716,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/palette")
-    async def serve_palette(request: Request) -> HTMLResponse:
+    def serve_palette(request: Request) -> HTMLResponse:
         """Every action and place, as one list to type into (11g)."""
         return _action(
             request,
@@ -720,13 +731,13 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/settings")
-    async def serve_settings(request: Request) -> HTMLResponse:
+    def serve_settings(request: Request) -> HTMLResponse:
         """The settings page: this window's preferences (12a) and
         kennis's own configuration (12b)."""
         return _settings_page(request, _kennis_section({}))
 
     @app.get("/settings/kennis")
-    async def redraw_kennis_settings(request: Request) -> HTMLResponse:
+    def redraw_kennis_settings(request: Request) -> HTMLResponse:
         """The configuration section for the values in the address.
 
         What a changed choice asks, so the rows that apply are the
@@ -739,14 +750,14 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _settings_page(request, section)
 
     @app.post("/settings/kennis")
-    async def save_kennis_settings(request: Request) -> HTMLResponse:
+    def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
         """Check every changed answer, and write them together or not at all.
 
         Each refusal is drawn beside its field, which is why the answers
         are checked one at a time before `apply_answers` checks them as a
         set: the page should say which value, not only that one was wrong.
         """
-        answers = answers_in(await request.form())
+        answers = answers_in(form)
         problems = {
             question.key: problem
             for question in offered(answers)
@@ -788,10 +799,9 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return _settings_page(request, section)
 
     @app.post("/settings")
-    async def save_settings(request: Request) -> Response:
+    def save_settings(request: Request, form: PostedForm) -> Response:
         """Where the form posts without a script; with one, `prefs.js`
         has already written each cookie as it was chosen."""
-        form = await request.form()
         answer = RedirectResponse("/settings", status_code=303)
         for name, value in chosen_in(form).items():
             answer.set_cookie(
@@ -804,18 +814,18 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return answer
 
     @app.get("/settings/backup")
-    async def serve_backup_section(request: Request) -> HTMLResponse:
+    def serve_backup_section(request: Request) -> HTMLResponse:
         """The Backup section as it stands, for a finished job to redraw."""
         return _backup_answer(request, _backup_section())
 
     @app.post("/settings/backup")
-    async def save_backup_folder(request: Request) -> HTMLResponse:
+    def save_backup_folder(request: Request, form: PostedForm) -> HTMLResponse:
         """The folder, written through `apply_answers` like any setting.
 
         Refused when it is not a folder, because the chooser lists files
         too and a file would only be found out at the next backup.
         """
-        given = str((await request.form()).get("backup.folder") or "").strip()
+        given = str(form.get("backup.folder") or "").strip()
         if not given:
             return _backup_answer(
                 request, _backup_section(about="folder", outcome=words.KENNIS_UNCHANGED)
@@ -834,9 +844,9 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/settings/backup/test")
-    async def test_backup(request: Request) -> HTMLResponse:
+    def test_backup(request: Request, form: PostedForm) -> HTMLResponse:
         """Every member decrypted against its checksum, with this password."""
-        password = str((await request.form()).get("password") or "")
+        password = str(form.get("password") or "")
         folder = _backup_folder()
         if folder is None:
             return _backup_answer(
@@ -863,10 +873,9 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/backup")
-    async def start_backup(request: Request) -> Response:
+    def start_backup(request: Request, form: PostedForm) -> Response:
         """Back up now: a job, so it is in the strip and refused while
         another runs. The password reaches the job as an argument only."""
-        form = await request.form()
         password = str(form.get("password") or "")
         confirmation = str(form.get("confirmation") or "")
         folder = _backup_folder()
@@ -886,7 +895,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/sync")
-    async def serve_sync_form(request: Request) -> HTMLResponse:
+    def serve_sync_form(request: Request) -> HTMLResponse:
         return _action(
             request,
             "/sync",
@@ -899,7 +908,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/pack")
-    async def serve_pack_form(request: Request) -> HTMLResponse:
+    def serve_pack_form(request: Request) -> HTMLResponse:
         return _action(
             request,
             "/pack",
@@ -908,7 +917,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/remember")
-    async def accept_remembered(request: Request) -> HTMLResponse:
+    def accept_remembered(request: Request, form: PostedForm) -> HTMLResponse:
         """Write a note, and answer with the outcome alone.
 
         **POST, not GET.** A GET that writes is a GET something will
@@ -921,7 +930,6 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         such a request arrives without the token and the guard in
         `require_token` refuses it before this runs.
         """
-        form = await request.form()
         text_given = str(form.get("text") or "")
         title = str(form.get("title") or "") or None
         group = str(form.get("group") or "") or None
@@ -938,19 +946,19 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/strip/status")
-    async def serve_strip_status(request: Request) -> HTMLResponse:
+    def serve_strip_status(request: Request) -> HTMLResponse:
         """The strip's status line alone, for a finished job (#457)."""
         return _TEMPLATES.TemplateResponse(request, "strip-status.html", {})
 
     @app.get("/pane/documents")
-    async def serve_pane_documents(request: Request) -> HTMLResponse:
+    def serve_pane_documents(request: Request) -> HTMLResponse:
         """The pane's document count alone, for a finished job (#457)."""
         return _TEMPLATES.TemplateResponse(
             request, "pane-documents.html", {"pane": pane_now()}
         )
 
     @app.get("/pane/row/{collection}")
-    async def serve_pane_row(request: Request, collection: str) -> HTMLResponse:
+    def serve_pane_row(request: Request, collection: str) -> HTMLResponse:
         """One collection's row in the pane, for a finished job (#457)."""
         rows = {row.collection: row for row in pane_now().collections}
         if collection not in rows:
@@ -960,14 +968,14 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/revision")
-    async def serve_revision() -> JSONResponse:
+    def serve_revision() -> JSONResponse:
         # Answered on demand, never pushed. One `git rev-parse`, which
         # is cheap enough to ask when a window regains focus and far
         # too expensive to poll. Concern #311.
         return JSONResponse({"revision": revision(existing_corpus())})
 
     @app.get("/document/{collection}/{document_id}")
-    async def serve_document(
+    def serve_document(
         request: Request,
         collection: str,
         document_id: str,
@@ -1043,7 +1051,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/bundle/{relative_path:path}")
-    async def serve_bundle_document(
+    def serve_bundle_document(
         request: Request,
         relative_path: str,
         images: str = "",
@@ -1090,7 +1098,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/add")
-    async def start_add(request: Request) -> Response:
+    def start_add(request: Request, form: PostedForm) -> Response:
         """Start an add and answer with somewhere to watch it.
 
         Answers at once rather than when the work is done: one PDF is
@@ -1098,7 +1106,6 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         and a POST that returns at the end is a browser that appears to
         have hung.
         """
-        form = await request.form()
         context = existing_corpus()
         options = _add_options(context, form)
         if isinstance(options, str):
@@ -1131,8 +1138,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/index")
-    async def start_index(request: Request) -> Response:
-        form = await request.form()
+    def start_index(request: Request, form: PostedForm) -> Response:
         chosen = str(form.get("collection") or "")
         collection = chosen if chosen in COLLECTION_NAMES else None
         context = existing_corpus()
@@ -1143,14 +1149,14 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/sync")
-    async def start_corpus_sync(request: Request) -> Response:
+    def start_corpus_sync(request: Request) -> Response:
         context = existing_corpus()
         return _started(
             request, "sync", lambda events: synchronise_corpus(context, events=events)
         )
 
     @app.post("/context-sync")
-    async def start_bundle_sync(request: Request) -> Response:
+    def start_bundle_sync(request: Request) -> Response:
         context = existing_corpus()
         bundle = find_bundle()
         if bundle is None:
@@ -1167,8 +1173,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.post("/pack")
-    async def start_pack_install(request: Request) -> Response:
-        form = await request.form()
+    def start_pack_install(request: Request, form: PostedForm) -> Response:
         given = str(form.get("path") or "").strip()
         path = Path(given).expanduser()
         if not given or not path.is_file():
@@ -1179,7 +1184,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/job/{job_id}")
-    async def serve_job(request: Request, job_id: str) -> HTMLResponse:
+    def serve_job(request: Request, job_id: str) -> HTMLResponse:
         """One job: its panel for htmx, the panel inside the shell otherwise.
 
         The page is where a scriptless POST is sent (#412), where the
@@ -1199,7 +1204,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/activity")
-    async def serve_activity(request: Request) -> HTMLResponse:
+    def serve_activity(request: Request) -> HTMLResponse:
         """What has run since kennis started, newest first.
 
         The registry keeps a job for an hour; this lists what it has,
@@ -1215,7 +1220,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/job/{job_id}/events")
-    async def serve_job_events(job_id: str) -> StreamingResponse:
+    def serve_job_events(job_id: str) -> StreamingResponse:
         """This job's events, pushed until the operation ends.
 
         A sync generator on purpose: Starlette runs one in a thread, so
@@ -1240,7 +1245,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     @app.get("/job/{job_id}/outcome")
-    async def serve_job_outcome(request: Request, job_id: str) -> HTMLResponse:
+    def serve_job_outcome(request: Request, job_id: str) -> HTMLResponse:
         """What the job amounted to, fetched once its stream has closed.
 
         Rendered here rather than assembled by the script, so every

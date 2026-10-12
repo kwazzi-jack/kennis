@@ -19,12 +19,14 @@ renders it and nothing flashes open before collapsing.
 
 from __future__ import annotations
 
+import inspect
 import re
 from pathlib import Path
 
 import pytest
 from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
@@ -611,3 +613,25 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
     at the bottom whatever is above it."""
     assert "100dvh" in rules_for(".shell")
     assert "calc(100%" not in rules_for(".shell")
+
+
+# ---------------------------------------------------------------------------
+# Nothing a route does stops the server
+# ---------------------------------------------------------------------------
+
+
+def test_no_route_runs_on_the_event_loop():
+    """An `async` route runs on the event loop, and every route here reads
+    the corpus, starts git or renders the pane - 600 ms a page at a thousand
+    documents. One of them running stopped every other request, a job's
+    progress stream included. A plain `def` runs on a worker thread; the
+    form a POST carries is read by an `async` dependency instead."""
+    app = build_app(TOKEN)
+
+    on_the_loop = [
+        route.path
+        for route in app.routes
+        if isinstance(route, APIRoute) and inspect.iscoroutinefunction(route.endpoint)
+    ]
+
+    assert on_the_loop == []
