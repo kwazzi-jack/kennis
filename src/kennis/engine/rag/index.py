@@ -355,6 +355,18 @@ def read_manifest(index_root: Path, collection: str) -> IndexManifest | None:
     )
 
 
+def published_files(index_root: Path, collection: str) -> list[Path]:
+    """The pointer for `collection` and the manifest it names, which are
+    what `read_manifest` reads - for a caller that asks whether either has
+    changed without reading them."""
+    pointer = index_root / collection / _POINTER_FILE
+    try:
+        named = str(json.loads(pointer.read_text(encoding="utf-8"))["index_id"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return [pointer]
+    return [pointer, index_root / collection / named / _MANIFEST_FILE]
+
+
 def read_binding(index_root: Path, collection: str) -> Binding | None:
     """How the published index for `collection` was built, or None.
 

@@ -20,6 +20,7 @@ from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
+from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.holdings import holdings, installed_packs, revision
 
@@ -158,3 +159,71 @@ def test_a_document_that_cannot_be_read_is_counted_separately(
 
     assert held("notes").documents == 1
     assert held("notes").unreadable == 1
+
+
+# ---------------------------------------------------------------------------
+# Counted once per state of the corpus
+# ---------------------------------------------------------------------------
+
+
+def test_an_unchanged_corpus_is_not_counted_again(
+    corpus: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Counting reads every document - about a second at a thousand - and
+    the window asks on every page."""
+    a_note(run, corpus, "calibration", "Antenna gains.")
+    held("notes")
+    walked: list[str] = []
+    walk = Collection.contents
+
+    def counted(self: Collection) -> object:
+        walked.append(self.name)
+        return walk(self)
+
+    monkeypatch.setattr(Collection, "contents", counted)
+
+    assert held("notes").documents == 1
+    assert walked == []
+
+
+def test_a_second_edit_to_an_uncommitted_document_is_seen(corpus: Path, run: CliRunner):
+    """Git's status line for a document edited twice is the same both
+    times, so the edit is told apart by the file itself."""
+    a_note(run, corpus, "calibration", "Antenna gains.")
+    note = next((corpus / "corpus" / "notes").rglob("*.md"))
+    note.write_text(note.read_text(encoding="utf-8") + "\nMore.\n", encoding="utf-8")
+    assert held("notes").unreadable == 0
+
+    note.write_text("---\nnot: valid frontmatter for kennis\n---\n\nText.\n")
+
+    assert held("notes").unreadable == 1
+
+
+def test_an_edit_inside_a_new_directory_is_seen(corpus: Path, run: CliRunner):
+    """Git names an untracked directory rather than its files unless asked,
+    and editing a file does not change its directory's time."""
+    a_note(run, corpus, "calibration", "Antenna gains.")
+    group = corpus / "corpus" / "notes" / "new-group"
+    group.mkdir()
+    copied = group / "copied.md"
+    copied.write_text("---\nnot: valid\n---\n\nText.\n", encoding="utf-8")
+    assert held("notes").unreadable == 1
+
+    copied.write_text(
+        next((corpus / "corpus" / "notes").glob("*.md")).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    assert held("notes").unreadable == 0
+
+
+def test_a_rebuilt_index_is_seen(corpus: Path, run: CliRunner):
+    """The index is ignored by git, so its rebuild is in no status line."""
+    a_note(run, corpus, "calibration", "Antenna gains.")
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    a_note(run, corpus, "imaging", "Deconvolution.")
+    assert not held("notes").is_current
+
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    assert held("notes").is_current
