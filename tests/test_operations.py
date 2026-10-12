@@ -23,6 +23,7 @@ from kennis.engine.corpus.add import AddOptions
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.errors import CorpusBusy
 from kennis.engine.history.git import git
+from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
 from kennis.operations import (
@@ -31,6 +32,7 @@ from kennis.operations import (
     restore_hand_deletions,
     synchronise_bundle,
 )
+from kennis.writing import write_note
 
 
 @pytest.fixture
@@ -109,6 +111,27 @@ def test_a_hand_deletion_is_restored_before_the_commit_is_made(isolated: Path):
 
     assert deleted.is_file()
     assert deleted.read_text(encoding="utf-8") == held
+    touched = git(
+        ["show", "--name-status", "--format=", "HEAD"], cwd=context.corpus_root
+    ).lines()
+    assert not [line for line in touched if line.startswith("D\t")], touched
+
+
+def test_writing_a_note_restores_a_hand_deletion_first(isolated: Path):
+    """`remember` from any front end - an agent's included - commits with
+    `git add --all .` as `add` does, so it restores as `add` does."""
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "first.md"))], AddOptions())
+    deleted = only_note(context.corpus_root)
+    deleted.unlink()
+    restored: list[OutOfBandChange] = []
+
+    write_note("A second thought about trees.", restored=restored)
+
+    assert deleted.is_file()
+    assert [change.path for change in restored] == [
+        deleted.relative_to(context.corpus_root).as_posix()
+    ]
     touched = git(
         ["show", "--name-status", "--format=", "HEAD"], cwd=context.corpus_root
     ).lines()
