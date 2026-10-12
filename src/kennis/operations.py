@@ -216,6 +216,7 @@ def add_in_groups(
     options: AddOptions,
     *,
     events: EventSink | None = None,
+    restored: list[OutOfBandChange] | None = None,
 ) -> AddReport:
     """Several adds as one job, one per group, merged into one report.
 
@@ -232,6 +233,7 @@ def add_in_groups(
             block.identifiers,
             replace(options, group=block.group),
             events=events,
+            restored=restored,
         )
         for block in blocks
     ]

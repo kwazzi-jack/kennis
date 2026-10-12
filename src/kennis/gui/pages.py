@@ -1109,6 +1109,9 @@ class ShownOutcome:
     # the button again writes it twice; a write that was refused
     # leaves text the reader would otherwise have to type again.
     clears: bool = False
+    # What else the write did that the reader should know of: documents
+    # deleted by hand that it put back.
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

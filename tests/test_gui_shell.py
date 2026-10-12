@@ -643,6 +643,37 @@ def test_the_script_takes_the_revision_from_a_write_and_reads_it_on_each_check()
     assert "body.revision === banner.dataset.revision" in script
 
 
+def a_hand_deletion(corpus: Path) -> str:
+    """One note deleted outside kennis, as the corpus names it."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    deleted = next((corpus / "corpus" / "notes").rglob("*.md"))
+    deleted.unlink()
+    return deleted.relative_to(corpus / "corpus").as_posix()
+
+
+def test_a_note_written_here_says_what_it_put_back(corpus: Path, client: TestClient):
+    """The command line says it; the window put the document back in
+    silence (#381's defect class: a field one front end drops)."""
+    deleted = a_hand_deletion(corpus)
+    admitted(client)
+
+    answer = posted(client, "/remember", data={"text": "Antenna gains drift."})
+
+    assert f"{deleted} was deleted outside kennis and has been restored" in answer.text
+
+
+def test_a_job_started_here_says_what_it_put_back(corpus: Path, client: TestClient):
+    deleted = a_hand_deletion(corpus)
+    admitted(client)
+
+    posted(client, "/index", data={"collection": "notes"})
+    job = client.app.state.jobs.recent()[0]
+    assert job.done.wait(20)
+    outcome = client.get(f"/job/{job.id}/outcome", headers={"HX-Request": "true"})
+
+    assert f"{deleted} was deleted outside kennis and has been restored" in outcome.text
+
+
 def test_the_revision_is_not_readable_without_the_token(
     corpus: Path, client: TestClient
 ):

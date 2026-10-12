@@ -25,7 +25,7 @@ import secrets
 import shlex
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Final
 from urllib.parse import quote
@@ -63,6 +63,7 @@ from kennis.engine.errors import (
     UnknownCollection,
 )
 from kennis.engine.events import EventSink
+from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Chunk
@@ -154,7 +155,7 @@ from kennis.render.backup import (
 )
 from kennis.render.html import MarkedRange
 from kennis.render.packs import describe_holdings
-from kennis.render.words import describe_lexical_fallback
+from kennis.render.words import describe_change, describe_lexical_fallback
 from kennis.retrieval import (
     EVERY_SCOPE,
     SCOPE_NAMES,
@@ -1066,7 +1067,11 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         )
 
     def _started(
-        request: Request, kind: str, work: Callable[[EventSink], object]
+        request: Request,
+        kind: str,
+        work: Callable[[EventSink], object],
+        *,
+        restored: list[OutOfBandChange] | None = None,
     ) -> Response:
         """Hand the work to a thread and answer with the panel watching it.
 
@@ -1075,7 +1080,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         limit is honest, and dropping a click in silence is not.
         """
         try:
-            job = app.state.jobs.start(kind, work)
+            job = app.state.jobs.start(kind, work, restored=restored)
         except AlreadyRunning as busy:
             if not _from_htmx(request):
                 return RedirectResponse(f"/job/{busy.running}", status_code=303)
@@ -1163,10 +1168,14 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 return _refused_a_post(request, blocks)
             if not blocks:
                 return _refused_a_post(request, words.NOTHING_TO_ADD)
+            restored: list[OutOfBandChange] = []
             return _started(
                 request,
                 "add",
-                lambda events: add_in_groups(context, blocks, options, events=events),
+                lambda events: add_in_groups(
+                    context, blocks, options, events=events, restored=restored
+                ),
+                restored=restored,
             )
         identifiers = _lines(str(form.get("identifiers") or ""))
         destination = str(form.get("collection") or "")
@@ -1176,12 +1185,19 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             return _refused_a_post(request, words.CHOOSE_A_COLLECTION)
         if destination not in COLLECTION_NAMES:
             return _refused_a_post(request, words.unknown_collection(destination))
+        put_back: list[OutOfBandChange] = []
         return _started(
             request,
             "add",
             lambda events: add_documents(
-                context, destination, identifiers, options, events=events
+                context,
+                destination,
+                identifiers,
+                options,
+                events=events,
+                restored=put_back,
             ),
+            restored=put_back,
         )
 
     @app.post("/index")
@@ -1189,17 +1205,27 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         chosen = str(form.get("collection") or "")
         collection = chosen if chosen in COLLECTION_NAMES else None
         context = existing_corpus()
+        restored: list[OutOfBandChange] = []
         return _started(
             request,
             "index",
-            lambda events: build_indexes(context, collection, events=events),
+            lambda events: build_indexes(
+                context, collection, events=events, restored=restored
+            ),
+            restored=restored,
         )
 
     @app.post("/sync")
     def start_corpus_sync(request: Request) -> Response:
         context = existing_corpus()
+        restored: list[OutOfBandChange] = []
         return _started(
-            request, "sync", lambda events: synchronise_corpus(context, events=events)
+            request,
+            "sync",
+            lambda events: synchronise_corpus(
+                context, events=events, restored=restored
+            ),
+            restored=restored,
         )
 
     @app.post("/context-sync")
@@ -1315,8 +1341,15 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 resolution=job.error.resolution,
             )
         else:
+            shown = _shown_result(job)
+            # What the operation put back before it ran, said where it
+            # says what it did: the command line has always said it, and
+            # a document reappearing in silence is a surprise of its own.
+            put_back = tuple(describe_change(change) for change in job.restored)
             answer = _TEMPLATES.TemplateResponse(
-                request, "job-outcome.html", {"shown": _shown_result(job)}
+                request,
+                "job-outcome.html",
+                {"shown": replace(shown, notes=(*put_back, *shown.notes))},
             )
         # Only a job that commits moves the page's revision: a bundle sync,
         # a pack install and a backup write no corpus history, so a terminal
@@ -1359,9 +1392,13 @@ def _remembered(
         if to_context:
             note, bundle_name = write_context_note(text, title=title, group=group)
             return words.describe_written_to_bundle(note, bundle_name)
-        report = write_note(text, title=title, group=group)
-        return words.describe_written(
+        restored: list[OutOfBandChange] = []
+        report = write_note(text, title=title, group=group, restored=restored)
+        written = words.describe_written(
             report, relative_to_corpus(report.path, existing_corpus().corpus_root)
+        )
+        return replace(
+            written, notes=tuple(describe_change(change) for change in restored)
         )
     except CorpusBusy:
         return ShownOutcome(message=words.CORPUS_BUSY, role="role-warning")
