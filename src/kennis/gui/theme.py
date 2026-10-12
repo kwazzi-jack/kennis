@@ -500,6 +500,7 @@ body {
 
 .bar {
   grid-area: bar;
+  view-transition-name: bar;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -615,6 +616,7 @@ body {
 
 .pane {
   grid-area: pane;
+  view-transition-name: pane;
   overflow-y: auto;
   background: var(--raised);
   border-right: 1px solid var(--rule);
@@ -793,6 +795,7 @@ details.menu[open] > .menu-button { opacity: 1; }
   border-radius: 6px;
   background: var(--ground);
   box-shadow: 0 4px 14px var(--rule);
+  transition: opacity 0.12s ease, translate 0.12s ease;
 }
 .menu-items form.index { margin: 0; }
 .menu-items .item {
@@ -1078,6 +1081,7 @@ main {
 
 .strip {
   grid-area: strip;
+  view-transition-name: strip;
   max-height: 40dvh;
   overflow-y: auto;
   background: var(--raised);
@@ -1422,6 +1426,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   padding: 1rem 0 1.25rem;
   border-top: 1px solid var(--rule);
   max-width: var(--measure);
+  transition: opacity 0.2s ease, translate 0.2s ease;
 }
 .hit > * { margin: 0 0 0.4rem; }
 
@@ -2120,8 +2125,52 @@ article table {
   .inspector { width: auto; border-left: 0; border-top: 1px solid var(--rule); }
 }
 
+/* ---- motion ----
+   Short and saying where a thing came from: nothing here takes more
+   than a quarter of a second, and each entry is `@starting-style`, so
+   the browser animates whatever is newly drawn - a dialog `dialog.js`
+   opened, a menu its summary opened, hits htmx swapped in, a job the
+   strip drew - with no event handled anywhere. Nothing animates
+   leaving: a closed dialog is removed at once. */
+
+/* Moving between pages cross-fades the centre; the shell is named, so
+   the bar, the pane and the strip hold still. */
+@view-transition { navigation: auto; }
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: 0.15s; }
+
+.dialog[open] {
+  opacity: 1;
+  translate: 0 0;
+  transition: opacity 0.18s ease, translate 0.18s ease;
+}
+.dialog[open]::backdrop { transition: background-color 0.18s ease; }
+@starting-style {
+  .dialog[open] { opacity: 0; translate: 0 0.5rem; }
+  .dialog[open]::backdrop { background-color: transparent; }
+}
+
+@starting-style {
+  .menu-items { opacity: 0; translate: 0 -0.25rem; }
+}
+
+@starting-style {
+  .hit { opacity: 0; translate: 0 0.25rem; }
+}
+
+.strip .job { transition: opacity 0.2s ease; }
+@starting-style {
+  .strip .job { opacity: 0; }
+}
+
+button, a.button, .action { transition: translate 0.08s ease, border-color 0.15s ease; }
+button:active,
+a.button:active { translate: 0 1px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  /* `*` selects no view transition pseudo-element. */
+  @view-transition { navigation: none; }
 }
 """
 
