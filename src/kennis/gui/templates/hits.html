@@ -56,10 +56,10 @@
    the search returned (#406). #}
 {% if orders and order %}<p class="limit role-muted">{{ order_limit }}</p>{% endif %}
 {% for group in groups %}
-<h2 class="group-head">{{ icon(group.icon) }}<span class="name">{{ group.collection }}</span><span class="count">{{ group.count }}</span></h2>
+<h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.collection }}</span><span class="count">{{ group.count }}</span></h2>
 <ol class="results">
 {% for hit in group.hits %}
-  <li class="hit">
+  <li class="hit" data-collection="{{ group.collection }}">
     {# The card's head (Brian, 2026-10-12): what kennis says about the
        hit - how well it matched, its handle, the document and the
        section - in a band over the passage it quotes. #}

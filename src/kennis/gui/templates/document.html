@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ document.title }}{% endblock %}
-{% block main_class %} class="document"{% endblock %}
+{% block main_class %} class="document" data-collection="{{ document.collection }}"{% endblock %}
 {# The centre laid out as the mockup draws a document: a bar of
    breadcrumbs, then the text and the inspector side by side, each
    scrolling on its own, so the bar and the inspector stay put while
@@ -9,7 +9,7 @@
 <nav class="doc-bar" aria-label="{{ crumbs_label }}">
   <span class="crumbs">
     {% if search_crumb %}<a href="/?q={{ question | urlencode }}">{{ search_crumb }}</a><span class="sep">/</span>{% endif %}
-    <a href="/collection/{{ document.collection }}">{{ document.collection }}</a><span class="sep">/</span>
+    <a class="crumb-collection" href="/collection/{{ document.collection }}">{{ document.collection }}</a><span class="sep">/</span>
     {% if document.group %}<span>{{ document.group }}</span><span class="sep">/</span>{% endif %}
     <span class="here">{{ document.handle or document.document_id }}</span>
   </span>
