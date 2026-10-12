@@ -241,17 +241,39 @@ def test_the_section_heads_its_passage_and_is_not_repeated_in_it(
 
     item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
     title = item.find("a", class_="title")
-    card = item.select_one(".passage .full")
+    head = item.select_one(".hit-head")
+    passage = item.select_one(".passage")
 
     assert isinstance(title, Tag) and title.get_text(strip=True) == "rivers"
-    assert isinstance(card, Tag)
-    first = card.find(recursive=False)
-    assert isinstance(first, Tag) and "passage-section" in (first.get("class") or [])
-    assert first.get_text(strip=True) == "Deposition"
-    assert first.find("svg") is not None
+    assert isinstance(head, Tag) and isinstance(passage, Tag)
+    section = head.find(class_="passage-section")
+    assert isinstance(section, Tag)
+    assert section.get_text(strip=True) == "Deposition"
+    assert section.find("svg") is not None
     assert "Deposition" not in "".join(
-        heading.get_text() for heading in card.find_all(["h1", "h2", "h3"])
+        heading.get_text() for heading in passage.find_all(["h1", "h2", "h3"])
     )
+
+
+def test_the_head_of_the_card_holds_the_measures_the_title_and_the_section(
+    corpus: Path, client: TestClient
+):
+    """Brian, 2026-10-12: "made the metadata part of the chunk card as
+    well as the paper name". One card per hit: a head - what matched,
+    how well, and where - over the passage, in that order."""
+    a_note(corpus, "rivers", "## Deposition\n\nRivers carry antenna sediment.")
+
+    item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
+    head = item.select_one(".hit-head")
+
+    assert isinstance(head, Tag)
+    names = [
+        " ".join(child.get("class") or []) for child in head.find_all(recursive=False)
+    ]
+    assert names == ["measures", "heading", "passage-section"]
+    assert head.find(class_="handle") is not None
+    following = head.find_next_sibling()
+    assert isinstance(following, Tag) and "passage" in (following.get("class") or [])
 
 
 def test_the_measures_come_before_the_title(corpus: Path, client: TestClient):
@@ -512,23 +534,31 @@ def test_a_hit_has_one_way_to_its_document_and_a_chevron_to_open_it(
     assert summary.get_text(strip=True) == "".join(hidden), "no visible words"
 
 
-def test_the_passage_is_a_card_set_apart_from_its_title(client: TestClient):
-    """Brian, 2026-10-12: "a little hard to see that it is quoted text".
-    A surface, a border and a rule down the left, as a quotation has;
-    the rule turns to the brand when the passage is open."""
+def test_the_hit_is_a_card_with_its_head_set_apart(client: TestClient):
+    """Brian, 2026-10-12: "a little hard to see that it is quoted text",
+    and then the metadata "hard to pick out". A surface, a border and a
+    rule down the left, as a quotation has, turning to the brand when
+    the passage is open; the head is a band on the page's ground over a
+    hairline, so what kennis says about the hit is apart from the text."""
     css = client.get("/static/kennis.css").text
-    card = re.search(r"^\.passage \.full \{([^}]*)\}", css, re.M)
+    card = re.search(r"^\.hit \{([^}]*)\}", css, re.M)
+    head = re.search(r"^\.hit-head \{([^}]*)\}", css, re.M)
 
     assert card, css
     for declaration in ("background: var(--raised)", "border: 1px solid var(--rule)"):
         assert declaration in card.group(1)
     assert "border-radius" in card.group(1)
     assert re.search(r"border-left: 3px solid var\(--role-muted\)", card.group(1))
+    assert "overflow: hidden" not in card.group(1), "the chevron hangs off its edge"
     assert re.search(
-        r"\.passage:has\(details\[open\]\) \.full \{[^}]*border-left-color: "
-        r"var\(--brand\)",
+        r"\.hit:has\(details\[open\]\) \{[^}]*border-left-color: var\(--brand\)",
         css,
     )
+    assert head, css
+    assert "background: var(--ground)" in head.group(1)
+    assert "border-bottom: 1px solid var(--rule)" in head.group(1)
+    full = re.search(r"^\.passage \.full \{([^}]*)\}", css, re.M)
+    assert full and "background" not in full.group(1), "one surface, not two"
 
 
 # ---------------------------------------------------------------------------
@@ -949,11 +979,7 @@ def test_the_title_is_kennis_s_and_the_passage_the_document_s(client: TestClient
     reading face, so the two are told apart before either is read."""
     css = client.get("/static/kennis.css").text
     title = re.search(r"^\.hit \.title \{([^}]*)\}", css, re.M)
-    header = re.search(r"^\.passage \.full \.passage-section \{([^}]*)\}", css, re.M)
+    section = re.search(r"^\.passage-section \{([^}]*)\}", css, re.M)
 
     assert title and "font-family: var(--gutter)" in title.group(1)
-    assert header and "font-family: var(--gutter)" in header.group(1)
-    assert "border-bottom: 1px solid var(--rule)" in header.group(1)
-    # Out to the card's edges; `.passage .full p` sets a margin too, and
-    # a header rule less specific than it loses the negative one.
-    assert "margin: -0.75rem -1rem" in header.group(1)
+    assert section and "font-family: var(--gutter)" in section.group(1)

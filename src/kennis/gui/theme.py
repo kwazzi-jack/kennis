@@ -1441,16 +1441,37 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   max-width: var(--text);
 }
 .group-head .count { font-weight: 400; color: var(--role-muted); }
-.group-head + .results > .hit:first-child { border-top: 0; }
-
-.results { list-style: none; margin: 0; padding: 0; }
-.hit {
-  padding: 1rem 0 1.25rem;
-  border-top: 1px solid var(--rule);
-  max-width: var(--text);
-  transition: opacity 0.2s ease, translate 0.2s ease;
+.results {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1.1rem;
 }
-.hit > * { margin: 0 0 0.4rem; }
+/* A hit is a card (Brian, 2026-10-12), as search interfaces set a quoted
+   excerpt apart: the raised surface, a hairline, and a rule down the
+   left as a block quotation has, which turns to the brand - the colour
+   of "here" in a document - when the passage is open. Nothing clips,
+   because the chevron hangs off the card's bottom edge. */
+.hit {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--role-muted);
+  border-radius: 8px;
+  max-width: var(--text);
+  transition: opacity 0.2s ease, translate 0.2s ease, border-color 0.25s ease;
+}
+.hit:has(details[open]) { border-left-color: var(--brand); }
+/* The head: what kennis says about the hit, on the page's ground so it
+   reads as a band, over the passage the hit quotes. */
+.hit-head {
+  background: var(--ground);
+  border-bottom: 1px solid var(--rule);
+  border-radius: 7px 7px 0 0;
+  padding: 0.6rem 1rem 0.55rem;
+}
+.hit-head > * { margin: 0 0 0.3rem; }
+.hit-head > :last-child { margin-bottom: 0; }
 
 /* The measures, above the title: an icon naming each, a bar of five
    cells and the level's word. The cells and the word carry the level
@@ -1511,39 +1532,22 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
    browser can interpolate to `max-content` and change at once where it
    cannot. Everything is in ink: an opened passage is one text. */
 .passage { color: var(--ink); }
-/* A card, as search interfaces set a quoted excerpt apart from the
-   result's own title: the raised surface, a hairline, and a rule down
-   the left as a block quotation has, which turns to the brand - the
-   colour of "here" in a document - when the passage is open. */
-.passage .full {
-  background: var(--raised);
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--role-muted);
-  border-radius: 8px;
-  padding: 0.75rem 1rem 0.8rem;
-  margin: 0.5rem 0 0;
-  transition: border-color 0.25s ease;
-}
+.passage .full { padding: 0.75rem 1rem 0.8rem; }
 .passage .full > * > :first-child { margin-top: 0; }
-/* The card's header: which section of the document the passage is from,
-   over a hairline that runs to the card's edges. */
-.passage .full .passage-section {
+/* Which section of the document the passage is from. */
+.passage-section {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
-  margin: -0.75rem -1rem 0.65rem;
-  padding: 0.4rem 1rem;
-  border-bottom: 1px solid var(--rule);
   font-family: var(--gutter);
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.4;
+  color: var(--ink);
 }
-/* A chunk that was only its heading is the header alone. */
-.passage .full:has(> .body:empty) .passage-section {
-  border-bottom: 0;
-  margin-bottom: -0.8rem;
-}
+/* A chunk that was only its heading is the head alone. */
+.hit:has(.body:empty) .hit-head { border-bottom: 0; border-radius: 7px; }
+.passage:has(.body:empty) .full { display: none; }
 .passage-section .icon {
   flex: none;
   width: 0.8rem;
@@ -1580,12 +1584,11 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   max-height: max-content;
   mask-image: none;
 }
-.passage:has(details[open]) .full { border-left-color: var(--brand); }
-
+/* The chevron sits on the card's bottom edge, half of it below. */
 .passage-foot {
   display: flex;
   justify-content: center;
-  margin-top: -0.85rem;
+  margin: -0.45rem 0 -0.85rem;
   position: relative;
 }
 .passage-foot summary {
