@@ -97,6 +97,7 @@ def to_html(
     load_remote_images: bool = False,
     marked: MarkedRange | None = None,
     without_title: str | None = None,
+    terms: Sequence[str] = (),
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
 
@@ -119,16 +120,94 @@ def to_html(
     `Chunk.char_start` and `char_end` address `Document.body`, so
     editing that string before rendering would put every chunk mark
     out by the heading's length. Concern #353.
+
+    `terms` are the reader's own words, marked on the text the corpus
+    holds and never inside code or maths, by the rule a snippet uses.
     """
     parser = _parser(load_remote_images=load_remote_images)
-    if marked is None and without_title is None:
+    pattern = query_pattern(terms)
+    if marked is None and without_title is None and pattern is None:
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
     if marked is not None:
         tokens = _wrapped(tokens, markdown, marked)
     if without_title is not None:
         tokens = _without_title(tokens, without_title)
+    if pattern is not None:
+        _mark_text(tokens, pattern)
     return str(parser.renderer.render(tokens, parser.options, {}))
+
+
+# Below this a term matches most of the page. Two characters is not
+# a judgement about which words are worth marking - it is the point
+# at which the mark stops carrying information.
+_SHORTEST_TERM: Final = 2
+
+
+def query_pattern(terms: Sequence[str]) -> re.Pattern[str] | None:
+    """One expression matching any term, whole and regardless of case.
+
+    `re.escape`, because these are a person's words and a query of
+    `.*` must match those two characters rather than everything. Nothing
+    is stemmed: the index stems and this does not, so "calibration" will
+    not mark "calibrate", and prefix-matching to fix that would mark
+    "calibrate" inside "recalibrated", a match the search did not make.
+    """
+    wanted = sorted(
+        {term for term in terms if len(term) >= _SHORTEST_TERM},
+        key=len,
+        reverse=True,
+    )
+    if not wanted:
+        return None
+    joined = "|".join(re.escape(term) for term in wanted)
+    # `\b` alone fails on a term ending in a non-word character, so
+    # the boundary is asserted by lookaround on word characters.
+    return re.compile(rf"(?<!\w)(?:{joined})(?!\w)", re.IGNORECASE)
+
+
+def marked_text(text: str, pattern: re.Pattern[str]) -> str:
+    """Escape the text and wrap each match, keeping the corpus's spelling.
+
+    The replacement uses what was matched rather than what was searched
+    for, so "ASTRONOMY" in the document stays "ASTRONOMY" when the query
+    said "astronomy". The text kennis quotes is not kennis's to re-spell.
+    """
+    out: list[str] = []
+    last = 0
+    for found in pattern.finditer(text):
+        out.append(_escaped(text[last : found.start()]))
+        out.append(f"<mark>{_escaped(found.group(0))}</mark>")
+        last = found.end()
+    out.append(_escaped(text[last:]))
+    return "".join(out)
+
+
+def _mark_text(tokens: Sequence[Token], pattern: re.Pattern[str]) -> None:
+    """Mark the reader's words on text and inline code, in place.
+
+    **On tokens, never on finished HTML**, where a query of "class"
+    would rewrite `class="..."`. A marked token becomes `html_inline`,
+    whose content the renderer writes as it is: `html=False` stops the
+    parser making such tokens from the corpus's text, not the renderer
+    writing one kennis made, and `marked_text` escaped every character.
+
+    Inline code is marked, as the snippet marks it: a search for
+    `solve_gains` is a search for the code. Maths is another token
+    type and never reached, because a `<mark>` inside TeX is markup
+    KaTeX renders or refuses. A fenced block is left alone, because
+    its HTML is the highlighter's.
+    """
+    for token in tokens:
+        for child in token.children or ():
+            if not pattern.search(child.content):
+                continue
+            if child.type == "text":
+                child.type = "html_inline"
+                child.content = marked_text(child.content, pattern)
+            elif child.type == "code_inline":
+                child.type = "html_inline"
+                child.content = f"<code>{marked_text(child.content, pattern)}</code>"
 
 
 def _without_title(tokens: list[Token], title: str) -> list[Token]:
@@ -438,6 +517,8 @@ __all__ = [
     "IMAGE_BLOCKED",
     "IMAGE_MISSING",
     "MarkedRange",
+    "marked_text",
+    "query_pattern",
     "to_html",
     "without_empty_options",
 ]

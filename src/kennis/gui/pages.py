@@ -124,8 +124,8 @@ class ShownHit:
     # **HTML, unlike the words.** The chunk rendered for this medium,
     # because leaving `##` and `[[35](https://...)]` on the page is
     # what the terminal's rule yields in a browser. Concerns #336 and
-    # #297. Three parts, so one element can show the window closed and
-    # the whole chunk opened without repeating any text (#415).
+    # #297. The window a closed passage shows and the whole chunk an
+    # opened one shows in its place.
     passage: Passage
     collection: str
     document_id: str
@@ -138,7 +138,7 @@ class ShownHit:
     @property
     def opens(self) -> bool:
         """Whether the passage holds more than its window."""
-        return bool(self.passage.before or self.passage.after)
+        return self.passage.cut_before or self.passage.cut_after
 
 
 def shown_measures(

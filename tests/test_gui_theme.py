@@ -471,3 +471,11 @@ def test_each_margin_field_is_its_own_line():
     assert not any("white-space" in rule for rule in margin), (
         "the margin is laid out by its fields now, not by preserved whitespace"
     )
+
+
+def test_the_stylesheet_holds_no_control_character():
+    """The layout is a Python string, so a CSS escape written with one
+    backslash is read by Python first: `"\\00b7"` arrived in the browser
+    as a NUL and a stray `b7`. The ASCII check cannot see it, because NUL
+    is ASCII."""
+    assert not re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", stylesheet())

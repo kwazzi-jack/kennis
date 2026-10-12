@@ -26,6 +26,7 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
@@ -256,11 +257,9 @@ def test_the_window_snippet_says_the_same_words_as_the_command_line(
     from_terminal = _words(printed.output)
     # The window is what a closed passage shows, and so what stands
     # beside the terminal's snippet.
-    from_window = _words(
-        re.search(
-            r'<span class="window">(.*?)</span><span class="after">', page.text, re.S
-        ).group(1)
-    )
+    snippet = BeautifulSoup(page.text, "html.parser").find(class_="snippet")
+    assert isinstance(snippet, Tag), page.text
+    from_window = _words(snippet.decode_contents())
     assert from_window, page.text
     index = 0
     for word in from_window:
