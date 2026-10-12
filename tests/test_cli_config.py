@@ -14,6 +14,7 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.engine.settings import load_settings
 
 
 @pytest.fixture(autouse=True)
@@ -185,17 +186,41 @@ def test_choosing_a_local_backend_never_asks_for_a_key(run: CliRunner):
 
 
 def test_choosing_a_hosted_backend_asks_for_a_key(run: CliRunner, isolated: Path):
-    answers = "openai\n" + "text-embedding-3-small\n" + "sk-notarealkey\n" + "\n" * 20
+    answers = (
+        "openai\n"
+        + "text-embedding-3-small\n"
+        + "1536\n"
+        + "sk-notarealkey\n"
+        + "\n" * 20
+    )
     result = run.invoke(main, ["config", "init"], input=answers)
 
     assert result.exit_code == 0, result.output
     assert "api_key" in result.output
 
 
+def test_choosing_a_backend_offers_its_own_model(run: CliRunner, isolated: Path):
+    """Enter on each question after the backend accepts what is offered,
+    and what is offered is the backend's own model and width, not the
+    previous backend's. Concern #441."""
+    answers = "openai\n" + "\n" + "\n" + "sk-notarealkey\n" + "\n" * 20
+    result = run.invoke(main, ["config", "init"], input=answers)
+
+    assert result.exit_code == 0, result.output
+    embedding = load_settings().embedding
+    assert (embedding.model, embedding.dimensions) == ("text-embedding-3-small", 1536)
+
+
 def test_a_key_is_never_echoed_or_written_to_the_config(run: CliRunner, isolated: Path):
     """It would otherwise sit in scrollback, in a screenshot, and in
     whatever the terminal logs."""
-    answers = "openai\n" + "text-embedding-3-small\n" + "sk-notarealkey\n" + "\n" * 20
+    answers = (
+        "openai\n"
+        + "text-embedding-3-small\n"
+        + "1536\n"
+        + "sk-notarealkey\n"
+        + "\n" * 20
+    )
     result = run.invoke(main, ["config", "init"], input=answers)
 
     assert result.exit_code == 0, result.output

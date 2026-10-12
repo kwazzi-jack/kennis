@@ -32,6 +32,7 @@ import os
 import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal, get_args, get_origin
 
@@ -58,6 +59,25 @@ _CREDENTIALS_FILE: Final = "credentials.toml"
 _ENV_FILES: Final[tuple[str, ...]] = (".env.keys", ".env")
 
 
+@dataclass(frozen=True, slots=True)
+class BackendModel:
+    """A model an embedding backend serves, and the width of its vectors."""
+
+    model: str
+    dimensions: int
+
+
+# Each backend's own model. A model name means something only to its
+# backend, so the setup offers this row when the backend is changed rather
+# than keeping the previous backend's, which failed only at the next index
+# (#441). The width is the model's, not a request: no backend is passed it.
+EMBEDDING_DEFAULTS: Final[dict[str, BackendModel]] = {
+    "fastembed": BackendModel("BAAI/bge-small-en-v1.5", 384),
+    "ollama": BackendModel("nomic-embed-text", 768),
+    "openai": BackendModel("text-embedding-3-small", 1536),
+}
+
+
 class EmbeddingSettings(BaseModel):
     """How chunks and queries become vectors."""
 
@@ -74,7 +94,7 @@ class EmbeddingSettings(BaseModel):
         ),
     )
     model: str = Field(
-        default="BAAI/bge-small-en-v1.5",
+        default=EMBEDDING_DEFAULTS["fastembed"].model,
         description="Model name, interpreted by the backend.",
         examples=[
             '"BAAI/bge-small-en-v1.5"    (fastembed)',
@@ -83,7 +103,10 @@ class EmbeddingSettings(BaseModel):
         ],
     )
     dimensions: int = Field(
-        default=384, ge=1, le=8192, description="Width of a vector."
+        default=EMBEDDING_DEFAULTS["fastembed"].dimensions,
+        ge=1,
+        le=8192,
+        description="Width of a vector.",
     )
     normalise: bool = Field(
         default=True,

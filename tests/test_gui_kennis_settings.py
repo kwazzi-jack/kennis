@@ -158,12 +158,62 @@ def test_choosing_a_backend_redraws_with_its_questions(client: TestClient):
     )
 
     assert "embedding.api_key" in rows_of(redrawn)
-    assert "embedding.dimensions" not in rows_of(redrawn)
+    # Asked under every backend since #441: the width belongs to the model.
+    assert "embedding.dimensions" in rows_of(redrawn)
     cost = row_of(redrawn, "embedding.backend").find(class_="cost")
     assert isinstance(cost, Tag)
     assert describe_cost("leaves_machine") in cost.get_text()
     # Sending a document away is never a default, so it is drawn apart.
     assert "role-warning" in cost.get("class", [])
+
+
+def test_choosing_a_backend_offers_its_own_model_and_saving_writes_it(
+    client: TestClient,
+):
+    """The model in force is the previous backend's, and a name means
+    something only to its backend: kept, it failed only at the next index.
+    Saving the redrawn form as drawn has to write the new pairing, which is
+    why the offered value is not the value in force. Concern #441."""
+    form = redrawn_from(
+        client,
+        form_of(section_of(client.get("/settings").text)),
+        **{"embedding.backend": "openai"},
+    )
+    model = row_of(form, "embedding.model").find("input")
+    assert isinstance(model, Tag) and model["value"] == "text-embedding-3-small"
+
+    client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
+
+    embedding = load_settings().embedding
+    assert (embedding.backend, embedding.model, embedding.dimensions) == (
+        "openai",
+        "text-embedding-3-small",
+        1536,
+    )
+
+
+def test_a_model_follows_the_backend_there_and_back(client: TestClient):
+    """The page's own offer is not something the person typed: a redraw
+    through ollama and back to openai offers openai's model again, rather
+    than keeping ollama's because the field now holds it."""
+    form = form_of(section_of(client.get("/settings").text))
+    for backend in ("ollama", "openai"):
+        form = redrawn_from(client, form, **{"embedding.backend": backend})
+
+    model = row_of(form, "embedding.model").find("input")
+    assert isinstance(model, Tag) and model["value"] == "text-embedding-3-small"
+
+
+def test_a_model_the_person_typed_survives_a_redraw(client: TestClient):
+    form = redrawn_from(
+        client,
+        form_of(section_of(client.get("/settings").text)),
+        **{"embedding.model": "BAAI/bge-base-en-v1.5", "chunking.size": "777"},
+    )
+    form = redrawn_from(client, form, **{"retrieval.corpus_method": "bm25"})
+
+    model = row_of(form, "embedding.model").find("input")
+    assert isinstance(model, Tag) and model["value"] == "BAAI/bge-base-en-v1.5"
 
 
 def test_a_local_backend_is_not_drawn_as_a_warning(client: TestClient):
@@ -301,6 +351,25 @@ def sent_from(form: Tag, **changes: str) -> dict[str, str]:
             sent[name] = value if isinstance(value, str) else ""
     sent.update(changes)
     return sent
+
+
+def redrawn_from(client: TestClient, form: Tag, **changes: str) -> Tag:
+    """The section a choice redraws, asked as the page asks it: htmx
+    includes every `[data-redraw]` field in the form, not only the one that
+    changed. A test sending the backend alone passed while the page kept
+    the previous backend's model (#441)."""
+    select = form.find("select", attrs={"hx-get": True})
+    assert isinstance(select, Tag)
+    assert select["hx-include"] == ".kennis-settings [data-redraw]"
+    sent = {
+        name: value
+        for name, value in sent_from(form).items()
+        if isinstance(found := form.find(attrs={"name": name}), Tag)
+        and found.has_attr("data-redraw")
+    }
+    sent.update(changes)
+    answer = client.get(str(select["hx-get"]), params=sent, headers=HTMX)
+    return form_of(section_of(answer.text))
 
 
 def test_saving_as_drawn_writes_through_the_engine(client: TestClient):

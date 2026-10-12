@@ -212,8 +212,8 @@ def _ask(question: Question) -> str:
     while True:
         answered: str = click.prompt(
             f"{_QUESTION_INDENT}{question.key}",
-            default=question.current,
-            show_default=bool(question.current),
+            default=question.suggested,
+            show_default=bool(question.suggested),
             hide_input=question.kind == "secret",
             type=str,
         )
