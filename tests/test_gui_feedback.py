@@ -241,15 +241,19 @@ def test_the_outcome_line_does_not_repeat_its_name():
 
 def test_the_live_lines_give_way_to_an_outcome_that_lists_its_items():
     """The outcome is the record and the live lines were progress, so a
-    finished sync listed every document twice."""
+    finished sync listed every document twice. Only item lines go: a
+    warning raised while the job ran is not repeated by the outcome."""
     code = code_of("progress.js")
     finish = re.search(r"function finish\(\) \{(.*?)\n    \}\n", code, re.S)
 
     assert finish, code
     assert re.search(
-        r'if \(outcome\.querySelector\("\.items"\)\) \{\s*lines\.remove\(\);',
+        r'if \(outcome\.querySelector\("\.items"\)\) \{\s*'
+        r'lines\.querySelectorAll\("li\[data-item\]"\)',
         finish.group(1),
     )
+    assert 'if (message.kind === "item") { item.dataset.item = "yes"; }' in code
+    assert "lines.remove()" not in code
 
 
 # ---------------------------------------------------------------------------

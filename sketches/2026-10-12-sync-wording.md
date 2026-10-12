@@ -67,9 +67,12 @@ which no reader sees.
   counting each kind in the lines' words says the same and more, and
   the protection rule holds - an edited file is "left as yours", never
   "unchanged", and a test injection merging the two is caught.
-- The add job's outcome lists items too, so its live lines go as well;
-  every live line has its counterpart in the outcome there (refusals
-  carry their remedies only in the outcome), so nothing is lost.
+- The add job's outcome lists items too, so its live item lines go as
+  well; `shown_add` draws one line per `report.outcomes`, the records
+  the live lines came from. **The first version removed the whole live
+  list, warnings included**, and an outcome repeats no warning; checked
+  only after committing. Now each item line is marked `data-item` and
+  only those go (amended into the next commit).
 - Not walked against Brian's corpus: a sync fetches and may commit, and
   a scratch corpus has no pack to sync. The script's rule is tested by
   reading it; the words by calling them.
