@@ -387,14 +387,17 @@ def test_saving_as_drawn_writes_through_the_engine(client: TestClient):
     assert words.KENNIS_SAVED in answer.text
 
 
-def test_an_unchanged_value_is_not_written(client: TestClient):
-    """Saving the form as drawn writes nothing: every field holds the value
-    in force, and writing it would pin a default into the file."""
+def test_saving_as_drawn_writes_every_setting(client: TestClient):
+    """Saving is choosing what the page shows, defaults included, and the
+    file holds every setting so it can be synced (Brian, 2026-10-12)."""
     form = form_of(section_of(client.get("/settings").text))
 
     client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
 
-    assert saved() == {}
+    written = saved()
+    assert written["embedding"]["backend"] == "fastembed"
+    assert written["chunking"]["size"] == 1500
+    assert "batch_size" in written["embedding"]
 
 
 def test_a_refused_value_is_named_beside_its_field_and_nothing_is_written(
@@ -540,4 +543,5 @@ def test_a_key_the_page_does_not_offer_is_not_written(
     )
 
     assert str(load_settings().corpus.root) != elsewhere
-    assert saved() == {}
+    # The file, because the fixture's environment answers `load_settings`.
+    assert saved()["corpus"]["root"] == ""

@@ -241,7 +241,7 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("converting", "Converting documents"),
 )
 KENNIS_SAVED = "Saved."
-KENNIS_UNCHANGED = "Nothing was changed, so nothing was written."
+KENNIS_UNCHANGED = "Saved. No value was changed."
 KENNIS_NOT_SAVED = "Nothing was saved. Each value that was refused says why."
 # Each setting's name in the window, by its configuration key. The
 # sentence beside it is the field's own description, as `config init`

@@ -44,15 +44,11 @@ def streams(result: object) -> tuple[str, str]:
 
 
 def settings_in(written: str) -> dict[str, str]:
-    """Every key the file actually sets, flattened to `section.key`.
-
-    The template leaves the `[section]` headers active and comments out the
-    keys, so a file that sets nothing still parses as a handful of empty
-    tables rather than as `{}`.
-    """
+    """Every key the file actually sets, flattened to `section.key`, each
+    value as its string."""
     parsed = tomllib.loads(written)
     return {
-        f"{section}.{key}": repr(value)
+        f"{section}.{key}": str(value)
         for section, keys in parsed.items()
         if isinstance(keys, dict)
         for key, value in keys.items()
@@ -138,28 +134,82 @@ def test_a_number_is_written_as_a_number(run: CliRunner, isolated: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_init_with_defaults_writes_the_commented_template(
-    run: CliRunner, isolated: Path
-):
+def test_init_with_defaults_writes_every_setting_active(run: CliRunner, isolated: Path):
+    """Active, so the file says what is in use and can be synced as it is
+    (Brian, 2026-10-12)."""
     result = run.invoke(main, ["config", "init", "--defaults"])
 
     assert result.exit_code == 0, result.output
     written = (isolated / "config.toml").read_text(encoding="utf-8")
-    assert "# backend" in written
-    # Commented out, so a later kennis that improves a default still reaches
-    # whoever ran this.
-    assert settings_in(written) == {}
+    assert '\nbackend = "fastembed"' in written
+    assert settings_in(written)["chunking.size"] == "1500"
 
 
-def test_pressing_return_throughout_changes_nothing(run: CliRunner, isolated: Path):
-    """What makes the setup safe to re-run at all."""
+def test_pressing_return_throughout_writes_every_value_shown(
+    run: CliRunner, isolated: Path
+):
+    """Accepting a value is choosing it, so the file holds it."""
     result = run.invoke(main, ["config", "init"], input="\n" * 20)
 
     assert result.exit_code == 0, result.output
-    # No file at all, rather than a file setting nothing. This test used to
-    # assert the second, which was the bug: an empty `config.toml` made
-    # `config show` print nothing where no file makes it print the defaults.
-    assert not (isolated / "config.toml").exists()
+    written = settings_in((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["embedding.backend"] == "fastembed"
+    assert written["embedding.model"] == "BAAI/bge-small-en-v1.5"
+
+
+def test_init_over_an_existing_file_asks_first_and_no_leaves_it(
+    run: CliRunner, isolated: Path
+):
+    """The whole file is replaced, comments and hand edits included, so a
+    re-run says so before it asks anything else."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text(
+        "# mine\n[chunking]\nsize = 900\n", encoding="utf-8"
+    )
+    before = (isolated / "config.toml").read_bytes()
+
+    # Return alone, so the test is also of the default: replacing a file is
+    # something said, not something pressed through.
+    result = run.invoke(main, ["config", "init"], input="\n" * 21)
+
+    assert result.exit_code == 0, result.output
+    assert "replace" in result.output
+    assert "embedding.backend [" not in result.output
+    assert (isolated / "config.toml").read_bytes() == before
+
+
+def test_init_over_an_existing_file_keeps_its_values_when_told_to_go_on(
+    run: CliRunner, isolated: Path
+):
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text("[chunking]\nsize = 900\n", encoding="utf-8")
+
+    result = run.invoke(main, ["config", "init"], input="y\n" + "\n" * 20)
+
+    assert result.exit_code == 0, result.output
+    written = settings_in((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["chunking.size"] == "900"
+    assert written["embedding.backend"] == "fastembed"
+
+
+def test_init_with_defaults_over_an_existing_file_asks_too(
+    run: CliRunner, isolated: Path
+):
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text("[chunking]\nsize = 900\n", encoding="utf-8")
+
+    refused = run.invoke(main, ["config", "init", "--defaults"], input="n\n")
+    assert "size = 900" in (isolated / "config.toml").read_text(encoding="utf-8")
+
+    accepted = run.invoke(main, ["config", "init", "--defaults"], input="y\n")
+
+    assert refused.exit_code == accepted.exit_code == 0
+    assert (
+        settings_in((isolated / "config.toml").read_text(encoding="utf-8"))[
+            "chunking.size"
+        ]
+        == "1500"
+    )
 
 
 def test_the_setup_asks_about_the_backend_first(run: CliRunner):
@@ -248,24 +298,20 @@ def test_a_rejected_answer_is_asked_again(run: CliRunner, isolated: Path):
     assert written["embedding"]["backend"] == "none"
 
 
-def test_the_count_is_of_what_was_written_not_what_was_asked(
+def test_the_report_counts_what_changed_and_names_the_file(
     run: CliRunner, isolated: Path
 ):
-    """Five questions are asked either way. Reporting five settings
-    configured for a file that sets one is a claim about disk that is false.
-    """
+    """Every setting is written either way, so the count is of what the
+    answers changed, and the file is named so the reader knows what was
+    replaced."""
     kept = run.invoke(main, ["config", "init"], input="\n" * 20)
     assert kept.exit_code == 0, kept.output
-    assert "Configured" not in kept.output
     assert "Changed nothing" in kept.output
-    assert not (isolated / "config.toml").exists()
+    assert "config.toml" in kept.output
 
-    one = run.invoke(main, ["config", "init"], input="none\n" + "\n" * 20)
+    one = run.invoke(main, ["config", "init"], input="y\nnone\n" + "\n" * 20)
     assert one.exit_code == 0, one.output
-    assert "Configured 1 setting" in one.output
-    assert set(settings_in((isolated / "config.toml").read_text(encoding="utf-8"))) == {
-        "embedding.backend"
-    }
+    assert "Changed 1 setting" in one.output
 
 
 def test_the_setup_closes_by_naming_the_next_command(run: CliRunner):

@@ -33,10 +33,13 @@ from kennis.engine.errors import SettingsError
 from kennis.engine.settings import (
     EMBEDDING_DEFAULTS,
     Settings,
+    config_document,
     config_path,
     credential,
     credentials_path,
     load_settings,
+    section_models,
+    toml_value,
 )
 
 type QuestionKind = Literal["choice", "text", "integer", "boolean", "secret"]
@@ -49,7 +52,7 @@ class Question:
     Facts only, per #81: the key it sets, what kind of value it takes, what
     is currently in effect, and the constraints. `description` is the
     pydantic field's own, which is schema metadata rather than composed
-    prose - the same text `config_template` emits, for the same reason.
+    prose - the same text `config_document` emits, for the same reason.
 
     `when` is a conjunction of `(key, value)` pairs over the answers given so
     far. A value rather than a callback, so a form can evaluate it to decide
@@ -419,37 +422,38 @@ def _as_typed(field: FieldInfo, value: str) -> object:
 
 
 def _write_config(values: Mapping[str, str]) -> None:
-    """Merge `values` into the config file, keeping everything else.
+    """Write the whole file: every section's defaults, then what the file
+    holds, then `values`.
 
-    Read, merge, write - rather than dumping the whole settings model, which
-    would write every default as an active value and freeze it at the moment
-    the setup was run. `config_template`'s comment about that is the reason.
+    Every setting is written, including one at its default, so the file
+    says what is in use and can be synced (Brian, 2026-10-12). **The
+    environment is not a source**: a variable exported for one shell would
+    otherwise outlive it, so each section is read through its own model,
+    which does not consult the environment as `Settings` does. A key the
+    model no longer has is dropped; kennis keeps no compatibility before
+    v1.0.0.
     """
-    if not values:
-        # Nothing to merge, so nothing is written. Without this a setup where
-        # every answer was left unchanged - the ordinary re-run, and the
-        # ordinary first run for somebody happy with the defaults - created a
-        # 0-byte `config.toml`, which `config show` then found and printed
-        # verbatim. An empty file is worse than no file: with no file at all
-        # `show` prints the defaults and says where they came from.
-        return
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing: dict[str, dict[str, object]] = {}
+    held: dict[str, dict[str, object]] = {}
     if path.is_file():
-        existing = {
-            section: dict(values)
-            for section, values in tomllib.loads(
+        held = {
+            section: dict(entries)
+            for section, entries in tomllib.loads(
                 path.read_text(encoding="utf-8")
             ).items()
-            if isinstance(values, dict)
+            if isinstance(entries, dict)
         }
 
     for key, value in values.items():
         section, _, name = key.partition(".")
-        existing.setdefault(section, {})[name] = _as_typed(_field_of(key), value)
+        held.setdefault(section, {})[name] = _as_typed(_field_of(key), value)
 
-    path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
+    complete = {
+        section: model.model_validate(held.get(section, {})).model_dump()
+        for section, model in section_models().items()
+    }
+    path.write_text(config_document(complete), encoding="utf-8", newline="\n")
 
 
 def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
@@ -491,17 +495,9 @@ def _as_toml_document(sections: Mapping[str, Mapping[str, object]]) -> str:
             continue
         lines.append(f"[{section}]")
         for name in sorted(sections[section]):
-            lines.append(f"{name} = {_as_toml_value(sections[section][name])}")
+            lines.append(f"{name} = {toml_value(sections[section][name])}")
         lines.append("")
     return "\n".join(lines)
-
-
-def _as_toml_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int | float):
-        return str(value)
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 __all__ = [

@@ -24,8 +24,8 @@ from kennis.engine.errors import SettingsError
 from kennis.engine.setting_costs import COSTED, costs_of
 from kennis.engine.settings import (
     Settings,
+    config_document,
     config_path,
-    config_template,
     credentials_path,
     load_settings,
 )
@@ -70,7 +70,7 @@ def show_command() -> None:
     """
     path = config_path()
     settings = _settings_in(path)
-    display.toml(settings if settings else config_template())
+    display.toml(settings if settings else config_document())
     if settings:
         return
     display.note(
@@ -141,10 +141,14 @@ def init_command(defaults: bool) -> None:
     """Set kennis up, asking only what depends on you.
 
     Re-runnable: every question offers what is currently in effect, so
-    pressing return throughout changes nothing.
+    pressing return throughout keeps every value. Either way the whole file
+    is written, every setting included, and an existing one is replaced
+    only once you say so.
     """
+    if not _may_replace(config_path()):
+        return
     if defaults:
-        _write_template()
+        _write_defaults()
         return
 
     display.using(f"configuration at {config_path()}")
@@ -178,19 +182,18 @@ def init_command(defaults: bool) -> None:
         answers[question.key] = _ask(question)
 
     apply_answers(answers)
-    # The count is of what was *written*, not of what was asked. An unchanged
-    # answer writes nothing, so counting questions would report five settings
-    # configured for a file that sets none.
+    # Every setting is written either way, so the count is of what the
+    # answers changed. An empty answer is one left as it was.
     changed = {key: value for key, value in answers.items() if value}
     if changed:
-        display.operation("Configured", count_of(len(changed), "setting"))
+        display.operation("Changed", count_of(len(changed), "setting"))
     else:
-        # "Configured 0 settings" reads as a failure to someone who
-        # deliberately kept everything. Not "every default" either: on a
-        # re-run what is kept is the previous answers, which are not defaults.
+        # Not "every default": on a re-run what is kept is the previous
+        # answers, which are not defaults.
         display.operation("Changed", "nothing")
     for key, value in sorted(changed.items()):
         display.detail("~", describe_setting(key, _hidden_if_secret(key, value)))
+    display.operation("Wrote", f"every setting to {config_path()}")
     if any(key.endswith(".api_key") for key in changed):
         display.detail(" ", f"credentials written to {credentials_path()}")
     display.next_step("kennis corpus init", note="to create the corpus")
@@ -219,8 +222,8 @@ def _ask(question: Question) -> str:
         )
         value = answered.strip()
         if value == question.current:
-            # Unchanged is the same as unanswered: nothing is written for it,
-            # so a later kennis that improves the default still reaches them.
+            # Unchanged is reported as unchanged. The file holds it either
+            # way, because every setting is written.
             return ""
         problem = validate_answer(question, value)
         if problem is None:
@@ -271,14 +274,29 @@ def _hidden_if_secret(key: str, value: str) -> str:
     return "(set)" if key.endswith(".api_key") else value
 
 
-def _write_template() -> None:
+def _may_replace(path: Path) -> bool:
+    """Whether to go on, asking first when a file is already there.
+
+    The whole file is replaced, comments and hand edits included, so this
+    is asked before any question rather than discovered after them.
+    """
+    if not path.is_file():
+        return True
+    display.note(
+        f"{path} will be replaced: every setting is written, including those "
+        "at their default, and anything edited in it by hand is lost"
+    )
+    if click.confirm(f"{_QUESTION_INDENT}replace it?", default=False):
+        return True
+    display.operation("Kept", str(path))
+    return False
+
+
+def _write_defaults() -> None:
     path = config_path()
-    if path.is_file():
-        display.note(f"{path} already exists and was left alone")
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(config_template(), encoding="utf-8", newline="\n")
-    display.operation("Wrote", str(path))
+    path.write_text(config_document(), encoding="utf-8", newline="\n")
+    display.operation("Wrote", f"every setting at its default to {path}")
 
 
 def _section_values(settings: Settings, section: str) -> dict[str, object]:
