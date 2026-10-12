@@ -11,8 +11,10 @@ server never read them; kennis's own settings are written through
 `engine/setup.py` and are milestone 12's other half.
 
 The words are in `gui/words.py`; this module holds the values and the
-defaults, and the default is always what the window did before there was
-a choice.
+defaults. A default needs no CSS rule: it is the layout without the
+attribute. That was what the window did before there was a choice, with
+one exception - the text width fits the pane by default, and the
+reading measure it had before is a choice (Brian, 2026-10-12).
 """
 
 from __future__ import annotations
@@ -69,6 +71,7 @@ PREFERENCES: Final[dict[str, Preference]] = {
         _preference("face", "serif", "appearance"),
         _preference("size", "normal", "appearance"),
         _preference("spacing", "normal", "appearance"),
+        _preference("width", "pane", "appearance"),
         _preference("strength", "bars", "results"),
         _preference("labels", "icons", "results"),
         _preference("scale", "viridis", "results"),

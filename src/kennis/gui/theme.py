@@ -445,6 +445,11 @@ _LAYOUT = """\
   --gap: 1.75rem;
   /* Under 70 characters of the column face at 1.0625rem. */
   --measure: 33rem;
+  /* What the text is set at and what the column is centred in: the
+     whole pane unless the width preference says otherwise (Brian,
+     2026-10-12). `none` is what `max-width` takes for no limit. */
+  --text: none;
+  --frame: none;
   --column: 'Source Serif 4', Charter, Cambria, Georgia, serif;
   /* Two faces, divided by the rule the interface already uses.
      `--gutter` is what kennis composed - provenance, counts,
@@ -908,7 +913,7 @@ details.menu[open] > .menu-button { opacity: 1; }
 main {
   grid-area: main;
   overflow-y: auto;
-  padding: 2rem 1.5rem 4rem;
+  padding: 1.25rem 1.5rem 4rem;
   min-width: 0;
   /* The containing block for what is positioned inside it. Without
      this a visually hidden label deep in a long document was placed
@@ -922,7 +927,7 @@ main {
    rule setting a child's `margin` shorthand - `h1` among them, which
    left the corpus page's heading beside its table rather than above. */
 .column {
-  max-width: calc(var(--margin) + var(--gap) + var(--measure));
+  max-width: var(--frame);
   margin: 0 auto;
   /* The spacing preference, on what is read rather than on the whole
      window: wider letters in the bar would only crowd it. */
@@ -954,6 +959,13 @@ main {
   --leading: 2;
   --tracking: 0.04em;
   --word-gap: 0.16em;
+}
+/* The reading measure is the width the window had before there was a
+   choice; wide is about a hundred characters of the column face. */
+:root[data-width="wide"] { --text: 56rem; --frame: 56rem; }
+:root[data-width="reading"] {
+  --text: var(--measure);
+  --frame: calc(var(--margin) + var(--gap) + var(--measure));
 }
 :root[data-strength="words"] .cells { display: none; }
 :root[data-labels="icons"] .measure-name { display: none; }
@@ -1343,7 +1355,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   align-items: baseline;
   margin: 0 0 0.35rem;
 }
-.key p { margin: 0.5rem 0 0; max-width: var(--measure); }
+.key p { margin: 0.5rem 0 0; max-width: var(--text); }
 
 /* How many were found and for what, with the order beside it. */
 .results-head {
@@ -1355,7 +1367,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   font-family: var(--gutter);
   font-size: 0.8125rem;
   margin: 0 0 1rem;
-  max-width: var(--measure);
+  max-width: var(--text);
 }
 .results-head .summary { margin: 0; color: var(--role-muted); }
 
@@ -1426,7 +1438,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   margin: 2rem 0 0;
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--ink);
-  max-width: var(--measure);
+  max-width: var(--text);
 }
 .group-head .count { font-weight: 400; color: var(--role-muted); }
 .group-head + .results > .hit:first-child { border-top: 0; }
@@ -1435,7 +1447,7 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .hit {
   padding: 1rem 0 1.25rem;
   border-top: 1px solid var(--rule);
-  max-width: var(--measure);
+  max-width: var(--text);
   transition: opacity 0.2s ease, translate 0.2s ease;
 }
 .hit > * { margin: 0 0 0.4rem; }
@@ -1476,7 +1488,17 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .cell.on[data-step="5"] { background: var(--strength-5); }
 
 .heading { display: flex; align-items: baseline; gap: 0.4rem; }
-.hit .title { color: var(--role-operation); font-weight: 600; text-decoration: none; }
+/* The document's title, in kennis's face: the passage under it is the
+   document's, in the reading face, so the two are told apart before
+   either is read. */
+.hit .title {
+  font-family: var(--gutter);
+  font-size: 0.975rem;
+  line-height: 1.35;
+  color: var(--role-operation);
+  font-weight: 600;
+  text-decoration: none;
+}
 .hit .title:hover, .hit .title:focus-visible { text-decoration: underline; }
 .open { color: var(--role-muted); }
 .open:hover, .open:focus-visible { color: var(--brand); }
@@ -1503,6 +1525,32 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   transition: border-color 0.25s ease;
 }
 .passage .full > * > :first-child { margin-top: 0; }
+/* The card's header: which section of the document the passage is from,
+   over a hairline that runs to the card's edges. */
+.passage .full .passage-section {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: -0.75rem -1rem 0.65rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+/* A chunk that was only its heading is the header alone. */
+.passage .full:has(> .body:empty) .passage-section {
+  border-bottom: 0;
+  margin-bottom: -0.8rem;
+}
+.passage-section .icon {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  align-self: center;
+  opacity: 0.55;
+}
 .passage .full p { margin: 0 0 0.7rem; }
 .passage .full :is(h1, h2, h3, h4, h5, h6) {
   font-size: 1em;
@@ -1603,7 +1651,7 @@ h1 { font-size: 1.75rem; margin: 0 0 1.25rem; }
 h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; }
 h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
 
-article { max-width: var(--measure); }
+article { max-width: var(--text); }
 article h1 { margin: 0 0 0.5rem; }
 article p { margin: 0 0 1rem; }
 article img { max-width: 100%; height: auto; }

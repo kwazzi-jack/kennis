@@ -581,3 +581,61 @@ def test_a_table_never_fits_a_closed_passage():
 
 def test_the_readers_words_are_their_own_words():
     assert terms_of("  antenna   gains ") == ("antenna", "gains")
+
+
+# ---------------------------------------------------------------------------
+# A passage's section, as the card's header
+# ---------------------------------------------------------------------------
+
+
+def test_a_leading_heading_that_is_the_section_moves_to_the_header():
+    """The card's header says the section; the passage need not say it
+    again under it."""
+    body = "## Deposition\n\nRivers carry antenna sediment.\n"
+
+    parts = passage_html(body, terms=["antenna"], fits=1000, section="Deposition")
+
+    assert parts.heading == "Deposition"
+    assert "<h2" not in parts.lead + parts.body
+    assert "<mark>antenna</mark>" in parts.body
+
+
+def test_a_heading_that_is_not_the_section_stays_in_the_passage():
+    body = "## Erosion\n\nRivers carry sediment.\n"
+
+    parts = passage_html(body, terms=[], fits=1000, section="Deposition")
+
+    assert parts.heading == "Deposition"
+    assert "<h2>Erosion</h2>" in parts.lead + parts.body
+
+
+def test_only_a_leading_heading_is_moved():
+    body = "Rivers carry sediment.\n\n## Deposition\n\nMore.\n"
+
+    parts = passage_html(body, terms=[], fits=1000, section="Deposition")
+
+    assert "<h2>Deposition</h2>" in parts.lead + parts.body
+
+
+def test_the_header_is_escaped_and_marked():
+    parts = passage_html(
+        "Text.\n", terms=["antenna"], fits=1000, section="Antenna <gains>"
+    )
+
+    assert parts.heading == "<mark>Antenna</mark> &lt;gains&gt;"
+
+
+def test_a_passage_without_a_section_has_no_header():
+    assert passage_html(THREE_BLOCKS, terms=[], fits=1000).heading == ""
+
+
+def test_a_chunk_that_is_only_its_section_heading_is_an_empty_passage():
+    """The corpus holds such chunks; with the heading moved to the header
+    nothing is left, and that has to be an empty passage, not an error."""
+    parts = passage_html(
+        "## Deposition\n", terms=["deposition"], fits=1000, section="Deposition"
+    )
+
+    assert (parts.lead, parts.body) == ("", "")
+    assert parts.heading == "<mark>Deposition</mark>"
+    assert parts.fits

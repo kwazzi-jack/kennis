@@ -202,11 +202,15 @@ class PassageHtml:
     block, a display equation - whose height its characters do not say.
     It counts the lead too, since a passage that fits shows its lead; a
     note's title heading alone is no reason to offer an opening.
+
+    `heading` is the section the passage is from, escaped and marked, for
+    the card's header; empty when there is no section to name.
     """
 
     lead: str
     body: str
     fits: bool
+    heading: str = ""
 
 
 # Blocks whose height is not their length in characters.
@@ -215,16 +219,30 @@ _TALL: Final = frozenset(
 )
 
 
-def passage_html(markdown: str, *, terms: Sequence[str], fits: int) -> PassageHtml:
+def passage_html(
+    markdown: str, *, terms: Sequence[str], fits: int, section: str | None = None
+) -> PassageHtml:
     """`markdown` rendered as `to_html` would, in two parts (#454).
 
     The part is decided after marking, by where a mark was drawn, so a
     term that occurs only in a link's address - which the reader never
     sees - does not move it. With no mark at all everything is `body`:
     a hit found by meaning alone is shown from its start.
+
+    A `section` is the card's header, so a heading opening the passage
+    with the same words is dropped from the tokens rather than said
+    twice. Only the first block and only the same words: any other
+    heading is text the reader has not been shown elsewhere.
     """
     parser = _parser(load_remote_images=False)
     tokens = parser.parse(markdown)
+    if (
+        section
+        and len(tokens) >= 3
+        and tokens[0].type == "heading_open"
+        and tokens[1].content.strip() == section.strip()
+    ):
+        tokens = tokens[3:]
     pattern = query_pattern(terms)
     if pattern is not None:
         _mark_text(tokens, pattern)
@@ -234,7 +252,7 @@ def passage_html(markdown: str, *, terms: Sequence[str], fits: int) -> PassageHt
     first = next(
         (
             start
-            for start, end in zip(starts, [*starts[1:], len(tokens)], strict=True)
+            for start, end in pairwise([*starts, len(tokens)])
             if any(_holds_a_mark(token) for token in tokens[start:end])
         ),
         0,
@@ -244,6 +262,13 @@ def passage_html(markdown: str, *, terms: Sequence[str], fits: int) -> PassageHt
         lead=str(parser.renderer.render(tokens[:first], parser.options, {})),
         body=str(parser.renderer.render(tokens[first:], parser.options, {})),
         fits=length <= fits and not any(token.type in _TALL for token in tokens),
+        heading=(
+            ""
+            if not section
+            else _escaped(section)
+            if pattern is None
+            else marked_text(section, pattern)
+        ),
     )
 
 

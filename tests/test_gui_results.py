@@ -147,14 +147,30 @@ def test_the_command_line_says_keywords_too(corpus: Path):
     assert "lexical as" not in printed.output
 
 
-def test_the_title_is_the_headline_without_its_rank():
+def test_the_title_and_section_are_the_headline_without_its_rank():
+    """Two values, so the window can set the section apart; the command
+    line's headline is still the two joined."""
     hit = Hit(collection="notes", result=a_result(bm25_score=4.0), model=None)
 
     rendered = rendered_hit(hit, rank=3, style="human", best=4.0, snippet="none")
 
     assert rendered.headline == "[3] Rivers - Deposition"
-    assert rendered.title == "Rivers - Deposition"
+    assert rendered.document_title == "Rivers"
+    assert rendered.section == "Deposition"
     assert rendered.measures == (("lexical", "very high"),)
+
+
+def test_a_section_that_only_repeats_the_title_is_none():
+    hit = Hit(
+        collection="notes",
+        result=a_result(bm25_score=4.0, title="deposition"),
+        model=None,
+    )
+
+    rendered = rendered_hit(hit, rank=1, style="human", best=4.0, snippet="none")
+
+    assert rendered.section is None
+    assert rendered.headline == "[1] deposition"
 
 
 def test_the_mode_control_names_the_search_by_what_it_matches():
@@ -201,9 +217,41 @@ def test_the_title_is_the_command_lines_headline_less_its_rank(
     page = hits_of(client, "antenna")
 
     assert headlines, printed.output
-    for headline in headlines:
-        title = re.sub(r"^\[\d+\] ", "", headline)
-        assert f">{title}</a>" in page, title
+    shown = []
+    for item in items_of(page):
+        hit = BeautifulSoup(item, "html.parser")
+        title = hit.find("a", class_="title")
+        section = hit.find(class_="passage-section")
+        assert isinstance(title, Tag)
+        parts = [title.get_text(strip=True)]
+        if isinstance(section, Tag):
+            parts.append(section.get_text(strip=True))
+        shown.append(" - ".join(parts))
+    assert shown == [re.sub(r"^\[\d+\] ", "", line) for line in headlines]
+
+
+def test_the_section_heads_its_passage_and_is_not_repeated_in_it(
+    corpus: Path, client: TestClient
+):
+    """Brian, 2026-10-12: easier "to understand per chunk". The card
+    says which section it is from, first, over its text; the title
+    above it is the document's alone, so two hits from one document
+    differ where they differ."""
+    a_note(corpus, "rivers", "## Deposition\n\nRivers carry antenna sediment.")
+
+    item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
+    title = item.find("a", class_="title")
+    card = item.select_one(".passage .full")
+
+    assert isinstance(title, Tag) and title.get_text(strip=True) == "rivers"
+    assert isinstance(card, Tag)
+    first = card.find(recursive=False)
+    assert isinstance(first, Tag) and "passage-section" in (first.get("class") or [])
+    assert first.get_text(strip=True) == "Deposition"
+    assert first.find("svg") is not None
+    assert "Deposition" not in "".join(
+        heading.get_text() for heading in card.find_all(["h1", "h2", "h3"])
+    )
 
 
 def test_the_measures_come_before_the_title(corpus: Path, client: TestClient):
@@ -894,3 +942,18 @@ def test_a_title_is_drawn_in_the_operation_colour(client: TestClient):
     css = client.get("/static/kennis.css").text
 
     assert re.search(r"\.hit \.title\s*\{[^}]*color: var\(--role-operation\)", css)
+
+
+def test_the_title_is_kennis_s_and_the_passage_the_document_s(client: TestClient):
+    """The title is set in the interface's face, the passage in the
+    reading face, so the two are told apart before either is read."""
+    css = client.get("/static/kennis.css").text
+    title = re.search(r"^\.hit \.title \{([^}]*)\}", css, re.M)
+    header = re.search(r"^\.passage \.full \.passage-section \{([^}]*)\}", css, re.M)
+
+    assert title and "font-family: var(--gutter)" in title.group(1)
+    assert header and "font-family: var(--gutter)" in header.group(1)
+    assert "border-bottom: 1px solid var(--rule)" in header.group(1)
+    # Out to the card's edges; `.passage .full p` sets a margin too, and
+    # a header rule less specific than it loses the negative one.
+    assert "margin: -0.75rem -1rem" in header.group(1)

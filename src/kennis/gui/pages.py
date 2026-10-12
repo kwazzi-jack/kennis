@@ -125,7 +125,8 @@ class ShownMeasure:
 class ShownHit:
     """One hit, in the pieces a page arranges.
 
-    `title` and `handle` come from `render/hits.py::rendered_hit`, and
+    `title` (the document's; the section heads the passage) and `handle`
+    come from `render/hits.py::rendered_hit`, and
     each measure is a band that function also printed into `detail`,
     so what is read here is what `kennis search` prints and what an
     agent is handed - arranged, not reworded. There is no rank: in a
@@ -188,7 +189,7 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
         rendered = rendered_hit(hit, rank=rank, style=style, best=best, snippet="none")
         shown.append(
             ShownHit(
-                title=rendered.title,
+                title=rendered.document_title,
                 measures=shown_measures(rendered.measures),
                 # The handle is the last field of `detail` in every
                 # style, which is the line `kennis read` takes.
@@ -199,7 +200,10 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
                 # paragraph after it are one line and a markdown
                 # parse would make a heading of both.
                 passage=passage_html(
-                    hit.result.chunk.text, terms=terms, fits=_PASSAGE_FITS
+                    hit.result.chunk.text,
+                    terms=terms,
+                    fits=_PASSAGE_FITS,
+                    section=rendered.section,
                 ),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
