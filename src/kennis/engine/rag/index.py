@@ -164,6 +164,13 @@ def build_index(
     started_at = time.monotonic()
     collection_root = index_root / loader.name
 
+    # **Read before the documents are, never after.** The corpus lock is
+    # released during a build (#167), so a note can be committed between
+    # loading and publishing. Recorded at publish, that commit would count
+    # as indexed: freshness diffs from `built_from`, so the note would never
+    # be reported as missing, and an edit made meanwhile never as stale.
+    # Read first, anything committed during the build is a change since it.
+    built_from = repository.head() if repository else None
     documents = loader.documents(events=events)
     chunked = [
         (
@@ -189,7 +196,7 @@ def build_index(
             embedder=embedder,
             events=events,
             embed_batch_size=embed_batch_size,
-            repository=repository,
+            built_from=built_from,
             started_at=started_at,
         )
 
@@ -205,7 +212,7 @@ def _publish(
     embedder: Embedder | None,
     events: EventSink | None,
     embed_batch_size: int,
-    repository: Repository | None,
+    built_from: str | None,
     started_at: float,
 ) -> BuildReport:
     """Everything that writes, with this collection's index lock held.
@@ -237,7 +244,7 @@ def _publish(
                     # The commit this index was built from. Freshness is a
                     # diff between it and HEAD, which is O(changed files)
                     # rather than O(corpus).
-                    "built_from": repository.head() if repository else None,
+                    "built_from": built_from,
                     "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     # The digests a later staleness check compares against
                     # the corpus: there is one notion of "this document's

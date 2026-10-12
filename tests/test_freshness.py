@@ -12,10 +12,20 @@ from pathlib import Path
 
 import pytest
 
+from kennis.engine.corpus.collection import Collection
+from kennis.engine.events import EventSink
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.repository import Repository, initialise_corpus
-from kennis.engine.rag.binding import document_digest
+from kennis.engine.rag.binding import binding_from, document_digest
+from kennis.engine.rag.index import build_index, read_manifest
+from kennis.engine.rag.loaders import CollectionLoader
+from kennis.engine.rag.models import Document
+from kennis.engine.remember import remember
+from kennis.engine.settings import ChunkingSettings, EmbeddingSettings
+
+# Lexical, so a build downloads no model.
+_LEXICAL = binding_from(ChunkingSettings(), EmbeddingSettings(backend="none"))
 
 
 @pytest.fixture
@@ -363,3 +373,52 @@ def test_without_a_manifest_the_diff_is_trusted_as_before(corpus: Path):
     )
 
     assert report.added == 1
+
+
+# ---------------------------------------------------------------------------
+# A build the corpus moved under
+# ---------------------------------------------------------------------------
+
+
+class _WrittenDuringTheLoad(CollectionLoader):
+    """A loader that, once it has read the collection, does what a
+    `remember` does while `build_indexes` has released the corpus lock
+    (#167): writes a note and commits it."""
+
+    def __init__(self, collection: Collection, corpus: Path) -> None:
+        super().__init__(collection)
+        self._corpus = corpus
+
+    def documents(self, *, events: EventSink | None = None) -> list[Document]:
+        read = super().documents(events=events)
+        remember(self._corpus, "Written during the build.", binding=_LEXICAL)
+        committed(self._corpus)
+        return read
+
+
+def test_a_note_committed_during_a_build_is_counted_as_added(corpus: Path):
+    """The index records the commit it was built from when it starts to
+    read, so a note committed while it ran is one it does not hold - and
+    says so, rather than calling itself in step with a corpus it is
+    missing a document of."""
+    remember(corpus, "Written before the build.", binding=_LEXICAL)
+    committed(corpus)
+    notes = Collection(root=corpus, name="notes")
+
+    build_index(
+        _WrittenDuringTheLoad(notes, corpus),
+        index_root=corpus / "index",
+        binding=_LEXICAL,
+        repository=Repository(corpus),
+    )
+
+    manifest = read_manifest(corpus / "index", "notes")
+    assert manifest is not None
+    found = index_freshness(
+        Repository(corpus),
+        collection="notes",
+        built_from=manifest.built_from,
+        indexed=manifest.documents,
+    )
+    assert len(manifest.documents) == 1
+    assert found.added == 1
