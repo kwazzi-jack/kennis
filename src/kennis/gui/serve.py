@@ -22,11 +22,12 @@ import threading
 import time
 import webbrowser
 from collections.abc import Callable
-from typing import Final
+from typing import Final, Protocol
 
 import uvicorn
 
 from kennis.gui.app import build_app, new_token
+from kennis.gui.jobs import Jobs
 
 # Loopback, spelled out. Not `localhost`, which resolves through the
 # host file and can be made to mean something else, and never `0.0.0.0`,
@@ -39,7 +40,16 @@ HOST: Final = "127.0.0.1"
 ANY_PORT: Final = 0
 
 
-def run(on_ready: Callable[[str], None], *, open_browser: bool = True) -> None:
+def _say_nothing(kind: str) -> None:
+    """The default for `on_busy`: a caller that says nothing."""
+
+
+def run(
+    on_ready: Callable[[str], None],
+    *,
+    open_browser: bool = True,
+    on_busy: Callable[[str], None] = _say_nothing,
+) -> None:
     """Serve until the page asks to quit or the user interrupts.
 
     `on_ready` is handed the address **before** this blocks, and that
@@ -55,13 +65,16 @@ def run(on_ready: Callable[[str], None], *, open_browser: bool = True) -> None:
     terminal kennis is printing to.
 
     This module is not a front end's voice, so it hands the address
-    over and the command decides what is said about it.
+    over and the command decides what is said about it - and the same
+    for `on_busy`, handed the running job's kind when a Ctrl-C arrives
+    during it (#422).
     """
     token = new_token()
     quitting = threading.Event()
+    app = build_app(token, on_quit=quitting.set)
     server = uvicorn.Server(
         uvicorn.Config(
-            build_app(token, on_quit=quitting.set),
+            app,
             host=HOST,
             port=ANY_PORT,
             log_level="warning",
@@ -79,7 +92,7 @@ def run(on_ready: Callable[[str], None], *, open_browser: bool = True) -> None:
     try:
         if open_browser:
             _open_quietly(url)
-        _wait_for_quit(quitting)
+        _wait_for_quit(quitting, app.state.jobs, on_busy)
     finally:
         server.should_exit = True
         thread.join(timeout=5)
@@ -129,13 +142,33 @@ def _port_of(server: uvicorn.Server, timeout: float = 10.0) -> int:
     raise RuntimeError("the interface did not start listening")
 
 
-def _wait_for_quit(quitting: threading.Event) -> None:
+class _Waitable(Protocol):
+    def wait(self, timeout: float | None = None) -> bool: ...
+
+
+def _wait_for_quit(
+    quitting: _Waitable, jobs: Jobs, on_busy: Callable[[str], None]
+) -> None:
     """Block until the page asks to quit, or until Ctrl-C.
 
     Closing a tab does not end this process - the server cannot tell a
     closed tab from a reader who has gone to make tea - so one of these
     two has to.
+
+    **A Ctrl-C during a job is asked twice** (#422). Quit refuses while
+    a job runs, because the job is a daemon thread that may be inside
+    the corpus lock or between writing a document and committing it;
+    the first Ctrl-C says so and keeps serving, and a second ends the
+    process wherever the job is, as the reader has then been told.
     """
+    try:
+        quitting.wait()
+        return
+    except KeyboardInterrupt:
+        running = jobs.running()
+        if running is None:
+            return
+        on_busy(running.kind)
     try:
         quitting.wait()
     except KeyboardInterrupt:

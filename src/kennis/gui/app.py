@@ -224,6 +224,14 @@ _TEMPLATES.env.globals.update(
         "settings_heading": words.SETTINGS_HEADING,
         "packs_heading": words.PACKS_HEADING,
         "documents_held": words.documents_held,
+        "index_every": words.INDEX_EVERY,
+        "remember_targets": words.REMEMBER_TARGETS,
+        # Every job's outcome redraws these where the page has them (#457).
+        "shell_redraws": (
+            ("strip-status", "/strip/status"),
+            ("pane-documents", "/pane/documents"),
+            *((f"pane-row-{name}", f"/pane/row/{name}") for name in COLLECTION_NAMES),
+        ),
         "palette_shortcut": words.PALETTE_SHORTCUT,
         "close_label": words.CLOSE,
         "collection_icons": words.COLLECTION_ICONS,
@@ -927,6 +935,28 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             )
         return _TEMPLATES.TemplateResponse(
             request, "outcome.html", {"outcome": outcome}
+        )
+
+    @app.get("/strip/status")
+    async def serve_strip_status(request: Request) -> HTMLResponse:
+        """The strip's status line alone, for a finished job (#457)."""
+        return _TEMPLATES.TemplateResponse(request, "strip-status.html", {})
+
+    @app.get("/pane/documents")
+    async def serve_pane_documents(request: Request) -> HTMLResponse:
+        """The pane's document count alone, for a finished job (#457)."""
+        return _TEMPLATES.TemplateResponse(
+            request, "pane-documents.html", {"pane": pane_now()}
+        )
+
+    @app.get("/pane/row/{collection}")
+    async def serve_pane_row(request: Request, collection: str) -> HTMLResponse:
+        """One collection's row in the pane, for a finished job (#457)."""
+        rows = {row.collection: row for row in pane_now().collections}
+        if collection not in rows:
+            return HTMLResponse("", status_code=404)
+        return _TEMPLATES.TemplateResponse(
+            request, "pane-row.html", {"row": rows[collection]}
         )
 
     @app.get("/revision")

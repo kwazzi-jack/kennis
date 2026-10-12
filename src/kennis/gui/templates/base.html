@@ -92,7 +92,7 @@
 
 <nav class="pane" aria-label="{{ corpus_heading }}">
   <section>
-    <h2 class="pane-head"><a href="/corpus">{{ corpus_heading }}</a>{% if pane.readable %} <span class="count">{{ documents_held(pane.documents) }}</span>{% endif %}</h2>
+    <h2 class="pane-head"><a href="/corpus">{{ corpus_heading }}</a>{% if pane.readable %} {% include "pane-documents.html" %}{% endif %}</h2>
     {% if not pane.readable %}
     <p class="role-error">{{ corpus_unreadable }}</p>
     {% endif %}
@@ -106,12 +106,7 @@
         {# `hx-disinherit`: the branch holds forms of its own, and each
            would otherwise inherit this target and swap into itself (#430). #}
         <details hx-get="/tree/{{ row.collection }}" hx-trigger="toggle once" hx-target="find .branch" hx-disinherit="*">
-          <summary class="node top">
-            {{ icon("chevron-right") }}{{ icon(collection_icons[row.collection]) }}
-            <a class="name" href="/collection/{{ row.collection }}">{{ row.collection }}</a>
-            <span class="count">{{ row.documents }}</span>
-            <span class="state state-{{ row.state }}" title="{{ pane_states[row.state] }}"><span class="visually-hidden">{{ pane_states[row.state] }}</span></span>
-          </summary>
+          {% include "pane-row.html" %}
           <div class="branch"></div>
         </details>
       </li>
@@ -174,15 +169,9 @@
      opened anywhere has somewhere to put its job (#405). #}
   {% set running = job_now(request) %}
   <div id="job" aria-live="polite">{% if running %}{% with job_id = running.id, kind = running.kind %}{% include "job.html" %}{% endwith %}{% endif %}</div>
-  {% if not running %}
-  {# Idle, the strip is a status line. Every word in it is Python's. #}
-  <p class="strip-status role-muted">
-    {% for text, role in strip_status(pane) %}<span{% if role %} class="role-{{ role }}"{% endif %}>{{ text }}</span>
-    {% endfor %}
-    {% set last = last_job(request) %}
-    {% if last %}<a href="{{ last[0] }}">{{ last[1] }}</a>{% endif %}
-  </p>
-  {% endif %}
+  {# Drawn while a job runs too, so a job that finishes on this page has
+     a status line to redraw (#457). #}
+  {% include "strip-status.html" %}
 </footer>
 <div id="dialog"></div>
 </body>

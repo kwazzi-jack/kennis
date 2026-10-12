@@ -1,0 +1,2 @@
+{# The corpus's document count at the pane's head (#457). #}
+<span id="pane-documents" class="count"{% if oob %} hx-swap-oob="true"{% endif %}>{{ documents_held(pane.documents) }}</span>

@@ -20,6 +20,7 @@ from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
+from kennis.gui import words
 from kennis.gui.app import build_app
 
 TOKEN = "a-test-token"
@@ -161,3 +162,26 @@ def test_a_pressed_segment_is_the_checked_radios_label(client: TestClient):
     hidden = rule_for(css, '.segmented input[type="radio"]')
     assert "opacity: 0" in hidden and "display: none" not in hidden
     assert "outline" in rule_for(css, ".segmented label:has(input:focus-visible)")
+
+
+def test_the_forms_choices_are_worded_in_python(client: TestClient):
+    """#455: `forms/index.html` and `forms/remember.html` spelled their
+    choices in the markup, where every other word the window shows is in
+    `gui/words.py` (#345, #346)."""
+    templates = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
+    for name in ("forms/index.html", "forms/remember.html"):
+        source = (templates / name).read_text(encoding="utf-8")
+        for literal in ("every collection", "this project", ">notes<"):
+            assert literal not in source, (name, literal)
+
+    index = BeautifulSoup(client.get("/index").text, "html.parser")
+    every = index.find("input", attrs={"name": "collection", "value": ""})
+    assert isinstance(every, Tag)
+    assert every.find_parent("label").get_text(strip=True) == words.INDEX_EVERY
+
+    remember = BeautifulSoup(client.get("/remember").text, "html.parser")
+    labels = {
+        str(radio["value"]): radio.find_parent("label").get_text(strip=True)
+        for radio in remember.find_all("input", attrs={"name": "target"})
+    }
+    assert labels == dict(words.REMEMBER_TARGETS)

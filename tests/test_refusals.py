@@ -36,7 +36,11 @@ from kennis.engine.refusals import (
     SymlinkSkipped,
     UnsupportedFormat,
 )
-from kennis.render.refusals import describe_refusal, remedies_for_refusal
+from kennis.render.refusals import (
+    choices_for_refusal,
+    describe_refusal,
+    remedies_for_refusal,
+)
 
 # One of every member, so a test can be exhaustive without the union
 # being introspectable. `test_every_member_of_the_union_is_sampled`
@@ -243,3 +247,33 @@ def test_no_refusal_field_is_a_path():
         for member in fields(type(refusal)):
             value = getattr(refusal, member.name)
             assert not isinstance(value, Path), (refusal, member.name)
+
+
+def test_an_ambiguous_page_is_described_without_a_flag():
+    """#434: the sentence both front ends print said "settle it with
+    --identifier", which the window showed above a form doing exactly
+    that. A command never appears inside a sentence (#321, #322)."""
+    ambiguous = AmbiguousIdentity(
+        named="/tmp/paper.pdf", kind="arxiv", values=("2409.19750", "1101.1764")
+    )
+
+    sentence = describe_refusal(ambiguous)
+
+    assert "--" not in sentence
+    assert "2409.19750" in sentence and "1101.1764" in sentence
+
+
+def test_the_terminal_is_offered_every_candidate_and_chooses_none():
+    """The command line's counterpart of the window's radios, none
+    checked: one command per candidate, in the page's own order, each
+    runnable as printed. Every candidate, so none is chosen for the
+    reader - which is what a single `--identifier` remedy would do."""
+    ambiguous = AmbiguousIdentity(
+        named="/tmp/paper.pdf", kind="arxiv", values=("2409.19750", "1101.1764")
+    )
+
+    assert choices_for_refusal(ambiguous) == (
+        "kennis corpus add --identifier 2409.19750 /tmp/paper.pdf",
+        "kennis corpus add --identifier 1101.1764 /tmp/paper.pdf",
+    )
+    assert choices_for_refusal(NoIdentity(named="/tmp/paper.pdf")) == ()

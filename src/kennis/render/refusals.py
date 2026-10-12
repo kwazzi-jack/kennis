@@ -98,7 +98,7 @@ def describe_refusal(refusal: Refusal) -> str:
             return (
                 f"its first page offers more than one {kind} identifier "
                 f"({offered}) and kennis cannot tell which names the paper; "
-                f"settle it with --identifier, or add it as a note instead"
+                f"choose one, or add it as a note instead"
             )
         case NoPublisherText(kind=kind, value=value):
             # Deliberately not the wording of `NoIdentity`. That one
@@ -177,4 +177,24 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             return ()
 
 
-__all__ = ["describe_refusal", "remedies_for_refusal"]
+def choices_for_refusal(refusal: Refusal) -> tuple[str, ...]:
+    """One command per candidate, for the reader to choose among (#434).
+
+    Not a remedy: `remedies_for_refusal` holds what is right whichever
+    way the reader decides, and a single `--identifier` there would be
+    kennis deciding which paper this is. Every candidate, in the page's
+    order, is the terminal's form of the window's radios with none
+    checked; each runs as printed.
+    """
+    match refusal:
+        case AmbiguousIdentity(named=named, values=values):
+            return tuple(
+                f"kennis corpus add --identifier {quoted_for_this_shell(value)} "
+                f"{quoted_for_this_shell(named)}"
+                for value in values
+            )
+        case _:
+            return ()
+
+
+__all__ = ["choices_for_refusal", "describe_refusal", "remedies_for_refusal"]

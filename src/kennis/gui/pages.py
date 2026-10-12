@@ -204,6 +204,7 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
                     terms=terms,
                     fits=_PASSAGE_FITS,
                     section=rendered.section,
+                    title=rendered.document_title,
                 ),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
@@ -1141,11 +1142,12 @@ class ShownJob:
     notes: tuple[str, ...] = ()
     next_steps: tuple[str, ...] = ()
     role: str = "role-added"
-    # A part of the page the outcome changes, as (element id, route that
-    # draws it). The outcome asks for it again on arrival, where the page
-    # has one: a backup's section otherwise kept saying no backup had
-    # been written while the strip beside it said one had.
-    redraws: tuple[str, str] | None = None
+    # Parts of the page the outcome changes, as (element id, route that
+    # draws it). The outcome asks for each again on arrival, where the
+    # page has one: a backup's section otherwise kept saying no backup
+    # had been written while the strip beside it said one had. The
+    # strip's status and the pane are added for every job (#457).
+    redraws: tuple[tuple[str, str], ...] = ()
 
 
 def shown_add(report: AddReport) -> ShownJob:
@@ -1280,7 +1282,7 @@ def shown_backup(report: BackupReport) -> ShownJob:
     """A backup: where it was written, how large, and how many entries."""
     return ShownJob(
         headline=f"Backed up to {describe_written(report)}",
-        redraws=("backup", "/settings/backup"),
+        redraws=(("backup", "/settings/backup"),),
     )
 
 

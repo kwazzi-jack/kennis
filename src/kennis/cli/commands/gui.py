@@ -12,6 +12,7 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand
+from kennis.render.words import still_running_on_interrupt
 
 
 @click.command(cls=KennisCommand, name="gui")
@@ -40,7 +41,10 @@ def gui_command(no_browser: bool) -> None:
         display.guidance("The token is in the address and lasts for this run only.")
         display.guidance("Stop it with Quit in the page, or Ctrl-C here.")
 
-    run(announce, open_browser=not no_browser)
+    def warn(kind: str) -> None:
+        display.warning(still_running_on_interrupt(kind))
+
+    run(announce, open_browser=not no_browser, on_busy=warn)
 
 
 __all__ = ["gui_command"]

@@ -28,6 +28,9 @@ from fastapi.testclient import TestClient
 from kennis.cli.__main__ import main
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.jobs import Jobs
+from kennis.gui.serve import _wait_for_quit
+from kennis.render.words import still_running_on_interrupt
 
 TOKEN = "a-test-token"
 
@@ -167,7 +170,7 @@ def test_the_browser_is_opened_once_at_the_address_announced(
     announced: list[str] = []
     opened: list[str] = []
     monkeypatch.setattr(serving.webbrowser, "open", opened.append)
-    monkeypatch.setattr(serving, "_wait_for_quit", lambda quitting: None)
+    monkeypatch.setattr(serving, "_wait_for_quit", lambda *_: None)
 
     serving.run(announced.append)
 
@@ -184,7 +187,7 @@ def test_no_browser_opens_nothing(corpus: Path, monkeypatch: pytest.MonkeyPatch)
     announced: list[str] = []
     opened: list[str] = []
     monkeypatch.setattr(serving.webbrowser, "open", opened.append)
-    monkeypatch.setattr(serving, "_wait_for_quit", lambda quitting: None)
+    monkeypatch.setattr(serving, "_wait_for_quit", lambda *_: None)
 
     serving.run(announced.append, open_browser=False)
 
@@ -278,9 +281,82 @@ def test_run_opens_the_browser_quietly(corpus: Path, monkeypatch: pytest.MonkeyP
     # Replaced too, so that opening loudly fails this test rather than
     # starting the real browser.
     monkeypatch.setattr(serving.webbrowser, "open", loudly.append)
-    monkeypatch.setattr(serving, "_wait_for_quit", lambda quitting: None)
+    monkeypatch.setattr(serving, "_wait_for_quit", lambda *_: None)
 
     serving.run(lambda url: None)
 
     assert len(quietly) == 1
     assert loudly == []
+
+
+# ---------------------------------------------------------------------------
+# Ctrl-C with a job running (#422)
+# ---------------------------------------------------------------------------
+
+
+class Interrupted:
+    """An event whose waits are interrupted `times` times, then end."""
+
+    def __init__(self, times: int) -> None:
+        self.left = times
+        self.waits = 0
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waits += 1
+        if self.left:
+            self.left -= 1
+            raise KeyboardInterrupt
+        return True
+
+
+def jobs_with(running: bool) -> Jobs:
+    jobs = Jobs()
+    if running:
+        holding = threading.Event()
+        jobs.start("index", lambda events: holding.wait(2))
+    return jobs
+
+
+def test_ctrl_c_with_no_job_running_stops_at_once():
+    told: list[str] = []
+    quitting = Interrupted(times=1)
+
+    _wait_for_quit(quitting, jobs_with(running=False), told.append)
+
+    assert quitting.waits == 1
+    assert told == []
+
+
+def test_ctrl_c_with_a_job_running_says_so_and_waits_for_a_second():
+    """Quit refuses while a job runs, because the job is a daemon thread
+    that may be inside the corpus lock; Ctrl-C ended it wherever it was."""
+    told: list[str] = []
+    quitting = Interrupted(times=2)
+
+    # Caught here, because an interrupt escaping a test stops pytest's
+    # whole run rather than failing the test, and the run then reads as
+    # passing. `run` returns cleanly on the second, as on the first
+    # with no job.
+    try:
+        _wait_for_quit(quitting, jobs_with(running=True), told.append)
+    except KeyboardInterrupt:
+        pytest.fail("the second Ctrl-C escaped instead of ending the wait")
+
+    assert told == ["index"]
+    assert quitting.waits == 2, "the second Ctrl-C stops it"
+
+
+def test_after_the_warning_a_quit_from_the_page_still_stops_it():
+    told: list[str] = []
+    quitting = Interrupted(times=1)
+
+    _wait_for_quit(quitting, jobs_with(running=True), told.append)
+
+    assert told == ["index"]
+    assert quitting.waits == 2
+
+
+def test_the_command_line_words_the_warning():
+    said = still_running_on_interrupt("index")
+
+    assert "index" in said and "Ctrl-C" in said

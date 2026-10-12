@@ -7,7 +7,7 @@
   <div class="fields">
     <input type="text" name="title" placeholder="{{ title_hint }}">
     <input type="text" name="group" placeholder="{{ group_hint }}">
-    <span class="segmented" role="radiogroup"><label><input type="radio" name="target" value="notes" checked>notes</label><label><input type="radio" name="target" value="context">this project</label></span>
+    <span class="segmented" role="radiogroup">{% for value, label in remember_targets %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span>
   </div>
   <button type="submit">{{ action }}</button>
 </form>

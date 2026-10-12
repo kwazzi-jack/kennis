@@ -639,3 +639,24 @@ def test_a_chunk_that_is_only_its_section_heading_is_an_empty_passage():
     assert (parts.lead, parts.body) == ("", "")
     assert parts.heading == "<mark>Deposition</mark>"
     assert parts.fits
+
+
+def test_a_leading_heading_that_repeats_the_title_is_dropped_too():
+    """#426: a document's first chunk opens with its own title, which the
+    card's head already says; that chunk has no section, because the
+    section would only repeat the title."""
+    body = "# Rivers\n\nRivers carry antenna sediment.\n"
+
+    parts = passage_html(body, terms=["antenna"], fits=1000, title="Rivers")
+
+    assert "<h1" not in parts.lead + parts.body
+    assert parts.heading == ""
+    assert "<mark>antenna</mark>" in parts.body
+
+
+def test_a_title_heading_is_matched_regardless_of_case_as_the_head_is():
+    """`hit_title_parts` drops a section equal to the title in any case;
+    the passage drops the heading by the same rule."""
+    parts = passage_html("# rivers\n\nText.\n", terms=[], fits=1000, title="Rivers")
+
+    assert "<h1" not in parts.body
