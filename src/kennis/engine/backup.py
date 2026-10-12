@@ -3,9 +3,9 @@
 kennis talks to no service and configures no remote (#413, #420). The
 folder is often one a cloud client synchronises; kennis neither knows nor
 asks which. The archive is AES-256 with the names encrypted too, and holds
-the corpus folder with its `.git` but not `index/`. The published index
-is tracked, so `.git` holds it already; a restore checks it out rather
-than the archive carrying a second copy (#443).
+the corpus folder with its `.git` but not `index/`. The index is derived and
+only its pointer and binding are in history, so a restored corpus is
+indexed again before it is searched (#443).
 
 **The last good backup is never destroyed.** A backup is written beside it
 under a temporary name, opened again with the same password and tested,
@@ -75,18 +75,18 @@ class BackupCheck:
 
 @dataclass(frozen=True, slots=True)
 class RestoreReport:
+    """What a restore unpacked. The index is never among it: a restored
+    corpus is indexed before it is searched."""
+
     target: Path
     members: int
-    # Whether the index came back from the history. False for a corpus
-    # that was never indexed, which has to be indexed before a search.
-    index_restored: bool
 
 
 def members_of(corpus_root: Path) -> list[Member]:
     """Every directory and regular file the backup holds, in a stable order.
 
     Directories are members too, so a restored `.git` has the empty
-    directories git expects. Not `index/`, which the history holds, and
+    directories git expects. Not `index/`, which is rebuilt, and
     not the lock file, which is
     a fact about a running process rather than about the corpus. **A
     symbolic link is neither followed nor stored**: kennis never writes one,
@@ -211,13 +211,12 @@ def restore_backup(archive: Path, target: Path, password: str) -> RestoreReport:
         os.replace(staging / _TOP, target)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    # The published index is tracked, so it is in `.git` already and the
-    # archive need not hold a second copy. Checking it out makes the
-    # working tree agree with HEAD and the corpus searchable at once.
-    index_restored = Repository(target).restore(index_root(target).name)
-    return RestoreReport(
-        target=target, members=len(names), index_restored=index_restored
-    )
+    # The index's pointer and binding are tracked and were not in the
+    # archive, so they are checked out to leave the working tree agreeing
+    # with HEAD - a missing tracked file is what the next write would take
+    # for a deletion by hand. What they point at is built by `corpus index`.
+    Repository(target).restore(index_root(target).name)
+    return RestoreReport(target=target, members=len(names))
 
 
 def _stored_name(corpus_root: Path, path: Path) -> str:

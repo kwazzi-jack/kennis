@@ -378,6 +378,14 @@ def load_index(index_root: Path, collection: str) -> LoadedIndex:
         )
     index_id = str(json.loads(pointer_path.read_text(encoding="utf-8"))["index_id"])
     index_dir = collection_root / index_id
+    # Only the pointer and the binding are in history, so a corpus restored
+    # from a backup, or checked out afresh, names an index this machine has
+    # not built. That is an index to build, not a damaged one.
+    if not (index_dir / _CHUNKS_FILE).is_file():
+        raise NothingToIndex(
+            f"the '{collection}' collection's index has not been built here",
+            resolution=f"kennis corpus index --collection {collection}",
+        )
 
     chunks = [
         Chunk.model_validate_json(line)

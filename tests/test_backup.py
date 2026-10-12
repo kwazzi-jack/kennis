@@ -27,9 +27,15 @@ from kennis.engine.backup import (
     restore_backup,
     write_backup,
 )
-from kennis.engine.errors import BackupRefused, BackupUnreadable, CorpusBusy
+from kennis.engine.errors import (
+    BackupRefused,
+    BackupUnreadable,
+    CorpusBusy,
+    NothingToIndex,
+)
 from kennis.engine.events import Progress, Recorder
 from kennis.engine.locking import corpus_lock
+from kennis.engine.rag.index import load_index
 from kennis.operations import back_up_corpus
 
 PASSWORD = "correct horse battery staple"
@@ -255,11 +261,13 @@ def test_a_restored_corpus_is_the_corpus_with_its_history(
     note = next((target / "notes").rglob("*.md"))
     assert NOTE_TEXT in note.read_text(encoding="utf-8")
     assert git_in(target, "log", "--format=%H") == git_in(corpus, "log", "--format=%H")
-    # The index is not in the archive, but it is in the history: the
-    # restore checks it out, so the working tree agrees with HEAD.
+    # The index is not in the archive and only its pointer is in history:
+    # the restore checks the pointer out, so the working tree agrees with
+    # HEAD, and the index itself is built again before a search.
     assert git_in(target, "status", "--porcelain") == ""
-    assert restored.index_restored
     assert (target / "index" / "notes" / "latest.json").is_file()
+    with pytest.raises(NothingToIndex):
+        load_index(target / "index", "notes")
     assert (
         sorted(path.name for path in tmp_path.iterdir() if ".restoring-" in path.name)
         == []
@@ -373,7 +381,7 @@ def test_check_reports_and_tests_on_request(corpus: Path, folder: Path):
     assert "every file" in tested
 
 
-def test_a_restored_corpus_can_be_searched_at_once(
+def test_a_restored_corpus_is_told_to_index_and_then_searches(
     corpus: Path, folder: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     run("backup", "create", "--to", str(folder), given=f"{PASSWORD}\n{PASSWORD}\n")
@@ -389,7 +397,10 @@ def test_a_restored_corpus_can_be_searched_at_once(
     )
     monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(target))
 
-    assert "kennis corpus index" not in told
+    # The index is rebuilt rather than restored, so the restore says so,
+    # and the command it prints is the one that makes the corpus searchable.
+    assert "kennis corpus index" in told
+    run("corpus", "index")
     assert "selfcal" in run("search", "selfcal")
 
 
