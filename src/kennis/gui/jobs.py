@@ -32,6 +32,7 @@ from typing import Final
 
 from kennis.engine.errors import KennisError
 from kennis.engine.events import Event, EventSink
+from kennis.engine.history.outofband import OutOfBandChange
 from kennis.logs import FanOut, LogSink
 
 # How long a finished job stays readable. Long enough to reload the
@@ -92,6 +93,9 @@ class Job:
     # words it differently - but it is a failure all the same, and an
     # operation that died is never reported as one that finished.
     crash: Exception | None = None
+    # Documents deleted by hand that the operation put back before it ran,
+    # filled in place by the operation as `restored=` is everywhere.
+    restored: list[OutOfBandChange] = field(default_factory=list)
     # Every event the job has emitted, in order, appended and never
     # taken from: each watcher reads from its own position, so a page
     # drawn mid-job sees what was already reported and two pages watching
@@ -140,7 +144,13 @@ class Jobs:
         self._jobs: dict[str, Job] = {}
         self._guard = threading.Lock()
 
-    def start(self, kind: str, work: Callable[[EventSink], object]) -> Job:
+    def start(
+        self,
+        kind: str,
+        work: Callable[[EventSink], object],
+        *,
+        restored: list[OutOfBandChange] | None = None,
+    ) -> Job:
         """Run `work` on a thread and return the job watching it.
 
         `work` is handed the sink rather than reaching for one, so what
@@ -152,7 +162,11 @@ class Jobs:
             running = self._running()
             if running is not None:
                 raise AlreadyRunning(running.id)
-            job = Job(id=secrets.token_urlsafe(8), kind=kind)
+            job = Job(
+                id=secrets.token_urlsafe(8),
+                kind=kind,
+                restored=restored if restored is not None else [],
+            )
             self._jobs[job.id] = job
 
         # Fanned out to the log as well as to the page, exactly as the
