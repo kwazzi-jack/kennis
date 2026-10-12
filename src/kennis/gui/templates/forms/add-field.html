@@ -1,7 +1,7 @@
 {# One field, saying whether it is required and, when it is not, what
    empty becomes. No `<div>` inside: the chooser panel follows the
    field rather than sitting in it. #}
-<div class="field">
+<div class="field" data-need="{{ 'required' if field.required else 'optional' }}">
   {% if field.widget == "choice" %}<span class="name">{{ field.label }}</span>{% else %}<label class="name" for="add-{{ field.name }}">{{ field.label }}</label>{% endif %}
   <span class="need">{% if field.required %}{{ required }}{% else %}{{ optional }}{% endif %}</span>
   {% if field.widget == "choice" %}
@@ -12,6 +12,6 @@
   {% if field.browse %}<button type="button" class="ghost browse" hx-get="/browse?target={{ field.name }}{% if field.browse == 'both' %}&amp;folders=1{% endif %}" hx-target="#chooser-{{ field.name }}">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>{% endif %}
   </span>
   {% endif %}
-  {% if field.empty %}<span class="empty">{{ empty_prefix }} {{ field.empty }}</span>{% endif %}
+  {% if field.empty %}<span class="empty">{{ empty_prefix }} <b>{{ field.empty }}</b></span>{% endif %}
 </div>
 {% if field.browse %}<div class="chooser" id="chooser-{{ field.name }}"></div>{% endif %}

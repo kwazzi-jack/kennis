@@ -77,6 +77,7 @@ from kennis.gui.adding import (
     add_kind,
     add_tabs,
     chooser_target,
+    destination_of,
     filled,
     listing_of,
     shown_checks,
@@ -1683,7 +1684,10 @@ def _add_context(
         "fixed_collection": FIXED_COLLECTIONS.get(kind),
         "collections": COLLECTION_NAMES,
         "first_blocks": FIRST_BLOCKS,
-        "add_action": words.ADD_ACTION,
+        "add_action": words.ADD_ACTIONS[kind],
+        "adds_to": words.ADDS_TO,
+        "cancel": words.CANCEL,
+        "destination": destination_of(kind, given or {}),
     }
 
 

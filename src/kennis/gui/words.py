@@ -658,6 +658,14 @@ ADD_TABS: Final[tuple[tuple[str, str], ...]] = (
     ("file", "File"),
     ("group", "Several by group"),
 )
+# Each tab's picture: the collection a paper or a site goes to, a
+# document for a file, a folder for a group.
+ADD_TAB_ICONS: Final[dict[str, str]] = {
+    "paper": "book-open",
+    "site": "globe",
+    "file": "file-text",
+    "group": "folder",
+}
 
 ADD_PREAMBLES: Final[dict[str, str]] = {
     "paper": (
@@ -683,7 +691,7 @@ ADD_PREAMBLES: Final[dict[str, str]] = {
 # kennis will do instead.
 REQUIRED = "required"
 OPTIONAL = "optional"
-EMPTY_PREFIX = "Left empty:"
+EMPTY_PREFIX = "If empty:"
 ADD_TABS_LABEL = "What to add"
 # Answered to a chooser asked to write into a field no form draws.
 NOT_A_FIELD = "There is no such field to choose a path for."
@@ -818,7 +826,18 @@ LINE_KINDS: Final[dict[str, str]] = {
 }
 LINE_HELD = "already held"
 
-ADD_ACTION = "Add"
+# The Add dialog's submit button, named for what the tab adds.
+ADD_ACTIONS: Final[dict[str, str]] = {
+    "paper": "Add paper",
+    "site": "Add site",
+    "file": "Add",
+    "group": "Add every group",
+}
+
+# The foot of the Add dialog: where the add will go, which the window
+# keeps in step with the fields as they are filled in.
+ADDS_TO = "Adds to"
+CANCEL = "Cancel"
 
 INDEX_PREAMBLE = (
     "Building an index reads every document in a collection. With a dense "
@@ -1098,10 +1117,12 @@ __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
     "ACTIVITY_HEADING",
-    "ADD_ACTION",
+    "ADDS_TO",
+    "ADD_ACTIONS",
     "ADD_PREAMBLES",
     "ADD_TABS",
     "ADD_TABS_LABEL",
+    "ADD_TAB_ICONS",
     "ANOTHER_GROUP",
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
@@ -1121,6 +1142,7 @@ __all__ = [
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
     "BUSY_WITH_ANOTHER",
+    "CANCEL",
     "CHANGE_KINDS",
     "CHECK_SITE",
     "CHOOSER_CANCEL",

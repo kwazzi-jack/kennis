@@ -978,7 +978,9 @@ main {
 }
 .setting-name { float: left; padding: 0; font-weight: 600; }
 .setting-sentence { grid-column: 1; margin: 0; font-size: 0.8125rem; }
-.choices {
+/* `.setting` in the selector: the Add form uses `choices` too, and a
+   bare rule put its radios in row 1, above their label (#451). */
+.setting .choices {
   grid-column: 2;
   grid-row: 1 / span 2;
   display: flex;
@@ -999,7 +1001,7 @@ main {
 .settings-open { display: inline-flex; align-items: center; }
 @media (max-width: 760px) {
   .setting { grid-template-columns: minmax(0, 1fr); }
-  .choices { grid-column: 1; grid-row: auto; justify-content: flex-start; }
+  .setting .choices { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 }
 .measure-name { color: var(--role-muted); }
 /* kennis's configuration: the control in the right column beside
@@ -1671,6 +1673,9 @@ button:focus-visible, a:focus-visible {
   margin: 0 0 0.8rem;
 }
 .add-tab .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.4rem 0 0.45rem;
   color: var(--role-muted);
   text-decoration: none;
@@ -1684,16 +1689,39 @@ button:focus-visible, a:focus-visible {
   border-bottom-color: var(--brand);
 }
 
-/* A field: its name and whether it is needed on one line, the control
+/* The fields, two to a row where there is room: a required field takes
+   the whole row, as does a chooser opened under a field. */
+.add-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0 1rem;
+}
+.field[data-need="required"] { grid-column: 1 / -1; }
+.add-fields > .chooser { grid-column: 1 / -1; }
+
+/* A field: its name with whether it is needed beside it, the control
    under them, and what empty becomes under that. */
 .add-tab .field {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  /* A field shares a row with its neighbour and is stretched to the
+     taller one's height; without this its own rows took the extra
+     space, and two inputs side by side sat at different heights. */
+  align-content: start;
   gap: 0.2rem 0.5rem;
   margin: 0 0 0.75rem;
 }
 .add-tab .field .name { font-weight: 600; }
 .add-tab .need { color: var(--role-muted); font-size: 0.75rem; }
+/* Set apart by case and weight as well as colour, as the mockup has it. */
+.add-tab .field[data-need="required"] .need {
+  color: var(--role-error);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
 .add-tab .field > .choices, .add-tab .field > .entry-row, .add-tab .field > .empty,
 .add-tab .field > input, .add-tab .field > textarea {
   grid-column: 1 / -1;
@@ -1705,10 +1733,60 @@ button:focus-visible, a:focus-visible {
 }
 .add-tab .choices { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
 .add-tab .empty { color: var(--role-muted); font-size: 0.75rem; }
+.add-tab .empty b { color: var(--ink); font-weight: 600; }
 .add-tab .browse { display: inline-flex; align-items: center; gap: 0.3rem; }
 .add-tab .preview { min-height: 1.2rem; margin: 0 0 0.75rem; }
 .add-tab .preview p { margin: 0 0 0.3rem; }
 .add-tab .probe { margin: 0 0 0.75rem; }
+
+/* Where the add goes, Cancel, and the add itself, at the foot. Inside
+   a dialog it is the dialog's foot, across its whole width. */
+.form-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+}
+.dialog .form-foot {
+  margin: 1rem -1.1rem -1.1rem;
+  padding: 0.7rem 1.1rem;
+  border-top: 1px solid var(--rule);
+  background: var(--raised);
+}
+/* Two classes, to outrank `.dialog-body p`, whose margin took away the
+   `auto` that keeps this at the left. */
+.form-foot .destination { margin: 0 auto 0 0; font-size: 0.8125rem; }
+/* Until there is a collection there is nowhere to say: the File tab
+   chooses none for the reader (#431). */
+.destination:has(> [data-mirror="collection"]:empty) { visibility: hidden; }
+.destination .sep { margin: 0 0.3rem; }
+/* A part whose field is still empty says nothing, separator and all. */
+.destination .part:has(> [data-mirror]:empty) { display: none; }
+/* A link that does what a button does, drawn as one. */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.45rem 1rem;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+a.button:hover { border-color: var(--role-muted); }
+/* The one action a form exists for. */
+button.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ground);
+}
 
 /* A group of Several by group. */
 .add-tab .block {

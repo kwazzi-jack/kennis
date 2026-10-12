@@ -36,6 +36,30 @@ ADD_KINDS: Final[tuple[str, ...]] = tuple(kind for kind, _ in words.ADD_TABS)
 # The collection a tab adds to, where the tab decides it.
 FIXED_COLLECTIONS: Final[dict[str, str]] = {"paper": "literature", "site": "docs"}
 
+# The field naming the place within the collection, per tab: a docs
+# page's directory is its project (#101). Several by group has none,
+# because each of its blocks names its own.
+PLACE_FIELDS: Final[dict[str, str]] = {
+    "paper": "group",
+    "site": "project",
+    "file": "group",
+}
+
+
+def destination_of(kind: str, given: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
+    """Where an add on this tab will go, as `(field, value)` parts.
+
+    The field is what the window keeps each part in step with; the value
+    is what the form holds when it is drawn - the fixed collection, or
+    the place the dialog was opened on. Empty for Several by group.
+    """
+    if kind not in PLACE_FIELDS:
+        return ()
+    collection = FIXED_COLLECTIONS.get(kind, given.get("collection", ""))
+    place = PLACE_FIELDS[kind]
+    return (("collection", collection), (place, given.get(place, "")))
+
+
 # The field names the chooser may write into: the add form's, and the
 # backup folder on the settings page. Echoed into an attribute, so only
 # names kennis drew are taken rather than escaping whatever was sent and
@@ -55,6 +79,7 @@ class ShownTab:
     label: str
     href: str
     current: bool
+    icon: str
 
 
 def add_kind(asked: str) -> str:
@@ -65,7 +90,13 @@ def add_kind(asked: str) -> str:
 
 def add_tabs(kind: str) -> list[ShownTab]:
     return [
-        ShownTab(kind=each, label=label, href=f"/add?kind={each}", current=each == kind)
+        ShownTab(
+            kind=each,
+            label=label,
+            href=f"/add?kind={each}",
+            current=each == kind,
+            icon=words.ADD_TAB_ICONS[each],
+        )
         for each, label in words.ADD_TABS
     ]
 
@@ -379,6 +410,7 @@ __all__ = [
     "ADD_KINDS",
     "FIRST_BLOCKS",
     "FIXED_COLLECTIONS",
+    "PLACE_FIELDS",
     "ShownCheck",
     "ShownEntry",
     "ShownField",
@@ -389,6 +421,7 @@ __all__ = [
     "add_kind",
     "add_tabs",
     "chooser_target",
+    "destination_of",
     "filled",
     "listing_of",
     "shown_checks",
