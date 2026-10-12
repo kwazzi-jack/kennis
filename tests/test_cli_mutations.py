@@ -19,7 +19,7 @@ from click.testing import CliRunner
 from kennis.cli.__main__ import main
 from kennis.engine.history.git import git
 from kennis.engine.history.repository import Repository
-from kennis.engine.locking import corpus_lock, lock_path
+from kennis.engine.locking import corpus_lock, index_lock_path, lock_path
 
 
 @pytest.fixture(autouse=True)
@@ -709,6 +709,21 @@ def test_the_vector_cache_is_never_committed(
     cache = corpus / "index" / "notes" / "vectors"
     cache.mkdir(parents=True, exist_ok=True)
     (cache / "somedocument.npy").write_bytes(b"not really a matrix")
+    assert Repository(corpus).is_clean()
+
+
+def test_the_index_lock_is_never_committed(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """A lock is a fact about a process, and a restore from history would
+    check it out again as if it were part of the corpus. Concern #444."""
+    added(run, a_source(tmp_path, "trees.md"))
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    lock = index_lock_path(corpus / "index", "notes")
+    # Without this the assertions below pass for a file never created (#390).
+    assert lock.is_file()
+    assert lock.relative_to(corpus).as_posix() not in tracked(corpus)
     assert Repository(corpus).is_clean()
 
 

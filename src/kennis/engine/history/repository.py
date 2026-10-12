@@ -47,6 +47,10 @@ _GITIGNORE: Final = """\
 # corpus because that is what it guards, and it is not part of it.
 .kennis.lock
 
+# The lock a build holds on one collection's index. The same kind of fact,
+# and a restore from history would otherwise check it out as corpus content.
+index/*/.lock
+
 # The per-document vector cache. A sibling of the index it accelerates, and
 # deliberately not tracked with it: the published index already holds every
 # vector once, so committing the cache would store them twice for a saving
