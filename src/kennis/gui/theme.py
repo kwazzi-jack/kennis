@@ -141,6 +141,26 @@ STRENGTH_SCALES: Final[dict[str, StrengthScale]] = {
 # preference, `gui/preferences.py`).
 DEFAULT_STRENGTH_SCALE: Final = "viridis"
 
+# Which collection something belongs to, as one accent per collection
+# and theme (Brian, 2026-10-12): a hit's card, its group's heading, the
+# pane's rows and a document's bar wear it. **Chosen by meaning**, like
+# the strength scales, so here and not in the terminal's palette.
+#
+# From the Okabe-Ito set, which was drawn for colour-vision deficiency,
+# then moved in lightness until docs and notes - a green and a purple,
+# the pair a deuteranope merges - separated. `tests/
+# test_gui_collection_colours.py` holds every one to 4.5:1 on the ground
+# and on a card, every pair to dE 40 and to dE 20 as a deuteranope sees
+# them, and each to dE 20 from the brand; the measurements are in
+# `sketches/2026-10-12-collection-colours.md`. Each collection keeps its
+# own icon as well, so the colour is never the only cue.
+COLLECTION_COLOURS: Final[dict[str, dict[str, str]]] = {
+    "literature": {"light": "#0B6BA8", "dark": "#5BB2E6"},
+    "docs": {"light": "#0A7B4C", "dark": "#7FE0A8"},
+    "notes": {"light": "#8A2F6B", "dark": "#DA6A9A"},
+    "context": {"light": "#B14A12", "dark": "#EE8A57"},
+}
+
 
 def css_variables(
     colours: dict[AnsiColour, str] | None = None,
@@ -191,6 +211,8 @@ def css_variables(
         lines.append(
             f"  --strength-{step}: var(--scale-{DEFAULT_STRENGTH_SCALE}-{step});"
         )
+    for name, accents in COLLECTION_COLOURS.items():
+        lines.append(f"  --collection-{name}: {accents[scheme]};")
     for name, role in ROLES.items():
         lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)
@@ -475,7 +497,17 @@ _LAYOUT = """\
      track. Inherited, so this one declaration reaches every scroller. */
   --scrollbar: color-mix(in srgb, var(--role-muted) 55%, transparent);
   scrollbar-color: var(--scrollbar) transparent;
+  /* Which collection, for whatever names none: the muted grey. */
+  --collection: var(--role-muted);
 }
+
+/* One attribute on an ancestor chooses the collection's colour for
+   everything inside it: a hit, a group's heading, a pane row and its
+   branch, a document page. */
+[data-collection="literature"] { --collection: var(--collection-literature); }
+[data-collection="docs"] { --collection: var(--collection-docs); }
+[data-collection="notes"] { --collection: var(--collection-notes); }
+[data-collection="context"] { --collection: var(--collection-context); }
 
 /* `scrollbar-width` is not inherited, so it is set on everything. */
 * { box-sizing: border-box; scrollbar-width: thin; }
@@ -711,7 +743,11 @@ body {
   min-width: 0;
 }
 .node:hover { background: var(--raised); }
-.node .icon { color: var(--role-muted); }
+/* A collection's icon and its documents' wear its colour; the chevron
+   that opens a row stays grey, since it is the control and not the
+   thing. */
+.node .icon { color: var(--collection); }
+summary.node > .icon:first-child { color: var(--role-muted); }
 .node .name {
   flex: 1;
   min-width: 0;
@@ -1265,6 +1301,10 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .crumbs a:hover { color: var(--ink); text-decoration: underline; }
 .crumbs .sep { color: var(--rule); }
 .crumbs .here { color: var(--ink); font-family: var(--mono); }
+/* A document page says its collection: the rule under the bar and the
+   collection's crumb wear its colour. */
+.document .doc-bar { border-bottom: 2px solid var(--collection); }
+.crumbs .crumb-collection { color: var(--collection); font-weight: 600; }
 
 .document-body { flex: 1; min-height: 0; display: flex; }
 .reading {
@@ -1515,9 +1555,10 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   color: var(--ink);
   margin: 2rem 0 0;
   padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--ink);
+  border-bottom: 1px solid var(--collection);
   max-width: var(--text);
 }
+.group-head .icon { color: var(--collection); }
 .group-head .count { font-weight: 400; color: var(--role-muted); }
 .results {
   list-style: none;
@@ -1534,16 +1575,20 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .hit {
   background: var(--raised);
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--role-muted);
+  border-color: color-mix(in srgb, var(--collection) 30%, var(--rule));
+  border-left: 3px solid var(--collection);
   border-radius: 8px;
   max-width: var(--text);
-  transition: opacity 0.2s ease, translate 0.2s ease, border-color 0.25s ease;
+  transition: opacity 0.2s ease, translate 0.2s ease, border-left-width 0.2s ease;
 }
-.hit:has(details[open]) { border-left-color: var(--brand); }
+/* Open, the rule widens: its colour says which collection, so the
+   change of state is the same edge's width rather than its colour. */
+.hit:has(details[open]) { border-left-width: 6px; }
 /* The head: what kennis says about the hit, on the page's ground so it
    reads as a band, over the passage the hit quotes. */
 .hit-head {
   background: var(--ground);
+  background: color-mix(in srgb, var(--collection) 9%, var(--ground));
   border-bottom: 1px solid var(--rule);
   border-radius: 7px 7px 0 0;
   padding: 0.6rem 1rem 0.55rem;
@@ -1594,7 +1639,8 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   font-family: var(--gutter);
   font-size: 0.975rem;
   line-height: 1.35;
-  color: var(--role-operation);
+  /* Its collection's colour, measured on its own band. */
+  color: var(--collection);
   font-weight: 600;
   text-decoration: none;
 }

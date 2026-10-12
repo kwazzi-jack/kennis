@@ -86,7 +86,7 @@ def hits_of(client: TestClient, question: str) -> str:
 
 def items_of(page: str) -> list[str]:
     return re.findall(
-        r'<li class="hit">(.*?)</li>\s*(?=<li class="hit">|</ol>)', page, re.S
+        r'<li class="hit"[^>]*>(.*?)</li>\s*(?=<li class="hit"|</ol>)', page, re.S
     )
 
 
@@ -551,9 +551,10 @@ def test_a_hit_has_one_way_to_its_document_and_a_chevron_to_open_it(
 def test_the_hit_is_a_card_with_its_head_set_apart(client: TestClient):
     """Brian, 2026-10-12: "a little hard to see that it is quoted text",
     and then the metadata "hard to pick out". A surface, a border and a
-    rule down the left, as a quotation has, turning to the brand when
-    the passage is open; the head is a band on the page's ground over a
-    hairline, so what kennis says about the hit is apart from the text."""
+    rule down the left, as a quotation has, in the collection's colour
+    and wider when the passage is open; the head is a band on the page's
+    ground over a hairline, so what kennis says about the hit is apart
+    from the text."""
     css = client.get("/static/kennis.css").text
     card = re.search(r"^\.hit \{([^}]*)\}", css, re.M)
     head = re.search(r"^\.hit-head \{([^}]*)\}", css, re.M)
@@ -562,12 +563,11 @@ def test_the_hit_is_a_card_with_its_head_set_apart(client: TestClient):
     for declaration in ("background: var(--raised)", "border: 1px solid var(--rule)"):
         assert declaration in card.group(1)
     assert "border-radius" in card.group(1)
-    assert re.search(r"border-left: 3px solid var\(--role-muted\)", card.group(1))
+    # The rule is the collection's colour (Brian, 2026-10-12); open, it
+    # widens rather than changing colour.
+    assert re.search(r"border-left: 3px solid var\(--collection\)", card.group(1))
     assert "overflow: hidden" not in card.group(1), "the chevron hangs off its edge"
-    assert re.search(
-        r"\.hit:has\(details\[open\]\) \{[^}]*border-left-color: var\(--brand\)",
-        css,
-    )
+    assert re.search(r"\.hit:has\(details\[open\]\) \{[^}]*border-left-width: 6px", css)
     assert head, css
     assert "background: var(--ground)" in head.group(1)
     assert "border-bottom: 1px solid var(--rule)" in head.group(1)
@@ -596,10 +596,10 @@ def test_one_key_heads_the_results_and_no_group_repeats_a_basis(
 
     page = client.get("/hits", params={"q": "antenna", "scope": "all"}).text
 
-    assert page.count('<h2 class="group-head">') == 2, page
+    assert page.count('<h2 class="group-head"') == 2, page
     assert page.count('<details class="key">') == 1
     assert 'class="basis"' not in page
-    assert page.index('<details class="key">') < page.index('<li class="hit">')
+    assert page.index('<details class="key">') < page.index('<li class="hit"')
 
 
 def test_the_key_explains_each_measure_present(corpus: Path, client: TestClient):
@@ -896,7 +896,7 @@ def test_an_unknown_order_is_named(corpus: Path, client: TestClient, hybrid: Non
     ).text
 
     assert escape(words.unknown_order("loudness")) in page
-    assert '<li class="hit">' not in page
+    assert '<li class="hit"' not in page
 
 
 # ---------------------------------------------------------------------------
@@ -956,7 +956,7 @@ def test_a_group_is_headed_by_its_collections_icon_name_and_count(
     a_note(corpus, "calibration", "Calibration solves for antenna gains.")
 
     page = hits_of(client, "antenna")
-    raw = re.search(r'<h2 class="group-head">(.*?)</h2>', page, re.S)
+    raw = re.search(r'<h2 class="group-head"[^>]*>(.*?)</h2>', page, re.S)
     assert raw, page
     head = BeautifulSoup(raw.group(0), "html.parser")
     name = head.find(class_="name")
@@ -982,10 +982,12 @@ def test_the_handle_is_on_the_measures_row(corpus: Path, client: TestClient):
     assert len(item.find_all(class_="handle")) == 1
 
 
-def test_a_title_is_drawn_in_the_operation_colour(client: TestClient):
+def test_a_title_is_drawn_in_its_collections_colour(client: TestClient):
+    """It was the operation green for every hit, which read as the docs
+    collection's colour once collections had colours (Brian, 2026-10-12)."""
     css = client.get("/static/kennis.css").text
 
-    assert re.search(r"\.hit \.title\s*\{[^}]*color: var\(--role-operation\)", css)
+    assert re.search(r"\.hit \.title\s*\{[^}]*color: var\(--collection\)", css)
 
 
 def test_the_title_is_kennis_s_and_the_passage_the_document_s(client: TestClient):
