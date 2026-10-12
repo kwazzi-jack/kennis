@@ -40,15 +40,6 @@ from kennis.engine.settings import (
 
 type QuestionKind = Literal["choice", "text", "integer", "boolean", "secret"]
 
-# Which environment variable a hosted backend's key is read from. Named here
-# rather than asked, because the *name* is a setting and the *value* is a
-# credential, and a user who has to choose both is being asked a question
-# about kennis's internals.
-_KEY_VARIABLES: Final[dict[str, str]] = {
-    "openai": "OPENAI_API_KEY",
-    "datalab": "DATALAB_API_KEY",
-}
-
 
 @dataclass(frozen=True, slots=True)
 class Question:
@@ -172,7 +163,12 @@ def apply_answers(answers: Mapping[str, str]) -> Settings:
     secrets = {key: value for key, value in given.items() if _is_secret(key)}
     _write_config({key: value for key, value in given.items() if key not in secrets})
     if secrets:
-        _write_credentials(secrets)
+        _write_credentials(
+            {
+                (key.partition(".")[0], _key_variable(key, settings)): value
+                for key, value in secrets.items()
+            }
+        )
     return settings
 
 
@@ -192,19 +188,27 @@ class CredentialStatus:
 def credential_status(key: str) -> CredentialStatus:
     """The variable `key`'s value is read from, and whether it is set.
 
-    The variable is the one the reader of the key consults, which for
-    embedding is `embedding.api_key_env` - a setting - and for conversion is
-    the converter's own constant. Asking `_KEY_VARIABLES` instead would name
-    where `apply_answers` writes, which is not the same once
-    `embedding.api_key_env` has been changed (#440).
+    The variable is the one the reader of the key consults, under the
+    settings in force.
+    """
+    variable = _key_variable(key, load_settings())
+    return CredentialStatus(variable=variable, is_set=bool(credential(variable)))
+
+
+def _key_variable(key: str, settings: Settings) -> str:
+    """The variable the reader of `key` asks `credential` for.
+
+    The one answer to that question, for the writer and for the status
+    alike: two tables answering it separately filed the embedding key
+    under `OPENAI_API_KEY` while embedding read `embedding.api_key_env`
+    (#440). An unknown key raises rather than being filed under a name
+    nobody reads.
     """
     if key == "embedding.api_key":
-        variable = load_settings().embedding.api_key_env
-    elif key == "conversion.api_key":
-        variable = DATALAB_KEY_VARIABLE
-    else:
-        raise KeyError(key)
-    return CredentialStatus(variable=variable, is_set=bool(credential(variable)))
+        return settings.embedding.api_key_env
+    if key == "conversion.api_key":
+        return DATALAB_KEY_VARIABLE
+    raise KeyError(key)
 
 
 # ---------------------------------------------------------------------------
@@ -415,8 +419,14 @@ def _write_config(values: Mapping[str, str]) -> None:
     path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
 
 
-def _write_credentials(secrets: Mapping[str, str]) -> None:
-    """Write API keys, readable only by their owner.
+def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
+    """Write API keys, each as `(section, variable)`, readable only by
+    their owner.
+
+    `credential` searches every section for the variable and takes the
+    first, so the section is for the person reading the file - and a key
+    is kept in its own, because one filed under a new section would sit
+    behind an older value of the same name rather than replace it.
 
     The mode is set **before** the content is written, so the key is never
     on disk world-readable even briefly.
@@ -433,21 +443,12 @@ def _write_credentials(secrets: Mapping[str, str]) -> None:
             if isinstance(values, dict)
         }
 
-    for key, value in secrets.items():
-        section, _, _name = key.partition(".")
-        backend = _backend_for(key)
-        existing.setdefault(section, {})[_KEY_VARIABLES.get(backend, "API_KEY")] = value
+    for (section, variable), value in secrets.items():
+        existing.setdefault(section, {})[variable] = value
 
     path.touch(mode=0o600, exist_ok=True)
     path.chmod(0o600)
     path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
-
-
-def _backend_for(key: str) -> str:
-    for asked, kind, when in _ASKED:
-        if asked == key and kind == "secret" and when:
-            return when[0][1]
-    return ""
 
 
 def _as_toml_document(sections: Mapping[str, Mapping[str, object]]) -> str:

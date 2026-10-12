@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 
 from kennis.engine import setup
+from kennis.engine.settings import credential
 from kennis.engine.setup import (
     Question,
     apply_answers,
+    credential_status,
     questions_for,
     setup_questions,
     validate_answer,
@@ -329,6 +331,62 @@ def test_the_datalab_key_is_written_under_its_own_variable(tmp_path: Path):
 
     assert "DATALAB_API_KEY" in written
     assert "dl-notarealkey" in written
+
+
+@pytest.fixture
+def no_key_in_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The environment wins in `credential`, so a key exported in the shell
+    running the suite would answer for the file being tested."""
+    for variable in ("OPENAI_API_KEY", "MY_OWN_KEY", "ANOTHER_KEY"):
+        monkeypatch.delenv(variable, raising=False)
+
+
+@pytest.mark.usefixtures("no_key_in_the_environment")
+def test_the_embedding_key_is_written_under_the_variable_it_is_read_from():
+    """`embedding.api_key_env` names the variable embedding reads. Filing
+    the key under `OPENAI_API_KEY` regardless left it where nothing looked,
+    and the setup reported success. Concern #440."""
+    apply_answers({"embedding.api_key_env": "MY_OWN_KEY"})
+
+    apply_answers({"embedding.backend": "openai", "embedding.api_key": "sk-mine"})
+
+    assert credential("MY_OWN_KEY") == "sk-mine"
+    assert credential("OPENAI_API_KEY") == ""
+    assert credential_status("embedding.api_key").is_set is True
+
+
+@pytest.mark.usefixtures("no_key_in_the_environment")
+def test_a_variable_named_in_the_same_answers_is_the_one_written():
+    """The answers are validated as a whole before anything is written, so
+    the key belongs under the variable those answers produce, not the one
+    in force before them."""
+    apply_answers({"embedding.api_key_env": "MY_OWN_KEY"})
+
+    apply_answers(
+        {
+            "embedding.backend": "openai",
+            "embedding.api_key_env": "ANOTHER_KEY",
+            "embedding.api_key": "sk-mine",
+        }
+    )
+
+    assert credential("ANOTHER_KEY") == "sk-mine"
+    assert credential("MY_OWN_KEY") == ""
+
+
+@pytest.mark.usefixtures("no_key_in_the_environment")
+def test_a_new_key_replaces_one_already_in_the_file(isolated: Path):
+    """`credential` takes the first section holding the name, so a key filed
+    under any other section than the one it was in before would sit behind
+    the old value rather than replace it."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "credentials.toml").write_text(
+        '[embedding]\nOPENAI_API_KEY = "sk-old"\n', encoding="utf-8"
+    )
+
+    apply_answers({"embedding.backend": "openai", "embedding.api_key": "sk-new"})
+
+    assert credential("OPENAI_API_KEY") == "sk-new"
 
 
 def test_the_conversion_key_never_reaches_the_config_file(tmp_path: Path):
