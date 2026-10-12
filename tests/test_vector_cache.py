@@ -28,7 +28,7 @@ def a_binding(**overrides: object) -> Binding:
         else ChunkParameters(),
         model=model
         if isinstance(model, ModelBinding)
-        else ModelBinding(kind="fastembed", model="bge-small", dim=4),
+        else ModelBinding(kind="fastembed", model="bge-small"),
     )
 
 
@@ -112,9 +112,7 @@ def test_changing_the_embedding_model_misses_every_document(tmp_path: Path):
 
     changed = VectorCache(
         root=tmp_path / "vectors",
-        binding=a_binding(
-            model=ModelBinding(kind="fastembed", model="bge-large", dim=4)
-        ),
+        binding=a_binding(model=ModelBinding(kind="fastembed", model="bge-large")),
     )
     assert changed.get("doc1", digest) is None
 
@@ -129,9 +127,7 @@ def test_a_miss_on_a_new_binding_does_not_destroy_the_old_one(tmp_path: Path):
 
     other = VectorCache(
         root=tmp_path / "vectors",
-        binding=a_binding(
-            model=ModelBinding(kind="fastembed", model="bge-large", dim=4)
-        ),
+        binding=a_binding(model=ModelBinding(kind="fastembed", model="bge-large")),
     )
     other.put("doc1", digest, vectors(value=2.0))
 

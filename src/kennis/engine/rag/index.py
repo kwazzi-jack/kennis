@@ -475,11 +475,11 @@ def _vectors_for(
         if events is not None:
             events.emit(Progress(operation="index", completed=done, total=total))
 
-    stacked = (
-        np.vstack(blocks)
-        if blocks
-        else np.zeros((0, binding.model.dim), dtype=np.float32)
-    )
+    # A document with no chunks gives a block with no rows and no columns,
+    # which cannot stand beside the others. It adds no rows, so leaving it
+    # out keeps row `i` on chunk `i`.
+    filled = [block for block in blocks if block.shape[0]]
+    stacked = np.vstack(filled) if filled else np.zeros((0, 0), dtype=np.float32)
     return stacked, embedded
 
 

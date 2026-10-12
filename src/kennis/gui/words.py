@@ -249,7 +249,6 @@ KENNIS_NOT_SAVED = "Nothing was saved. Each value that was refused says why."
 SETTING_NAMES: Final[dict[str, str]] = {
     "embedding.backend": "Embedding",
     "embedding.model": "Embedding model",
-    "embedding.dimensions": "Dimensions",
     "embedding.base_url": "Ollama address",
     "embedding.api_key": "OpenAI key",
     "conversion.backend": "Converter",

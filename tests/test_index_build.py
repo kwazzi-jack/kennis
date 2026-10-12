@@ -69,7 +69,7 @@ def a_binding(**overrides: object) -> Binding:
         # text's length in its vector survives: normalising every row of
         # `[n, n, ...]` yields the same unit vector whatever n was, which
         # would make row order unobservable.
-        else ModelBinding(kind="fastembed", model="bge-small", dim=8, normalise=False),
+        else ModelBinding(kind="fastembed", model="bge-small", normalise=False),
     )
 
 
@@ -196,6 +196,26 @@ def test_the_matrix_has_one_row_per_chunk(
     assert loaded.matrix.shape[0] == len(loaded.chunks)
 
 
+def test_a_document_with_no_text_beside_one_with_text_still_stacks(
+    notes: Collection, tmp_path: Path, index_root: Path
+):
+    """The empty block has no rows and, with no configured width, no
+    columns either, so it cannot be stacked beside the others. It adds no
+    rows, so leaving it out keeps row `i` on chunk `i`."""
+    a_note(notes, tmp_path, "blank.md", "# Blank\n\nplaceholder\n")
+    blank = next(notes.path.glob("*.md"))
+    head, _, _ = blank.read_text(encoding="utf-8").partition("\n---\n")
+    blank.write_text(f"{head}\n---\n\n   \n", encoding="utf-8")
+    a_note(notes, tmp_path, "full.md", "# Full\n\nSome words about trees.\n")
+
+    build(notes, index_root, embedder=RecordingEmbedder(dim=8))
+    loaded = load_index(index_root, "notes")
+
+    assert loaded.matrix is not None
+    assert loaded.matrix.shape == (len(loaded.chunks), 8)
+    assert len(loaded.chunks) > 0
+
+
 def test_row_order_matches_chunk_order_across_cached_and_fresh_documents(
     notes: Collection, tmp_path: Path, index_root: Path
 ):
@@ -293,9 +313,7 @@ def test_changing_the_embedding_model_re_embeds_everything(
     build(
         notes,
         index_root,
-        binding=a_binding(
-            model=ModelBinding(kind="fastembed", model="bge-large", dim=8)
-        ),
+        binding=a_binding(model=ModelBinding(kind="fastembed", model="bge-large")),
         embedder=second,
     )
 

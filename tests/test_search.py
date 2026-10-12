@@ -65,7 +65,7 @@ def index_root(tmp_path: Path) -> Path:
 def a_binding(*, dense: bool = True) -> Binding:
     return Binding(
         chunking=ChunkParameters(),
-        model=ModelBinding(kind="fastembed", model="test", dim=DIM) if dense else None,
+        model=ModelBinding(kind="fastembed", model="test") if dense else None,
     )
 
 

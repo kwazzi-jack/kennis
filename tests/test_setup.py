@@ -171,27 +171,30 @@ def asked_under(backend: str) -> dict[str, Question]:
 
 
 @pytest.mark.parametrize(
-    ("backend", "model", "width"),
+    ("backend", "model"),
     [
         # Written by hand rather than read from the table, so a wrong entry
         # there is not agreed with by its own test (#373).
-        ("ollama", "nomic-embed-text", "768"),
-        ("openai", "text-embedding-3-small", "1536"),
+        ("ollama", "nomic-embed-text"),
+        ("openai", "text-embedding-3-small"),
     ],
 )
-def test_another_backend_offers_its_own_model_and_width(
-    backend: str, model: str, width: str
-):
+def test_another_backend_offers_its_own_model(backend: str, model: str):
     """A model name means something only to its backend, so the one in force
     belongs to fastembed and offering it under another failed at the next
     index. The value in force stays `current`, because that is what a front
-    end compares an answer with to decide whether to write it. Concern #441."""
+    end compares an answer with to say what changed. Concern #441."""
     asked = asked_under(backend)
 
     assert asked["embedding.model"].suggested == model
-    assert asked["embedding.dimensions"].suggested == width
     assert asked["embedding.model"].current == "BAAI/bge-small-en-v1.5"
-    assert asked["embedding.dimensions"].current == "384"
+
+
+def test_the_width_of_a_vector_is_never_asked():
+    """The model fixes it and no backend is sent it (Brian, 2026-10-12)."""
+    assert not any(
+        question.key == "embedding.dimensions" for question in setup_questions()
+    )
 
 
 def test_the_backend_in_force_offers_the_model_in_force(
@@ -200,15 +203,13 @@ def test_the_backend_in_force_offers_the_model_in_force(
     """Including one that is not the default: it was chosen for this backend."""
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
     (tmp_path / "config.toml").write_text(
-        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-large"\n'
-        "dimensions = 3072\n",
+        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-large"\n',
         encoding="utf-8",
     )
 
-    asked = asked_under("openai")
-
-    assert asked["embedding.model"].suggested == "text-embedding-3-large"
-    assert asked["embedding.dimensions"].suggested == "3072"
+    assert asked_under("openai")["embedding.model"].suggested == (
+        "text-embedding-3-large"
+    )
 
 
 def test_going_back_to_the_local_backend_offers_its_model(
@@ -216,15 +217,27 @@ def test_going_back_to_the_local_backend_offers_its_model(
 ):
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
     (tmp_path / "config.toml").write_text(
-        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-small"\n'
-        "dimensions = 1536\n",
+        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-small"\n',
         encoding="utf-8",
     )
 
-    asked = asked_under("fastembed")
+    assert asked_under("fastembed")["embedding.model"].suggested == (
+        "BAAI/bge-small-en-v1.5"
+    )
 
-    assert asked["embedding.model"].suggested == "BAAI/bge-small-en-v1.5"
-    assert asked["embedding.dimensions"].suggested == "384"
+
+def test_a_width_left_in_an_old_file_is_dropped_by_the_next_write(isolated: Path):
+    """A section model ignores a key it no longer has, so the file still
+    loads; every write renders the model's own keys, so it then goes."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text(
+        "[embedding]\ndimensions = 384\n", encoding="utf-8"
+    )
+
+    apply_answers({"chunking.size": "900"})
+
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert "dimensions" not in written["embedding"]
 
 
 def test_a_question_with_no_backend_offers_what_is_in_force():

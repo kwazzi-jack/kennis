@@ -32,7 +32,6 @@ import os
 import tomllib
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal, get_args, get_origin
 
@@ -59,22 +58,15 @@ _CREDENTIALS_FILE: Final = "credentials.toml"
 _ENV_FILES: Final[tuple[str, ...]] = (".env.keys", ".env")
 
 
-@dataclass(frozen=True, slots=True)
-class BackendModel:
-    """A model an embedding backend serves, and the width of its vectors."""
-
-    model: str
-    dimensions: int
-
-
 # Each backend's own model. A model name means something only to its
-# backend, so the setup offers this row when the backend is changed rather
+# backend, so the setup offers this one when the backend is changed rather
 # than keeping the previous backend's, which failed only at the next index
-# (#441). The width is the model's, not a request: no backend is passed it.
-EMBEDDING_DEFAULTS: Final[dict[str, BackendModel]] = {
-    "fastembed": BackendModel("BAAI/bge-small-en-v1.5", 384),
-    "ollama": BackendModel("nomic-embed-text", 768),
-    "openai": BackendModel("text-embedding-3-small", 1536),
+# (#441). There is no width beside it: the model fixes the width of its
+# vectors, and as a setting it could only be wrong in silence.
+EMBEDDING_DEFAULTS: Final[dict[str, str]] = {
+    "fastembed": "BAAI/bge-small-en-v1.5",
+    "ollama": "nomic-embed-text",
+    "openai": "text-embedding-3-small",
 }
 
 
@@ -94,19 +86,13 @@ class EmbeddingSettings(BaseModel):
         ),
     )
     model: str = Field(
-        default=EMBEDDING_DEFAULTS["fastembed"].model,
+        default=EMBEDDING_DEFAULTS["fastembed"],
         description="Model name, interpreted by the backend.",
         examples=[
             '"BAAI/bge-small-en-v1.5"    (fastembed)',
             '"nomic-embed-text"          (ollama)',
             '"text-embedding-3-small"    (openai)',
         ],
-    )
-    dimensions: int = Field(
-        default=EMBEDDING_DEFAULTS["fastembed"].dimensions,
-        ge=1,
-        le=8192,
-        description="Width of a vector.",
     )
     normalise: bool = Field(
         default=True,

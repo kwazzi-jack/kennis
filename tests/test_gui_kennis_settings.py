@@ -34,7 +34,6 @@ HTMX = {"HX-Request": "true"}
 EXPECTED_ROWS = [
     "embedding.backend",
     "embedding.model",
-    "embedding.dimensions",
     "retrieval.corpus_method",
     "retrieval.default_top_k",
     "chunking.size",
@@ -42,8 +41,8 @@ EXPECTED_ROWS = [
 ]
 # And the heading each row sits under, as the plan lays the page out.
 EXPECTED_GROUPS = {
-    "Searching and indexing": EXPECTED_ROWS[:6],
-    "Converting documents": EXPECTED_ROWS[6:],
+    "Searching and indexing": EXPECTED_ROWS[:5],
+    "Converting documents": EXPECTED_ROWS[5:],
 }
 
 
@@ -158,8 +157,6 @@ def test_choosing_a_backend_redraws_with_its_questions(client: TestClient):
     )
 
     assert "embedding.api_key" in rows_of(redrawn)
-    # Asked under every backend since #441: the width belongs to the model.
-    assert "embedding.dimensions" in rows_of(redrawn)
     cost = row_of(redrawn, "embedding.backend").find(class_="cost")
     assert isinstance(cost, Tag)
     assert describe_cost("leaves_machine") in cost.get_text()
@@ -185,11 +182,7 @@ def test_choosing_a_backend_offers_its_own_model_and_saving_writes_it(
     client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
 
     embedding = load_settings().embedding
-    assert (embedding.backend, embedding.model, embedding.dimensions) == (
-        "openai",
-        "text-embedding-3-small",
-        1536,
-    )
+    assert (embedding.backend, embedding.model) == ("openai", "text-embedding-3-small")
 
 
 def test_a_model_follows_the_backend_there_and_back(client: TestClient):
