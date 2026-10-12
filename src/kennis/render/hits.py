@@ -190,10 +190,17 @@ def hit_title(result: SearchResult) -> str:
     something, the section.
 
     The headline is this with the rank in front. The window shows the
-    title alone, because a rank in a fused list is a position and not a
-    measurement, and a page has the list's own order to show position
-    (#342, #406).
+    two parts apart and without the rank, because a rank in a fused list
+    is a position and not a measurement, and a page has the list's own
+    order to show position (#342, #406).
     """
+    title, section = hit_title_parts(result)
+    where = f" - {section}" if section else ""
+    return f"{title}{where}"
+
+
+def hit_title_parts(result: SearchResult) -> tuple[str, str | None]:
+    """The document's title, and the section when it adds something."""
     chunk = result.chunk
     title = str(chunk.metadata.get("title") or chunk.document_id)
     # Casefolded, because a title taken from a filename beside an H1
@@ -202,9 +209,7 @@ def hit_title(result: SearchResult) -> str:
     # that differs from the title only in case carries nothing the title
     # does not. Concern #296.
     same = chunk.section is not None and chunk.section.casefold() == title.casefold()
-    section = None if same else chunk.section
-    where = f" - {section}" if section else ""
-    return f"{title}{where}"
+    return title, None if same else chunk.section or None
 
 
 def hit_headline(rank: int, result: SearchResult) -> str:
@@ -278,6 +283,7 @@ __all__ = [
     "hit_handle",
     "hit_headline",
     "hit_title",
+    "hit_title_parts",
     "raw_scores",
     "relevance_phrase",
     "relevances",
@@ -332,13 +338,14 @@ class RenderedHit:
     # string; a test asserts the two cannot drift. Concern #380.
     detail_parts: tuple[str, ...]
     body: str | None
-    # The headline without its rank, and the bands as values rather
-    # than as `keywords: high`, for a front end that lays them out
-    # itself. Taken from the same functions as `headline` and `detail`,
-    # so the window cannot say something the terminal does not. Empty
-    # `measures` unless the style is `human`, because only then is a
-    # band being shown at all.
-    title: str
+    # The headline without its rank, in its two parts, and the bands as
+    # values rather than as `keywords: high`, for a front end that lays
+    # them out itself. Taken from the same functions as `headline` and
+    # `detail`, so the window cannot say something the terminal does
+    # not. Empty `measures` unless the style is `human`, because only
+    # then is a band being shown at all.
+    document_title: str
+    section: str | None
     measures: tuple[tuple[Leg, Relevance], ...]
 
 
@@ -394,6 +401,7 @@ def rendered_hit(
     sees, so a person debugging a retrieval problem at the terminal is
     looking at the thing the model looked at.
     """
+    document_title, section = hit_title_parts(hit.result)
     return RenderedHit(
         headline=hit_headline(rank, hit.result),
         detail=hit_detail(hit, style=style, best=best),
@@ -403,7 +411,8 @@ def rendered_hit(
             if snippet == "none"
             else snippet_of(hit.result.chunk.text, full=snippet == "full")
         ),
-        title=hit_title(hit.result),
+        document_title=document_title,
+        section=section,
         measures=(
             relevances(hit.result, model=hit.model, best=best)
             if style == "human"

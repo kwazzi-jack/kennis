@@ -31,6 +31,7 @@ EXPECTED_KINDS: list[tuple[str, str, str]] = [
     ("/settings", "face", "dropdown"),
     ("/settings", "size", "dropdown"),
     ("/settings", "spacing", "dropdown"),
+    ("/settings", "width", "dropdown"),
     ("/settings", "strength", "dropdown"),
     ("/settings", "labels", "dropdown"),
     ("/settings", "scale", "radio list"),
@@ -101,7 +102,7 @@ def test_a_preference_dropdown_is_named_by_its_label_and_marked_for_the_script(
 ):
     page = BeautifulSoup(client.get("/settings").text, "html.parser")
 
-    for name in ("theme", "face", "size", "spacing", "strength", "labels"):
+    for name in ("theme", "face", "size", "spacing", "width", "strength", "labels"):
         select = page.find("select", attrs={"name": name})
         assert isinstance(select, Tag), name
         assert select.has_attr("data-pref"), name

@@ -35,6 +35,9 @@ EXPECTED_PREFERENCES = {
     "face": (("serif", "sans", "hyperlegible"), "serif"),
     "size": (("small", "normal", "large", "larger"), "normal"),
     "spacing": (("normal", "wide", "wider"), "normal"),
+    # Brian, 2026-10-12: the text fits the pane unless asked otherwise;
+    # the reading measure the window had until then is the last choice.
+    "width": (("pane", "wide", "reading"), "pane"),
     "strength": (("bars", "words"), "bars"),
     "labels": (("icons", "words", "both"), "icons"),
     "scale": (("viridis", "cividis", "plasma", "magma", "greys"), "viridis"),
@@ -324,6 +327,24 @@ def test_spacing_widens_in_two_steps():
 
     assert 1.6 < leading("wide") < leading("wider")
     assert "var(--leading)" in rules_for(sheet, ".column")
+
+
+def test_the_text_fits_the_pane_unless_a_width_is_chosen():
+    """No cap by default; the reading choice restores exactly the widths
+    the window had before there was a choice."""
+    sheet = stylesheet()
+    code = re.sub(r"/\*.*?\*/", "", sheet, flags=re.S)
+
+    assert ':root[data-width="pane"]' not in sheet  # the default needs no rule
+    assert re.search(r"--text: none;", code) and re.search(r"--frame: none;", code)
+    reading = rules_for(sheet, ':root[data-width="reading"]')
+    assert "--text: var(--measure)" in reading
+    assert "--frame: calc(var(--margin) + var(--gap) + var(--measure))" in reading
+    assert "--text: " in rules_for(sheet, ':root[data-width="wide"]')
+    assert "max-width: var(--frame)" in rules_for(sheet, ".column")
+    # Every width a reading measure set now goes through the choice.
+    assert "max-width: var(--measure)" not in code
+    assert code.count("max-width: var(--text)") == 5
 
 
 def test_words_only_hides_the_bars():

@@ -266,6 +266,11 @@ PREFERENCE_WORDS: Final[dict[str, tuple[str, str]]] = {
         "spacing has helped some readers with dyslexia more than any "
         "special typeface.",
     ),
+    "width": (
+        "Text width",
+        "How wide documents and search results are set: across the whole "
+        "pane, wide, or at a reading measure of about 70 characters a line.",
+    ),
     "strength": (
         "Match strength",
         "How each measure shows how well a result matched: bars beside "
@@ -295,6 +300,11 @@ PREFERENCE_CHOICES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ("larger", "Larger"),
     ),
     "spacing": (("normal", "Normal"), ("wide", "Wide"), ("wider", "Wider")),
+    "width": (
+        ("pane", "Fit the pane"),
+        ("wide", "Wide"),
+        ("reading", "Reading measure"),
+    ),
     "strength": (("bars", "Bars and words"), ("words", "Words only")),
     "labels": (("icons", "Icons"), ("words", "Words"), ("both", "Both")),
     "scale": (

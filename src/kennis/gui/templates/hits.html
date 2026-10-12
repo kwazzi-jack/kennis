@@ -80,6 +80,9 @@
        emitted only the tags it chose. #}
     <div class="passage{% if hit.opens %} clamped{% endif %}">
       <div class="full">
+        {# Which section the passage is from, as the card's own header;
+           the title above is the document's alone. Marked, so `safe`. #}
+        {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
         {% if hit.passage.lead %}<div class="lead">{{ hit.passage.lead | safe }}</div>{% endif %}
         <div class="body">{{ hit.passage.body | safe }}</div>
       </div>
