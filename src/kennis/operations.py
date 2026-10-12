@@ -29,9 +29,11 @@ printing it. Concern #324.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import contextlib
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Final
 
 from kennis.context import Context
 from kennis.engine.backup import BackupReport, write_backup
@@ -49,7 +51,7 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync, sync_corpus
-from kennis.engine.errors import CorpusBusy, IndexBusy
+from kennis.engine.errors import CorpusBusy, IndexBusy, KennisError
 from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.history import commit_summary, outcome_summary
 from kennis.engine.history.outofband import (
@@ -66,6 +68,37 @@ from kennis.engine.rag.loaders import CollectionLoader
 from kennis.render.packs import describe_sync_summary
 
 _ADDERS = {"notes": add_notes, "literature": add_literature, "docs": add_docs}
+
+# The summary of a commit made for an operation that did not finish. Free
+# text to `history._SUBJECT`, as every summary is.
+INTERRUPTED: Final = "interrupted"
+
+
+@contextlib.contextmanager
+def committed_if_interrupted(
+    context: Context, operation: str, *, scope: str
+) -> Iterator[None]:
+    """Record what an operation wrote before it failed, under its own name.
+
+    Held inside the corpus lock around the work, before the work's own
+    commit. A failure part-way - a full disk, a converter that crashed, an
+    interrupt - leaves the documents already written on disk, and the next
+    command's `git add --all .` would commit them under *its* name: an add's
+    documents in a `remember(notes)` commit. Committed here, as
+    `add(notes): interrupted`, history says which command wrote them.
+
+    A commit that fails here is not reported over the failure that caused
+    it: that is the one the person needs to see, and the documents are still
+    on disk for the next commit.
+    """
+    try:
+        yield
+    except BaseException:
+        with contextlib.suppress(KennisError):
+            Repository(context.corpus_root).commit(
+                operation, scope=scope, summary=INTERRUPTED
+            )
+        raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +192,8 @@ def add_documents(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        report = _ADDERS[destination](target, identifiers, options, events=events)
+        with committed_if_interrupted(context, "add", scope=destination):
+            report = _ADDERS[destination](target, identifiers, options, events=events)
         Repository(context.corpus_root).commit(
             "add", scope=destination, summary=outcome_summary(report.counts)
         )
@@ -232,11 +266,12 @@ def move_a_document(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        moved = move_document(
-            document,
-            target_md_path=target,
-            updates={"title": title} if title else None,
-        )
+        with committed_if_interrupted(context, "move", scope=collection.name):
+            moved = move_document(
+                document,
+                target_md_path=target,
+                updates={"title": title} if title else None,
+            )
         Repository(context.corpus_root).commit(
             "move",
             scope=collection.name,
@@ -346,11 +381,12 @@ def synchronise_corpus(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        result = sync_corpus(
-            context.corpus_root,
-            events=events,
-            request_delay_seconds=context.settings.literature.request_delay,
-        )
+        with committed_if_interrupted(context, "sync", scope="notes"):
+            result = sync_corpus(
+                context.corpus_root,
+                events=events,
+                request_delay_seconds=context.settings.literature.request_delay,
+            )
         Repository(context.corpus_root).commit(
             "sync", scope="notes", summary=describe_sync_summary(result.counts)
         )
@@ -403,6 +439,7 @@ def back_up_corpus(
 
 
 __all__ = [
+    "INTERRUPTED",
     "BuiltIndex",
     "GroupBlock",
     "IndexBuild",
@@ -410,6 +447,7 @@ __all__ = [
     "add_in_groups",
     "back_up_corpus",
     "build_indexes",
+    "committed_if_interrupted",
     "install_a_pack",
     "move_a_document",
     "restore_hand_deletions",
