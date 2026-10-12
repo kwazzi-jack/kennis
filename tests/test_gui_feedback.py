@@ -440,3 +440,102 @@ def test_clearing_recent_searches_without_htmx_returns_to_search(client: TestCli
 
     assert cleared.status_code == 303
     assert cleared.headers["location"] == "/"
+
+
+# ---------------------------------------------------------------------------
+# After a job, the shell says what is true now (#457)
+# ---------------------------------------------------------------------------
+
+
+def a_waiting_note(corpus: Path) -> None:
+    source = corpus / "sources" / "rivers.md"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# rivers\n\nRivers carry sediment.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+
+def indexed_through_the_window(client: TestClient) -> str:
+    started = client.post("/index", data={"collection": ""}, headers=HTMX)
+    job = BeautifulSoup(started.text, "html.parser").find(attrs={"data-job": True})
+    assert job is not None, started.text
+    with client.stream("GET", f"/job/{job['data-job']}/events") as answer:
+        for _ in answer.iter_lines():
+            pass
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        outcome = client.get(f"/job/{job['data-job']}/outcome", headers=HTMX).text
+        if words.STILL_RUNNING not in outcome:
+            return outcome
+    raise AssertionError("the job never finished")
+
+
+def test_a_finished_job_redraws_the_strip_and_the_pane(
+    corpus: Path, client: TestClient
+):
+    """An index finished with "Indexed 14 documents" while the status
+    under it still said "14 documents need indexing" and the pane's dot
+    was amber. The outcome asks for each again, where the page has it."""
+    a_waiting_note(corpus)
+    before = client.get("/").text
+    assert words.documents_waiting(1) in before
+
+    outcome = BeautifulSoup(indexed_through_the_window(client), "html.parser")
+    hooks = {
+        str(hook["data-redraw-id"]): str(hook["data-redraw-route"])
+        for hook in outcome.find_all(attrs={"data-redraw-id": True})
+    }
+
+    expected = {"strip-status", "pane-documents"} | {
+        f"pane-row-{name}" for name in ("literature", "docs", "notes")
+    }
+    assert expected <= set(hooks), hooks
+    page = BeautifulSoup(before, "html.parser")
+    for element, route in hooks.items():
+        assert page.find(id=element) is not None, f"the page has no #{element}"
+        drawn = BeautifulSoup(client.get(route, headers=HTMX).text, "html.parser")
+        top = drawn.find(True)
+        assert top is not None and top.get("id") == element, route
+    status = client.get(hooks["strip-status"], headers=HTMX).text
+    assert words.documents_waiting(1) not in status
+    row = BeautifulSoup(
+        client.get(hooks["pane-row-notes"], headers=HTMX).text, "html.parser"
+    )
+    assert row.find(class_="state-current") is not None
+
+
+def test_a_redrawn_row_is_the_summary_so_an_open_folder_stays_open(client: TestClient):
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+    row = page.find(id="pane-row-notes")
+
+    assert row is not None and row.name == "summary"
+
+
+def test_the_status_line_is_drawn_while_a_job_runs(app: FastAPI, client: TestClient):
+    """A job that finishes on this page needs a status line to redraw."""
+    holding, _ = held(app)
+    try:
+        page = client.get("/").text
+    finally:
+        holding.set()
+
+    assert BeautifulSoup(page, "html.parser").find(id="strip-status") is not None
+
+
+def test_a_note_written_from_the_dialog_redraws_them_too(
+    corpus: Path, client: TestClient
+):
+    """A note is not a job and has no stream; its answer carries the
+    fresh elements for htmx to swap in by id."""
+    answer = client.post(
+        "/remember",
+        data={"text": "Rivers carry sediment.", "target": "notes"},
+        headers=HTMX,
+    )
+    swapped = BeautifulSoup(answer.text, "html.parser")
+
+    for element in ("strip-status", "pane-documents", "pane-row-notes"):
+        found = swapped.find(id=element)
+        assert found is not None, element
+        assert found.get("hx-swap-oob") == "true", element
+    count = swapped.find(id="pane-documents")
+    assert count is not None and "1" in count.get_text()

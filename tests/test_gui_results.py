@@ -255,6 +255,20 @@ def test_the_section_heads_its_passage_and_is_not_repeated_in_it(
     )
 
 
+def test_a_passage_does_not_repeat_its_documents_title(
+    corpus: Path, client: TestClient
+):
+    """#426: "Short" then "Short An antenna note"."""
+    a_note(corpus, "rivers", "Rivers carry antenna sediment.")
+
+    item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
+    passage = item.select_one(".passage")
+
+    assert isinstance(passage, Tag)
+    assert passage.find(["h1", "h2"]) is None, passage
+    assert passage.get_text(" ", strip=True).startswith("Rivers carry")
+
+
 def test_the_head_of_the_card_holds_the_measures_the_title_and_the_section(
     corpus: Path, client: TestClient
 ):

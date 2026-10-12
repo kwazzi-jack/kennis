@@ -220,7 +220,12 @@ _TALL: Final = frozenset(
 
 
 def passage_html(
-    markdown: str, *, terms: Sequence[str], fits: int, section: str | None = None
+    markdown: str,
+    *,
+    terms: Sequence[str],
+    fits: int,
+    section: str | None = None,
+    title: str | None = None,
 ) -> PassageHtml:
     """`markdown` rendered as `to_html` would, in two parts (#454).
 
@@ -229,20 +234,21 @@ def passage_html(
     sees - does not move it. With no mark at all everything is `body`:
     a hit found by meaning alone is shown from its start.
 
-    A `section` is the card's header, so a heading opening the passage
-    with the same words is dropped from the tokens rather than said
-    twice. Only the first block and only the same words: any other
-    heading is text the reader has not been shown elsewhere.
+    The card's head says the `section` and the document's `title`, so a
+    heading opening the passage with either's words is dropped from the
+    tokens rather than said twice (#426) - the title regardless of case,
+    as `hit_title_parts` compares them. Only the first block and only the
+    same words: any other heading is text the reader has not been shown
+    elsewhere.
     """
     parser = _parser(load_remote_images=False)
     tokens = parser.parse(markdown)
-    if (
-        section
-        and len(tokens) >= 3
-        and tokens[0].type == "heading_open"
-        and tokens[1].content.strip() == section.strip()
-    ):
-        tokens = tokens[3:]
+    if len(tokens) >= 3 and tokens[0].type == "heading_open":
+        words = tokens[1].content.strip()
+        if (section and words == section.strip()) or (
+            title and words.casefold() == title.strip().casefold()
+        ):
+            tokens = tokens[3:]
     pattern = query_pattern(terms)
     if pattern is not None:
         _mark_text(tokens, pattern)

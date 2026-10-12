@@ -3,6 +3,8 @@
 {% if outcome.where %}<p class="role-muted">{{ outcome.where }}</p>{% endif %}
 {% if outcome.resolution %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
 {% if outcome.clears %}
+{# A note was written: the strip and the pane say so at once (#457). #}
+{% with oob = true %}{% include "strip-status.html" %}{% set pane = pane_now() %}{% if pane.readable %}{% include "pane-documents.html" %}{% endif %}{% for row in pane.collections %}{% include "pane-row.html" %}{% endfor %}{% endwith %}
 <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}"
           hx-swap-oob="true"></textarea>
 {% endif %}

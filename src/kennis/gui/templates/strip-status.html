@@ -1,0 +1,10 @@
+{# Where the corpus stands, drawn by the page and by `/strip/status` for
+   a finished job to redraw (#457); `oob` when a note's answer carries it
+   for htmx to swap in by id. Every word in it is Python's. #}
+{% set pane = pane if pane is defined else pane_now() %}
+<p id="strip-status" class="strip-status role-muted"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% for text, role in strip_status(pane) %}<span{% if role %} class="role-{{ role }}"{% endif %}>{{ text }}</span>
+  {% endfor %}
+  {% set last = last_job(request) %}
+  {% if last %}<a href="{{ last[0] }}">{{ last[1] }}</a>{% endif %}
+</p>

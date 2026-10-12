@@ -857,6 +857,14 @@ ADD_ACTIONS: Final[dict[str, str]] = {
 ADDS_TO = "Adds to"
 CANCEL = "Cancel"
 
+# The Index form's choice for all of them, beside each collection's name.
+INDEX_EVERY = "every collection"
+# Where a note goes, by the form's value: the corpus's notes, or the
+# context bundle of the project the window was started in.
+REMEMBER_TARGETS: Final[tuple[tuple[str, str], ...]] = (
+    ("notes", "notes"),
+    ("context", "this project"),
+)
 INDEX_PREAMBLE = (
     "Building an index reads every document in a collection. With a dense "
     "backend configured it downloads a model the first time, which is why "
@@ -1196,6 +1204,7 @@ __all__ = [
     "HIDE_PASSAGE",
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
+    "INDEX_EVERY",
     "INDEX_PREAMBLE",
     "INDEX_STATES",
     "INSPECTOR_HIDE",
@@ -1291,6 +1300,7 @@ __all__ = [
     "REMEMBER_ACTION",
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
+    "REMEMBER_TARGETS",
     "REQUIRED",
     "RESIZE_LABELS",
     "RESULTS_HEADING",

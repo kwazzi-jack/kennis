@@ -407,3 +407,11 @@ def progress_label(operation: str) -> str:
     participle reads worse than a plain word.
     """
     return _PARTICIPLES.get(operation, operation.capitalize())
+
+
+def still_running_on_interrupt(kind: str) -> str:
+    """What `kennis gui` says to a Ctrl-C that arrives during a job (#422)."""
+    return (
+        f"A {kind} job is still running, and stopping now would end it "
+        "wherever it is. Wait for it, or press Ctrl-C again to stop anyway."
+    )

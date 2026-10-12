@@ -69,7 +69,11 @@ from kennis.render.packs import (
     describe_sync,
     describe_unfetched,
 )
-from kennis.render.refusals import describe_refusal, remedies_for_refusal
+from kennis.render.refusals import (
+    choices_for_refusal,
+    describe_refusal,
+    remedies_for_refusal,
+)
 from kennis.render.words import (
     conversion_cost,
     conversion_repairs,
@@ -524,7 +528,10 @@ def _report_remedies(report: AddReport) -> None:
     commands: dict[str, None] = {}
     for item in report.outcomes:
         if item.outcome is Outcome.FAILED and item.refusal is not None:
-            for command in remedies_for_refusal(item.refusal):
+            for command in (
+                *choices_for_refusal(item.refusal),
+                *remedies_for_refusal(item.refusal),
+            ):
                 commands.setdefault(command, None)
     for command in commands:
         display.hint(command)
