@@ -631,7 +631,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 return _tree(request, collection, problem=str(error))
             return _refused_a_post(request, str(error), resolution=error.resolution)
         if _from_htmx(request):
-            return _tree(request, collection)
+            return _written(_tree(request, collection))
         return RedirectResponse(f"/collection/{collection}", status_code=303)
 
     @app.get("/remember")
@@ -988,8 +988,8 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             return _action(
                 request, "/remember", "forms/remember.html", _remember_context(outcome)
             )
-        return _TEMPLATES.TemplateResponse(
-            request, "outcome.html", {"outcome": outcome}
+        return _written(
+            _TEMPLATES.TemplateResponse(request, "outcome.html", {"outcome": outcome})
         )
 
     @app.get("/strip/status")
@@ -1305,18 +1305,26 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         if not job.done.is_set():
             return _refused(request, words.STILL_RUNNING)
         if job.crash is not None:
-            return _refused(request, words.job_crashed(job.crash))
-        if job.error is not None:
-            return _refused(
+            answer = _refused(request, words.job_crashed(job.crash))
+        elif job.error is not None:
+            answer = _refused(
                 request,
                 words.CORPUS_BUSY_RETRY
                 if isinstance(job.error, CorpusBusy)
                 else str(job.error),
                 resolution=job.error.resolution,
             )
-        return _TEMPLATES.TemplateResponse(
-            request, "job-outcome.html", {"shown": _shown_result(job)}
-        )
+        else:
+            answer = _TEMPLATES.TemplateResponse(
+                request, "job-outcome.html", {"shown": _shown_result(job)}
+            )
+        # Only a job that commits moves the page's revision: a bundle sync,
+        # a pack install and a backup write no corpus history, so a terminal
+        # that wrote meanwhile is still news. One that does commit takes the
+        # corpus as it stands when the outcome is fetched, which a terminal
+        # writing in that same moment would share - a window of the length of
+        # one request, against a banner that was wrong after every add.
+        return _written(answer) if job.kind in _COMMITTING_JOBS else answer
 
     return app
 
@@ -1602,6 +1610,28 @@ def _backup_answer(request: Request, section: dict[str, object]) -> HTMLResponse
     if _from_htmx(request):
         return _TEMPLATES.TemplateResponse(request, "settings-backup.html", section)
     return _settings_page(request, _kennis_section({}), section)
+
+
+# The jobs whose work ends in a corpus commit, by `_started`'s kind.
+_COMMITTING_JOBS: Final = frozenset({"add", "index", "sync"})
+
+# The header a response to this window's own write carries: the commit the
+# corpus is at once the write is done.
+REVISION_HEADER: Final = "X-Kennis-Revision"
+
+
+def _written[Answer: Response](answer: Answer) -> Answer:
+    """`answer`, saying which commit this window's own write left.
+
+    The banner that says something *else* changed the corpus compares the
+    revision on focus with the one the page last knew. Fixed at page load,
+    it took the window's own add, note or move for someone else's, because
+    none of those reloads the page. `revision.js` moves the page's revision
+    to this header's value, on the responses to writes and to nothing else -
+    a search answering it would hide a terminal's write behind a keystroke.
+    """
+    answer.headers[REVISION_HEADER] = revision(existing_corpus()) or ""
+    return answer
 
 
 def _frame(context: Context) -> dict[str, object]:
