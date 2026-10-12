@@ -87,7 +87,6 @@ class Binding:
             "chunker_version": self.chunking.version,
             "embedding_backend": self.model.kind if self.model else None,
             "embedding_model": self.model.model if self.model else None,
-            "embedding_dim": self.model.dim if self.model else None,
             "normalise": self.model.normalise if self.model else None,
         }
         payload["digest"] = hashlib.blake2b(
@@ -109,7 +108,6 @@ class Binding:
                 ModelBinding(
                     kind=str(recorded["embedding_backend"]),
                     model=str(recorded["embedding_model"]),
-                    dim=int(recorded["embedding_dim"]),
                     normalise=bool(recorded["normalise"]),
                 )
                 if recorded.get("embedding_backend")
@@ -147,7 +145,6 @@ def binding_from(chunking: ChunkingSettings, embedding: EmbeddingSettings) -> Bi
             else ModelBinding(
                 kind=embedding.backend,
                 model=embedding.model,
-                dim=embedding.dimensions,
                 host=embedding.base_url or None,
                 normalise=embedding.normalise,
             )

@@ -231,7 +231,7 @@ def test_the_default_backend_really_embeds(tmp_path: Path):
     from kennis.engine.rag.embedding import ModelBinding, embed_texts
 
     binding = ModelBinding(
-        kind="fastembed", model="BAAI/bge-small-en-v1.5", dim=384, normalise=True
+        kind="fastembed", model="BAAI/bge-small-en-v1.5", normalise=True
     )
     texts = [
         "Calibration solves for antenna gains against a sky model.",

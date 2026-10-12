@@ -23,7 +23,7 @@ def a_binding(
 ) -> Binding:
     return Binding(
         chunking=parameters or ChunkParameters(),
-        model=model or ModelBinding(kind="fastembed", model="bge-small", dim=384),
+        model=model or ModelBinding(kind="fastembed", model="bge-small"),
     )
 
 
@@ -37,7 +37,7 @@ def test_the_digest_is_stable_across_processes():
     assert a_binding().digest == (
         Binding(
             chunking=ChunkParameters(),
-            model=ModelBinding(kind="fastembed", model="bge-small", dim=384),
+            model=ModelBinding(kind="fastembed", model="bge-small"),
         ).digest
     )
 
@@ -67,9 +67,7 @@ def test_a_different_backend_is_a_different_binding():
     assert (
         a_binding().digest
         != a_binding(
-            model=ModelBinding(
-                kind="ollama", model="bge-small", host="http://h", dim=384
-            )
+            model=ModelBinding(kind="ollama", model="bge-small", host="http://h")
         ).digest
     )
 
@@ -77,19 +75,18 @@ def test_a_different_backend_is_a_different_binding():
 def test_a_different_model_is_a_different_binding():
     assert (
         a_binding().digest
-        != a_binding(
-            model=ModelBinding(kind="fastembed", model="bge-large", dim=384)
-        ).digest
+        != a_binding(model=ModelBinding(kind="fastembed", model="bge-large")).digest
     )
 
 
-def test_a_different_dimension_is_a_different_binding():
-    assert (
-        a_binding().digest
-        != a_binding(
-            model=ModelBinding(kind="fastembed", model="bge-small", dim=768)
-        ).digest
-    )
+def test_the_width_is_not_part_of_a_binding():
+    """The model fixes the width of its vectors, and nothing compared a
+    configured width with them, so it could only be wrong in silence. The
+    model's name identifies the width already (Brian, 2026-10-12)."""
+    recorded = a_binding().recorded()
+
+    assert not any("dim" in key for key in recorded)
+    assert not any("dim" in name for name in EmbeddingSettings.model_fields)
 
 
 def test_a_different_normalisation_is_a_different_binding():
@@ -98,9 +95,7 @@ def test_a_different_normalisation_is_a_different_binding():
     assert (
         a_binding().digest
         != a_binding(
-            model=ModelBinding(
-                kind="fastembed", model="bge-small", dim=384, normalise=False
-            )
+            model=ModelBinding(kind="fastembed", model="bge-small", normalise=False)
         ).digest
     )
 
@@ -111,12 +106,12 @@ def test_the_host_does_not_change_the_binding():
     assert (
         a_binding(
             model=ModelBinding(
-                kind="ollama", model="bge-small", host="http://one:11434", dim=384
+                kind="ollama", model="bge-small", host="http://one:11434"
             )
         ).digest
         == a_binding(
             model=ModelBinding(
-                kind="ollama", model="bge-small", host="http://two:11434", dim=384
+                kind="ollama", model="bge-small", host="http://two:11434"
             )
         ).digest
     )
@@ -126,14 +121,10 @@ def test_concurrency_does_not_change_the_binding():
     """How many requests were in flight is not part of what a vector is."""
     assert (
         a_binding(
-            model=ModelBinding(
-                kind="fastembed", model="bge-small", dim=384, max_async=2
-            )
+            model=ModelBinding(kind="fastembed", model="bge-small", max_async=2)
         ).digest
         == a_binding(
-            model=ModelBinding(
-                kind="fastembed", model="bge-small", dim=384, max_async=16
-            )
+            model=ModelBinding(kind="fastembed", model="bge-small", max_async=16)
         ).digest
     )
 
@@ -200,7 +191,6 @@ def test_the_stored_binding_does_not_record_where_the_backend_lives():
         EmbeddingSettings(
             backend="ollama",
             model="nomic-embed-text",
-            dimensions=768,
             base_url="http://localhost:11434",
         ),
     )
@@ -215,7 +205,7 @@ def test_a_stored_binding_takes_a_runtime_host_for_the_query():
     """The merge: identity from disk, connection from configuration."""
     stored = binding_from(
         ChunkingSettings(),
-        EmbeddingSettings(backend="ollama", model="nomic-embed-text", dimensions=768),
+        EmbeddingSettings(backend="ollama", model="nomic-embed-text"),
     )
     assert stored.model is not None
 
@@ -223,7 +213,6 @@ def test_a_stored_binding_takes_a_runtime_host_for_the_query():
 
     assert reachable.host == "http://elsewhere:11434"
     assert reachable.model == stored.model.model
-    assert reachable.dim == stored.model.dim
     assert reachable.normalise == stored.model.normalise
 
 
@@ -231,7 +220,7 @@ def test_a_runtime_host_of_none_leaves_the_binding_alone():
     """fastembed has no host and must not acquire one."""
     stored = binding_from(
         ChunkingSettings(),
-        EmbeddingSettings(backend="fastembed", model="m", dimensions=8),
+        EmbeddingSettings(backend="fastembed", model="m"),
     )
     assert stored.model is not None
 

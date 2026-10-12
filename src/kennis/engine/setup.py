@@ -59,9 +59,9 @@ class Question:
     what to show without running kennis's code per keystroke.
 
     `current` is what is in force and `suggested` what to offer. They
-    differ only for a model or a width asked under a backend not in force
-    (#441), and a front end offers `suggested` and writes an answer only
-    when it differs from `current`.
+    differ only for the model asked under a backend not in force (#441). A
+    front end offers `suggested`, and compares an answer with `current` to
+    say what changed; every setting is written either way (#445).
     """
 
     key: str
@@ -88,16 +88,10 @@ class Question:
 # right answer depends on the person rather than on kennis.
 _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]] = (
     ("embedding.backend", "choice", ()),
-    # The width under every backend that has a model, because it is the
-    # model's: kept at fastembed's 384 under openai it recorded a false
-    # width beside 1536-wide vectors (#441).
     ("embedding.model", "text", (("embedding.backend", "fastembed"),)),
-    ("embedding.dimensions", "integer", (("embedding.backend", "fastembed"),)),
     ("embedding.base_url", "text", (("embedding.backend", "ollama"),)),
     ("embedding.model", "text", (("embedding.backend", "ollama"),)),
-    ("embedding.dimensions", "integer", (("embedding.backend", "ollama"),)),
     ("embedding.model", "text", (("embedding.backend", "openai"),)),
-    ("embedding.dimensions", "integer", (("embedding.backend", "openai"),)),
     ("embedding.api_key", "secret", (("embedding.backend", "openai"),)),
     ("conversion.backend", "choice", ()),
     # Before the key: the mode is a price, and nobody wants to retype a key
@@ -281,22 +275,17 @@ def _current(key: str, settings: Settings) -> str:
 
 
 def _suggested(key: str, when: tuple[tuple[str, str], ...], settings: Settings) -> str:
-    """What a front end offers for `key`: the value in force, unless the
-    question is asked for an embedding backend other than the one in force.
+    """What a front end offers for `key`: the value in force, unless it is
+    the model asked for an embedding backend other than the one in force.
 
-    Then the value in force belongs to the other backend, and that
-    backend's own model and width are offered instead (#441). This is not
-    `current`, because `current` is what an answer is compared with to
-    decide whether to write it: accepting the offer has to write it.
+    Then the model in force belongs to the other backend, and this
+    backend's own model is offered instead (#441). Not `current`, because
+    `current` is what an answer is compared with to say what changed.
     """
     backend = dict(when).get("embedding.backend")
-    default = EMBEDDING_DEFAULTS.get(backend or "")
-    if default is None or backend == settings.embedding.backend:
-        return _current(key, settings)
-    if key == "embedding.model":
-        return default.model
-    if key == "embedding.dimensions":
-        return str(default.dimensions)
+    model = EMBEDDING_DEFAULTS.get(backend or "")
+    if key == "embedding.model" and model and backend != settings.embedding.backend:
+        return model
     return _current(key, settings)
 
 

@@ -23,7 +23,6 @@ from kennis.render.settings import describe_cost, describe_costs
 EXPECTED = {
     "embedding.backend": ("rebuild",),
     "embedding.model": ("rebuild",),
-    "embedding.dimensions": ("rebuild",),
     # The host is absent from the binding, so a moved daemon changes no
     # vector; it changes where the next query is embedded.
     "embedding.base_url": ("next_search",),

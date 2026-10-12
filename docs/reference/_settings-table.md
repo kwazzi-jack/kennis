@@ -9,7 +9,6 @@ How chunks and queries become vectors.
 |---|---|---|---|
 | `backend` | `fastembed` / `ollama` / `openai` / `none` | `fastembed` | Backend used to embed chunks. fastembed downloads a 65 MB model the first time you index; none means lexical search only. |
 | `model` | `str` | `BAAI/bge-small-en-v1.5` | Model name, interpreted by the backend. |
-| `dimensions` | `int` | `384` | Width of a vector. |
 | `normalise` | `bool` | `True` | Scale vectors to unit length, so cosine is a dot product. |
 | `batch_size` | `int` | `64` | Texts per backend request. |
 | `base_url` | `str` | `""` | Server address. Unused for fastembed. |

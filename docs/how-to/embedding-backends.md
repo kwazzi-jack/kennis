@@ -41,7 +41,6 @@ level. See [How retrieval works](../explanation/retrieval.md).
 ```
 kennis config set embedding.backend ollama
 kennis config set embedding.model nomic-embed-text
-kennis config set embedding.dimensions 768
 kennis config set embedding.base_url http://localhost:11434
 ```
 
@@ -55,7 +54,6 @@ does not recognise is a 404, so a typo is an error rather than a download.
 ```
 kennis config set embedding.backend openai
 kennis config set embedding.model text-embedding-3-small
-kennis config set embedding.dimensions 1536
 ```
 
 This sends your document text to OpenAI. It needs a key, which does not go in
@@ -75,24 +73,12 @@ become relative to each query's best hit, and the summary line says so.
 Reasonable when the corpus is small, when your queries use the corpus's own
 vocabulary, or when you do not want a model download at all.
 
-## Dimensions
+## Changing backend
 
-`embedding.dimensions` should match what the model actually produces - 384
-for `BAAI/bge-small-en-v1.5`, 768 for `nomic-embed-text`, 1536 for
-`text-embedding-3-small`. It is a statement about the model, not a request:
-no backend is asked for a particular width.
+`kennis config init` and the settings page offer each backend's own model when
+the backend is changed, so accepting what they offer keeps the two in step.
+`kennis config set` changes one value and offers nothing, which is why the
+commands above set the model as well as the backend.
 
-`kennis config init` and the settings page offer each backend's own model and
-width when the backend is changed, so accepting what they offer keeps the two
-in step. `kennis config set` changes one value and offers nothing, which is
-why the commands above set all three.
-
-!!! warning "Not currently validated"
-    kennis does not check this against the model. The model
-    decides the real width regardless, so a wrong value does not corrupt
-    your vectors or your search results - but it is recorded in the index's
-    `binding.json` as though it were true, and because it forms part of the
-    index identity, changing it forces a full reindex that achieves nothing.
-
-    Set it correctly. The default, 384, is right only for the default
-    model.
+There is no setting for the width of a vector. The model fixes it, and kennis
+takes it from the vectors the model returns.

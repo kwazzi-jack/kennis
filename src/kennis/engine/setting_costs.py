@@ -24,7 +24,6 @@ type SettingCost = Literal["next_search", "next_add", "rebuild", "leaves_machine
 _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "embedding.backend": ("rebuild",),
     "embedding.model": ("rebuild",),
-    "embedding.dimensions": ("rebuild",),
     "embedding.base_url": ("next_search",),
     "embedding.api_key": ("next_search",),
     "conversion.backend": ("next_add",),
