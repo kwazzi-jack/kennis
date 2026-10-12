@@ -10,7 +10,7 @@
   <div class="field">
     <span class="name">{{ field_labels.collection }}</span>
     <span class="need">{{ required }}</span>
-    <span class="choices">{% for choice in collections %}<label><input type="radio" name="collection-{{ index }}" value="{{ choice }}"> {{ choice }}</label>{% endfor %}</span>
+    <span class="choices segmented" role="radiogroup">{% for choice in collections %}<label><input type="radio" name="collection-{{ index }}" value="{{ choice }}">{{ choice }}</label>{% endfor %}</span>
   </div>
   <div class="field">
     <label class="name" for="lines-{{ index }}">{{ field_labels.lines }}</label>

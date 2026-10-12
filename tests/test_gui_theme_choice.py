@@ -160,7 +160,7 @@ def theme_control(page: str) -> str:
     Named rather than found by excluding what other controls carry:
     scoping by exclusion is what concern #375 was, twice."""
     found = re.search(
-        r'<fieldset class="setting" data-preference="theme">.*?</fieldset>',
+        r'<div class="setting" data-preference="theme">.*?</select>',
         page,
         re.DOTALL,
     )
@@ -174,9 +174,7 @@ def test_the_chosen_option_is_the_one_marked_checked(corpus: Path, client: TestC
     client.cookies.set("theme", "dark")
 
     control = theme_control(client.get("/settings").text)
-    chosen = re.findall(
-        r'<input type="radio" name="theme" value="([^"]*)"[^>]*\schecked', control
-    )
+    chosen = re.findall(r'<option value="([^"]*)"[^>]*\sselected', control)
 
     assert chosen == ["dark"], control
 

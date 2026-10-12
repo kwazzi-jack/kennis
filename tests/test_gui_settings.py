@@ -65,9 +65,22 @@ def root_of(page: str) -> Tag:
 
 def control_of(page: str, name: str) -> Tag:
     """The settings page's control for one preference, by its name."""
-    found = soup(page).find("fieldset", attrs={"data-preference": name})
+    found = soup(page).find(attrs={"data-preference": name})
     assert isinstance(found, Tag), name
     return found
+
+
+def offered_in(control: Tag, name: str) -> list[Tag]:
+    """The options of a dropdown or the radios of a list, whichever the
+    preference is drawn as (`test_gui_controls.py` says which)."""
+    select = control.find("select", attrs={"name": name})
+    if isinstance(select, Tag):
+        return list(select.find_all("option"))
+    return list(control.find_all("input", attrs={"type": "radio", "name": name}))
+
+
+def is_chosen(choice: Tag) -> bool:
+    return choice.has_attr("selected") or choice.has_attr("checked")
 
 
 def attributes_of(cookie: str) -> dict[str, str]:
@@ -187,10 +200,13 @@ def test_the_page_says_these_are_this_windows_alone(client: TestClient):
 @pytest.mark.parametrize("name", list(EXPECTED_PREFERENCES))
 def test_each_preference_has_a_control_with_its_choices(client: TestClient, name: str):
     control = control_of(client.get("/settings").text, name)
-    radios = control.find_all("input", attrs={"type": "radio", "name": name})
+    offered = offered_in(control, name)
 
-    assert [radio["value"] for radio in radios] == list(EXPECTED_PREFERENCES[name][0])
-    assert all(radio.has_attr("data-pref") for radio in radios)
+    assert [choice["value"] for choice in offered] == list(
+        EXPECTED_PREFERENCES[name][0]
+    )
+    marked = control.select(f'[name="{name}"][data-pref]')
+    assert marked and all(element.name in ("select", "input") for element in marked)
 
 
 @pytest.mark.parametrize("name", list(EXPECTED_PREFERENCES))
@@ -198,9 +214,9 @@ def test_the_current_choice_is_checked(client: TestClient, name: str):
     chosen = EXPECTED_PREFERENCES[name][0][1]
     client.cookies.set(name, chosen)
     control = control_of(client.get("/settings").text, name)
-    checked = control.find_all("input", attrs={"checked": True})
+    offered = offered_in(control, name)
 
-    assert [radio["value"] for radio in checked] == [chosen]
+    assert [choice["value"] for choice in offered if is_chosen(choice)] == [chosen]
 
 
 def test_each_scale_shows_its_five_steps(client: TestClient):
