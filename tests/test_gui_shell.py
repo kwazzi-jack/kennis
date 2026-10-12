@@ -100,6 +100,79 @@ def test_the_guard_does_not_redirect_to_somewhere_unguarded(client: TestClient):
     assert "location" not in {key.lower() for key in refused.headers}
 
 
+def test_a_second_interface_does_not_sign_out_the_first(corpus: Path):
+    """A browser sends a cookie to every port on a host, so two windows
+    holding their tokens under one name overwrote each other (#407)."""
+    first = TestClient(build_app("first-token"), base_url="http://127.0.0.1:41001")
+    second = TestClient(build_app("second-token"), base_url="http://127.0.0.1:41002")
+
+    def one_browser() -> None:
+        """Every cookie either tab holds, in both: a browser's one jar,
+        which matches a host whatever its port."""
+        held = {**dict(first.cookies), **dict(second.cookies)}
+        for tab in (first, second):
+            tab.cookies.clear()
+            for name, value in held.items():
+                tab.cookies.set(name, value)
+
+    assert first.get("/", params={"token": "first-token"}).status_code == 200
+    one_browser()
+    assert second.get("/", params={"token": "second-token"}).status_code == 200
+    one_browser()
+
+    assert first.get("/").status_code == 200
+    assert second.get("/").status_code == 200
+
+
+# Written by hand: what a browser sends with a POST from another page on
+# this host - another port is the same *site*, so `samesite=strict` lets
+# the cookie through - and from kennis's own page.
+ELSEWHERE = [
+    {"Origin": "http://127.0.0.1:8888"},
+    {"Origin": "http://localhost:41001"},
+    {"Origin": "null"},
+    {"Sec-Fetch-Site": "same-site"},
+    {"Sec-Fetch-Site": "cross-site"},
+]
+OWN_PAGE = [
+    {"Origin": "http://127.0.0.1:41001"},
+    {"Sec-Fetch-Site": "same-origin"},
+    {},
+]
+
+
+@pytest.fixture
+def signed_in(corpus: Path) -> TestClient:
+    opened = TestClient(
+        build_app(TOKEN), base_url="http://127.0.0.1:41001", follow_redirects=False
+    )
+    assert opened.get("/", params={"token": TOKEN}).status_code == 200
+    return opened
+
+
+@pytest.mark.parametrize("headers", ELSEWHERE)
+def test_a_write_from_another_page_on_this_host_is_refused(
+    signed_in: TestClient, headers: dict[str, str]
+):
+    refused = signed_in.post("/history/clear", headers=headers)
+
+    assert refused.status_code == 403
+
+
+@pytest.mark.parametrize("headers", OWN_PAGE)
+def test_a_write_from_kennis_own_page_is_accepted(
+    signed_in: TestClient, headers: dict[str, str]
+):
+    assert signed_in.post("/history/clear", headers=headers).status_code == 303
+
+
+def test_a_read_from_another_page_is_still_a_read(signed_in: TestClient):
+    """Nothing is changed by a GET, and the token still guards it."""
+    answer = signed_in.get("/", headers={"Sec-Fetch-Site": "same-site"})
+
+    assert answer.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # The theme
 # ---------------------------------------------------------------------------
