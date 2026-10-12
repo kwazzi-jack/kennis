@@ -433,6 +433,28 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             )
         return answer
 
+    @app.exception_handler(KennisError)
+    def drawn_as_a_problem(request: Request, error: Exception) -> HTMLResponse:
+        """A domain failure no route turned into something of its own.
+
+        Design section 20: the engine raises, and each front end turns it
+        into what that front end has. A route that reads the settings is
+        nearly every route, so a `config.toml` holding one value out of range
+        answered every page with a bare "Internal Server Error" - the
+        sentence saying which value, and the command that shows it, were
+        both in the error and neither reached the reader.
+        """
+        if not isinstance(error, KennisError):
+            raise error
+        if _from_htmx(request):
+            return _refused(request, str(error), resolution=error.resolution)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "problem.html",
+            {"problem": str(error), "resolution": error.resolution},
+            status_code=500,
+        )
+
     # Mounted, not routed one file at a time. The guard above is
     # application middleware, so it runs for a mounted app too - which
     # is the case a per-route decorator would have missed, and the one
@@ -886,7 +908,12 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                     about="folder", problem=words.not_a_backup_folder(given)
                 ),
             )
-        apply_answers({"backup.folder": str(folder)})
+        try:
+            apply_answers({"backup.folder": str(folder)})
+        except SettingsError as error:
+            return _backup_answer(
+                request, _backup_section(about="folder", problem=str(error))
+            )
         return _backup_answer(
             request, _backup_section(about="folder", outcome=words.KENNIS_SAVED)
         )
