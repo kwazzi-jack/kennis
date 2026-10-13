@@ -12,9 +12,10 @@ from fastapi.responses import (
 from starlette.background import BackgroundTask
 
 from kennis.context import existing_corpus
-from kennis.gui import words
+from kennis.gui import history, words
 from kennis.gui.pages import (
     palette_entries,
+    palette_typed,
 )
 from kennis.gui.pane import pane_now
 from kennis.gui.responses import TEMPLATES, action_page
@@ -99,7 +100,8 @@ def serve_palette(request: Request) -> HTMLResponse:
         "/palette",
         "forms/palette.html",
         {
-            "entries": palette_entries(),
+            "entries": palette_entries()
+            + palette_typed(existing_corpus(), history.recent()),
             "palette_prompt": words.PALETTE_PROMPT,
             "palette_empty": words.PALETTE_EMPTY,
             "palette_keys": words.PALETTE_KEYS,

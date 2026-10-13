@@ -493,6 +493,7 @@ PALETTE_KINDS: Final[dict[str, str]] = {
     "action": "action",
     "collection": "collection",
     "page": "page",
+    "search": "search",
 }
 
 

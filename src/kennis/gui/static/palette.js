@@ -7,6 +7,8 @@
 // writes the "nothing matches" sentence; this file compares, hides,
 // moves and clicks. Nothing here composes a sentence.
 (function () {
+  var TYPED_SHOWN = 30;
+
   document.addEventListener("keydown", function (event) {
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k") { return; }
     var open = document.querySelector(".palette-open");
@@ -44,8 +46,16 @@
     var palette = event.target.closest(".palette");
     if (!palette || !event.target.matches(".palette-input")) { return; }
     var needle = event.target.value.trim().toLowerCase();
+    // A document or a past search shows only for something typed, and
+    // only the first few that match: the corpus may hold thousands.
+    var typed = 0;
     options(palette).forEach(function (option) {
-      option.hidden = option.dataset.match.indexOf(needle) === -1;
+      var matches = option.dataset.match.indexOf(needle) !== -1;
+      if (option.hasAttribute("data-typed")) {
+        matches = matches && needle !== "" && typed < TYPED_SHOWN;
+        if (matches) { typed += 1; }
+      }
+      option.hidden = !matches;
     });
     var visible = shown(palette);
     palette.querySelector(".palette-empty").hidden = visible.length > 0;

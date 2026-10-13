@@ -1,4 +1,6 @@
-{# The palette (11g): every action and place, one list, actions first.
+{# The palette (11g): every action and place, one list, actions first,
+   then documents by title and past searches, which show only once
+   something typed matches them.
    Each entry is an ordinary link to a route that already exists - an
    action into `#dialog` as the bar's are, a place by navigating - so
    running one is clicking it, and without a script this is a page of
@@ -8,8 +10,9 @@
 <input type="text" class="palette-input" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-label="{{ palette_prompt }}" placeholder="{{ palette_prompt }}" autocomplete="off" aria-activedescendant="palette-0" autofocus>
 <ul class="palette-list" id="palette-list" role="listbox" aria-label="{{ palette_prompt }}">
 {% for entry in entries %}
-<li role="option" id="palette-{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}" data-match="{{ entry.match }}">
-<a href="{{ entry.href }}"{% if entry.opens_a_dialog %} hx-get="{{ entry.href }}" hx-target="#dialog" hx-swap="innerHTML"{% endif %} tabindex="-1"><span class="role-{{ entry.role }}">{{ icon(entry.icon) }}</span><span class="label">{{ entry.label }}</span><span class="kind role-{{ entry.role }}">{{ entry.kind }}</span></a>
+<li role="option" id="palette-{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}" data-match="{{ entry.match }}"{% if entry.typed_only %} data-typed hidden{% endif %}{% if entry.collection %} data-collection="{{ entry.collection }}"{% endif %}>
+{% set worn = ("role-" ~ entry.role) if entry.role else "collection-kind" %}
+<a href="{{ entry.href }}"{% if entry.opens_a_dialog %} hx-get="{{ entry.href }}" hx-target="#dialog" hx-swap="innerHTML"{% endif %} tabindex="-1"><span class="{{ worn }}">{{ icon(entry.icon) }}</span><span class="label">{{ entry.label }}</span><span class="kind {{ worn }}">{{ entry.kind }}</span></a>
 </li>
 {% endfor %}
 </ul>
