@@ -284,17 +284,20 @@ def test_the_head_of_the_card_holds_the_measures_the_title_and_the_section(
     names = [
         " ".join(child.get("class") or []) for child in head.find_all(recursive=False)
     ]
-    assert names == ["measures", "heading", "passage-section"]
+    assert names == ["heading", "passage-section", "measures"]
     assert head.find(class_="handle") is not None
     following = head.find_next_sibling()
     assert isinstance(following, Tag) and "passage" in (following.get("class") or [])
 
 
-def test_the_measures_come_before_the_title(corpus: Path, client: TestClient):
+def test_the_title_comes_before_the_measures(corpus: Path, client: TestClient):
+    """A card reads as what it is before how well it matched: the
+    metadata came first, and the title only after five cells, a level
+    and a handle (the visual review of 2026-10-13, F4)."""
     a_note(corpus, "calibration", "Calibration solves for antenna gains.")
 
     for item in items_of(hits_of(client, "antenna")):
-        assert item.index('class="measures"') < item.index('class="title"')
+        assert item.index('class="title"') < item.index('class="measures"')
 
 
 def test_a_measure_is_an_icon_a_word_and_a_bar(corpus: Path, client: TestClient):
@@ -563,11 +566,11 @@ def test_the_hit_is_a_card_with_its_head_set_apart(client: TestClient):
     for declaration in ("background: var(--raised)", "border: 1px solid var(--rule)"):
         assert declaration in card.group(1)
     assert "border-radius" in card.group(1)
-    # The rule is the collection's colour (Brian, 2026-10-12); open, it
-    # widens rather than changing colour.
-    assert re.search(r"border-left: 3px solid var\(--collection\)", card.group(1))
+    # The frame is the collection's colour, all round and with no side
+    # stripe (Brian, 2026-10-13); open, it thickens rather than recolours.
+    assert "border-left" not in card.group(1)
     assert "overflow: hidden" not in card.group(1), "the chevron hangs off its edge"
-    assert re.search(r"\.hit:has\(details\[open\]\) \{[^}]*border-left-width: 6px", css)
+    assert re.search(r"\.hit:has\(details\[open\]\) \{[^}]*box-shadow", css)
     assert head, css
     assert "background: var(--ground)" in head.group(1)
     assert "border-bottom: 1px solid var(--rule)" in head.group(1)

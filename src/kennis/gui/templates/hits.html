@@ -61,10 +61,16 @@
 <ol class="results">
 {% for hit in group.hits %}
   <li class="hit" data-collection="{{ group.collection }}">
-    {# The card's head (Brian, 2026-10-12): what kennis says about the
-       hit - how well it matched, its handle, the document and the
-       section - in a band over the passage it quotes. #}
+    {# The card's head (Brian, 2026-10-12): the document and the section,
+       then how well it matched and its handle, in a band over the
+       passage it quotes. Title first, so a card says what it is before
+       how well it matched (the visual review, F4). #}
     <div class="hit-head">
+      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
+        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+      {# Which section the passage is from; the title is the document's
+         alone. Marked, so `safe`. #}
+      {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
       {# The handle ends the row, where the mockup puts the citekey. #}
       <p class="measures">
         {% for measure in hit.measures %}
@@ -74,11 +80,6 @@
         {% endfor %}
         <span class="handle">{{ hit.handle }}</span>
       </p>
-      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
-        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
-      {# Which section the passage is from; the title is the document's
-         alone. Marked, so `safe`. #}
-      {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
     </div>
     {# One rendering of the chunk, parted where the reader's words first
        occur (#454). Closed, the part from the match, faded where it is
