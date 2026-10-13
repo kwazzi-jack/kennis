@@ -71,7 +71,7 @@ PREFERENCES: Final[dict[str, Preference]] = {
         _preference("face", "serif", "appearance"),
         _preference("size", "normal", "appearance"),
         _preference("spacing", "normal", "appearance"),
-        _preference("width", "pane", "appearance"),
+        _preference("width", "reading", "appearance"),
         _preference("strength", "bars", "results"),
         _preference("labels", "icons", "results"),
         _preference("scale", "viridis", "results"),

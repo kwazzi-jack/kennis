@@ -51,7 +51,8 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     source.parent.mkdir(parents=True)
     source.write_text(
         "# Calibration\n\nAntenna gains drift on long tracks.\n\n"
-        "The model is $$g(t) = g_0 e^{i \\phi(t)}$$\n",
+        "The model is $$g(t) = g_0 e^{i \\phi(t)}$$\n\n"
+        "| Source | Flux |\n|---|---|\n| J1000+30 | 4 |\n",
         encoding="utf-8",
     )
     assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
@@ -126,6 +127,23 @@ def test_a_document_is_typeset(page: playwright.Page) -> None:
     page.click("#hits .hit a.open")
 
     page.wait_for_selector(".katex", timeout=_WAIT_MS)
+
+
+def test_a_document_s_table_has_its_cells_kept_apart(page: playwright.Page) -> None:
+    """Left to the browser a table had no padding and no rules, and its
+    cells ran together: "J1000+30 4"."""
+    page.fill("input[name=q]", "antenna")
+    page.wait_for_selector("#hits .hit a.open", timeout=_WAIT_MS)
+    page.click("#hits .hit a.open")
+    page.wait_for_selector("article td", timeout=_WAIT_MS)
+
+    cell = page.evaluate(
+        "(() => { const s = getComputedStyle(document.querySelector('article td'));"
+        " return [s.paddingRight, s.borderBottomWidth]; })()"
+    )
+
+    assert cell[0] != "0px"
+    assert cell[1] != "0px"
 
 
 def test_a_note_written_here_is_not_announced_as_someone_else_s(

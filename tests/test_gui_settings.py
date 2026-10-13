@@ -37,7 +37,7 @@ EXPECTED_PREFERENCES = {
     "spacing": (("normal", "wide", "wider"), "normal"),
     # Brian, 2026-10-12: the text fits the pane unless asked otherwise;
     # the reading measure the window had until then is the last choice.
-    "width": (("pane", "wide", "reading"), "pane"),
+    "width": (("pane", "wide", "reading"), "reading"),
     "strength": (("bars", "words"), "bars"),
     "labels": (("icons", "words", "both"), "icons"),
     "scale": (("viridis", "cividis", "plasma", "magma", "greys"), "viridis"),
@@ -329,17 +329,18 @@ def test_spacing_widens_in_two_steps():
     assert "var(--leading)" in rules_for(sheet, ".column")
 
 
-def test_the_text_fits_the_pane_unless_a_width_is_chosen():
-    """No cap by default; the reading choice restores exactly the widths
-    the window had before there was a choice."""
+def test_the_text_is_set_at_a_reading_measure_unless_a_width_is_chosen():
+    """Fitting the pane was the default for a day and set passages about
+    150 characters a line; every review asked for the measure back."""
     sheet = stylesheet()
     code = re.sub(r"/\*.*?\*/", "", sheet, flags=re.S)
 
-    assert ':root[data-width="pane"]' not in sheet  # the default needs no rule
-    assert re.search(r"--text: none;", code) and re.search(r"--frame: none;", code)
-    reading = rules_for(sheet, ':root[data-width="reading"]')
-    assert "--text: var(--measure)" in reading
-    assert "--frame: calc(var(--margin) + var(--gap) + var(--measure))" in reading
+    assert ':root[data-width="reading"]' not in sheet  # the default needs no rule
+    assert "--text: var(--measure);" in code
+    assert "--frame: calc(var(--margin) + var(--gap) + var(--measure));" in code
+    pane = rules_for(sheet, ':root[data-width="pane"]')
+    assert "--text: none" in pane
+    assert "--frame: none" in pane
     assert "--text: " in rules_for(sheet, ':root[data-width="wide"]')
     assert "max-width: var(--frame)" in rules_for(sheet, ".column")
     # Every width a reading measure set now goes through the choice.
