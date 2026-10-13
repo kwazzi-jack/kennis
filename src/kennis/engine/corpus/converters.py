@@ -29,9 +29,11 @@ would lack.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -286,7 +288,12 @@ class MineruConverter:
             return ConversionBatch(markdown={})
         require_converter(self, paths)
 
-        with tempfile.TemporaryDirectory(prefix="kennis-mineru-") as temporary:
+        # A file a just-killed process still had open cannot be removed on
+        # Windows until it lets go: the conversion's own error is the one to
+        # report, not a cleanup's `PermissionError` raised over it.
+        with tempfile.TemporaryDirectory(
+            prefix="kennis-mineru-", ignore_cleanup_errors=True
+        ) as temporary:
             staged_dir = Path(temporary) / "input"
             output_dir = Path(temporary) / "output"
             staged_dir.mkdir()
@@ -367,19 +374,8 @@ class MineruConverter:
             _SECONDS_PER_DOCUMENT * document_count
         )
         try:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                # Not the locale's encoding: on Windows that is cp1252, and
-                # MinerU's own UTF-8 log lines raised `UnicodeDecodeError`,
-                # which nothing here catches.
-                encoding="utf-8",
-                errors="replace",
-                env=self._environment(),
-                check=False,
-                timeout=timeout_seconds,
-                stdin=subprocess.DEVNULL,
+            return _run_as_group(
+                command, env=self._environment(), timeout=timeout_seconds
             )
         except subprocess.TimeoutExpired as expired:
             # The remedy is the setting that sizes a run: "convert them in
@@ -747,6 +743,64 @@ def _collect(
         markdown[original] = largest.read_text(encoding="utf-8", errors="replace")
         front_page[original] = _front_page_text(largest)
     return markdown, front_page
+
+
+def _run_as_group(
+    command: list[str], *, env: dict[str, str], timeout: float
+) -> subprocess.CompletedProcess[str]:
+    """Run `command` in a process group of its own, and end the whole group
+    if it overruns `timeout`.
+
+    `subprocess.run` kills only the process it started. MinerU starts helpers
+    of its own - a model server among them - so a cancelled run left those
+    running, holding the GPU and the output directory, after kennis had
+    said the run was cancelled. `TimeoutExpired` is raised as `run` raises it.
+    """
+    group: dict[str, Any]
+    if sys.platform == "win32":
+        group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        group = {"start_new_session": True}
+    with subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Not the locale's encoding: on Windows that is cp1252, and MinerU's
+        # own UTF-8 log lines raised `UnicodeDecodeError`, which nothing here
+        # catches.
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        **group,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _end_group(process)
+            raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _end_group(process: subprocess.Popen[str]) -> None:
+    """Kill `process` and everything it started, then reap it."""
+    if sys.platform == "win32":
+        # The tree, by parent: a Windows process group cannot be killed as
+        # one, only sent Ctrl-Break, which a model server may ignore.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    else:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+    process.kill()
+    # Bounded: a helper outside the group that inherited the pipes would
+    # otherwise hold this open as long as it lives.
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.communicate(timeout=5)
 
 
 def _failure_reason(completed: subprocess.CompletedProcess[str]) -> str:

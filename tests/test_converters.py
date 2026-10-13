@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -286,6 +287,32 @@ def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_writt
     assert "Nothing was written" in str(raised.value)
 
 
+@needs_a_posix_shell
+def test_a_cancelled_run_ends_what_it_started_as_well(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Only the process kennis started was killed, so MinerU's own helpers -
+    a model server holding the GPU - went on running after the run was
+    said to be cancelled."""
+    marker = tmp_path / "still-running"
+    binary_dir = tmp_path / "bin"
+    binary_dir.mkdir()
+    script = binary_dir / "mineru"
+    script.write_text(
+        f"#!/bin/sh\n(sleep 2; touch '{marker}') &\nsleep 30\n", encoding="utf-8"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr("kennis.engine.corpus.converters._STARTUP_GRACE_SECONDS", 0)
+    monkeypatch.setattr("kennis.engine.corpus.converters._SECONDS_PER_DOCUMENT", 1)
+
+    with pytest.raises(ConversionFailed):
+        MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+    time.sleep(2.5)
+
+    assert not marker.exists()
+
+
 def test_a_run_that_times_out_names_the_setting_that_shortens_it(
     fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -295,7 +322,7 @@ def test_a_run_that_times_out_names_the_setting_that_shortens_it(
     def expire(*args: object, **kwargs: object) -> object:
         raise subprocess.TimeoutExpired(cmd="mineru", timeout=1)
 
-    monkeypatch.setattr("kennis.engine.corpus.converters.subprocess.run", expire)
+    monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", expire)
     pdfs = [a_pdf(tmp_path / f"{name}.pdf") for name in ("a", "b", "c", "d")]
 
     with pytest.raises(ConversionFailed) as raised:
@@ -597,7 +624,7 @@ def test_the_run_invokes_the_mineru_it_found(
         invoked.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(subprocess, "run", record)
+    monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", record)
     MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
 
     assert invoked, "mineru was never run"
