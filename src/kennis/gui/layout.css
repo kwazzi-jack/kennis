@@ -2307,3 +2307,7 @@ a.button:active { translate: 0 1px; }
   .field[data-name="project"] {
   display: grid;
 }
+
+/* A collection in the Index dialog with documents a search cannot find. */
+.segmented .waiting { color: var(--role-warning); font-size: 0.75rem; }
+.sync-foot .primary { order: 1; }

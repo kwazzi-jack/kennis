@@ -211,6 +211,7 @@ TEMPLATES.env.globals.update(
         "upload_folder": words.UPLOAD_FOLDER,
         "upload_hint": words.UPLOAD_HINT,
         "tip_about": words.tip_about,
+        "index_waiting": words.index_waiting,
         "upload_pdf": words.UPLOAD_PDF,
         "upload_typed": words.UPLOAD_TYPED,
         "upload_clear": words.UPLOAD_CLEAR,
