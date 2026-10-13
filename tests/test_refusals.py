@@ -23,6 +23,7 @@ from kennis.engine import refusals as refusal_module
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     KennisOwn,
     NoArxivText,
     NoIdentity,
@@ -54,6 +55,12 @@ EVERY_REFUSAL: list[Refusal] = [
     NoIdentity(named="/tmp/paper.pdf"),
     AmbiguousIdentity(
         named="/tmp/paper.pdf", kind="arxiv", values=("2409.19750", "1101.1764")
+    ),
+    IdentityMismatch(
+        named="https://journal.example/paper.pdf",
+        kind="doi",
+        stated="10.1093/mnras/stab1234",
+        found=("10.1093/mnras/stab9999",),
     ),
     NoPublisherText(kind="doi", value="10.1093/mnras/stab1234"),
     NoArxivText(named="2409.19750", arxiv_id="2409.19750", declined="406"),

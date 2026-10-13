@@ -31,6 +31,7 @@ from kennis.engine.events import (
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -1219,3 +1220,59 @@ def test_without_an_email_unpaywall_is_not_asked(papers: Collection):
     assert asked == []
     assert report.outcomes[0].refusal == NoPublisherText(kind="doi", value=DOI)
     assert "unpaywall_email" in describe_refusal(report.outcomes[0].refusal)
+
+
+# ---------------------------------------------------------------------------
+# A fetched document is the paper the reader named
+# ---------------------------------------------------------------------------
+
+PAPER_URL = "https://journal.example/paper.md"
+
+
+def serving_text(text: str) -> httpx.Client:
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, text=text, headers={"content-type": "text/markdown"}
+            )
+        )
+    )
+
+
+def test_a_url_whose_page_names_another_paper_is_asked_about_not_filed(
+    papers: Collection,
+):
+    """The reader's identifier was taken outright, so a link to the wrong
+    PDF was filed as the paper it was said to be."""
+    client = serving_text("# Another Paper\n\ndoi:10.1093/mnras/stab9999\n")
+
+    report = add_literature(
+        papers,
+        [PAPER_URL],
+        AddOptions(identifier=DOI),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    assert report.outcomes[0].refusal == IdentityMismatch(
+        named=PAPER_URL, kind="doi", stated=DOI, found=("10.1093/mnras/stab9999",)
+    )
+    assert list(papers.contents().documents) == []
+
+
+@pytest.mark.parametrize(
+    "front", [f"# The Paper\n\nhttps://doi.org/{DOI}\n", "# The Paper\n\nNo ids.\n"]
+)
+def test_a_url_naming_the_paper_or_nothing_is_taken_as_stated(
+    papers: Collection, front: str
+):
+    """A page naming no identifier is taken to be what the reader said."""
+    report = add_literature(
+        papers,
+        [PAPER_URL],
+        AddOptions(identifier=DOI),
+        arxiv=no_preprint_client(),
+        client=serving_text(front),
+    )
+
+    assert report.outcomes[0].outcome is Outcome.ADDED

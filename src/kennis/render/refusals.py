@@ -29,6 +29,7 @@ from urllib.parse import quote
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     KennisOwn,
     NoArxivText,
     NoIdentity,
@@ -103,6 +104,14 @@ def describe_refusal(refusal: Refusal) -> str:
                 f"({offered}) and kennis cannot tell which names the paper; "
                 f"choose one, or add it as a note instead"
             )
+        case IdentityMismatch(named=named, kind=kind, stated=stated, found=found):
+            offered = ", ".join(f"'{value}'" for value in found)
+            return (
+                f"the document at '{named}' names the {kind} {offered} and not "
+                f"'{stated}', so it may not be the paper you meant; choose the "
+                f"identifier it names, or if it is the paper, download it and "
+                f"supply the document with -l and --identifier '{stated}'"
+            )
         case NoPublisherText(
             kind=kind,
             value=value,
@@ -171,6 +180,7 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             | SameContent()
             | SamePaper()
             | SamePage()
+            | IdentityMismatch()
             | NoPublisherText()
             | NoArxivText()
             | NotAnInput()
@@ -198,6 +208,12 @@ def choices_for_refusal(refusal: Refusal) -> tuple[str, ...]:
                 f"kennis corpus add --identifier {quoted_for_this_shell(value)} "
                 f"{quoted_for_this_shell(named)}"
                 for value in values
+            )
+        case IdentityMismatch(named=named, found=found):
+            return tuple(
+                f"kennis corpus add -l --identifier {quoted_for_this_shell(value)} "
+                f"{quoted_for_this_shell(named)}"
+                for value in found
             )
         case _:
             return ()

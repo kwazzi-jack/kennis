@@ -101,6 +101,22 @@ class AmbiguousIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class IdentityMismatch:
+    """A fetched document whose first page names a different paper.
+
+    The identifier the reader gave is taken as fact, so kennis does not
+    swap it for the one the page shows; it asks. Every value found is
+    carried, so the reader can choose one of them instead.
+    """
+
+    code: ClassVar[str] = "identity-mismatch"
+    named: str
+    kind: str
+    stated: str
+    found: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class NoPublisherText:
     """An identified paper whose text sits behind a publisher.
 
@@ -209,6 +225,7 @@ type Refusal = (
     | SamePage
     | NoIdentity
     | AmbiguousIdentity
+    | IdentityMismatch
     | NoPublisherText
     | NoArxivText
     | NotAnInput
@@ -223,6 +240,7 @@ type Refusal = (
 __all__ = [
     "AmbiguousIdentity",
     "BibliographyIncomplete",
+    "IdentityMismatch",
     "KennisOwn",
     "NoArxivText",
     "NoIdentity",
