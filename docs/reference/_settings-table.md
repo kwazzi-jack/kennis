@@ -62,6 +62,7 @@ How papers are identified and fetched.
 | key | type | default | what it does |
 |---|---|---|---|
 | `request_delay` | `float` | `3.0` | Seconds between arXiv requests. arXiv states three. |
+| `unpaywall_email` | `str` | `""` | Your email address, which Unpaywall requires, to look up a free and legal copy of a paper known only by its DOI. Empty: Unpaywall is not asked, and such a paper needs your own copy. |
 
 ### `[logging]`
 

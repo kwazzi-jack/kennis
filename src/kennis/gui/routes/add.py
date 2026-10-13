@@ -160,6 +160,7 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
         keep_original=context.settings.corpus.keep_original,
         identifier=identifier,
         citekey=str(form.get("citekey") or "") or None,
+        unpaywall_email=context.settings.literature.unpaywall_email,
         project=str(form.get("project") or "") or None,
         batch_size=context.settings.conversion.batch_size,
         # arXiv's pacing, for arXiv: a site gets the docs default.

@@ -388,6 +388,7 @@ def synchronise_corpus(
                 context.corpus_root,
                 events=events,
                 request_delay_seconds=context.settings.literature.request_delay,
+                unpaywall_email=context.settings.literature.unpaywall_email,
             )
         Repository(context.corpus_root).commit(
             "sync", scope="notes", summary=describe_sync_summary(result.counts)

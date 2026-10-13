@@ -122,6 +122,7 @@ def sync_corpus(
     arxiv: httpx.Client | None = None,
     client: httpx.Client | None = None,
     request_delay_seconds: float | None = None,
+    unpaywall_email: str = "",
 ) -> CorpusSync:
     """Converge the corpus with every installed pack.
 
@@ -155,6 +156,7 @@ def sync_corpus(
         arxiv=arxiv,
         client=client,
         request_delay_seconds=request_delay_seconds,
+        unpaywall_email=unpaywall_email,
         events=events,
     )
 
@@ -265,6 +267,7 @@ def _carried_out(
     arxiv: httpx.Client | None,
     client: httpx.Client | None,
     request_delay_seconds: float | None,
+    unpaywall_email: str,
     events: EventSink | None,
 ) -> tuple[str, ...]:
     """Do what the three plans decided, and report what would not happen.
@@ -290,7 +293,9 @@ def _carried_out(
             corpus_root,
             papers,
             arxiv=arxiv,
+            client=client,
             request_delay_seconds=request_delay_seconds,
+            unpaywall_email=unpaywall_email,
             events=events,
             progress=progress,
         )
@@ -366,7 +371,9 @@ def _fetched_literature(
     plan: _Plan,
     *,
     arxiv: httpx.Client | None,
+    client: httpx.Client | None,
     request_delay_seconds: float | None,
+    unpaywall_email: str,
     events: EventSink | None,
     progress: _Progress,
 ) -> list[str]:
@@ -415,8 +422,10 @@ def _fetched_literature(
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
                 request_delay_seconds=request_delay_seconds,
+                unpaywall_email=unpaywall_email,
             ),
             arxiv=arxiv,
+            client=client,
             events=progress.inner,
         )
         progress.step()

@@ -112,6 +112,13 @@ class NoPublisherText:
     code: ClassVar[str] = "no-publisher-text"
     kind: str
     value: str
+    # Whether Unpaywall was asked for an open copy and knew of none. When it
+    # was not, setting the reader's email for it is one more remedy.
+    asked_unpaywall: bool = False
+    # The authors' accepted manuscript, when that is the only open copy.
+    # Offered rather than fetched: it may differ from the published paper
+    # the identifier names, so whether it will do is the reader's call.
+    accepted_manuscript: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
