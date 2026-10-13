@@ -111,5 +111,15 @@ def accept_remembered(request: Request, form: PostedForm) -> HTMLResponse:
             request, "/remember", "forms/remember.html", _remember_context(outcome)
         )
     return written(
-        TEMPLATES.TemplateResponse(request, "outcome.html", {"outcome": outcome})
+        TEMPLATES.TemplateResponse(
+            request,
+            "outcome.html",
+            {
+                "outcome": outcome,
+                # The fields a written note empties are drawn again, and
+                # with their hints, which they lost when drawn without them.
+                "placeholder": words.REMEMBER_PLACEHOLDER,
+                "title_hint": words.TITLE_HINT,
+            },
+        )
     )

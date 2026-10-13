@@ -6,7 +6,12 @@
 {% if outcome.clears %}
 {# A note was written: the strip and the pane say so at once (#457). #}
 {% with oob = true %}{% include "strip-status.html" %}{% set pane = pane_now() %}{% if pane.readable %}{% include "pane-documents.html" %}{% endif %}{% for row in pane.collections %}{% include "pane-row.html" %}{% endfor %}{% endwith %}
+{# The text and the title belong to the note just written, so both are
+   emptied: a title left behind named the next note too. The group is
+   where notes are filed, so it stays for the next one. #}
 <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}"
           hx-swap-oob="true"></textarea>
+<input id="remember-title" type="text" name="title" placeholder="{{ title_hint }}"
+       hx-swap-oob="true">
 {% endif %}
 {% endif %}

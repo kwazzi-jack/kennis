@@ -5,7 +5,7 @@
 <form action="/remember" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/remember" hx-target="#outcome" hx-swap="innerHTML">
   <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}" autofocus></textarea>
   <div class="fields">
-    <input type="text" name="title" placeholder="{{ title_hint }}">
+    <input id="remember-title" type="text" name="title" placeholder="{{ title_hint }}">
     <input type="text" name="group" placeholder="{{ group_hint }}">
     <span class="segmented" role="radiogroup">{% for value, label in remember_targets %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span>
   </div>

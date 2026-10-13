@@ -27,6 +27,7 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -38,6 +39,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import DocumentNotFound
 from kennis.engine.rag.index import load_index
+from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_bundle_document
 from kennis.gui.words import MARK_WITHHELD
@@ -721,6 +723,32 @@ def test_writing_a_note_clears_the_form(corpus: Path, client: TestClient):
     # keyed on a 200 would empty the box after a refusal too, which
     # is the text the reader would then have to retype.
     assert 'hx-swap-oob="true"' in written.text
+
+
+def test_a_written_note_empties_its_title_but_keeps_its_group(
+    corpus: Path, client: TestClient
+):
+    """A title left in the box named the next note too ("Sidelobe at 1.2
+    GHz (2)"); the group is where notes are filed, so it stays. Each field
+    the outcome redraws keeps its hint."""
+    admitted(client)
+
+    written = posted(
+        client,
+        "/remember",
+        data={"text": "A sidelobe.", "title": "Sidelobe", "group": "rfi"},
+    )
+    redrawn = {
+        element["id"]: element
+        for element in BeautifulSoup(written.text, "html.parser").select(
+            "[hx-swap-oob]"
+        )
+    }
+
+    assert redrawn["remember-title"].get("value", "") == ""
+    assert redrawn["remember-title"]["placeholder"] == words.TITLE_HINT
+    assert redrawn["remember-text"]["placeholder"] == words.REMEMBER_PLACEHOLDER
+    assert "remember-group" not in redrawn
 
 
 def test_a_refused_write_keeps_the_text(corpus: Path, client: TestClient):
