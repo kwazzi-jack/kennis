@@ -394,4 +394,4 @@ def test_a_setting_out_of_range_is_named_on_the_page_not_a_server_error(
     for path in ("/", "/settings", "/corpus"):
         page = client.get(path)
         assert "retrieval.default_top_k" in page.text, path
-        assert "kennis config show" in page.text, path
+        assert "kennis config set retrieval.default_top_k 3" in page.text, path

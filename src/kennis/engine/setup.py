@@ -40,6 +40,7 @@ from kennis.engine.settings import (
     credential,
     credentials_path,
     load_settings,
+    repair_of,
     section_models,
     toml_value,
 )
@@ -362,29 +363,49 @@ def _refuse_boolean(value: str) -> bool:
 def _validated(given: Mapping[str, str]) -> Settings:
     """The settings these answers produce, or the first reason they do not.
 
-    Built through the model rather than by checking the strings, so the
+    Built through the models rather than by checking the strings, so the
     answer to "is this acceptable" is the same one `load_settings` would
     give and cannot drift from it.
+
+    **Against the file, not the environment**, as `_write_config` writes
+    it. Settled through `load_settings`, a bad value in the file - or one
+    exported for this shell - refused every `config set`, including the
+    one that would have replaced it. An answer replaces the file's value
+    for its own key, so the repair a refusal names always goes through.
     """
-    sections: dict[str, dict[str, object]] = {}
+    held = _held()
     for key, value in given.items():
         if _is_secret(key):
             continue
         section, _, name = key.partition(".")
         field = _field_of(key)
-        sections.setdefault(section, {})[name] = _as_typed(key, field, value)
+        held.setdefault(section, {})[name] = _as_typed(key, field, value)
 
-    merged = load_settings().model_dump()
-    for section, values in sections.items():
-        merged[section] = {**merged.get(section, {}), **values}
-    try:
-        return Settings.model_validate(merged)
-    except ValidationError as error:
-        first = error.errors()[0]
-        where = ".".join(str(part) for part in first["loc"])
-        raise SettingsError(
-            f"{where}: {first['msg']}", resolution="kennis config init"
-        ) from error
+    sections: dict[str, BaseModel] = {}
+    for section, model in section_models().items():
+        try:
+            sections[section] = model.model_validate(held.get(section, {}))
+        except ValidationError as error:
+            first = error.errors()[0]
+            key = ".".join(str(part) for part in (section, *first["loc"][:1]))
+            path = config_path()
+            where = key if key in given else f"{key} in {path}"
+            raise SettingsError(
+                f"{where}: {first['msg']}", resolution=repair_of(key, path)
+            ) from error
+    return Settings.model_construct().model_copy(update=sections)
+
+
+def _held() -> dict[str, dict[str, object]]:
+    """What `config.toml` holds, section by section, unchecked."""
+    path = config_path()
+    if not path.is_file():
+        return {}
+    return {
+        section: dict(entries)
+        for section, entries in _toml_of(path).items()
+        if isinstance(entries, dict)
+    }
 
 
 _TRUE: Final = frozenset({"true", "yes", "on", "1"})
@@ -442,13 +463,7 @@ def _write_config(values: Mapping[str, str]) -> None:
     """
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    held: dict[str, dict[str, object]] = {}
-    if path.is_file():
-        held = {
-            section: dict(entries)
-            for section, entries in _toml_of(path).items()
-            if isinstance(entries, dict)
-        }
+    held = _held()
 
     for key, value in values.items():
         section, _, name = key.partition(".")

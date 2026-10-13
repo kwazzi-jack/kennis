@@ -129,6 +129,70 @@ def test_a_number_is_written_as_a_number(run: CliRunner, isolated: Path):
     assert "size = 800" in (isolated / "config.toml").read_text(encoding="utf-8")
 
 
+def test_a_bad_value_in_the_file_is_named_with_its_repair(
+    run: CliRunner, isolated: Path
+):
+    """`config show` was the hint, for a file whose fault it does not
+    point out; the hint is now the command that mends it."""
+    isolated.mkdir(parents=True)
+    (isolated / "config.toml").write_text(
+        '[retrieval]\ndefault_top_k = "lots"\n', encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["config", "get", "retrieval.rrf_k"])
+
+    assert result.exit_code != 0
+    assert "config.toml" in result.output
+    assert "kennis config set retrieval.default_top_k 3" in result.output
+
+
+def test_a_bad_value_in_the_file_does_not_refuse_its_own_repair(
+    run: CliRunner, isolated: Path
+):
+    """Every `config set` loaded the settings first, so the one the error
+    named as the way out failed on the same error."""
+    isolated.mkdir(parents=True)
+    (isolated / "config.toml").write_text(
+        '[retrieval]\ndefault_top_k = "lots"\nrrf_k = 50\n', encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["config", "set", "retrieval.default_top_k", "7"])
+
+    assert result.exit_code == 0, result.output
+    assert load_settings().retrieval.default_top_k == 7
+    assert load_settings().retrieval.rrf_k == 50
+
+
+def test_a_bad_value_elsewhere_in_the_file_is_named_by_set(
+    run: CliRunner, isolated: Path
+):
+    isolated.mkdir(parents=True)
+    (isolated / "config.toml").write_text(
+        '[retrieval]\ndefault_top_k = "lots"\n', encoding="utf-8"
+    )
+
+    result = run.invoke(main, ["config", "set", "chunking.size", "800"])
+
+    assert result.exit_code != 0
+    assert "retrieval.default_top_k in" in result.output
+    assert "kennis config set retrieval.default_top_k 3" in result.output
+
+
+def test_a_bad_variable_is_named_as_the_source_and_does_not_block_set(
+    run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """The environment is not the file: blaming the file sent the reader to
+    `config show` for a value exported in their shell."""
+    monkeypatch.setenv("KENNIS_RETRIEVAL_DEFAULT_TOP_K", "abc")
+
+    refused = run.invoke(main, ["config", "get", "retrieval.rrf_k"])
+    written = run.invoke(main, ["config", "set", "retrieval.rrf_k", "50"])
+
+    assert "set by KENNIS_RETRIEVAL_DEFAULT_TOP_K" in refused.output
+    assert "unset KENNIS_RETRIEVAL_DEFAULT_TOP_K" in refused.output
+    assert written.exit_code == 0, written.output
+
+
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
