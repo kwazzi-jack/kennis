@@ -81,7 +81,7 @@
        dialog; without htmx it is followed and the form arrives as a
        page. One route per action, however many entrances. #}
     {% for href, label, icon_name in actions %}
-    <a class="action" href="{{ href }}" hx-get="{{ href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon(icon_name) }}<span class="label">{{ label }}</span></a>
+    <a class="action" href="{{ href }}" title="{{ label }}" hx-get="{{ href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon(icon_name) }}<span class="label">{{ label }}</span></a>
     {% endfor %}
     {# The palette is reached from the bar but is not one of its actions:
        it is every action and place again, under one key. #}

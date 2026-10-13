@@ -532,3 +532,29 @@ def test_the_centre_pane_is_the_containing_block_of_what_it_positions():
 
     assert main is not None
     assert "position: relative" in main.group(1)
+
+
+def _rule(selector: str) -> str:
+    code = re.sub(r"/\*.*?\*/", "", layout_css(), flags=re.S)
+    found = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", code)
+    assert found, selector
+    return found.group(1)
+
+
+def test_a_collection_s_state_is_told_by_shape_as_well_as_colour():
+    """Searchable green against needs-indexing amber was 1.08:1, and the
+    same pair to a deuteranope: one is filled, the other a ring."""
+    assert "background: var(--role-added)" in _rule(".state-current")
+    assert "background: none" in _rule(".state-behind, .state-none")
+
+
+def test_the_palette_s_selection_is_more_than_a_wash():
+    """The wash alone was 1.19:1 on the ground."""
+    assert "box-shadow: inset" in _rule('.palette-list [aria-selected="true"] > a')
+
+
+def test_where_the_reader_is_survives_forced_colours():
+    forced = layout_css()[layout_css().index("@media (forced-colors: active)") :]
+
+    assert '[aria-selected="true"]' in forced
+    assert "Highlight" in forced
