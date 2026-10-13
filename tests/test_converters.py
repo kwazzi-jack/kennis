@@ -26,6 +26,7 @@ from kennis.engine.corpus.converters import (
     ConversionBatch,
     MineruConverter,
     MineruOptions,
+    _stage,
     default_converter,
 )
 from kennis.engine.errors import ConversionFailed, ConverterUnavailable
@@ -701,3 +702,17 @@ def test_a_checkout_is_recognised_by_its_layout(tmp_path: Path):
 
     (tmp_path / "src" / "kennis").mkdir(parents=True)
     assert converters._is_source_checkout(tmp_path)
+
+
+def test_a_staged_name_leaves_room_under_the_windows_path_limit(tmp_path: Path):
+    """MinerU writes the staged stem into its output path twice; a long
+    filename pushed that past the 260 characters Windows opens."""
+    source = a_pdf(tmp_path / f"{'a-very-long-paper-title-' * 10}.pdf")
+    staged_dir = tmp_path / "input"
+    staged_dir.mkdir()
+
+    stem = next(iter(_stage([source], staged_dir)))
+    windows_temp = "C:\\Users\\someone\\AppData\\Local\\Temp\\kennis-mineru-abcdefgh"
+    deepest = f"{windows_temp}\\output\\{stem}\\hybrid_auto\\{stem}_content_list.json"
+
+    assert len(deepest) < 260
