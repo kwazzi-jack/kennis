@@ -49,7 +49,11 @@ from kennis.engine.corpus.ligatures import (
 )
 from kennis.engine.corpus.markdown import normalise_markdown
 from kennis.engine.corpus.schema import SourceFormat
-from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from kennis.engine.errors import (
+    ConversionFailed,
+    ConverterRefused,
+    ConverterUnavailable,
+)
 from kennis.engine.settings import credential, load_settings
 
 
@@ -378,11 +382,22 @@ class MineruConverter:
                 stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired as expired:
-            plural = "document" if document_count == 1 else "documents"
+            # The remedy is the setting that sizes a run: "convert them in
+            # smaller batches" named an option no command has. A single
+            # document has no smaller run to suggest.
+            if document_count == 1:
+                raise ConversionFailed(
+                    f"mineru did not finish converting 1 document within "
+                    f"{timeout_seconds}s and was cancelled. Nothing was written.",
+                    resolution=None,
+                ) from expired
             raise ConversionFailed(
-                f"mineru did not finish converting {document_count} {plural} "
+                f"mineru did not finish converting {document_count} documents "
                 f"within {timeout_seconds}s and was cancelled. Nothing was "
-                f"written. Convert the documents in smaller batches."
+                f"written.",
+                resolution=(
+                    f"kennis config set conversion.batch_size {document_count // 2}"
+                ),
             ) from expired
         except OSError as error:
             raise ConversionFailed(f"could not run mineru: {error}") from error
@@ -498,6 +513,9 @@ class DatalabConverter:
             for path in paths:
                 try:
                     converted, cost = self._convert_one(client, path)
+                except ConverterRefused:
+                    # Every other document would be refused the same way.
+                    raise
                 except ConversionFailed as failed:
                     reasons.append(f"{path.name}: {failed}")
                     continue
@@ -542,10 +560,9 @@ class DatalabConverter:
         if response.status_code in (401, 403):
             # The key, not the document: said so, with the service's own
             # words, rather than as a refused document and `--help`.
-            raise ConversionFailed(
+            raise ConverterRefused(
                 f"datalab did not accept the API key ({response.status_code}"
-                f"{': ' + _detail_of(response) if _detail_of(response) else ''})",
-                resolution="kennis config init",
+                f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
             )
         if response.status_code >= 400:
             raise ConversionFailed(

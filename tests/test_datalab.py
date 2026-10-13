@@ -19,7 +19,11 @@ from kennis.engine.corpus.converters import (
     DatalabConverter,
     default_converter,
 )
-from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from kennis.engine.errors import (
+    ConversionFailed,
+    ConverterRefused,
+    ConverterUnavailable,
+)
 from kennis.engine.settings import credential
 
 CHECK_URL = "https://www.datalab.to/api/v1/convert/abc123"
@@ -414,3 +418,15 @@ def test_a_key_the_service_refuses_is_said_to_be_the_key(tmp_path: Path):
 
     assert "API key" in str(raised.value)
     assert "Invalid API key" in str(raised.value)
+
+
+def test_a_refused_key_stops_the_batch_and_keeps_its_remedy(tmp_path: Path):
+    """Filed against each document, the refusal was paid for once per file
+    and the command that mends it was dropped on the way to the report."""
+    converter, seen = answering(httpx.Response(403, json={"detail": "Forbidden"}))
+
+    with pytest.raises(ConverterRefused) as raised:
+        converter.convert([a_pdf(tmp_path / "a.pdf"), a_pdf(tmp_path / "b.pdf")])
+
+    assert len(seen) == 1
+    assert raised.value.resolution == "kennis config init"

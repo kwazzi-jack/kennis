@@ -286,6 +286,24 @@ def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_writt
     assert "Nothing was written" in str(raised.value)
 
 
+def test_a_run_that_times_out_names_the_setting_that_shortens_it(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """ "Convert the documents in smaller batches" named an option no command
+    has; the size of a run is `conversion.batch_size`."""
+
+    def expire(*args: object, **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(cmd="mineru", timeout=1)
+
+    monkeypatch.setattr("kennis.engine.corpus.converters.subprocess.run", expire)
+    pdfs = [a_pdf(tmp_path / f"{name}.pdf") for name in ("a", "b", "c", "d")]
+
+    with pytest.raises(ConversionFailed) as raised:
+        MineruConverter().convert(pdfs)
+
+    assert raised.value.resolution == "kennis config set conversion.batch_size 2"
+
+
 # ---------------------------------------------------------------------------
 # Against the real MinerU
 # ---------------------------------------------------------------------------

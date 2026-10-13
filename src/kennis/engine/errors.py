@@ -243,6 +243,19 @@ class ConversionFailed(KennisError):
     default_resolution = "kennis corpus add --help"
 
 
+class ConverterRefused(ConversionFailed):
+    """The converter turned kennis away, whatever the document: a hosted
+    service rejecting its API key.
+
+    Not one document's failure, so it ends the add rather than being filed
+    against each document in turn - where its remedy was dropped and the
+    same refusal was paid for once per file.
+    """
+
+    default_message = "the converter refused every document"
+    default_resolution = "kennis config init"
+
+
 class NothingToIndex(KennisError):
     """There is no text to build an index over.
 

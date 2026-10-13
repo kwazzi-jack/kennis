@@ -15,7 +15,7 @@ import pytest
 from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.converters import ConversionBatch
-from kennis.engine.errors import ConversionFailed, InputError
+from kennis.engine.errors import ConversionFailed, ConverterRefused, InputError
 from kennis.engine.events import (
     Diagnostic,
     DocumentSkipped,
@@ -874,3 +874,36 @@ def test_a_run_that_fails_whole_fails_only_its_own_documents(
     assert outcomes["three.pdf"].outcome is Outcome.FAILED
     assert isinstance(outcomes["three.pdf"].refusal, NothingConverted)
     assert "600 seconds" in (outcomes["three.pdf"].refusal.problem or "")
+
+
+class RefusingConverter(CountingConverter):
+    """A hosted converter whose key is rejected."""
+
+    def convert(
+        self, paths: Sequence[Path], *, page_limit: int | None = None
+    ) -> ConversionBatch:
+        self.runs.append(tuple(paths))
+        raise ConverterRefused("datalab did not accept the API key (401)")
+
+
+def test_a_refused_converter_ends_the_add_with_its_remedy(
+    notes: Collection, tmp_path: Path
+):
+    """Filed per run like a timeout, it became one "could not convert" per
+    document, each without the command that mends the key."""
+    pdfs = [
+        a_pdf(tmp_path / f"{name}.pdf", f"%PDF-1.7\n{name}\n".encode())
+        for name in ("one", "two", "three")
+    ]
+    converter = RefusingConverter()
+
+    with pytest.raises(ConverterRefused) as raised:
+        add_notes(
+            notes,
+            [str(pdf) for pdf in pdfs],
+            AddOptions(batch_size=1),
+            converter=converter,
+        )
+
+    assert raised.value.resolution == "kennis config init"
+    assert len(converter.runs) == 1
