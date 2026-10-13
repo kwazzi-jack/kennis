@@ -8,9 +8,12 @@ does not. The bounds matter because this walks an arbitrary third-party site.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from kennis.engine.docs.discover import (
+    _in_scope,
     crawl_site,
     discover_pages,
     discovery_mode,
@@ -451,3 +454,155 @@ def test_a_sphinx_site_under_the_limit_is_returned_whole():
     found = discover_pages(a_sphinx_site_of(3), a_site(), max_pages=300, delay=0)
 
     assert [page.key for page in found.pages] == ["page0", "page1", "page2"]
+
+
+# ---------------------------------------------------------------------------
+# Staying on the site (the review of 2026-10-13)
+# ---------------------------------------------------------------------------
+
+HTML = "text/html"
+
+
+def routed(
+    routes: dict[str, tuple[str, str] | str], asked: list[str] | None = None
+) -> httpx.Client:
+    """A site: a URL answers with (type, body), or with a string, which is
+    where it redirects. Every URL asked for is recorded in `asked`."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if asked is not None:
+            asked.append(url)
+        answer = routes.get(url)
+        if answer is None:
+            return httpx.Response(404)
+        if isinstance(answer, str):
+            return httpx.Response(302, headers={"location": answer})
+        kind, body = answer
+        return httpx.Response(200, headers={"content-type": kind}, text=body)
+
+    return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+
+def test_links_are_resolved_where_a_redirect_landed():
+    """A root redirecting to `/en/latest/` resolved `install.html` one level
+    too high, and only the index was added."""
+    client = routed(
+        {
+            "https://proj.example.io/": "https://proj.example.io/en/latest/",
+            "https://proj.example.io/en/latest/": (HTML, page("install.html")),
+            "https://proj.example.io/en/latest/install.html": (HTML, page()),
+        }
+    )
+
+    found = discover_pages(
+        client,
+        DocsSite(project="p", base_url="https://proj.example.io/", discovery="crawl"),
+        delay=0,
+    )
+
+    assert "en/latest/install" in [found_page.key for found_page in found.pages]
+
+
+def test_a_redirect_off_the_site_is_never_followed():
+    """An in-scope page redirecting to `127.0.0.1` was fetched, filed under
+    the documentation's address, and its links walked."""
+    asked: list[str] = []
+    client = routed(
+        {
+            "https://docs.example.org/guide/": (HTML, page("a.html")),
+            "https://docs.example.org/guide/a.html": "http://127.0.0.1:8080/admin",
+            "http://127.0.0.1:8080/admin": (HTML, page("secret.html")),
+        },
+        asked,
+    )
+
+    found = discover_pages(
+        client,
+        DocsSite(
+            project="d", base_url="https://docs.example.org/guide/", discovery="crawl"
+        ),
+        delay=0,
+    )
+
+    assert not [url for url in asked if "127.0.0.1" in url]
+    assert [found_page.key for found_page in found.pages] == ["index"]
+
+
+def test_a_sitemap_on_another_host_is_never_read():
+    asked: list[str] = []
+    client = routed(
+        {
+            "https://h.org/robots.txt": (
+                "text/plain",
+                "Sitemap: http://10.0.0.5/x.xml\n",
+            )
+        },
+        asked,
+    )
+
+    discover_pages(
+        client,
+        DocsSite(project="h", base_url="https://h.org/docs/", discovery="sitemap"),
+        delay=0,
+    )
+
+    assert not [url for url in asked if "10.0.0.5" in url]
+
+
+def test_a_sphinx_docname_cannot_name_a_page_off_the_site_or_the_prefix():
+    index = (
+        "Search.setIndex("
+        + json.dumps({"docnames": ["index", "//127.0.0.1:9000/x", "../../outside"]})
+        + ")"
+    )
+    client = routed({"https://h.org/docs/searchindex.js": ("text/javascript", index)})
+
+    found = discover_pages(
+        client,
+        DocsSite(project="h", base_url="https://h.org/docs/", discovery="sphinx"),
+        delay=0,
+    )
+
+    assert [found_page.key for found_page in found.pages] == ["index"]
+
+
+def test_a_sibling_directory_and_the_root_are_out_of_scope():
+    """`startswith("/en/latest")` admitted `/en/latest-old/`, and the root
+    was always admitted, taking the key `index` from the real index."""
+    assert not _in_scope("https://h/en/latest-old/x", "https://h", "/en/latest/")
+    assert not _in_scope("https://h/", "https://h", "/en/latest/")
+    assert _in_scope("https://h/en/latest", "https://h", "/en/latest/")
+    assert _in_scope("https://h/en/latest/x", "https://h", "/en/latest/")
+
+
+def test_a_seed_without_its_slash_is_still_its_directory():
+    """`https://h.org/docs` probed `https://h.org/searchindex.js` and took
+    the whole origin as its scope."""
+    index = "Search.setIndex(" + json.dumps({"docnames": ["index", "intro"]}) + ")"
+    client = routed({"https://h.org/docs/searchindex.js": ("text/javascript", index)})
+
+    found = discover_pages(
+        client, DocsSite(project="h", base_url="https://h.org/docs"), delay=0
+    )
+
+    assert found.mode == "sphinx"
+    assert found.path_prefix == "/docs/"
+    assert [found_page.url for found_page in found.pages] == [
+        "https://h.org/docs/index.html",
+        "https://h.org/docs/intro.html",
+    ]
+
+
+def test_a_robots_file_that_errors_forbids_rather_than_allows():
+    """A 500's error page parsed as rules allowed everything; RFC 9309 reads
+    a server error as "may not crawl now"."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="<html>Service Unavailable</html>")
+
+    robots = robots_for(
+        httpx.Client(transport=httpx.MockTransport(handler)), "https://h.org"
+    )
+
+    assert not robots.can_fetch("kennis-docs-fetch", "https://h.org/docs/")

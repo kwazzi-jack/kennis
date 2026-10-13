@@ -390,9 +390,10 @@ def test_a_page_the_crawl_already_holds_costs_no_wait(
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    # Every wait recorded belongs to the crawl itself, not to the write loop.
+    # Every wait recorded belongs to the crawl itself, not to the write
+    # loop - and the crawl waits between its requests, not after the last.
     assert docs.contents().documents
-    assert len(slept) == len(docs.contents().documents)
+    assert len(slept) == len(docs.contents().documents) - 1
 
 
 def test_an_offline_add_is_not_paced(docs: Collection, monkeypatch: pytest.MonkeyPatch):

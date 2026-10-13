@@ -285,7 +285,10 @@ def _carried_out(
             corpus_root,
             projects,
             client=client,
-            request_delay_seconds=request_delay_seconds,
+            # The figure is arXiv's pacing; a docs host gets its own
+            # default. Zero still passes: it is a caller that contacts
+            # nothing.
+            request_delay_seconds=0.0 if request_delay_seconds == 0 else None,
             events=events,
         )
     )
