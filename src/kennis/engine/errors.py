@@ -107,6 +107,18 @@ class IndexBusy(KennisError):
     default_resolution = "kennis corpus index"
 
 
+class CorpusExists(KennisError):
+    """`corpus init` was asked for where a corpus already is.
+
+    Not `CorpusBusy`, which it was: busy says another process holds the
+    lock and to try again, and initialising again would discard the
+    history the first one made.
+    """
+
+    default_message = "a kennis corpus is already here"
+    default_resolution = "kennis corpus status"
+
+
 class HistoryUnwritable(KennisError):
     """Git refused to record a change kennis made.
 

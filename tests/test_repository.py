@@ -13,6 +13,7 @@ import pytest
 
 from kennis.engine.errors import (
     CorpusBusy,
+    CorpusExists,
     CorpusNotFound,
     GitUnavailable,
     HistoryUnwritable,
@@ -96,10 +97,11 @@ def test_init_is_refused_rather_than_repeated(corpus: Path):
     """Re-initialising would discard the history it just created."""
     initialise_corpus(corpus)
 
-    with pytest.raises(CorpusBusy) as raised:
+    with pytest.raises(CorpusExists) as raised:
         initialise_corpus(corpus)
 
     assert "already" in str(raised.value)
+    assert not isinstance(raised.value, CorpusBusy)
 
 
 # ---------------------------------------------------------------------------

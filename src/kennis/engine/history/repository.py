@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Final
 
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusBusy, CorpusNotFound, HistoryUnwritable
+from kennis.engine.errors import CorpusExists, CorpusNotFound, HistoryUnwritable
 from kennis.engine.history.git import git, git_binary
 
 _GITATTRIBUTES: Final = """\
@@ -301,10 +301,7 @@ def initialise_corpus(root: Path) -> Repository:
     """
     git_binary()
     if (root / ".git").exists():
-        raise CorpusBusy(
-            f"{root} is already a kennis corpus",
-            resolution="kennis corpus status",
-        )
+        raise CorpusExists(f"{root} is already a kennis corpus")
 
     root.mkdir(parents=True, exist_ok=True)
     for name in COLLECTION_NAMES:
