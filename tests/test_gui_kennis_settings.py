@@ -538,3 +538,37 @@ def test_a_key_the_page_does_not_offer_is_not_written(
     assert str(load_settings().corpus.root) != elsewhere
     # The file, because the fixture's environment answers `load_settings`.
     assert saved()["corpus"]["root"] == ""
+
+
+# ---------------------------------------------------------------------------
+# A value the environment decides
+# ---------------------------------------------------------------------------
+
+
+def test_a_value_the_environment_sets_is_shown_and_not_offered(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """With `KENNIS_EMBEDDING_BACKEND` set, choosing another backend said
+    "Saved." and the page then showed the old value: the file was written
+    and the environment went on winning."""
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+
+    row = row_of(section_of(client.get("/settings").text), "embedding.backend")
+
+    assert row.find("select").has_attr("disabled")
+    assert "KENNIS_EMBEDDING_BACKEND" in row.get_text(" ", strip=True)
+
+
+def test_saving_a_value_the_environment_sets_writes_nothing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+
+    answer = client.post(
+        "/settings/kennis",
+        data={"embedding.backend": "ollama"},
+        headers={**HTMX, "Origin": "http://testserver"},
+    )
+
+    assert words.KENNIS_UNCHANGED in answer.text
+    assert saved().get("embedding", {}).get("backend") != "ollama"

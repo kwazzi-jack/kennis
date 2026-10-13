@@ -1177,6 +1177,14 @@ def menu_for(name: str) -> str:
     return f"Actions for {name}"
 
 
+def overridden_by(variable: str) -> str:
+    """A setting the environment decides, beside the control it disables."""
+    return (
+        f"Set by the environment variable {variable}, which overrides the "
+        "file. Unset it to choose here."
+    )
+
+
 # The first tab stop on every page.
 SKIP_TO_CONTENT = "Skip to the content"
 
@@ -1461,6 +1469,7 @@ __all__ = [
     "not_a_count",
     "not_a_folder",
     "open_candidate",
+    "overridden_by",
     "passage_label",
     "previewed_arxiv",
     "previewed_citekey",

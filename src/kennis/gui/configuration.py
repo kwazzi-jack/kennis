@@ -19,6 +19,7 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.rag.index import read_binding
 from kennis.engine.setting_costs import COSTLESS, costs_of
+from kennis.engine.settings import overriding_variable
 from kennis.engine.setup import (
     CredentialStatus,
     Question,
@@ -57,6 +58,10 @@ class ShownSetting:
     credential: CredentialStatus | None
     # The command that installs the chosen converter, when it is missing.
     install_hint: str
+    # The environment variable that decides this value, when one does:
+    # the control is then shown and not offered, because saving it would
+    # write a value the environment goes on overriding.
+    overridden_by: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +137,10 @@ def changed_answers(answers: Answers) -> dict[str, str]:
     changed: dict[str, str] = {}
     for question in offered(answers):
         value = answers.get(question.key, "")
+        # The environment decides it, so writing the file would say
+        # "Saved." and change nothing the reader can see.
+        if question.kind != "secret" and overriding_variable(question.key):
+            continue
         if value and value != question.current:
             changed[question.key] = value
     return changed
@@ -183,6 +192,7 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
         problem=problem,
         credential=credential_status(question.key) if secret else None,
         install_hint=_missing_converter(question.key, value),
+        overridden_by="" if secret else overriding_variable(question.key) or "",
     )
 
 
