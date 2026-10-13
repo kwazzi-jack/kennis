@@ -954,9 +954,24 @@ REMEMBER_PREAMBLE = (
 
 REMEMBER_PLACEHOLDER = "Something worth having again in six months"
 
-TITLE_HINT = "Title (optional - the first line is used otherwise)"
+# The Note dialog's fields by name, beside them rather than inside them:
+# a placeholder is gone the moment anything is typed, a screen reader
+# may not read it, and the title's was clipped mid-word.
+NOTE_TEXT_LABEL = "Note"
 
-GROUP_HINT = "Group (optional subdirectory)"
+TITLE_LABEL = "Title"
+
+TITLE_HINT = "Optional - the first line otherwise"
+
+GROUP_LABEL = "Group"
+
+GROUP_HINT = "Optional subfolder"
+
+TARGET_LABEL = "Save to"
+
+PACK_PATH_LABEL = "Pack file"
+
+INDEX_WHICH_LABEL = "Collections"
 
 REMEMBER_ACTION = "Remember"
 
@@ -1267,6 +1282,7 @@ __all__ = [
     "EVERYWHERE_LABEL",
     "FIELD_LABELS",
     "GROUP_HINT",
+    "GROUP_LABEL",
     "GROUP_NEEDS_A_NAME",
     "HIDE_PASSAGE",
     "IMAGES_BLOCKED",
@@ -1274,6 +1290,7 @@ __all__ = [
     "INDEX_EVERY",
     "INDEX_PREAMBLE",
     "INDEX_STATES",
+    "INDEX_WHICH_LABEL",
     "INSPECTOR_HIDE",
     "INSPECTOR_LABEL",
     "INSPECTOR_SHOW",
@@ -1314,6 +1331,7 @@ __all__ = [
     "MOVE_GROUP_EMPTY",
     "MOVE_GROUP_LABEL",
     "NEVER_INDEXED",
+    "NOTE_TEXT_LABEL",
     "NOTHING_FOUND",
     "NOTHING_HELD",
     "NOTHING_MATERIALISED",
@@ -1338,6 +1356,7 @@ __all__ = [
     "OUTLINE_HEADING",
     "PACKS_HEADING",
     "PACK_ACTION",
+    "PACK_PATH_LABEL",
     "PACK_PREAMBLE",
     "PALETTE_ACTIONS_AFTER_INDEX",
     "PALETTE_ACTIONS_BEFORE_INDEX",
@@ -1400,8 +1419,10 @@ __all__ = [
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",
+    "TARGET_LABEL",
     "THEME_CHOICES",
     "TITLE_HINT",
+    "TITLE_LABEL",
     "UNDO",
     "WINDOW_SETTINGS_HEADING",
     "WINDOW_SETTINGS_NOTE",

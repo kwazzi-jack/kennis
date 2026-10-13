@@ -1,10 +1,11 @@
 <p class="role-muted">{{ index_preamble }}</p>
 <form action="/index" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/index" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
   <div class="fields">
-    <span class="segmented" role="radiogroup">
+    <div class="labelled"><span class="name" id="index-which-name">{{ index_which_label }}</span>
+    <span class="segmented" role="radiogroup" aria-labelledby="index-which-name">
     <label><input type="radio" name="collection" value=""{% if not chosen %} checked{% endif %}>{{ index_every }}</label>
     {%- for name in collections %}<label><input type="radio" name="collection" value="{{ name }}"{% if name == chosen %} checked{% endif %}>{{ name }}</label>{% endfor %}
-    </span>
+    </span></div>
   </div>
   <button type="submit">{{ index_action }}</button>
 </form>
