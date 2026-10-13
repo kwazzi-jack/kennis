@@ -33,7 +33,7 @@ from kennis.engine.corpus.intake import sha256_of
 from kennis.engine.corpus.layout import title_filename, unique_filename
 from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
-from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.frontmatter import join_frontmatter, split_frontmatter
 from kennis.engine.groups import group_directory
 from kennis.engine.remember import title_for, titled_body
 
@@ -218,18 +218,17 @@ def _document(title: str, body: str, digest: str) -> str:
     `titled_body` added, so the file is no longer its own dedup key.
     """
     written_at = datetime.now(UTC).isoformat(timespec="seconds")
-    return (
-        "---\n"
-        f"title: {title}\n"
-        "description: ''\n"
-        "owner: user\n"
-        "source:\n"
-        "  via: remember\n"
-        f"  at: '{written_at}'\n"
-        f"  sha256: {digest}\n"
-        "---\n"
-        "\n"
-        f"{body}\n"
+    # Dumped, never formatted: a title is the reader's own words, and
+    # `title: Decision: use Briggs` is not YAML - the bundle's next sync
+    # refused the whole project over it.
+    return join_frontmatter(
+        {
+            "title": title,
+            "description": "",
+            "owner": "user",
+            "source": {"via": "remember", "at": written_at, "sha256": digest},
+        },
+        f"{body}\n",
     )
 
 

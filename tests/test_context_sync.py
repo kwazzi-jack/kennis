@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.context.notes import remember_in_bundle
@@ -699,3 +700,23 @@ def test_a_file_where_its_pack_declares_it_is_not_reported_as_moved(
     sync_bundle(bundle, corpus)
 
     assert sync_bundle(bundle, corpus).moved == ()
+
+
+@pytest.mark.parametrize(
+    ("title", "description"),
+    [("Calibration: a primer", "The array's gains"), ("yes", "no: really")],
+)
+def test_a_pack_s_title_and_description_are_written_as_given(
+    corpus: Path, bundle: Path, tmp_path: Path, title: str, description: str
+):
+    """Formatted into the header, a colon in the title or an apostrophe in
+    the description made a file that is not YAML."""
+    shipped = yaml.safe_dump({"title": title, "description": description})
+    installed(
+        corpus, tmp_path, files={"content/one.md": f"---\n{shipped}---\n\nBody.\n"}
+    )
+
+    sync_bundle(bundle, corpus)
+
+    header = header_of(bundle / "one.md")
+    assert (header["title"], header["description"]) == (title, description)
