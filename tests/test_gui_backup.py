@@ -20,9 +20,9 @@ from kennis.cli.__main__ import main
 from kennis.engine.backup import BACKUP_NAME, check_backup
 from kennis.engine.errors import SettingsError
 from kennis.engine.settings import load_settings
-from kennis.gui import app as app_module
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.routes import settings as settings_routes
 from kennis.render.backup import (
     BACKUP_CONTENTS,
     NO_BACKUP_FOLDER,
@@ -367,7 +367,7 @@ def test_a_folder_the_settings_refuse_is_said_beside_the_field(
     def refused(answers: object) -> None:
         raise SettingsError("the configuration file could not be written")
 
-    monkeypatch.setattr(app_module, "apply_answers", refused)
+    monkeypatch.setattr(settings_routes, "apply_answers", refused)
 
     answer = client.post(
         "/settings/backup",
