@@ -264,7 +264,10 @@ def test_sitemap_pages_outside_the_prefix_are_dropped():
     found = discover_pages(client, a_site())
 
     assert found.mode == "sitemap"
-    assert [item.key for item in found.pages] == ["index", "guide/start"]
+    assert [item.key for item in found.pages] == [
+        "en/latest/index",
+        "en/latest/guide/start",
+    ]
 
 
 def test_a_sitemap_index_is_followed_to_the_sitemaps_it_names():
@@ -277,8 +280,8 @@ def test_a_sitemap_index_is_followed_to_the_sitemaps_it_names():
         }
     )
     assert [item.key for item in discover_pages(client, a_site()).pages] == [
-        "index",
-        "guide/start",
+        "en/latest/index",
+        "en/latest/guide/start",
     ]
 
 
@@ -294,8 +297,8 @@ def test_a_sitemap_declared_in_robots_is_preferred_to_the_conventional_one():
         }
     )
     assert [item.key for item in discover_pages(client, a_site()).pages] == [
-        "index",
-        "guide/start",
+        "en/latest/index",
+        "en/latest/guide/start",
     ]
 
 
@@ -530,7 +533,7 @@ def test_a_redirect_off_the_site_is_never_followed():
     )
 
     assert not [url for url in asked if "127.0.0.1" in url]
-    assert [found_page.key for found_page in found.pages] == ["index"]
+    assert [found_page.key for found_page in found.pages] == ["guide"]
 
 
 def test_a_sitemap_on_another_host_is_never_read():
@@ -704,3 +707,45 @@ def test_a_page_too_large_to_read_is_skipped_by_the_crawl():
 def test_the_user_agent_says_what_it_is_and_where_to_ask():
     assert USER_AGENT.startswith("kennis-docs-fetch/")
     assert "https://" in USER_AGENT
+
+
+def test_a_page_has_one_key_whichever_address_the_add_started_from():
+    """Keyed below the seed, a site added from `/en/latest/` and again from
+    `/en/latest/guide/` filed its guide twice: `guide/start` and `start`."""
+    client = serving(
+        {
+            "searchindex.js": httpx.Response(404),
+            "robots.txt": httpx.Response(200, text="User-agent: *\nAllow: /\n"),
+            "sitemap.xml": httpx.Response(200, text=SITEMAP),
+        }
+    )
+
+    from_root = discover_pages(client, a_site())
+    from_section = discover_pages(client, a_site(base_url=BASE + "guide/"))
+
+    assert [page.key for page in from_section.pages] == ["en/latest/guide/start"]
+    assert set(page.key for page in from_section.pages) <= set(
+        page.key for page in from_root.pages
+    )
+
+
+def test_a_seed_inside_a_sphinx_site_finds_its_root():
+    """Its pages are named below the root by the site itself, so a seed in a
+    section keys them as the root would, and only that section is added."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if str(request.url) == BASE + "searchindex.js":
+            return httpx.Response(200, text=SEARCHINDEX)
+        if request.url.path.endswith("robots.txt"):
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    found = discover_pages(client, a_site(base_url=BASE + "install/"))
+
+    assert found.mode == "sphinx"
+    assert [page.key for page in found.pages] == ["install/index"]
+    assert found.pages[0].url == BASE + "install/index.html"

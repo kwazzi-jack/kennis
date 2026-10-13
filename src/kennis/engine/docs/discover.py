@@ -185,7 +185,7 @@ def paced_by(robots: RobotFileParser, delay: float) -> float:
 
 def discovery_mode(client: httpx.Client, base_url: str) -> str:
     """ "sphinx", "sitemap" or "crawl", cheapest and most authoritative first."""
-    if _docnames(client, _as_directory(base_url)) is not None:
+    if _sphinx_root(client, base_url) is not None:
         return "sphinx"
     origin = _origin_of(base_url)
     robots = robots_for(client, origin)
@@ -347,8 +347,8 @@ def _sphinx_pages(
     Truncated after the robots filter rather than before, so the limit counts
     pages that may actually be fetched.
     """
-    base = _as_directory(site.base_url)
-    docnames = _docnames(client, base) or []
+    found = _sphinx_root(client, site.base_url)
+    base, docnames = found if found is not None else (site.base_url, [])
     pages = [
         DiscoveredPage(key=docname, url=urljoin(base, f"{docname}.html"))
         for docname in docnames
@@ -369,6 +369,33 @@ def _sphinx_pages(
         pages=allowed[:max_pages],
         path_prefix=prefix,
     )
+
+
+# How far above the seed a Sphinx site's root is looked for: a seed is
+# usually the root or a section of it, rarely more than a few levels down.
+_MAX_ROOT_DEPTH: Final = 4
+
+
+def _sphinx_root(client: httpx.Client, seed: str) -> tuple[str, list[str]] | None:
+    """The Sphinx site the seed is in - the directory holding its search
+    index - and every page name it publishes, or None if it is not one.
+
+    Looked for upwards from the seed, not only at it. A page's key is its
+    name below this root, so the same page is filed under the same key
+    whichever address the add started from; keyed below the seed, a site
+    added from `/en/latest/` and again from `/en/latest/guide/` was two
+    copies of its guide.
+    """
+    directory = _as_directory(seed)
+    for _ in range(_MAX_ROOT_DEPTH + 1):
+        docnames = _docnames(client, directory)
+        if docnames is not None:
+            return directory, docnames
+        parent = urljoin(directory, "..")
+        if parent == directory:
+            return None
+        directory = parent
+    return None
 
 
 def _docnames(client: httpx.Client, base_url: str) -> list[str] | None:
@@ -464,7 +491,10 @@ def _generic_pages(
     pages: list[DiscoveredPage] = []
     seen: set[str] = set()
     for url in urls:
-        key = page_key(url, prefix)
+        # The whole path, not the path below the seed: these modes have no
+        # root of their own to key against, and below the seed the same page
+        # had a different key for every address an add started from.
+        key = page_key(url, "/")
         if key in seen or _excluded(key, site.exclude):
             continue
         seen.add(key)
