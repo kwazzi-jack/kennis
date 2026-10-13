@@ -247,7 +247,11 @@ class Jobs:
         """The jobs kept, newest first - what the Activity page lists."""
         with self._guard:
             self._forget_the_old()
-            return sorted(self._jobs.values(), key=lambda job: -job.started_at)
+            # By the order they were started, which the dict keeps, not by
+            # `started_at`: Windows' monotonic clock ticks every 16 ms or
+            # so, two jobs started within one tick tie, and a stable sort
+            # then lists the older one first.
+            return list(reversed(self._jobs.values()))
 
     def _running(self) -> Job | None:
         for job in self._jobs.values():

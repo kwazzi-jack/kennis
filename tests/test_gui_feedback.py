@@ -377,6 +377,20 @@ def test_activity_lists_what_ran_newest_first(app: FastAPI, client: TestClient):
     assert f"<h1>{words.ACTIVITY_HEADING}</h1>" in page
 
 
+def test_two_jobs_started_within_one_clock_tick_are_listed_newest_first():
+    """Windows' monotonic clock ticks every 16 ms or so, so two jobs started
+    together carry the same start time there; the tie is made by hand here
+    so that it holds on every platform."""
+    jobs = Jobs()
+    first = jobs.start("index", lambda events: None)
+    assert first.done.wait(10)
+    second = jobs.start("sync", lambda events: None)
+    assert second.done.wait(10)
+    second.started_at = first.started_at
+
+    assert [job.id for job in jobs.recent()] == [second.id, first.id]
+
+
 def test_activity_with_nothing_run_says_so(client: TestClient):
     assert words.NOTHING_RUN in client.get("/activity").text
 
