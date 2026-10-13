@@ -259,3 +259,26 @@ def test_a_refusal_answer_withholds_it_too():
     stranger = TestClient(build_app(TOKEN))
 
     assert stranger.get("/").headers.get("referrer-policy") == "no-referrer"
+
+
+TEMPLATES = Path(__file__).parents[1] / "src" / "kennis" / "gui" / "templates"
+
+
+def test_every_form_htmx_posts_also_posts_without_a_script():
+    """The window works without a script (11a): each form htmx posts must
+    post to the same route as a plain form. Seven did not - the index,
+    sync, pack, add, remember and clear-history forms had only `hx-post`,
+    so without a script each submitted a GET to the page it was on."""
+    missing = []
+    for template in sorted(TEMPLATES.rglob("*.html")):
+        source = re.sub(
+            r"\{#.*?#\}", "", template.read_text(encoding="utf-8"), flags=re.S
+        )
+        for head in re.findall(r"<form\b[^>]*>", source):
+            posted = re.search(r'hx-post="([^"]+)"', head)
+            if posted is None:
+                continue
+            if f'action="{posted.group(1)}"' not in head or 'method="post"' not in head:
+                missing.append(f"{template.name}: {head}")
+
+    assert missing == []

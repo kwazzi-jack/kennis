@@ -6,7 +6,7 @@
   {% for tab in tabs %}<a class="tab" href="{{ tab.href }}" hx-get="{{ tab.href }}" hx-target="closest .add-tab" hx-select=".add-tab" hx-swap="outerHTML"{% if tab.current %} aria-current="page"{% endif %}>{{ icon(tab.icon) }}{{ tab.label }}</a>{% endfor %}
 </nav>
 <p class="role-muted">{{ preamble }}</p>
-<form hx-disabled-elt="find button[type=submit]" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
+<form action="/add" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
   <input type="hidden" name="kind" value="{{ kind }}">
   {% if fixed_collection %}<input type="hidden" name="collection" value="{{ fixed_collection }}">{% endif %}
   {% if kind == "group" %}
