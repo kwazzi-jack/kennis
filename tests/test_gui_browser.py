@@ -341,6 +341,20 @@ def test_a_refused_add_keeps_the_dialog_and_what_was_typed(
     assert page.input_value("#dialog textarea[name=lines-1]") == "a-note.md"
 
 
+def test_the_palette_finds_a_document_only_once_something_is_typed(
+    page: playwright.Page,
+) -> None:
+    page.keyboard.press("Control+k")
+    page.wait_for_selector("#dialog .palette-input", timeout=_WAIT_MS)
+    assert page.is_hidden("#dialog [data-typed]")
+
+    page.fill("#dialog .palette-input", "calibration")
+
+    page.wait_for_selector("#dialog [data-typed]:not([hidden])", timeout=_WAIT_MS)
+    shown = page.inner_text("#dialog [data-typed]:not([hidden])")
+    assert "calibration" in shown.casefold()
+
+
 def test_the_palette_opens_on_its_shortcut(page: playwright.Page) -> None:
     page.keyboard.press("Control+k")
 

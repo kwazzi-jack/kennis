@@ -37,7 +37,7 @@ from kennis.engine.corpus.schema import (
     LiteratureFrontmatter,
 )
 from kennis.engine.corpus.sync import CorpusSync
-from kennis.engine.errors import DocumentNotFound
+from kennis.engine.errors import DocumentNotFound, KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.resolve import ACTING
@@ -770,6 +770,7 @@ __all__ = [
     "document_details",
     "ordered_by",
     "palette_entries",
+    "palette_typed",
     "shown_backup",
     "shown_bundle_document",
     "shown_document",
@@ -889,6 +890,7 @@ PALETTE_ROLES: Final[dict[str, str]] = {
     "action": "command",
     "collection": "operation",
     "page": "value",
+    "search": "query",
 }
 
 
@@ -907,6 +909,13 @@ class ShownPaletteEntry:
     icon: str
     role: str
     match: str
+    # Drawn hidden and shown only once something typed matches it: a
+    # document or a past search. Every action shows on an empty palette;
+    # a thousand titles would bury them.
+    typed_only: bool = False
+    # A document's collection, whose colour it wears in place of a role,
+    # as it does on a card and in the pane.
+    collection: str = ""
 
     @property
     def opens_a_dialog(self) -> bool:
@@ -950,6 +959,54 @@ def palette_entries() -> list[ShownPaletteEntry]:
         )
         for href, label, kind, icon in listed
     ]
+
+
+def palette_typed(
+    context: Context, searches: Sequence[Search]
+) -> list[ShownPaletteEntry]:
+    """Documents by title and past searches, for the palette to find.
+
+    It found only actions and places, so "bandpass" answered "Nothing
+    matches" with a document of that name in the corpus (the flows
+    review, F7). Read through `contents_of`, which is cached against the
+    corpus state, so opening the palette walks nothing that has not
+    changed. A collection that cannot be read is left out, not raised:
+    the palette is a convenience, and the pane says what is wrong.
+    """
+    entries: list[ShownPaletteEntry] = []
+    for search in searches:
+        entries.append(
+            ShownPaletteEntry(
+                label=search.query,
+                href=f"/?q={quote(search.query)}&scope={quote(search.scope)}"
+                + (f"&mode={quote(search.mode)}" if search.mode else ""),
+                kind=words.PALETTE_KINDS["search"],
+                icon="history",
+                role=PALETTE_ROLES["search"],
+                match=f"{search.query} {words.PALETTE_KINDS['search']}".casefold(),
+                typed_only=True,
+            )
+        )
+    for collection in COLLECTION_NAMES:
+        try:
+            contents = contents_of(context, collection)
+        except KennisError:
+            continue
+        for document in sorted(contents.documents, key=_sort_key):
+            title = document.frontmatter.title
+            entries.append(
+                ShownPaletteEntry(
+                    label=title,
+                    href=f"/document/{collection}/{document.id}",
+                    kind=collection,
+                    icon=words.COLLECTION_ICONS[collection],
+                    role="",
+                    match=f"{title} {collection}".casefold(),
+                    typed_only=True,
+                    collection=collection,
+                )
+            )
+    return entries
 
 
 # A mark wears an existing role, never a new colour. Not yet indexed is

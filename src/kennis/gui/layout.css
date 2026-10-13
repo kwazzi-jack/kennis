@@ -567,6 +567,8 @@ main:focus { outline: none; }
   box-shadow: inset 0 0 0 1.5px var(--brand);
 }
 .palette-list .label { flex: 1; min-width: 0; }
+/* A document found by title wears its collection's colour. */
+.palette-list .collection-kind { color: var(--collection); }
 /* The role gives the kind its colour only: `command` also sets the
    verbatim face, and a kind is a word kennis composes. */
 .palette-list .kind {

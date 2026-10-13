@@ -277,10 +277,11 @@ def test_ctrl_k_opens_the_palette_through_the_bar(client: TestClient):
     assert ".palette-open" in code
 
 
-def test_the_three_kinds_wear_three_colours():
+def test_each_kind_wears_its_own_colour():
     """`option` and `command` are both cyan, so pages and actions once
     looked alike; found by measuring the page, not by reading it. The
-    palette tests hold distinct names apart by dE >= 20 in both themes."""
+    palette tests hold distinct names apart by dE >= 20 in both themes.
+    A document wears its collection's colour instead of a role."""
     from kennis.gui.pages import PALETTE_ROLES
     from kennis.render.theme import ROLES
 
@@ -288,3 +289,43 @@ def test_the_three_kinds_wear_three_colours():
 
     assert None not in colours
     assert len(set(colours)) == len(colours)
+
+
+def test_the_palette_finds_a_document_by_its_title(client: TestClient, tmp_path: Path):
+    """ "bandpass" answered "Nothing matches" with a document of that name
+    in the corpus. A document is drawn hidden, shown once typing matches
+    it, so an empty palette still opens on its actions."""
+    source = tmp_path / "bandpass.md"
+    source.write_text(
+        "# Bandpass calibration\n\nSolve per channel.\n", encoding="utf-8"
+    )
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+    found = [
+        option
+        for option in options_of(palette_of(client))
+        if "bandpass" in option["data-match"]
+    ]
+
+    assert len(found) == 1
+    assert found[0].has_attr("data-typed") and found[0].has_attr("hidden")
+    assert found[0]["data-collection"] == "notes"
+    assert found[0].find("a")["href"].startswith("/document/notes/")
+
+
+def test_the_palette_offers_a_past_search_again(client: TestClient, tmp_path: Path):
+    # A search is recorded only when it could run, so the corpus holds one.
+    source = tmp_path / "beam.md"
+    source.write_text("# Beam\n\nSidelobes.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    assert CliRunner().invoke(main, ["corpus", "index"]).exit_code == 0
+    client.get("/", params={"q": "sidelobes"})
+
+    found = [
+        option
+        for option in options_of(palette_of(client))
+        if option["data-match"].startswith("sidelobes")
+    ]
+
+    assert len(found) == 1
+    assert found[0].find("a")["href"].startswith("/?q=sidelobes")
