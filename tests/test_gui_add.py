@@ -477,6 +477,8 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (place / "Zeta.pdf").write_bytes(b"%PDF")
     (place / ".hidden.md").write_text("x", encoding="utf-8")
     monkeypatch.setenv("HOME", str(place))
+    # Where `Path.home()` looks on Windows; HOME alone moved nothing there.
+    monkeypatch.setenv("USERPROFILE", str(place))
     return place
 
 
