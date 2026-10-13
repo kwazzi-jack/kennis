@@ -313,7 +313,7 @@ def test_a_saturated_search_reports_its_count_as_a_floor(
     entry = history.recent()[0]
     assert entry.hits == 3, "the fixture must saturate for this to test anything"
     assert entry.capped is True
-    assert "3+ hits" in client.get("/").text
+    assert "3+ results" in client.get("/").text
 
 
 def test_the_same_query_on_another_day_moves_to_the_top(

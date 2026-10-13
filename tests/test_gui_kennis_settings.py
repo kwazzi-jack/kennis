@@ -118,14 +118,28 @@ def test_the_corpus_root_is_not_offered(client: TestClient):
 
 @pytest.mark.parametrize("key", EXPECTED_ROWS)
 def test_each_row_says_what_a_change_costs(client: TestClient, key: str):
+    """Every cost, once: sending a document away on the row itself, as a
+    warning, and the rest in the row's info tip, which ends with the key."""
     row = row_of(section_of(client.get("/settings").text), key)
     current = load_settings()
     section_name, _, field = key.partition(".")
     value = str(getattr(getattr(current, section_name), field))
+    costs = costs_of(key, value)
+    tip = row.select_one(".tip")
     cost = row.find(class_="cost")
 
-    assert isinstance(cost, Tag), key
-    assert cost.get_text(" ", strip=True) == describe_costs(costs_of(key, value))
+    assert isinstance(tip, Tag), key
+    said = tip.get_text()
+    quieter = describe_costs([each for each in costs if each != "leaves_machine"])
+    if quieter:
+        assert f"{quieter[:1].upper()}{quieter[1:]}." in said, key
+    assert said.endswith(f"\nConfig key: {key}"), key
+    if "leaves_machine" in costs:
+        assert isinstance(cost, Tag), key
+        assert cost.get_text(" ", strip=True) == describe_cost("leaves_machine")
+        assert describe_cost("leaves_machine") not in said
+    else:
+        assert cost is None, key
 
 
 def test_a_row_shows_the_value_in_force(client: TestClient):
@@ -210,12 +224,10 @@ def test_a_model_the_person_typed_survives_a_redraw(client: TestClient):
 
 
 def test_a_local_backend_is_not_drawn_as_a_warning(client: TestClient):
-    cost = row_of(section_of(client.get("/settings").text), "embedding.backend").find(
-        class_="cost"
-    )
+    row = row_of(section_of(client.get("/settings").text), "embedding.backend")
 
-    assert isinstance(cost, Tag)
-    assert "role-warning" not in cost.get("class", [])
+    assert isinstance(row.select_one(".tip"), Tag)
+    assert row.select(".role-warning") == []
 
 
 def test_a_redraw_keeps_what_was_typed(client: TestClient):
@@ -572,3 +584,14 @@ def test_saving_a_value_the_environment_sets_writes_nothing(
 
     assert words.KENNIS_UNCHANGED in answer.text
     assert saved().get("embedding", {}).get("backend") != "ollama"
+
+
+def test_the_settings_page_leaves_the_panels_own_heading_alone(client: TestClient):
+    """The page passed its section heading under the panel's own name, so
+    on this page alone the panel's kennis section was headed by the
+    settings section's name."""
+    page = BeautifulSoup(client.get("/settings").text, "html.parser")
+
+    heads = [head.get_text(strip=True) for head in page.select("h2.pane-head")]
+    assert words.KENNIS_HEADING in heads
+    assert words.KENNIS_SETTINGS_HEADING not in heads

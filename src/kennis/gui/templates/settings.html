@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}kennis - {{ settings_heading }}{% endblock %}
 {% block main %}
+{% from "tip.html" import tip %}
 {# Settings (milestone 12). This window's preferences first, kept apart
    from kennis's configuration and saying so, because changing one of
    these changes nothing the command line or an agent sees.
@@ -13,7 +14,7 @@
 <h1>{{ settings_heading }}</h1>
 <section data-section="window">
 <h2>{{ window_heading }}</h2>
-<p class="role-muted">{{ window_note }}</p>
+<p class="role-muted">{{ window_note }} {{ tip("window-settings", window_heading, window_tip) }}</p>
 <form class="preferences" action="/settings" method="post">
 {% for section, heading in sections %}
 <h3>{{ heading }}</h3>
@@ -22,8 +23,7 @@
 {# A radio list, because each option is five colours as well as a name,
    which an `<option>` cannot draw. #}
 <fieldset class="setting" data-preference="{{ preference.name }}">
-<legend class="setting-name">{{ preference.label }}</legend>
-<p class="setting-sentence role-muted">{{ preference.sentence }}</p>
+<legend class="setting-name">{{ preference.label }} {{ tip("pref-" ~ preference.name, preference.label, preference.sentence) }}</legend>
 <div class="setting-control radio-list">
 {% for value, label in preference.choices %}
 <label class="choice"><input type="radio" name="{{ preference.name }}" value="{{ value }}" data-pref{% if chosen[preference.name] == value %} checked{% endif %}><span class="swatches" aria-hidden="true">{% for step in range(1, 6) %}<i class="swatch" data-scale="{{ value }}" data-step="{{ step }}"></i>{% endfor %}</span><span>{{ label }}</span></label>
@@ -34,13 +34,12 @@
 {# A dropdown, as kennis's own settings are: one value is always in
    force and the options are words to read. #}
 <div class="setting" data-preference="{{ preference.name }}">
-<label class="setting-name" for="pref-{{ preference.name }}">{{ preference.label }}</label>
+<div class="setting-head"><label class="setting-name" for="pref-{{ preference.name }}">{{ preference.label }}</label> {{ tip("pref-" ~ preference.name, preference.label, preference.sentence) }}</div>
 <div class="setting-control">
 <select id="pref-{{ preference.name }}" name="{{ preference.name }}" data-pref>
 {% for value, label in preference.choices %}<option value="{{ value }}"{% if chosen[preference.name] == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
 </select>
 </div>
-<p class="setting-sentence role-muted">{{ preference.sentence }}</p>
 </div>
 {% endif %}
 {% endfor %}

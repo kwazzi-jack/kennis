@@ -1,4 +1,5 @@
-<p class="role-muted">{{ sync_preamble }}</p>
+{% from "tip.html" import tip %}
+<p class="role-muted">{{ sync_preamble }} {{ tip("sync", title, sync_tip) }}</p>
 <div class="fields">
   <form action="/sync" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/sync" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
     <button type="submit">{{ sync_corpus_action }}</button>

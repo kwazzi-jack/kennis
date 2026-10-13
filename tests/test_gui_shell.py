@@ -399,7 +399,7 @@ def test_a_mistyped_scope_is_named_rather_than_answered_emptily(
     # The quotes around the name are escaped by the template, so the
     # assertion is on the parts escaping does not touch. Asserting the
     # exact sentence would fail on correct output.
-    assert "no scope called" in found.text
+    assert "is not a place to search" in found.text
     assert "notez" in found.text
     assert "No passages matched." not in found.text
 
@@ -442,7 +442,7 @@ def test_a_remote_figure_is_withheld_until_it_is_asked_for(
 
     assert "<img" not in withheld.text
     assert "arxiv.org" in withheld.text
-    assert "Load them" in withheld.text
+    assert "Load figures" in withheld.text
     assert "<img" in loaded.text
 
 
@@ -772,7 +772,7 @@ def test_a_note_written_from_the_page_reaches_the_corpus(
     answer = posted(client, "/remember", data={"text": "Use NNLS for the solver."})
 
     assert answer.status_code == 200
-    assert "Remembered" in answer.text
+    assert "Saved:" in answer.text
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     assert any("NNLS" in d.body for d in held.documents)
 
@@ -843,7 +843,7 @@ def test_writing_nothing_is_refused_by_the_page_not_by_the_engine(
 
     answer = posted(client, "/remember", data={"text": "   \n  "})
 
-    assert "nothing to remember" in answer.text.lower()
+    assert "write something first" in answer.text.lower()
     assert "role-warning" in answer.text
     assert "kennis remember" not in answer.text
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
@@ -873,7 +873,7 @@ def test_saying_the_same_thing_twice_is_reported_as_already_known(
         client, "/remember", data={"text": "Weighting is Briggs with robust zero."}
     )
 
-    assert "already remembered" in again.text.lower()
+    assert "already saved" in again.text.lower()
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     assert len(held.documents) == 1
 

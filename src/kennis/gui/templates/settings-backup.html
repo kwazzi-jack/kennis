@@ -3,6 +3,7 @@
    goes to the strip rather than here.
 
    No password field is drawn with a value, on any path. #}
+{% from "tip.html" import tip %}
 <section data-section="backup" id="backup" class="backup">
 <h2>{{ backup_heading }}</h2>
 <p class="role-muted">{{ backup_contents }}</p>
@@ -30,7 +31,7 @@
 <label class="password">{{ backup_confirmation }} <input type="password" name="confirmation" autocomplete="new-password" required></label>
 <button type="submit">{{ backup_now_label }}</button>
 </div>
-<p class="setting-sentence role-muted">{{ backup_now_note }}</p>
+<p class="setting-sentence role-muted">{{ backup_now_note }} {{ tip("backup-now", backup_now_label, backup_now_tip) }}</p>
 </div>
 </form>
 <form class="backup-test" action="/settings/backup/test" method="post" hx-post="/settings/backup/test" hx-target="closest section" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">

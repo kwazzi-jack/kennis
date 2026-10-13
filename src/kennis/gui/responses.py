@@ -132,6 +132,7 @@ TEMPLATES.env.globals.update(
         "more_from": words.more_from,
         "welcome_heading": words.WELCOME_HEADING,
         "welcome": words.WELCOME,
+        "welcome_tip": words.WELCOME_TIP,
         "welcome_actions": words.WELCOME_ACTIONS,
         "folded_after": words.FOLDED_AFTER,
         "every_item": words.every_item,
@@ -164,6 +165,7 @@ TEMPLATES.env.globals.update(
         "kennis_heading": words.KENNIS_HEADING,
         "corpus_unreadable": words.CORPUS_UNREADABLE,
         "no_context": words.NO_CONTEXT,
+        "no_context_tip": words.NO_CONTEXT_TIP,
         "recents_heading": words.RECENTS_HEADING,
         "results_heading": words.RESULTS_HEADING,
         # The words a hit and the key carry. Globals because `hits.html`
@@ -203,6 +205,7 @@ TEMPLATES.env.globals.update(
         "optional": words.OPTIONAL,
         "empty_prefix": words.EMPTY_PREFIX,
         "field_labels": words.FIELD_LABELS,
+        "field_tips": words.FIELD_TIPS,
         "browse": words.BROWSE,
         "upload_files": words.UPLOAD_FILES,
         "upload_folder": words.UPLOAD_FOLDER,

@@ -33,9 +33,9 @@ from kennis.retrieval import EVERY_SCOPE
 
 RECENTS_HEADING = "Recent searches"
 
-RECENTS_CLEAR = "Forget these"
+RECENTS_CLEAR = "Clear history"
 
-NOTHING_FOUND = "Nothing matched. Try fewer words, or a wider scope."
+NOTHING_FOUND = "No results. Try fewer words, or search everywhere."
 
 
 def search_hint_for(scope: str) -> str:
@@ -57,7 +57,7 @@ def search_hint_for(scope: str) -> str:
     and that was weighed and declined.
     """
     where = EVERYWHERE_LABEL if scope == EVERY_SCOPE else scope
-    return f"Search {where} kennis holds"
+    return f"Search {where}"
 
 
 SEARCH_ACTION = "Search"
@@ -68,7 +68,7 @@ SEARCH_ACTION = "Search"
 # and an indicator for it alone would never be seen. Concern #365.
 SEARCHING = "Searching"
 
-SCOPE_LABEL = "Where to look"
+SCOPE_LABEL = "Search in"
 
 # How to match, and **the labels are the band's labels**. A hit
 # reads `keywords: very high  meaning: low`, so a control
@@ -96,7 +96,7 @@ EVERYWHERE_LABEL = "everywhere"
 
 # A hit's passage opens in place, and the summary says which way it
 # goes. Both are drawn by the server and CSS shows the one that applies.
-SHOW_PASSAGE = "Show the whole passage"
+SHOW_PASSAGE = "Show full passage"
 HIDE_PASSAGE = "Show less"
 
 # ---- an opened document: its bar and its inspector (#447) ----
@@ -108,12 +108,12 @@ def search_crumb(question: str) -> str:
 
 
 INSPECTOR_LABEL = "About this document"
-CRUMBS_LABEL = "Where this document is"
-INSPECTOR_SHOW = "Show details, matches and outline"
-INSPECTOR_HIDE = "Hide details, matches and outline"
+CRUMBS_LABEL = "Breadcrumbs"
+INSPECTOR_SHOW = "Show details panel"
+INSPECTOR_HIDE = "Hide details panel"
 DETAILS_HEADING = "Details"
 OUTLINE_HEADING = "Outline"
-NO_HEADINGS = "This document has no headings."
+NO_HEADINGS = "No headings."
 
 
 def matches_heading(question: str) -> str:
@@ -121,10 +121,11 @@ def matches_heading(question: str) -> str:
     return f'Matches for "{question}"'
 
 
-NO_MATCHES = "None of these words occurs in a passage of this document."
+NO_MATCHES = "Your search words do not appear in this document."
 
 MATCHES_WITHHELD = (
-    "The document has changed since it was indexed, so its passages cannot be placed."
+    "Changed since last indexed, so matches cannot be shown. Index it again "
+    "to see them."
 )
 
 
@@ -143,7 +144,7 @@ def match_in_section(section: str, ordinal: int, count: int) -> str:
 DETAIL_LABELS: Final[dict[str, str]] = {
     "collection": "Collection",
     "group": "Group",
-    "id": "Identifier",
+    "id": "ID",
     "path": "Path",
     "citekey": "Citekey",
     "arxiv": "arXiv",
@@ -153,9 +154,9 @@ DETAIL_LABELS: Final[dict[str, str]] = {
     "page": "Page",
     "version": "Version",
     "source": "Source",
-    "converted": "Converted",
+    "converted": "Converted from",
     "added": "Added",
-    "index": "Index",
+    "index": "Search status",
 }
 
 # Whether the index holds a document, by `holdings.DocumentState`: the
@@ -163,12 +164,12 @@ DETAIL_LABELS: Final[dict[str, str]] = {
 INDEX_STATES: Final[dict[str, str]] = {
     "": "Searchable",
     "unindexed": "Not indexed yet",
-    "changed": "Changed since it was indexed",
+    "changed": "Changed since last indexed",
 }
 
 # The link from a hit into its document is an icon, so this is its
 # accessible name and its tooltip (#415).
-OPEN_AT_PASSAGE = "Open the document at this passage"
+OPEN_AT_PASSAGE = "Open at this passage"
 
 # Which icon names each measure, from Lucide. The tooltip is the
 # measure's own word from `render/hits.py::LEG_LABELS`; milestone 12
@@ -179,18 +180,18 @@ MEASURE_ICONS: Final[dict[str, str]] = {"lexical": "whole-word", "meaning": "bra
 # The values are the engine's leg names, as `mode`'s are its method
 # names; the labels are the measures' words. The first is empty, which
 # is the order the search returned.
-ORDER_LABEL = "Order"
+ORDER_LABEL = "Sort by"
 # Short, because they are drawn as one segmented row after "Order".
 ORDER_CHOICES: Final[tuple[tuple[str, str], ...]] = (
-    ("", "As ranked"),
+    ("", "Best match"),
     ("lexical", "Keywords"),
     ("meaning", "Meaning"),
 )
 # The limit, said beside the control: a reorder acts on the hits already
 # returned, which the fused rank chose.
 ORDER_LIMIT = (
-    "Reordering sorts the hits this search returned. To search by one "
-    f"measure, choose it under {MODE_LABEL}."
+    "Sorting only reorders these results. To search by one measure, "
+    f"change {MODE_LABEL}."
 )
 
 
@@ -211,29 +212,29 @@ def more_from(collection: str) -> str:
 
 # The key hint inside the search box: the key itself is drawn, and this
 # is its tooltip.
-SEARCH_KEY_TITLE = "Press / to search from anywhere on the page"
+SEARCH_KEY_TITLE = "Press / to search from anywhere"
 
 
 def unknown_order(asked: str) -> str:
     """Named rather than quietly replaced, as `unknown_mode` is."""
     offered = [label.lower() for value, label in ORDER_CHOICES if value]
-    return f"There is no order called '{asked}'. The orders are {joined(offered)}."
+    return f"'{asked}' is not a sort order. The orders are {joined(offered)}."
 
 
 # The key at the head of the results (#408, #416). The ramp between
 # these two ends is the five strength colours.
-KEY_SUMMARY = "What the measures mean"
+KEY_SUMMARY = "How to read the bars"
 KEY_LOW = "very low"
 KEY_HIGH = "very high"
 KEY_ORDER = (
-    "Hits are listed in the order the search ranked them, which combines "
-    "both measures by rank, so a hit with weaker bars can be listed first."
+    "Results are ranked on both measures together, so a result with weaker "
+    "bars can come first."
 )
 
 
 def key_models(models: Sequence[str]) -> str:
     """Which model the meaning cuts were measured for."""
-    return f"Meaning cuts measured for {joined(list(models))}."
+    return f"Meaning levels are set for {joined(list(models))}."
 
 
 # The three choices, in the order they are offered. `system` first
@@ -248,48 +249,44 @@ THEME_CHOICES: Final[tuple[tuple[str, str], ...]] = (
 # Settings (milestone 12). The window's own preferences are kept apart
 # from kennis's configuration on the page, and say so.
 SETTINGS_HEADING = "Settings"
-WINDOW_SETTINGS_HEADING = "This window"
-WINDOW_SETTINGS_NOTE = (
-    "Kept by this window only, in this browser. The command line and the "
-    "MCP server never see these, and each takes effect as you choose it."
-)
+WINDOW_SETTINGS_HEADING = "This browser"
+WINDOW_SETTINGS_NOTE = "Saved in this browser only. Each change applies at once."
+WINDOW_SETTINGS_TIP = "The command line and the MCP server do not use these."
 APPEARANCE_HEADING = "Appearance"
 RESULTS_HEADING = "Search results"
 SAVE = "Save"
 
 # Each preference's name and the sentence beside it, by its registry name.
 PREFERENCE_WORDS: Final[dict[str, tuple[str, str]]] = {
-    "theme": ("Colours", "Follow the system, or always light or dark."),
+    "theme": ("Theme", "Follow the system, or always light or dark."),
     "face": (
-        "Reading face",
-        "The face documents and search results are set in. Atkinson "
-        "Hyperlegible was designed to keep similar letters apart.",
+        "Reading font",
+        "Font for documents and results. Atkinson Hyperlegible keeps similar "
+        "letters distinct.",
     ),
-    "size": ("Text size", "Everything in the window grows or shrinks with it."),
+    "size": ("Text size", "Scales all text in the window."),
     "spacing": (
         "Spacing",
-        "Wider line, letter and word spacing in what you read. Extra "
-        "spacing has helped some readers with dyslexia more than any "
-        "special typeface.",
+        "Wider space between lines, letters and words. Some readers with "
+        "dyslexia find this helps.",
     ),
     "width": (
         "Text width",
-        "How wide documents and search results are set: across the whole "
-        "pane, wide, or at a reading measure of about 70 characters a line.",
+        "How wide documents and results run. Reading width is about 70 "
+        "characters a line.",
     ),
     "strength": (
         "Match strength",
-        "How each measure shows how well a result matched: bars beside "
-        "the level, or the level alone.",
+        "Show how well a result matched as bars and a word, or the word alone.",
     ),
     "labels": (
         "Measure labels",
-        "Name each measure by its icon, by its word, or by both.",
+        "Show each measure as an icon, a word, or both.",
     ),
     "scale": (
         "Bar colours",
-        "Each runs from dark to light, and stays distinguishable to the "
-        "commonest colour-vision deficiency.",
+        "Each runs dark to light and stays distinct for the most common "
+        "colour blindness.",
     ),
 }
 
@@ -307,9 +304,9 @@ PREFERENCE_CHOICES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
     ),
     "spacing": (("normal", "Normal"), ("wide", "Wide"), ("wider", "Wider")),
     "width": (
-        ("pane", "Fit the pane"),
+        ("pane", "Full width"),
         ("wide", "Wide"),
-        ("reading", "Reading measure"),
+        ("reading", "Reading width"),
     ),
     "strength": (("bars", "Bars and words"), ("words", "Words only")),
     "labels": (("icons", "Icons"), ("words", "Words"), ("both", "Both")),
@@ -325,12 +322,11 @@ PREFERENCE_CHOICES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
 # kennis's own configuration (12b): the same file `kennis config set`
 # writes, so the note says who else reads it. `corpus.root` is not
 # offered and not named: it moves the corpus from under an open window.
-KENNIS_SETTINGS_HEADING = "kennis"
+KENNIS_SETTINGS_HEADING = "Shared settings"
 KENNIS_SETTINGS_NOTE = (
-    "kennis's own configuration. The command line and the MCP server read "
-    "it too, from their next command."
+    "Also used by the command line and the MCP server, from their next command."
 )
-KENNIS_SAVE = "Save configuration"
+KENNIS_SAVE = "Save settings"
 # The configuration's headings, in page order, by the group each
 # setting's section belongs to.
 KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
@@ -338,23 +334,73 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("converting", "Converting documents"),
 )
 KENNIS_SAVED = "Saved."
-KENNIS_UNCHANGED = "Saved. No value was changed."
-KENNIS_NOT_SAVED = "Nothing was saved. Each value that was refused says why."
+KENNIS_UNCHANGED = "Nothing changed."
+KENNIS_NOT_SAVED = "Nothing saved. Each refused value says why."
 # Each setting's name in the window, by its configuration key. The
 # sentence beside it is the field's own description, as `config init`
 # prints it.
 SETTING_NAMES: Final[dict[str, str]] = {
-    "embedding.backend": "Embedding",
-    "embedding.model": "Embedding model",
+    "embedding.backend": "Meaning search",
+    "embedding.model": "Meaning model",
     "embedding.base_url": "Ollama address",
-    "embedding.api_key": "OpenAI key",
+    "embedding.api_key": "OpenAI API key",
     "conversion.backend": "Converter",
-    "conversion.mode": "Datalab mode",
-    "conversion.api_key": "Datalab key",
-    "retrieval.corpus_method": "Default matching",
+    "conversion.mode": "Datalab quality",
+    "conversion.api_key": "Datalab API key",
+    "retrieval.corpus_method": "Default way to match",
     "retrieval.default_top_k": "Results per collection",
-    "chunking.size": "Chunk size",
+    "chunking.size": "Passage size",
 }
+# What each setting is for, in an info tip beside its name. The engine's
+# own description, which `config init` prints and the config file
+# carries, suits the command line; these are the window's, and a key
+# without one falls back to it.
+SETTING_TIPS: Final[dict[str, str]] = {
+    "embedding.backend": (
+        "What finds results by meaning. FastEmbed downloads a 65 MB model the "
+        "first time you index. None searches by keywords only."
+    ),
+    "embedding.model": "The model name, as the meaning search you chose knows it.",
+    "embedding.base_url": (
+        "The address of your Ollama server, for example http://localhost:11434."
+    ),
+    "conversion.backend": (
+        "Turns PDF, Word, PowerPoint and Excel files into text. MinerU runs on "
+        "your computer. Datalab is a paid online service and needs an API key."
+    ),
+    "conversion.mode": (
+        "Datalab's quality and price per page: Fast 0.4c, Balanced 0.4c, "
+        "Accurate 1.0c. Re-adding a document in a different mode is charged again."
+    ),
+    "retrieval.corpus_method": (
+        f"How searches match when {MODE_LABEL} is left {MODE_CHOICES[0][1]}."
+    ),
+    "retrieval.default_top_k": (
+        "How many results each collection returns. Searching everywhere "
+        "returns this many from each."
+    ),
+    "chunking.size": (
+        "About how many characters make one passage. Smaller passages match "
+        "more precisely; larger ones give more context."
+    ),
+}
+
+
+def credential_tip(backend: str, file_name: str, kept: str) -> str:
+    """What a key's row says in its tip: where the key is kept."""
+    return (
+        f"Your {backend} API key. Kept in {file_name}, {kept}, never in the "
+        "config file."
+    )
+
+
+def setting_tip(sentence: str, costs: str, key: str) -> str:
+    """A setting's tip: what it is for, what changing it costs, and the
+    key the command line knows it by, each on a line of its own."""
+    said = f"{sentence} {costs[:1].upper()}{costs[1:]}." if costs else sentence
+    return f"{said}\nConfig key: {key}"
+
+
 CONVERTER_NAMES: Final[dict[str, str]] = {
     "mineru": "MinerU (local)",
     "datalab": "Datalab (hosted)",
@@ -362,9 +408,9 @@ CONVERTER_NAMES: Final[dict[str, str]] = {
 SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
     "embedding.backend": {
         "fastembed": "FastEmbed (local)",
-        "ollama": "Ollama (a local server)",
+        "ollama": "Ollama (local server)",
         "openai": "OpenAI (hosted)",
-        "none": "None: keywords only",
+        "none": "None (keywords only)",
     },
     "conversion.backend": CONVERTER_NAMES,
     "conversion.mode": {
@@ -374,18 +420,16 @@ SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
     },
     "retrieval.corpus_method": {value: label for value, label in MODE_CHOICES if value},
 }
-CONVERTER_MISSING = "MinerU is not installed on this machine. To install it:"
+CONVERTER_MISSING = "MinerU is not installed. To install it, run:"
 # Completed by the variable's name: "DATALAB_API_KEY is set". Neither
 # is inside the other, so a test can tell them apart.
 CREDENTIAL_SET = "is set"
 CREDENTIAL_UNSET = "is not set"
-CREDENTIAL_KEEP = "Leave it empty to keep the key there is."
-REBUILD_HEADING = "The indexes need rebuilding"
-REBUILD_NOTE = (
-    "Until it is rebuilt, each index keeps searching with what it was built with:"
-)
-REBUILD_NONE = "No collection has an index yet, so nothing needs rebuilding."
-REBUILD_NOW = "Rebuild now"
+CREDENTIAL_KEEP = "Leave empty to keep the current key."
+REBUILD_HEADING = "Indexes need updating"
+REBUILD_NOTE = "Until then, each index keeps its old settings:"
+REBUILD_NONE = "No collection is indexed yet, so nothing needs updating."
+REBUILD_NOW = "Index now"
 REBUILD_LATER = "Later"
 UNDO = "Undo"
 LEXICAL_ONLY_INDEX = "keywords only"
@@ -394,7 +438,7 @@ LEXICAL_ONLY_INDEX = "keywords only"
 def built_with(model: str | None, backend: str | None, chunk_size: int) -> str:
     """What an index was built with, as the rebuild panel names it."""
     searched = LEXICAL_ONLY_INDEX if model is None else f"{model} ({backend})"
-    return f"{searched}, in chunks of {chunk_size} characters"
+    return f"{searched}, passages of {chunk_size} characters"
 
 
 # The Backup section (13b). What the backup holds, and every sentence
@@ -403,39 +447,40 @@ BACKUP_HEADING = "Backup"
 BACKUP_FOLDER_LABEL = "Folder"
 BACKUP_SAVE_FOLDER = "Save folder"
 BACKUP_NOW = "Back up now"
-BACKUP_NOW_NOTE = (
-    "Asks for a password each time and never stores it. The backup is "
-    "tested with it before it replaces the last one."
+BACKUP_NOW_NOTE = "The password is never stored. You need it to restore."
+BACKUP_NOW_TIP = (
+    "kennis asks for the password each time. Each new backup is checked "
+    "before it replaces the last one."
 )
 BACKUP_PASSWORD = "Password"
-BACKUP_CONFIRMATION = "Password again"
-BACKUP_TEST = "Test the backup"
-BACKUP_TEST_NOTE = "Decrypts every file in it and compares each with its checksum."
-BACKUP_RESTORE_LABEL = "Restore"
-BACKUP_RESTORE_NOTE = (
-    "Restoring replaces the corpus this window shows, so it is a command, "
-    "run with no window open:"
+BACKUP_CONFIRMATION = "Confirm password"
+BACKUP_TEST = "Test backup"
+BACKUP_TEST_NOTE = (
+    "Checks that every file decrypts and is intact. Use the password you "
+    "backed up with."
 )
-PASSWORD_NEEDED = "A backup needs a password."
-PASSWORDS_DIFFER = "The two passwords differ, so nothing was started."
+BACKUP_RESTORE_LABEL = "Restore"
+BACKUP_RESTORE_NOTE = "Restoring replaces this corpus. Quit kennis, then run:"
+PASSWORD_NEEDED = "Enter a password."
+PASSWORDS_DIFFER = "The passwords do not match. Nothing was started."
 
 
 def not_a_backup_folder(path: str) -> str:
-    return f"'{path}' is not a folder, so it was not saved."
+    return f"'{path}' is not a folder. Nothing was saved."
 
 
 # The drag handles (`gui/layout.py`), each named by what it resizes.
 RESIZE_LABELS: Final[dict[str, str]] = {
-    "pane-width": "Resize the corpus pane",
-    "inspector-width": "Resize the details",
-    "strip-height": "Resize the activity strip",
+    "pane-width": "Resize corpus panel",
+    "inspector-width": "Resize details panel",
+    "strip-height": "Resize status bar",
 }
 # The activity strip's collapse, by its state.
-STRIP_SHOW = "Show all of the activity"
-STRIP_HIDE = "Show only the first line of the activity"
-PANE_SHOW = "Show the corpus"
+STRIP_SHOW = "Expand status bar"
+STRIP_HIDE = "Collapse status bar"
+PANE_SHOW = "Show corpus panel"
 
-PANE_HIDE = "Hide the corpus"
+PANE_HIDE = "Hide corpus panel"
 
 # The bar's actions as (path, label, icon), in the order they are
 # shown. **The path is the action's one route**: `GET` shows its form,
@@ -459,34 +504,34 @@ ACTIONS: Final[tuple[tuple[str, str, str], ...]] = (
 ACTION_TITLES: Final[dict[str, str]] = {
     "/add": "Add to the corpus",
     "/remember": "Write a note",
-    "/index": "Rebuild an index",
-    "/sync": "Synchronise",
+    "/index": "Index collections",
+    "/sync": "Sync packs",
     "/pack": "Install a pack",
-    "/palette": "Every action and place",
+    "/palette": "Actions and places",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
 # collection where that saves a step; its places are the pane's.
-PALETTE_TITLE = "Every action and place"
-PALETTE_PROMPT = "Type an action or a place"
+PALETTE_TITLE = "Actions and places"
+PALETTE_PROMPT = "Find an action or place"
 PALETTE_EMPTY = "Nothing matches"
 PALETTE_SHORTCUT = "Ctrl K"
 PALETTE_KEYS: Final[tuple[tuple[str, str], ...]] = (
     ("Up Down", "move"),
-    ("Enter", "run"),
+    ("Enter", "open"),
     ("Esc", "close"),
 )
 # (address, label, icon), in the order the palette lists them.
 PALETTE_ACTIONS_BEFORE_INDEX: Final[tuple[tuple[str, str, str], ...]] = (
     ("/add?kind=paper", "Add a paper", "file-plus"),
     ("/add?kind=site", "Add a documentation site", "globe"),
-    ("/add?kind=file", "Add a file", "file-plus"),
-    ("/add?kind=group", "Add several by group", "folder"),
+    ("/add?kind=file", "Add files", "file-plus"),
+    ("/add?kind=group", "Add several at once", "folder"),
     ("/remember", "Write a note", "pencil"),
-    ("/index", "Index every collection", "database"),
+    ("/index", "Index all collections", "database"),
 )
 PALETTE_ACTIONS_AFTER_INDEX: Final[tuple[tuple[str, str, str], ...]] = (
-    ("/sync", "Synchronise", "refresh-cw"),
+    ("/sync", "Sync packs", "refresh-cw"),
     ("/pack", "Install a pack", "package"),
 )
 PALETTE_KINDS: Final[dict[str, str]] = {
@@ -508,13 +553,12 @@ CLOSE = "Close"
 # process serving it (#420).
 QUIT = "Quit"
 
-QUIT_TITLE = "Stop kennis"
+QUIT_TITLE = "Quit kennis"
 
 STOPPED = "kennis has stopped. You can close this tab."
 
 QUIT_WHILE_RUNNING = (
-    "An operation is still running, and stopping now would cut it off "
-    "part of the way through. Quit once the strip says it has finished."
+    "A task is still running. Quit when the status bar says it has finished."
 )
 
 CORPUS_HEADING = "Corpus"
@@ -536,13 +580,13 @@ PALETTE_PAGES: Final[tuple[tuple[str, str, str], ...]] = (
     ("/settings", SETTINGS_HEADING, "settings"),
 )
 
-NOTHING_RUN = "Nothing has run since kennis started. Operations are kept for an hour."
+NOTHING_RUN = "No tasks yet. Tasks stay listed for an hour."
 
 # The corpus's own record, under this window's jobs: everything that
 # changed it, from here, a terminal or an agent.
-CHANGES_HEADING = "Changes to the corpus"
+CHANGES_HEADING = "Corpus history"
 
-NO_CHANGES = "The corpus has no history yet."
+NO_CHANGES = "No changes yet."
 
 # What each kind of job is called where a person reads it: the strip,
 # the Activity page. The keys are the kinds `app.py` starts jobs under.
@@ -550,7 +594,7 @@ JOB_KINDS: Final[dict[str, str]] = {
     "add": "Add",
     "index": "Index",
     "sync": "Corpus sync",
-    "context-sync": "Context sync",
+    "context-sync": "Project context sync",
     "pack": "Pack install",
     "backup": "Backup",
 }
@@ -566,13 +610,13 @@ def searchable_summary(searchable: int, total: int, behind: int) -> str:
     """Where the corpus stands, for the strip when nothing is running."""
     summary = f"{searchable} of {total} collections searchable"
     if behind:
-        summary += f", {behind} behind"
+        summary += f", {behind} {'needs' if behind == 1 else 'need'} indexing"
     return summary
 
 
 def corpus_at(commit: str) -> str:
     """The commit the corpus is at, for the strip."""
-    return f"Corpus at {commit}"
+    return f"Version {commit}"
 
 
 def documents_held(count: int) -> str:
@@ -591,7 +635,7 @@ def index_now(collections: Sequence[str]) -> str:
     plain text, and the reader had to find the Index dialog themselves."""
     if len(collections) == 1:
         return f"Index {collections[0]}"
-    return "Index them"
+    return "Index all"
 
 
 def time_ago(seconds: float) -> str:
@@ -613,12 +657,12 @@ def time_ago(seconds: float) -> str:
 # subject, and the word joining it to the scope it acted on.
 CHANGE_KINDS: Final[dict[str, str]] = {
     "init": "created",
-    "add": "add to",
-    "move": "move in",
-    "index": "index of",
-    "sync": "sync of",
-    "remember": "note in",
-    "restore": "restore in",
+    "add": "added to",
+    "move": "moved in",
+    "index": "indexed",
+    "sync": "synced",
+    "remember": "note saved in",
+    "restore": "restored",
 }
 
 
@@ -658,12 +702,17 @@ def _one_is_one(summary: str) -> str:
 
 def last_job(kind: str, state: str) -> str:
     """The most recent operation, as the strip's link text."""
-    return f"Last: {JOB_KINDS.get(kind, kind)}, {state}"
+    return f"Last task: {JOB_KINDS.get(kind, kind)}, {state}"
 
 
 CORPUS_OVERVIEW = "Overview"
 
-NO_CONTEXT = "No project here. Run kennis context init in one."
+NO_CONTEXT = "No project context."
+
+NO_CONTEXT_TIP = (
+    "Start kennis from a project folder that has a .context folder to see its "
+    "notes here. To create one in a project, run kennis context init."
+)
 
 CORPUS_UNREADABLE = "The corpus could not be read."
 
@@ -680,32 +729,25 @@ COLLECTION_ICONS: Final[dict[str, str]] = {
 # states, because "empty" and "never indexed" are different answers
 # to "is there anything to do" (#245).
 PANE_STATES: Final[dict[str, str]] = {
-    "empty": "Nothing held yet",
-    "none": "Never indexed",
+    "empty": "Empty",
+    "none": "Not indexed yet",
     "behind": "Needs indexing",
     "current": "Searchable",
 }
 
-NOTHING_TO_INDEX = "There is nothing to index yet."
+NOTHING_TO_INDEX = "Nothing to index yet."
 
 BUNDLE_NOT_COMMITTED = (
-    "kennis did not commit: the bundle is in your repository, so this "
-    "change is yours to commit with the project."
+    "Saved in your project's .context folder. Commit it with your project."
 )
 
-NOTHING_MATERIALISED = (
-    "Nothing has reached a collection yet. Installing records what the "
-    "pack declares; a sync brings it in."
-)
+NOTHING_MATERIALISED = "Installed. Run Sync to bring its documents in."
 
-BUSY_WITH_ANOTHER = "Something else is running. kennis does one at a time."
+BUSY_WITH_ANOTHER = "Another task is running. Try again when it finishes."
 
-CORPUS_BUSY_RETRY = (
-    "The corpus is busy - something else is writing to it. Nothing was "
-    "changed, so this can be tried again."
-)
+CORPUS_BUSY_RETRY = "The corpus is busy. Nothing changed; try again in a moment."
 
-NOTHING_TO_ADD = "Name at least one file, directory or URL."
+NOTHING_TO_ADD = "Nothing to add. Enter an ID, address or path, or choose a file."
 
 # The Add dialog's four tabs, in the order offered. A kind of thing to
 # add, not a collection: a PDF of a paper is a Paper, and a Markdown
@@ -713,8 +755,8 @@ NOTHING_TO_ADD = "Name at least one file, directory or URL."
 ADD_TABS: Final[tuple[tuple[str, str], ...]] = (
     ("paper", "Paper"),
     ("site", "Documentation site"),
-    ("file", "File"),
-    ("group", "Several by group"),
+    ("file", "Files"),
+    ("group", "Several at once"),
 )
 # Each tab's picture: the collection a paper or a site goes to, a
 # document for a file, a folder for a group.
@@ -726,21 +768,30 @@ ADD_TAB_ICONS: Final[dict[str, str]] = {
 }
 
 ADD_PREAMBLES: Final[dict[str, str]] = {
+    "paper": "An arXiv ID, DOI, ADS bibcode, or a PDF.",
+    "site": "The web address of a documentation site.",
+    "file": "Files or a folder, into the collection you choose.",
+    "group": "Many items at once: one block per group, one item per line.",
+}
+
+# Each tab's background, in an info tip beside its line.
+ADD_TIPS: Final[dict[str, str]] = {
     "paper": (
-        "A paper for the literature collection: an arXiv identifier, a DOI, "
-        "an ADS bibcode, or a PDF on this computer."
+        "Papers go to the literature collection. kennis looks up the title "
+        "and authors, and makes a citekey for citing it."
     ),
     "site": (
-        "A documentation site for the docs collection. kennis walks its pages "
-        "from the address given, politely, and stores each as a document."
+        "Pages go to the docs collection. kennis reads the site's page list, "
+        "or follows its links when it has none, at a polite pace, and saves "
+        "each page as a document."
     ),
     "file": (
-        "A file or a folder on this computer, into the collection you choose. "
-        "A folder adds every file in it that kennis can convert."
+        "A folder adds every file in it that kennis can convert, such as PDF, "
+        "Word, Markdown and plain text."
     ),
     "group": (
-        "Several things at once, one group per block. Each line is checked "
-        "as its own tab would check it."
+        "Each line can be an arXiv ID, DOI, bibcode, web address, file or "
+        "folder. Each line is checked as you type, as its own tab would check it."
     ),
 }
 
@@ -749,36 +800,47 @@ ADD_PREAMBLES: Final[dict[str, str]] = {
 # kennis will do instead.
 REQUIRED = "required"
 OPTIONAL = "optional"
-EMPTY_PREFIX = "If empty:"
+EMPTY_PREFIX = "Default:"
 ADD_TABS_LABEL = "What to add"
 # Answered to a chooser asked to write into a field no form draws.
-NOT_A_FIELD = "There is no such field to choose a path for."
+NOT_A_FIELD = "That field does not take a path."
 
 # What each form field is called where a person reads it. One label per
 # name, whichever tab shows the field.
 FIELD_LABELS: Final[dict[str, str]] = {
     "paper": "Paper",
-    "site": "Address",
-    "file": "File or folder",
-    "identifier": "Its identifier",
+    "site": "Site address",
+    "file": "Files or folder",
+    "identifier": "Identifier for a PDF",
     "title": "Title",
     "citekey": "Citekey",
     "group": "Group",
     "project": "Project",
     "collection": "Collection",
-    "max_pages": "Pages at most",
-    "max_depth": "Links deep at most",
-    "lines": "One per line",
+    "max_pages": "Page limit",
+    "max_depth": "Link depth limit",
+    "lines": "Items, one per line",
+}
+
+# A field's explanation, in an info tip beside its label, for the fields
+# whose name alone does not say enough.
+FIELD_TIPS: Final[dict[str, str]] = {
+    "identifier": (
+        "Fill this in only if kennis reads the wrong identifier from the PDF."
+    ),
+    "citekey": "The key you cite it by in LaTeX or BibTeX.",
+    "project": "The name its pages are filed under in docs.",
+    "max_depth": "How many links away from the start page kennis follows.",
 }
 
 # What an empty optional field becomes.
 EMPTY_MEANS: Final[dict[str, str]] = {
-    "identifier": "read from the PDF's first page",
-    "title": "the paper's own title, from arXiv or its first heading",
-    "file_title": "the document's first heading, or its file name",
-    "citekey": "made from the first author, the year and the title",
-    "project": "named from the address",
-    "file_project": "needed only for docs, where it names the project",
+    "identifier": "read from the PDF",
+    "title": "the paper's own title",
+    "file_title": "first heading or file name",
+    "citekey": "author, year, title",
+    "project": "taken from the address",
+    "file_project": "used only for docs",
     "max_pages": "300",
     "max_depth": "5",
 }
@@ -787,17 +849,17 @@ EMPTY_MEANS: Final[dict[str, str]] = {
 def group_empty_means(default_group: str | None) -> str:
     """What an empty group becomes, which depends on the settings."""
     if default_group:
-        return f"'{default_group}', the default group in your settings"
-    return "the collection itself, in no group"
+        return f"'{default_group}', from your settings"
+    return "no group"
 
 
-GROUP_NEEDS_A_NAME = "Each block with lines in it needs a group name."
+GROUP_NEEDS_A_NAME = "Give each block that has items a group name."
 
 # Beside a refusal's repairs. Skipping changes nothing: the item was
 # already refused and the rest of the add went on, which is what the
 # sentence says so that Skip is not read as undoing anything.
 SKIP = "Skip"
-SKIPPED = "Skipped. Nothing was added for this one; the rest of the add went on."
+SKIPPED = "Skipped. Nothing was added for this item; the rest are unaffected."
 
 
 def open_candidate(value: str) -> str:
@@ -808,8 +870,8 @@ def open_candidate(value: str) -> str:
 # No collection is chosen for the reader, as `corpus add` chooses none:
 # a Markdown note sent to literature by a default is refused there for
 # having no paper identifier, which reads as kennis failing.
-CHOOSE_A_COLLECTION = "Choose the collection to add to."
-ANOTHER_GROUP = "Another group"
+CHOOSE_A_COLLECTION = "Choose a collection."
+ANOTHER_GROUP = "Add another group"
 BLOCK_HEADING = "Group"
 
 BROWSE = "Browse"
@@ -827,14 +889,14 @@ def tip_about(subject: str) -> str:
 UPLOAD_FILES = "Choose files"
 UPLOAD_FOLDER = "Choose a folder"
 UPLOAD_PDF = "Choose a PDF"
-UPLOAD_HINT = "From the computer you are using, wherever kennis runs."
-UPLOAD_TYPED = "Or type a path on the computer kennis runs on"
+UPLOAD_HINT = "Sent from this computer, even when kennis runs on another."
+UPLOAD_TYPED = "Or type a path on the kennis computer"
 UPLOAD_CLEAR = "Clear"
 # What was chosen, said back under the buttons. Filled in by the page's
 # script, which composes no words of its own: `{name}`, `{names}` and
 # `{count}` are its only part.
 UPLOAD_SAID: Final[dict[str, str]] = {
-    "none": "Nothing chosen yet.",
+    "none": "Nothing chosen.",
     "one": "{name}",
     "many": "{count} files: {names}",
     "more": "{names} and {count} more",
@@ -843,21 +905,21 @@ UPLOAD_SAID: Final[dict[str, str]] = {
 CHOOSE_FOLDER = "Choose this folder"
 CHOOSER_UP = "Up one folder"
 CHOOSER_CANCEL = "Cancel"
-CHOOSER_HEADING = "Choose from this computer"
+CHOOSER_HEADING = "On the kennis computer:"
 # A folder of thousands of files is listed only so far, and says so.
 CHOOSER_SHOWN_AT_MOST = 500
 
 
 def chooser_truncated(shown: int, total: int) -> str:
-    return f"Showing {shown} of {total}. Type the path to reach one not shown."
+    return f"Showing {shown} of {total}. Type a path to reach the rest."
 
 
 def not_a_folder(path: str) -> str:
-    return f"'{path}' is not a folder kennis can list."
+    return f"'{path}' is not a folder kennis can open."
 
 
 def not_a_count(label: str, given: str) -> str:
-    return f"{label} must be a whole number; '{given}' is not one."
+    return f"{label} needs a whole number, not '{given}'."
 
 
 # The preview, for a paper.
@@ -871,20 +933,19 @@ def previewed_citekey(citekey: str) -> str:
 
 
 ARXIV_SILENT = (
-    "arXiv did not answer, so the citekey will be made from the paper's title. "
-    "The add asks again."
+    "arXiv did not respond, so the citekey comes from the title for now. "
+    "kennis asks again when adding."
 )
-PREVIEW_FILE = (
-    "A file on this computer. It is converted when added, and its identifier "
-    "read from its first page unless one is given as its identifier."
+PREVIEW_FILE = "A file on the kennis computer. It is converted when added."
+PREVIEW_ADDRESS = "A web address. Its file is converted when added."
+PREVIEW_UNRECOGNISED = (
+    "Not recognised. Enter an arXiv ID, DOI, ADS bibcode, or a path to a PDF."
 )
-PREVIEW_ADDRESS = "An address. What it serves is converted when added."
-PREVIEW_UNRECOGNISED = "Not an identifier kennis recognises yet."
 
 
 # The preview, for a site.
 def previewed_project(project: str) -> str:
-    return f"Filed under the project '{project}'."
+    return f"Pages will be filed under project '{project}'."
 
 
 def docs_input_refused(identifier: str, reason: str) -> str:
@@ -892,43 +953,41 @@ def docs_input_refused(identifier: str, reason: str) -> str:
     after the dialog had closed it came back in the strip, with what was
     typed gone."""
     if reason == "missing":
-        return f"'{identifier}' is neither a documentation site nor a file that exists."
+        return f"'{identifier}' is not a site address or an existing file."
     return (
-        f"'{identifier}' is a file on this machine, so there is no site to name "
-        "its project after: give one as the project."
+        f"'{identifier}' is a file, so no project name can be made from it. "
+        "Enter a Project name."
     )
 
 
-PROJECT_UNNAMED = (
-    "No project name can be made from this address; give one as the project."
-)
-CHECK_SITE = "Check how its pages are found"
+PROJECT_UNNAMED = "No project name can be made from this address. Enter a Project name."
+CHECK_SITE = "Check site"
 # Words for each way `discovery_mode` answers.
 DISCOVERY_WORDS: Final[dict[str, str]] = {
-    "sphinx": "Its pages are listed by its Sphinx inventory.",
-    "sitemap": "Its pages are listed by its sitemap.",
-    "crawl": "It has no list of pages, so kennis will follow its links.",
+    "sphinx": "Found a page list (Sphinx inventory).",
+    "sitemap": "Found a page list (sitemap).",
+    "crawl": "No page list found. kennis will follow links instead.",
 }
-SITE_UNREACHABLE = "The site did not answer."
+SITE_UNREACHABLE = "The site did not respond. Check the address."
 
 # A line of a group, checked.
 LINE_KINDS: Final[dict[str, str]] = {
-    "arxiv": "arXiv identifier",
+    "arxiv": "arXiv ID",
     "doi": "DOI",
     "bibcode": "bibcode",
-    "address": "address",
+    "address": "web address",
     "file": "file",
     "folder": "folder",
     "nothing": "not recognised",
 }
-LINE_HELD = "already held"
+LINE_HELD = "already in the corpus"
 
 # The Add dialog's submit button, named for what the tab adds.
 ADD_ACTIONS: Final[dict[str, str]] = {
     "paper": "Add paper",
     "site": "Add site",
-    "file": "Add",
-    "group": "Add every group",
+    "file": "Add files",
+    "group": "Add all",
 }
 
 # The foot of the Add dialog: where the add will go, which the window
@@ -937,42 +996,43 @@ ADDS_TO = "Adds to"
 CANCEL = "Cancel"
 
 # The Index form's choice for all of them, beside each collection's name.
-INDEX_EVERY = "every collection"
+INDEX_EVERY = "All"
 # Where a note goes, by the form's value: the corpus's notes, or the
 # context bundle of the project the window was started in.
 REMEMBER_TARGETS: Final[tuple[tuple[str, str], ...]] = (
-    ("notes", "notes"),
-    ("context", "this project"),
+    ("notes", "Notes"),
+    ("context", "Project context"),
 )
-INDEX_PREAMBLE = (
-    "Building an index reads every document in a collection. With a dense "
-    "backend configured it downloads a model the first time, which is why "
-    "the first run is the slow one."
-)
+INDEX_PREAMBLE = "Make new and changed documents searchable."
 
-INDEX_ACTION = "Build the index"
-
-SYNC_PREAMBLE = (
-    "A corpus sync fetches what every installed pack declares, so it uses "
-    "the network. A project sync copies from this machine's store and does "
-    "not."
+INDEX_TIP = (
+    "Indexing reads every document in a collection. With meaning search on, "
+    "the first run also downloads the meaning model, so it is slower."
 )
 
-PACK_PREAMBLE = (
-    "The path to a pack's .ken.yml. Installing records what the provider "
-    "declared; nothing reaches a collection until a sync."
+INDEX_ACTION = "Index"
+
+SYNC_PREAMBLE = "Bring in the documents your installed packs list."
+
+SYNC_TIP = (
+    "Sync corpus downloads over the network. Sync project context copies "
+    "from this computer only."
 )
 
-PACK_ACTION = "Install"
+PACK_PREAMBLE = "The path to a pack file (.ken.yml)."
 
-SYNC_CORPUS_ACTION = "Synchronise the corpus"
+PACK_TIP = "Installing records what the pack lists. Run Sync to bring its documents in."
 
-SYNC_CONTEXT_ACTION = "Synchronise this project"
+PACK_ACTION = "Install pack"
+
+SYNC_CORPUS_ACTION = "Sync corpus"
+
+SYNC_CONTEXT_ACTION = "Sync project context"
 
 # No "the Index section above": Add is first on the manage page
 # and Index is third, so the sentence was wrong as well as
 # fragile. A message does not name a position on a page.
-NOT_SEARCHABLE_YET = "Not searchable until the index is rebuilt."
+NOT_SEARCHABLE_YET = "Not searchable until indexed."
 
 INDEX_NOW = "Index now"
 
@@ -987,11 +1047,11 @@ def every_item(count: int) -> str:
     return f"Show all {count_of(count, 'item')}"
 
 
-NO_SUCH_JOB = "That operation has finished, or was never started here."
+NO_SUCH_JOB = "That task is no longer listed, or was not started in this window."
 
-STILL_RUNNING = "This is still running."
+STILL_RUNNING = "Still running."
 
-NOTHING_TO_SHOW = "That operation finished without reporting anything."
+NOTHING_TO_SHOW = "That task finished with nothing to report."
 
 
 def job_crashed(crash: Exception) -> str:
@@ -1010,38 +1070,38 @@ def job_crashed(crash: Exception) -> str:
     """
     detail = str(crash) or type(crash).__name__
     return (
-        f"That operation stopped part-way: {detail}. Anything it wrote before "
-        "it stopped is kept, so running it again carries on from there. The "
-        "details are in kennis's log."
+        f"The task stopped: {detail}. Run it again to carry on from where it "
+        "stopped. Details are in the kennis log."
     )
 
 
 MARK_WITHHELD = (
-    "This document has changed since the index was built, so the passage "
-    "the search matched can no longer be placed in it. Rebuild the index "
-    "to see it marked again."
+    "This document changed after it was indexed, so the matched passage "
+    "cannot be highlighted. Index it again to restore the highlight."
 )
 
-IMAGES_BLOCKED = (
-    "This document refers to figures held elsewhere. They were not fetched, "
-    "because requesting one tells the site which document is being read."
+IMAGES_BLOCKED = "Figures from other sites are not loaded, for privacy."
+
+IMAGES_TIP = (
+    "Loading a figure tells the site that hosts it which document you are reading."
 )
 
-LOAD_IMAGES = "Load them"
+LOAD_IMAGES = "Load figures"
 
 NEVER_INDEXED = "never indexed"
 
-CORPUS_CHANGED = "Something else has changed the corpus. Reload to see it."
+CORPUS_CHANGED = "The corpus changed elsewhere. Reload to see the latest."
 
-NOTHING_HELD = "This corpus holds no documents yet."
+NOTHING_HELD = "No documents yet. Use Add to bring some in."
 
-NO_PACKS = "No packs are installed."
+NO_PACKS = "No packs installed."
 
-REMEMBER_PREAMBLE = (
-    "What is written here is kept. A note goes into the machine-global "
-    "corpus and is committed to its history; a project note goes into "
-    "this repository's .context/ bundle and is not committed, so it is "
-    "yours to commit with the project."
+REMEMBER_PREAMBLE = "Write anything worth finding again."
+
+REMEMBER_TIP = (
+    "Notes go to the notes collection and are kept in its history. Project "
+    "context notes go to this project's .context folder; commit them with "
+    "the project."
 )
 
 REMEMBER_PLACEHOLDER = "Something worth having again in six months"
@@ -1053,11 +1113,11 @@ NOTE_TEXT_LABEL = "Note"
 
 TITLE_LABEL = "Title"
 
-TITLE_HINT = "Optional - the first line otherwise"
+TITLE_HINT = "Optional. Default: the first line"
 
 GROUP_LABEL = "Group"
 
-GROUP_HINT = "Optional subfolder"
+GROUP_HINT = "Optional"
 
 TARGET_LABEL = "Save to"
 
@@ -1065,14 +1125,11 @@ PACK_PATH_LABEL = "Pack file"
 
 INDEX_WHICH_LABEL = "Collections"
 
-REMEMBER_ACTION = "Remember"
+REMEMBER_ACTION = "Save note"
 
-NOTHING_TO_REMEMBER = "There is nothing to remember - no text was given."
+NOTHING_TO_REMEMBER = "Write something first."
 
-CORPUS_BUSY = (
-    "The corpus is busy - another kennis command is using it. Your text is "
-    "still here; try again in a moment."
-)
+CORPUS_BUSY = "The corpus is busy. Your text is kept; try again in a moment."
 
 
 def describe_written(report: RememberReport, where: str) -> ShownOutcome:
@@ -1084,7 +1141,7 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
     """
     if report.outcome is Outcome.UNCHANGED:
         return ShownOutcome(
-            message=f"Already remembered: {report.title}",
+            message=f"Already saved: {report.title}",
             role="role-unchanged",
             where=where,
             # Nothing was written, and the text in the box is the
@@ -1095,7 +1152,7 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
     if needs_an_index(report.index_outcome):
         state = index_state(report.index_outcome, report.chunk_count)
         return ShownOutcome(
-            message=f"Remembered: {report.title} - {state}",
+            message=f"Saved: {report.title} - {state}",
             role="role-operation",
             where=where,
             clears=True,
@@ -1109,7 +1166,7 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
     state = index_state(report.index_outcome, report.chunk_count)
     suffix = f" - {state}" if state else ""
     return ShownOutcome(
-        message=f"Remembered: {report.title}{suffix}",
+        message=f"Saved: {report.title}{suffix}",
         role="role-operation",
         where=where,
         clears=True,
@@ -1126,9 +1183,9 @@ def describe_written_to_bundle(note: BundleNote, bundle_name: str) -> ShownOutco
     already = note.outcome is Outcome.UNCHANGED
     return ShownOutcome(
         message=(
-            f"Already in this project: {note.title}"
+            f"Already in project context: {note.title}"
             if already
-            else f"Remembered in this project: {note.title}"
+            else f"Saved to project context: {note.title}"
         ),
         role="role-unchanged" if already else "role-operation",
         where=f"{bundle_name}/{note.relative_path}",
@@ -1160,7 +1217,7 @@ def unreadable_note(count: int) -> str | None:
         return None
     return (
         f"{count_of(count, 'document')} could not be read and "
-        "are not listed. Run `kennis corpus status`."
+        "are not listed. kennis corpus status names them."
     )
 
 
@@ -1194,11 +1251,11 @@ def describe_recent(scope: str, hits: int, *, capped: bool, mode: str) -> str:
     and is really a ceiling.
     """
     where = EVERYWHERE_LABEL if scope == EVERY_SCOPE else scope
-    counted = count_of(hits, "hit")
+    counted = count_of(hits, "result")
     # "9+" rather than "at least 9": the margin is 11rem and the
     # longer form wrapped between "9" and "hits", which reads worse
     # than the notation does.
-    found = f"{where}, {hits}+ hits" if capped else f"{where}, {counted}"
+    found = f"{where}, {hits}+ results" if capped else f"{where}, {counted}"
     # The mode only when it is not the default, because two facts
     # were asked for and a third is worth a line only when it is
     # news. A search that ran as everything else does is not.
@@ -1218,9 +1275,7 @@ def unknown_mode(asked: str) -> str:
     someone who edited a URL - so this names the choices instead.
     """
     offered = [label for value, label in MODE_CHOICES if value]
-    return (
-        f"There is no way to match called '{asked}'. The choices are {joined(offered)}."
-    )
+    return f"'{asked}' is not a way to match. The choices are {joined(offered)}."
 
 
 def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
@@ -1229,7 +1284,9 @@ def unknown_scope(asked: str, scopes: Sequence[str]) -> str:
     A mistyped scope answered with no hits reads as "nothing is here",
     which is a different and wrong conclusion.
     """
-    return f"There is no scope called '{asked}'. The scopes are {joined(list(scopes))}."
+    return (
+        f"'{asked}' is not a place to search. The choices are {joined(list(scopes))}."
+    )
 
 
 # The tree's marks, after an editor's source-control view: quiet when
@@ -1242,26 +1299,26 @@ STATE_LETTERS: Final[dict[str, str]] = {
 }
 
 STATE_WORDS: Final[dict[str, str]] = {
-    "unindexed": "Not in the index yet, so search will not find it",
-    "changed": "Changed since it was indexed, so search finds the earlier text",
-    "unreadable": "kennis cannot read this document's frontmatter",
+    "unindexed": "Not indexed yet, so search cannot find it",
+    "changed": "Changed since last indexed, so search finds the old text",
+    "unreadable": "kennis cannot read this document's metadata",
 }
 
-ATTENTION_ONLY = "Only what needs attention"
+ATTENTION_ONLY = "Show only what needs attention"
 
 MENU_OPEN = "Open"
 MENU_MOVE = "Move to group"
 MENU_ADD_HERE = "Add here"
 MENU_INDEX = "Index this collection"
 
-MOVE_GROUP_LABEL = "Group to move it to"
-MOVE_GROUP_EMPTY = "empty for the top level"
+MOVE_GROUP_LABEL = "New group"
+MOVE_GROUP_EMPTY = "Leave empty for no group"
 
 
 def attention_count(count: int) -> str:
     """How many documents beneath a group need attention."""
     verb = "needs" if count == 1 else "need"
-    return f"{count_of(count, 'document')} here {verb} attention"
+    return f"{count_of(count, 'document')} {verb} attention"
 
 
 def menu_for(name: str) -> str:
@@ -1279,13 +1336,14 @@ def overridden_by(variable: str) -> str:
 
 # The home page of an empty corpus: what kennis is, and the first things
 # to do with it, as the dialogs that do them. It was a blank centre.
-WELCOME_HEADING = "Nothing here yet"
+WELCOME_HEADING = "Your corpus is empty"
 
 WELCOME = (
-    "kennis keeps your papers, documentation and notes on this computer "
-    "and finds them again by keyword and by meaning. Agents read the same "
-    "corpus through MCP."
+    "kennis keeps your papers, docs and notes on this computer and finds "
+    "them by keyword and by meaning. Start by adding something."
 )
+
+WELCOME_TIP = "AI agents can search the same corpus through MCP."
 
 WELCOME_ACTIONS: Final[tuple[tuple[str, str, str], ...]] = (
     ("/add?kind=paper", "Add a paper", "file-plus"),
@@ -1302,7 +1360,7 @@ COPIED_LABEL = "Copied"
 
 
 # The first tab stop on every page.
-SKIP_TO_CONTENT = "Skip to the content"
+SKIP_TO_CONTENT = "Skip to content"
 
 # What a running job's bar is, to a screen reader.
 PROGRESS_LABEL = "Progress"
@@ -1310,13 +1368,13 @@ PROGRESS_LABEL = "Progress"
 
 # A page that could not be drawn: what went wrong, said as a heading the
 # reader can find, and two ways back, so a refusal is never a dead end.
-PROBLEM_HEADING = "That could not be shown"
+PROBLEM_HEADING = "This page cannot be shown"
 
 NOT_FOUND_HEADING = "Not found"
 
 PROBLEM_BACK = "Back to search"
 
-PROBLEM_CORPUS = "See the corpus"
+PROBLEM_CORPUS = "Open corpus"
 
 
 def no_page_at(path: str) -> str:
@@ -1326,12 +1384,11 @@ def no_page_at(path: str) -> str:
 
 # A request without the token: the browser was given an address with the
 # key in it, and this one has neither the key nor the cookie it leaves.
-LOCKED_HEADING = "This window needs its key"
+LOCKED_HEADING = "Access key missing"
 
 LOCKED = (
-    "This address is missing the key kennis was started with, so it will "
-    "not answer. Open the address `kennis gui` printed, or run `kennis gui` "
-    "again for a new one."
+    "This address is missing kennis's access key. Open the full address "
+    "that `kennis gui` printed, or run `kennis gui` again."
 )
 
 
@@ -1349,7 +1406,7 @@ def keywords_only(collections: Sequence[str]) -> str:
 
 KEYWORDS_ONLY_CHOOSE = "Choose a meaning model in Settings"
 
-KEYWORDS_ONLY_INDEX = "Index them with meaning"
+KEYWORDS_ONLY_INDEX = "Index with meaning"
 
 
 __all__ = [
@@ -1362,6 +1419,7 @@ __all__ = [
     "ADD_TABS",
     "ADD_TABS_LABEL",
     "ADD_TAB_ICONS",
+    "ADD_TIPS",
     "ANOTHER_GROUP",
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
@@ -1371,6 +1429,7 @@ __all__ = [
     "BACKUP_HEADING",
     "BACKUP_NOW",
     "BACKUP_NOW_NOTE",
+    "BACKUP_NOW_TIP",
     "BACKUP_PASSWORD",
     "BACKUP_RESTORE_LABEL",
     "BACKUP_RESTORE_NOTE",
@@ -1415,17 +1474,20 @@ __all__ = [
     "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",
     "FIELD_LABELS",
+    "FIELD_TIPS",
     "FOLDED_AFTER",
     "GROUP_HINT",
     "GROUP_LABEL",
     "GROUP_NEEDS_A_NAME",
     "HIDE_PASSAGE",
     "IMAGES_BLOCKED",
+    "IMAGES_TIP",
     "INDEX_ACTION",
     "INDEX_EVERY",
     "INDEX_NOW",
     "INDEX_PREAMBLE",
     "INDEX_STATES",
+    "INDEX_TIP",
     "INDEX_WHICH_LABEL",
     "INSPECTOR_HIDE",
     "INSPECTOR_LABEL",
@@ -1481,6 +1543,7 @@ __all__ = [
     "NOT_SEARCHABLE_YET",
     "NO_CHANGES",
     "NO_CONTEXT",
+    "NO_CONTEXT_TIP",
     "NO_HEADINGS",
     "NO_MATCHES",
     "NO_PACKS",
@@ -1495,6 +1558,7 @@ __all__ = [
     "PACK_ACTION",
     "PACK_PATH_LABEL",
     "PACK_PREAMBLE",
+    "PACK_TIP",
     "PALETTE_ACTIONS_AFTER_INDEX",
     "PALETTE_ACTIONS_BEFORE_INDEX",
     "PALETTE_EMPTY",
@@ -1533,6 +1597,7 @@ __all__ = [
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
     "REMEMBER_TARGETS",
+    "REMEMBER_TIP",
     "REQUIRED",
     "RESIZE_LABELS",
     "RESULTS_HEADING",
@@ -1544,6 +1609,7 @@ __all__ = [
     "SETTINGS_HEADING",
     "SETTING_CHOICES",
     "SETTING_NAMES",
+    "SETTING_TIPS",
     "SHOW_PASSAGE",
     "SITE_UNREACHABLE",
     "SKIP",
@@ -1558,6 +1624,7 @@ __all__ = [
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",
+    "SYNC_TIP",
     "TARGET_LABEL",
     "THEME_CHOICES",
     "TITLE_HINT",
@@ -1573,13 +1640,16 @@ __all__ = [
     "WELCOME",
     "WELCOME_ACTIONS",
     "WELCOME_HEADING",
+    "WELCOME_TIP",
     "WINDOW_SETTINGS_HEADING",
     "WINDOW_SETTINGS_NOTE",
+    "WINDOW_SETTINGS_TIP",
     "attention_count",
     "built_with",
     "change_line",
     "chooser_truncated",
     "corpus_at",
+    "credential_tip",
     "describe_count",
     "describe_holding",
     "describe_recent",
@@ -1615,6 +1685,7 @@ __all__ = [
     "search_crumb",
     "search_hint_for",
     "searchable_summary",
+    "setting_tip",
     "time_ago",
     "tip_about",
     "unknown_collection",
@@ -1647,15 +1718,16 @@ def indexed_headline(built: IndexBuild) -> str:
     if not built.built:
         return "Indexed nothing"
     return (
-        f"Indexed {count_of(built.documents, 'document')} as "
-        f"{count_of(built.chunks, 'chunk')}"
+        f"Indexed {count_of(built.documents, 'document')} in "
+        f"{count_of(built.chunks, 'passage')}"
     )
 
 
 def describe_built(index: BuiltIndex) -> str:
     """One collection's share of a build."""
     return (
-        f"{count_of(index.documents, 'document')} as {count_of(index.chunks, 'chunk')}"
+        f"{count_of(index.documents, 'document')} in "
+        f"{count_of(index.chunks, 'passage')}"
     )
 
 
@@ -1667,13 +1739,16 @@ def describe_backend(built: IndexBuild) -> str:
     rather than afterwards.
     """
     if built.model_kind is None or built.model_name is None:
-        return "lexical search only, with no embedding backend"
+        return "keywords only, with no meaning model"
     return f"{built.model_kind} {built.model_name}"
 
 
 def unknown_collection(asked: str) -> str:
     """A collection that is not one of the three, named back."""
-    return f"'{asked}' is not a collection. There are {joined(COLLECTION_NAMES)}."
+    return (
+        f"'{asked}' is not a collection. The collections are "
+        f"{joined(COLLECTION_NAMES)}."
+    )
 
 
 def no_such_pack(given: str) -> str:
@@ -1683,5 +1758,5 @@ def no_such_pack(given: str) -> str:
     reader cannot see one they cannot see.
     """
     if not given:
-        return "Name the path to a pack's .ken.yml."
-    return f"'{given}' is not a file."
+        return "Enter the path to a pack file (.ken.yml)."
+    return f"No file at '{given}'. Check the path."

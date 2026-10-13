@@ -686,6 +686,8 @@ main {
 }
 .setting-name { float: left; padding: 0; font-weight: 600; }
 .setting-sentence { grid-column: 1; margin: 0; font-size: 0.8125rem; }
+/* A setting's name and the info tip beside it, as one item of the row. */
+.setting-head { grid-column: 1; display: flex; align-items: center; gap: 0.3rem; }
 /* A list of radios, one to a line, for options carrying more than a
    word: the bar colours' swatches. */
 .radio-list {
@@ -719,7 +721,6 @@ main {
 .setting-control select, .setting-control input { width: 100%; }
 .setting-control .role-error { margin: 0.3rem 0 0; font-size: 0.8125rem; }
 .kennis .cost { font-style: italic; }
-.setting-key code { font-size: 0.75rem; color: var(--role-muted); }
 .kennis .outcome { margin: 0.6rem 0; }
 .rebuild {
   max-width: 46rem;
@@ -1735,11 +1736,12 @@ button:focus-visible, a:focus-visible {
 .field[data-uploads] { grid-column: 1 / -1; }
 .add-fields > .chooser { grid-column: 1 / -1; }
 
-/* A field: its name with whether it is needed beside it, the control
-   under them, and what empty becomes under that. */
+/* A field: its name with whether it is needed beside it, and an info
+   tip between them when it has one, then the control under them. What
+   empty becomes is the control's own placeholder. */
 .add-tab .field {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto auto 1fr;
   align-items: baseline;
   /* A field shares a row with its neighbour and is stretched to the
      taller one's height; without this its own rows took the extra
@@ -1758,7 +1760,7 @@ button:focus-visible, a:focus-visible {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.add-tab .field > .choices, .add-tab .field > .entry-row, .add-tab .field > .empty,
+.add-tab .field > .choices, .add-tab .field > .entry-row,
 .add-tab .field > input, .add-tab .field > textarea,
 .add-tab .field > .uploads, .add-tab .field > .typed-path {
   grid-column: 1 / -1;
@@ -1769,8 +1771,6 @@ button:focus-visible, a:focus-visible {
   min-width: 0;
 }
 .add-tab .choices { justify-self: start; flex-wrap: wrap; }
-.add-tab .empty { color: var(--role-muted); font-size: 0.75rem; }
-.add-tab .empty b { color: var(--ink); font-weight: 600; }
 .add-tab .browse { display: inline-flex; align-items: center; gap: 0.3rem; }
 /* The browser's own file picker, as kennis's buttons: the inputs stay in
    the form and are what it sends, and are hidden only once the script
@@ -1812,7 +1812,6 @@ button:focus-visible, a:focus-visible {
   text-decoration: underline;
   cursor: pointer;
 }
-.add-tab .upload-hint { font-size: 0.75rem; color: var(--role-muted); }
 /* The typed path, folded: the picker is the way in, and a path on the
    computer kennis runs on is the exception. */
 .add-tab .typed-path { margin-top: 0.4rem; }
@@ -2290,6 +2289,9 @@ a.button:active { translate: 0 1px; }
   font-size: 0.8rem;
   font-weight: normal;
   line-height: 1.45;
+  /* A tip of several parts, such as a setting's sentence and its key,
+     keeps each on a line of its own. */
+  white-space: pre-line;
   text-transform: none;
   letter-spacing: normal;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--ink) 18%, transparent);

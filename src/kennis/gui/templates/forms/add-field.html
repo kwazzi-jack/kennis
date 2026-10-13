@@ -1,5 +1,7 @@
 {# One field, saying whether it is required and, when it is not, what
-   empty becomes.
+   empty becomes: as the field's placeholder, worded as its default, so
+   it takes no line of its own. A field whose name alone does not say
+   enough has an info tip beside its label.
 
    A field that takes files offers the browser's own picker - the native
    dialog of the computer the reader sits at, wherever kennis runs - as
@@ -7,17 +9,19 @@
    File tab leads with the picker and folds the typed path away; the Paper
    tab leads with the identifier, which is what is usually typed there.
    Without a script the browser's own controls show, and still work. #}
+{% from "tip.html" import tip %}
 {% macro picker(field) %}<span class="uploads"{% for case, said in upload_said.items() %} data-said-{{ case }}="{{ said }}"{% endfor %}>
   <span class="upload-buttons">
   <label class="upload-button">{{ icon("file-plus") }}<span class="upload-label">{{ upload_pdf if field.upload == "file" else upload_files }}</span><input type="file" name="upload" multiple{% if field.upload == "file" %} accept=".pdf,application/pdf"{% endif %}></label>
   {% if field.upload == "both" %}<label class="upload-button">{{ icon("folder") }}<span class="upload-label">{{ upload_folder }}</span><input type="file" name="upload" webkitdirectory></label>{% endif %}
+  {{ tip("upload-" ~ field.name, upload_files, upload_hint) }}
   </span>
   <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="link upload-clear" data-upload-clear hidden>{{ upload_clear }}</button></span>
-  <span class="upload-hint">{{ upload_hint }}</span>
 </span>{% endmacro %}
-{% set typed %}<input id="add-{{ field.name }}" type="{{ 'number' if field.widget == 'number' else 'text' }}" name="{{ field.name }}"{% if field.value %} value="{{ field.value }}"{% endif %}{% if field.widget == "number" %} min="1" step="1"{% endif %}{% if field.name == "identifiers" and field.upload != "both" %} autofocus{% endif %}{% if field.preview %} hx-get="{{ field.preview }}" hx-trigger="input changed delay:600ms" hx-target="#add-preview" hx-include="closest form"{% endif %}>{% endset %}
+{% set typed %}<input id="add-{{ field.name }}" type="{{ 'number' if field.widget == 'number' else 'text' }}" name="{{ field.name }}"{% if field.value %} value="{{ field.value }}"{% endif %}{% if field.empty %} placeholder="{{ empty_prefix }} {{ field.empty }}"{% endif %}{% if field.widget == "number" %} min="1" step="1"{% endif %}{% if field.name == "identifiers" and field.upload != "both" %} autofocus{% endif %}{% if field.preview %} hx-get="{{ field.preview }}" hx-trigger="input changed delay:600ms" hx-target="#add-preview" hx-include="closest form"{% endif %}>{% endset %}
 <div class="field" data-need="{{ 'required' if field.required else 'optional' }}"{% if field.upload %} data-uploads="{{ field.upload }}"{% endif %}>
   {% if field.widget == "choice" or field.upload == "both" %}<span class="name" id="add-{{ field.name }}-name">{{ field.label }}</span>{% else %}<label class="name" for="add-{{ field.name }}">{{ field.label }}</label>{% endif %}
+  {% if field.name in field_tips %}{{ tip("field-" ~ field.name, field.label, field_tips[field.name]) }}{% endif %}
   <span class="need">{% if field.required %}{{ required }}{% else %}{{ optional }}{% endif %}</span>
   {% if field.widget == "choice" %}
   <span class="choices segmented" role="radiogroup" aria-labelledby="add-{{ field.name }}-name">{% for choice in field.choices %}<label><input type="radio" name="{{ field.name }}" value="{{ choice }}" required{% if choice == field.value %} checked{% endif %}>{{ choice }}</label>{% endfor %}</span>
@@ -32,5 +36,4 @@
   <span class="entry-row">{{ typed }}</span>
   {% if field.upload %}{{ picker(field) }}{% endif %}
   {% endif %}
-  {% if field.empty %}<span class="empty">{{ empty_prefix }} <b>{{ field.empty }}</b></span>{% endif %}
 </div>

@@ -93,8 +93,8 @@ def a_note(tmp_path: Path, name: str, body: str) -> None:
 
 
 def test_the_hint_names_the_scope_it_will_search():
-    assert words.search_hint_for("literature") == "Search literature kennis holds"
-    assert words.search_hint_for("notes") == "Search notes kennis holds"
+    assert words.search_hint_for("literature") == "Search literature"
+    assert words.search_hint_for("notes") == "Search notes"
 
 
 def test_the_hint_for_a_sweep_says_where_a_sweep_goes():

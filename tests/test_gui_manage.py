@@ -163,7 +163,7 @@ def test_an_add_with_nothing_named_is_refused_before_a_job_starts(client: TestCl
         client, "/add", data={"identifiers": "  \n\n", "collection": "notes"}
     )
 
-    assert "at least one" in answer.text
+    assert "Nothing to add" in answer.text
     assert "data-job" not in answer.text
 
 
@@ -355,7 +355,7 @@ def test_a_busy_corpus_is_a_state_to_retry_from(client: TestClient, tmp_path: Pa
         shown = finished(client, job_of(started.text))
 
     assert "busy" in shown
-    assert "tried again" in shown
+    assert "try again" in shown
 
 
 def test_an_operation_started_from_the_window_reaches_the_log(
@@ -477,7 +477,7 @@ def test_indexing_an_empty_corpus_says_there_is_nothing_to_do(client: TestClient
     started = posted(client, "/index", data={"collection": ""})
     shown = finished(client, job_of(started.text))
 
-    assert "nothing to index" in shown
+    assert "Nothing to index" in shown
 
 
 def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(

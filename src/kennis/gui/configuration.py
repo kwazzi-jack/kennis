@@ -19,7 +19,11 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.rag.index import read_binding
 from kennis.engine.setting_costs import COSTLESS, costs_of
-from kennis.engine.settings import overriding_variable
+from kennis.engine.settings import (
+    CREDENTIALS_KEPT,
+    credentials_path,
+    overriding_variable,
+)
 from kennis.engine.setup import (
     CredentialStatus,
     Question,
@@ -29,7 +33,7 @@ from kennis.engine.setup import (
     setup_questions,
 )
 from kennis.gui import words
-from kennis.render.settings import describe_costs
+from kennis.render.settings import describe_cost, describe_costs
 
 type Answers = Mapping[str, str]
 
@@ -42,7 +46,10 @@ class ShownSetting:
     # The heading the row sits under: `words.KENNIS_GROUPS`'s first column.
     group: str
     name: str
-    sentence: str
+    # Everything said about the row that need not take a line: what it is
+    # for, what changing it costs short of sending anything away, and its
+    # key. Drawn as an info tip beside the name.
+    tip: str
     kind: QuestionKind
     # What the control holds: the answer given, else the value in force.
     # Always empty for a key, which is never drawn back into a page.
@@ -50,10 +57,11 @@ class ShownSetting:
     choices: tuple[tuple[str, str], ...]
     minimum: int | None
     maximum: int | None
-    cost: str
     # Drawn as a warning: sending a document away is never a default
-    # (rules.md 4.5), so choosing it should not read like the rest.
-    leaves_machine: bool
+    # (rules.md 4.5), so choosing it should not read like the rest. The
+    # one cost said on the row itself rather than in its tip, because it
+    # is a privacy risk; empty when the choice keeps everything here.
+    leaves_machine: str
     problem: str
     credential: CredentialStatus | None
     # The command that installs the chosen converter, when it is missing.
@@ -181,19 +189,37 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
         key=question.key,
         group="converting" if question.section == "conversion" else "searching",
         name=words.SETTING_NAMES[question.key],
-        sentence=question.description,
+        tip=words.setting_tip(
+            _sentence(question),
+            describe_costs([cost for cost in costs if cost != "leaves_machine"]),
+            question.key,
+        ),
         kind=question.kind,
         value=value,
         choices=tuple((option, labels[option]) for option in question.options),
         minimum=question.minimum,
         maximum=question.maximum,
-        cost=describe_costs(costs),
-        leaves_machine="leaves_machine" in costs,
+        leaves_machine=(
+            describe_cost("leaves_machine") if "leaves_machine" in costs else ""
+        ),
         problem=problem,
         credential=credential_status(question.key) if secret else None,
         install_hint=_missing_converter(question.key, value),
         overridden_by="" if secret else overriding_variable(question.key) or "",
     )
+
+
+def _sentence(question: Question) -> str:
+    """What a setting is for, in the window's words when it has them.
+
+    The engine's description is written for `config init` and the config
+    file; a key the window has no words for falls back to it.
+    """
+    if question.kind == "secret":
+        backend = question.when[0][1] if question.when else ""
+        kept = words.credential_tip(backend, credentials_path().name, CREDENTIALS_KEPT)
+        return f"{kept} {words.CREDENTIAL_KEEP}"
+    return words.SETTING_TIPS.get(question.key, question.description)
 
 
 def _missing_converter(key: str, value: str) -> str:

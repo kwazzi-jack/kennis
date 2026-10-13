@@ -180,6 +180,7 @@ def serve_index_form(request: Request, collection: str = "") -> HTMLResponse:
             "collections": COLLECTION_NAMES,
             "chosen": collection if collection in COLLECTION_NAMES else "",
             "index_preamble": words.INDEX_PREAMBLE,
+            "index_tip": words.INDEX_TIP,
             "index_action": words.INDEX_ACTION,
         },
     )
@@ -209,6 +210,7 @@ def serve_sync_form(request: Request) -> HTMLResponse:
         "forms/sync.html",
         {
             "sync_preamble": words.SYNC_PREAMBLE,
+            "sync_tip": words.SYNC_TIP,
             "sync_corpus_action": words.SYNC_CORPUS_ACTION,
             "sync_context_action": words.SYNC_CONTEXT_ACTION,
         },
@@ -251,7 +253,11 @@ def serve_pack_form(request: Request) -> HTMLResponse:
         request,
         "/pack",
         "forms/pack.html",
-        {"pack_preamble": words.PACK_PREAMBLE, "pack_action": words.PACK_ACTION},
+        {
+            "pack_preamble": words.PACK_PREAMBLE,
+            "pack_tip": words.PACK_TIP,
+            "pack_action": words.PACK_ACTION,
+        },
     )
 
 

@@ -74,6 +74,7 @@ def _document_context(
         "document": document,
         "load_remote_images": load_remote,
         "blocked_note": words.IMAGES_BLOCKED,
+        "blocked_tip": words.IMAGES_TIP,
         "blocked_action": words.LOAD_IMAGES,
         "mark_withheld": words.MARK_WITHHELD if withheld else None,
         "question": question,
