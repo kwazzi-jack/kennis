@@ -33,6 +33,7 @@ those mean the command as typed cannot be carried out at all.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
@@ -125,6 +126,7 @@ from kennis.engine.literature.unpaywall import open_copy_of
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -1233,8 +1235,12 @@ def _converted_for(
         # rule for both collections.
         try:
             return (
-                convert_url(
-                    paper.url, keep_original=options.keep_original, client=client
+                _as_stated(
+                    paper.url,
+                    identity,
+                    convert_url(
+                        paper.url, keep_original=options.keep_original, client=client
+                    ),
                 ),
                 None,
             )
@@ -1309,6 +1315,61 @@ def _converted_for(
         )
 
 
+# How much of a fetched document is its first page, near enough: its own
+# identifiers are printed there, and the ones it cites come later.
+_FRONT_PAGE_CHARACTERS = 5000
+
+
+def _as_stated(
+    address: str, identity: _Identity, converted: Converted
+) -> Converted | AddOutcome:
+    """`converted`, unless its first page names a different paper.
+
+    The reader's identifier is taken as fact, and a page that names none
+    is taken to be what they said. Only a page naming identifiers of the
+    same kind, none of them theirs, is in doubt - and then kennis asks,
+    with what it found, rather than filing the document under either.
+    """
+    kind, stated = _stated_of(identity)
+    if stated is None:
+        return converted
+    found: list[str] = []
+    for candidate in find_paper_identifiers(
+        converted.markdown[:_FRONT_PAGE_CHARACTERS]
+    ):
+        if candidate.kind == kind and candidate.value not in found:
+            found.append(candidate.value)
+    if not found or any(_same(kind, value, stated) for value in found):
+        return converted
+    return AddOutcome(
+        identifier=address,
+        outcome=Outcome.FAILED,
+        refusal=IdentityMismatch(
+            named=address, kind=kind, stated=stated, found=tuple(found)
+        ),
+    )
+
+
+def _stated_of(identity: _Identity) -> tuple[str, str | None]:
+    if identity.arxiv_id:
+        return "arxiv", identity.arxiv_id
+    if identity.doi:
+        return "doi", identity.doi
+    return "bibcode", identity.bibcode
+
+
+def _same(kind: str, found: str, stated: str) -> bool:
+    """One paper, allowing for case and an arXiv version suffix."""
+    if kind == "arxiv":
+        return _unversioned(found) == _unversioned(stated)
+    return found.lower() == stated.lower()
+
+
+def _unversioned(arxiv_id: str) -> str:
+    """`2409.19750v2` as `2409.19750`; `solv-int/9901001` is left whole."""
+    return re.sub(r"v\d+$", "", arxiv_id.lower())
+
+
 def _open_copy(
     paper: _Paper,
     identity: _Identity,
@@ -1332,8 +1393,12 @@ def _open_copy(
             ),
         )
     try:
-        return convert_url(
-            copies.published, keep_original=options.keep_original, client=client
+        return _as_stated(
+            copies.published,
+            identity,
+            convert_url(
+                copies.published, keep_original=options.keep_original, client=client
+            ),
         )
     except KennisError as error:
         return AddOutcome(

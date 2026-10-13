@@ -26,6 +26,7 @@ from urllib.parse import quote
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     KennisOwn,
     NoArxivText,
     NoIdentity,
@@ -89,6 +90,16 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
                     kind=kind,
                 ),
                 _as_a_note(named),
+            )
+        case IdentityMismatch(named=named, kind=kind, found=found):
+            return (
+                Repair(
+                    label="Use the identifier it names",
+                    collection="literature",
+                    identifiers=named,
+                    choices=found,
+                    kind=kind,
+                ),
             )
         case (
             Quoted()
