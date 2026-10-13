@@ -38,6 +38,7 @@
 </li>
 {% endmacro %}
 {% if problem %}<p class="pane-note role-error">{{ problem }}</p>{% endif %}
+{% for note in notes %}<p class="pane-note role-muted">{{ note }}</p>{% endfor %}
 {% if tree.attention %}<label class="attention-filter"><input type="checkbox" class="attention-only"> {{ attention_only }}</label>{% endif %}
 {% if tree.movable %}<datalist id="groups-{{ tree.collection }}">{% for name in tree.groups %}<option value="{{ name }}">{% endfor %}</datalist>{% endif %}
 <ul class="tree">
