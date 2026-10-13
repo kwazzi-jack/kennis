@@ -142,9 +142,7 @@ class FrontPageConverter:
     def install_hint(self) -> str:
         return "install it"
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         self.runs.append(tuple(paths))
         return ConversionBatch(
             markdown={path: f"# {path.stem}\n\nBody.\n" for path in paths},

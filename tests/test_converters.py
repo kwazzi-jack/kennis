@@ -259,14 +259,6 @@ def test_an_explicit_setting_reaches_the_process(fake_mineru: Path, tmp_path: Pa
     assert "source=huggingface" in fake_mineru.read_text(encoding="utf-8")
 
 
-def test_a_page_limit_restricts_the_run(fake_mineru: Path, tmp_path: Path):
-    """Two pages are enough to learn what every document in a folder *is*, at
-    about a second each against sixteen for a full conversion."""
-    batch = MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")], page_limit=2)
-
-    assert batch.markdown
-
-
 @needs_a_posix_shell
 def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
