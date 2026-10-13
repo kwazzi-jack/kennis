@@ -839,7 +839,7 @@ EMPTY_MEANS: Final[dict[str, str]] = {
     "file_title": "first heading or file name",
     "citekey": "author, year, title",
     "project": "taken from the address",
-    "file_project": "used only for docs",
+    "file_project": "none (docs needs one)",
     "max_pages": "300",
     "max_depth": "5",
 }
