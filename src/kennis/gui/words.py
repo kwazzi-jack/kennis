@@ -997,6 +997,14 @@ CANCEL = "Cancel"
 
 # The Index form's choice for all of them, beside each collection's name.
 INDEX_EVERY = "All"
+
+
+def index_waiting(count: int) -> str:
+    """Beside a collection in the Index dialog: how many documents a search
+    cannot find until it is indexed."""
+    return f"{count} to index"
+
+
 # Where a note goes, by the form's value: the corpus's notes, or the
 # context bundle of the project the window was started in.
 REMEMBER_TARGETS: Final[tuple[tuple[str, str], ...]] = (
@@ -1662,6 +1670,7 @@ __all__ = [
     "group_empty_means",
     "index_collection",
     "index_now",
+    "index_waiting",
     "job_crashed",
     "key_models",
     "keywords_only",

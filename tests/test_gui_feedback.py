@@ -96,7 +96,7 @@ def held(app: FastAPI, kind: str = "add") -> tuple[threading.Event, str]:
 # Written by hand, not read from the templates: which forms post, per
 # dialog. A form added without the attribute fails below; a form dropped
 # from a dialog fails here (#373).
-POSTING_FORMS = {"/add": 1, "/index": 1, "/sync": 2, "/pack": 1, "/remember": 1}
+POSTING_FORMS = {"/add": 1, "/index": 1, "/sync": 1, "/pack": 1, "/remember": 1}
 
 
 @pytest.mark.parametrize(("route", "expected"), sorted(POSTING_FORMS.items()))

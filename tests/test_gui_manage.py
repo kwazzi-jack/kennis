@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -511,15 +512,25 @@ def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     assert "/nowhere/at/all.ken.yml" in answer.text
 
 
-def test_the_sync_dialog_offers_both_syncs(client: TestClient):
+def test_the_sync_dialog_offers_the_project_context_only_where_there_is_one(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
     """The one dialog with two operations in it. Every other action's
-    dialog posts to its own path, which `test_gui_workbench` asserts;
-    this one also posts to `/context-sync`, and that has no button of
-    its own in the bar."""
-    dialog = client.get("/sync", headers={"HX-Request": "true"}).text
+    dialog posts to its own path, which `test_gui_workbench` asserts; this
+    one also posts to `/context-sync` - offered only where there is a
+    project context, since with none it would refuse."""
+    alone = client.get("/sync", headers={"HX-Request": "true"}).text
+    monkeypatch.setattr("kennis.gui.pane.project_name", lambda: "kennis")
+    with_context = client.get("/sync", headers={"HX-Request": "true"}).text
 
-    assert 'hx-post="/sync"' in dialog
-    assert 'hx-post="/context-sync"' in dialog
+    assert 'hx-post="/sync"' in alone
+    assert 'hx-post="/context-sync"' not in alone
+    assert 'hx-post="/context-sync"' in with_context
+    assert 'hx-disabled-elt="this"' in with_context
+    foot = BeautifulSoup(with_context, "html.parser").select_one(".form-foot")
+    assert foot is not None
+    submits = foot.select("button[type=submit]")
+    assert "primary" in (submits[0].get("class") or [])
 
 
 def test_the_management_routes_need_the_token(tmp_path: Path):
@@ -532,3 +543,29 @@ def test_the_management_routes_need_the_token(tmp_path: Path):
     assert stranger.get("/add").status_code == 401
     assert stranger.get("/tree/notes").status_code == 401
     assert stranger.get("/job/whatever/events").status_code == 401
+
+
+def test_the_index_dialog_marks_and_chooses_what_needs_indexing(
+    client: TestClient, tmp_path: Path
+):
+    """It offered every collection alike, so the reader had to find out
+    elsewhere which one their new documents were in."""
+    for name in ("one.md", "two.md"):
+        result = CliRunner().invoke(
+            main, ["corpus", "add", "-n", str(a_source(tmp_path, name))]
+        )
+        assert result.exit_code == 0
+
+    dialog = BeautifulSoup(
+        client.get("/index", headers={"HX-Request": "true"}).text, "html.parser"
+    )
+
+    checked = dialog.select_one('input[name="collection"]:checked')
+    assert checked is not None and checked["value"] == "notes"
+    marked = {
+        str(label.select_one("input")["value"]): label.select_one(".waiting")
+        for label in dialog.select(".segmented label")
+    }
+    assert marked["notes"] is not None
+    assert marked["notes"].get_text() == words.index_waiting(2)
+    assert marked["literature"] is None and marked[""] is None
