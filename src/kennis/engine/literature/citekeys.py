@@ -106,10 +106,13 @@ def _surname_part(authors: str) -> str:
 
 
 def _ascii(text: str) -> str:
-    """`text` with its accents taken off rather than its letters dropped:
-    `Nunez` written with its accents gave the citekey `nez`, and `Uber` `ber`. Decomposed and the
-    combining marks removed, as Better BibTeX does; a letter with no
-    decomposition (sharp s, slashed o) is still dropped by the caller's filter."""
+    """`text` with its accents taken off rather than its letters dropped.
+
+    `Nunez` written with its accents gave the citekey `nez`, and `Uber`
+    `ber`. Decomposed and the combining marks removed, as Better BibTeX
+    does; a letter with no decomposition (sharp s, slashed o) is still
+    dropped by the caller's filter.
+    """
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(char for char in decomposed if not unicodedata.combining(char))
 

@@ -276,7 +276,7 @@ def write_document(
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         replace_file(leaf_path, text)
         for asset_name, asset_bytes in assets.items():
-            replace_file(wrapper_dir / asset_name, asset_bytes)
+            replace_file(wrapper_dir / _asset_name(asset_name), asset_bytes)
         return Document(
             id=frontmatter.id,
             collection=collection,
@@ -364,6 +364,22 @@ def remove_document(document: Document) -> None:
         shutil.rmtree(document.wrapper_dir)
         return
     document.md_path.unlink(missing_ok=True)
+
+
+def _asset_name(name: str) -> str:
+    """Where a kept original goes inside its document's directory.
+
+    The name comes from a URL or a source file, so it is never trusted: a
+    PDF served from `.../content.md` was written over the document just
+    written beside it, and `..` was a directory. The last path component
+    only, and never the document's own name.
+    """
+    base = Path(name).name
+    if base in ("", ".", ".."):
+        return "original"
+    if base == WRAPPED_DOCUMENT_FILENAME:
+        return f"original-{base}"
+    return base
 
 
 def _refuse_overwriting_another_document(md_path: Path, document_id: str) -> None:
