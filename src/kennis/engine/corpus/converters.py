@@ -221,9 +221,14 @@ _SECONDS_PER_DOCUMENT: Final = 300
 
 # How much of the original filename a staged copy keeps. The index prefix is
 # what makes the name unique; the rest is there only so MinerU's own error
-# output names something the user recognises, and truncating is easier than
-# discovering each filesystem's own limit.
-_STAGED_STEM_LIMIT: Final = 100
+# output names something the user recognises.
+#
+# Short because MinerU writes the stem into its output path twice - as the
+# directory and again in each file's name - under the temporary directory.
+# On Windows that directory is some 60 characters before the stem, and a
+# path past 260 fails to open: at 100 a long filename came to about 300.
+# At 40 the whole path stays under 200.
+_STAGED_STEM_LIMIT: Final = 40
 
 # Block kinds MinerU classifies as page furniture rather than body text. These
 # are exactly what the rendered markdown throws away, and exactly where a
