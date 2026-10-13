@@ -697,3 +697,11 @@ def test_a_kennis_summary_of_one_is_read_in_the_singular():
     said = words.last_change("note", "notes", "1 documents, 3 chunks", 5)
 
     assert "(1 document, 3 chunks)" in said
+
+
+def test_a_command_s_help_is_not_offered_as_the_window_s_remedy(client: TestClient):
+    """An empty corpus's search answered with `kennis corpus add --help`
+    while the Add button sat in the bar above it."""
+    page = client.get("/", params={"q": "anything"}).text
+
+    assert "--help" not in page

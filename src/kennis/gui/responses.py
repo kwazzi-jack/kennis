@@ -93,6 +93,18 @@ TEMPLATES.env.globals["preferences"] = preferences_of
 SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION)
 
 
+def for_the_window(resolution: str | None) -> bool:
+    """Whether a refusal's command is worth printing in the window.
+
+    Not a command's `--help`: that is a terminal's answer to someone
+    looking at a form, and the window has the dialogs it would lead to.
+    A command with no window equivalent - a restore, a claim - stays.
+    """
+    return bool(resolution) and not str(resolution).rstrip().endswith("--help")
+
+
+TEMPLATES.env.tests["for_the_window"] = for_the_window
+
 TEMPLATES.env.globals.update(
     {
         "pane_state": _pane_state,

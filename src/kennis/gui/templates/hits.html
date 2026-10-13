@@ -9,7 +9,7 @@
       data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
-{% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>
+{% if resolution is for_the_window %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>
 {% elif question and not groups %}
 <p class="nothing">{{ nothing }}</p>
 {% endif %}
