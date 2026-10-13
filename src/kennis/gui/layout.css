@@ -378,7 +378,10 @@ details[open] > summary.node > .icon:first-child { transform: rotate(90deg); }
 
 /* A collection's state, as a dot. The words are beside it for a
    screen reader and in its title for a pointer; the dot is for the
-   glance. */
+   glance. **Shape as well as colour**: searchable is filled and
+   needing an index is a ring. The green and the amber were 1.08:1
+   apart, and the same to a deuteranope, so colour alone said nothing
+   to the readers the palette was chosen for. */
 .state {
   width: 0.5rem;
   height: 0.5rem;
@@ -388,8 +391,8 @@ details[open] > summary.node > .icon:first-child { transform: rotate(90deg); }
 }
 .state-current { background: var(--role-added); border-color: var(--role-added); }
 .state-behind, .state-none {
-  background: var(--role-warning);
-  border-color: var(--role-warning);
+  background: none;
+  border: 2px solid var(--role-warning);
 }
 .state-empty { background: none; }
 
@@ -557,7 +560,12 @@ main:focus { outline: none; }
 }
 /* The selection is the reader's place in the list, whether it was
    moved there by a key or by the pointer. */
-.palette-list [aria-selected="true"] > a { background: var(--brand-wash); }
+.palette-list [aria-selected="true"] > a {
+  background: var(--brand-wash);
+  /* A frame as well as the wash, which alone was 1.19:1 on the ground
+     and the only thing saying which row Enter would open. */
+  box-shadow: inset 0 0 0 1.5px var(--brand);
+}
 .palette-list .label { flex: 1; min-width: 0; }
 /* The role gives the kind its colour only: `command` also sets the
    verbatim face, and a kind is a word kennis composes. */
@@ -2011,10 +2019,37 @@ article table, .full table { font-variant-numeric: tabular-nums; }
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "bar" "main" "strip";
   }
-  .pane { display: none; }
-  #pane-toggle { display: none; }
+  /* The pane is a drawer over the page rather than gone: removing it
+     took the tree, its row menus and the attention filter with it, and
+     at 400% zoom a laptop is this narrow too. Closed until asked for,
+     whatever the wide layout's choice; `pane.js` opens it. Opaque, the
+     raised wash laid over the ground, because the page shows through. */
+  .pane, :root[data-pane="closed"] .pane {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: min(20rem, 85vw);
+    background: linear-gradient(var(--raised), var(--raised)) var(--ground);
+    box-shadow: 0 0 24px var(--rule);
+    translate: -100% 0;
+    opacity: 1;
+    visibility: hidden;
+    transition: translate 0.2s ease, visibility 0.2s;
+  }
+  :root[data-drawer="open"] .pane { translate: 0 0; visibility: visible; }
   .resize-pane { display: none; }
-  .action .label { display: none; }
+  /* Out of sight, not out of the page: with `display: none` each action
+     was a link with no name at all. Its `title` says it to the eye. */
+  .action .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .palette-open .kbd { display: none; }
   .searchbox { order: 3; flex-basis: 100%; max-width: none; flex-wrap: wrap; }
   main { padding: 1.5rem 1rem 4rem; }
@@ -2094,3 +2129,21 @@ a.button:active { translate: 0 1px; }
   @view-transition { navigation: none; }
 }
 
+/* ---- forced colours ----
+   A high-contrast theme replaces every colour with the system's few,
+   and a wash or a filled dot becomes nothing. The marks that say where
+   the reader is, or what state a collection is in, are given the
+   system's own words for them. */
+@media (forced-colors: active) {
+  .palette-list [aria-selected="true"] > a,
+  .segmented a[aria-current="true"],
+  .segmented label:has(input:checked),
+  .node[aria-current="page"] {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .state-current { forced-color-adjust: none; background: CanvasText; }
+  .cell.on { forced-color-adjust: none; background: CanvasText; }
+  .cell { border: 1px solid CanvasText; }
+}

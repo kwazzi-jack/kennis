@@ -250,6 +250,53 @@ def test_the_pane_closes_and_stays_closed(page: playwright.Page) -> None:
     assert page.evaluate("document.documentElement.dataset.pane") == "closed"
 
 
+def test_at_phone_width_the_bar_keeps_its_names_and_the_pane_is_a_drawer(
+    page: playwright.Page,
+) -> None:
+    """Below 46rem every action's name was `display: none` - a link with
+    no name - and the pane and its toggle were removed outright, taking
+    the tree with them. At 400% zoom a laptop is this narrow too."""
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.reload()
+
+    shown = page.evaluate(
+        "[...document.querySelectorAll('.action .label')]"
+        ".map(label => getComputedStyle(label).display)"
+    )
+    assert shown and "none" not in shown
+    assert page.is_hidden(".pane")
+
+    page.click("#pane-toggle")
+    page.wait_for_selector(".pane", state="visible", timeout=_WAIT_MS)
+    page.keyboard.press("Escape")
+    page.wait_for_selector(".pane", state="hidden", timeout=_WAIT_MS)
+
+
+def test_a_row_menu_stays_in_the_window_and_closes_when_focus_leaves(
+    page: playwright.Page,
+) -> None:
+    """Clipped by the pane's edge ("pen", "ove to group"), and left open
+    over whatever the keyboard moved on to."""
+    # Opened by its property: a click on the row lands on the name,
+    # which is a link to the collection's page.
+    page.evaluate(
+        "document.querySelector('.tree li[data-collection=notes] > details')"
+        ".open = true"
+    )
+    page.wait_for_selector("li.row details.menu summary", timeout=_WAIT_MS)
+    page.click("li.row details.menu summary")
+    page.wait_for_selector("li.row details.menu[open] .menu-items", timeout=_WAIT_MS)
+
+    left = page.evaluate(
+        "document.querySelector('details.menu[open] .menu-items')"
+        ".getBoundingClientRect().left"
+    )
+    assert left >= 0
+
+    page.focus("input[name=q]")
+    assert page.query_selector("details.menu[open]") is None
+
+
 def test_the_palette_opens_on_its_shortcut(page: playwright.Page) -> None:
     page.keyboard.press("Control+k")
 
