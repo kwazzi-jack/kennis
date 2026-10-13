@@ -426,14 +426,70 @@ def convert_url(
     suffix = _binary_suffix_for(declared, response.content)
     if suffix is not None:
         return _converted_download(url, response.content, suffix, keep_original)
-    if declared in _URL_TEXT_TYPES:
+    if declared in _URL_TEXT_TYPES and _url_suffix(url) not in _READ_AS_FILES:
         return _converted_text(url, response, keep_original)
+    as_file = _text_suffix_for(url, declared)
+    if as_file is not None:
+        return _converted_download(url, response.content, as_file, keep_original)
     if declared in _URL_HTML_TYPES or declared in _URL_UNCOMMITTED_TYPES:
         return _converted_html(url, response, keep_original)
     raise SourceUnreadable(
         f"'{url}' answered with '{declared}', which kennis has no converter "
         f"for. Download it yourself and add the file instead."
     )
+
+
+# Text a server labels with an `application/` type of its own. Every
+# `text/` type but HTML is text already.
+_URL_TEXTUAL_APPLICATION_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "application/x-tex",
+        "application/x-latex",
+        "application/x-rst",
+        "application/x-bibtex",
+        "application/json",
+        "application/x-yaml",
+        "application/yaml",
+        "application/toml",
+        "application/x-sh",
+        "application/x-python",
+    }
+)
+# The text a downloaded file is converted as its own suffix says, as the same
+# file on disk would be: `.tex` and source code fenced, `.rst` as text.
+_READ_AS_FILES: Final = (_TEXT_SUFFIXES | _CODE_SUFFIXES) - {".txt", ".text"}
+
+
+def names_a_file(url: str) -> bool:
+    """Whether `url` ends in a file kennis reads - a PDF, a markdown or a
+    source file - rather than a page or a site."""
+    suffix = _url_suffix(url)
+    return suffix in SUPPORTED_SUFFIXES and suffix not in _HTML_SUFFIXES
+
+
+def _url_suffix(url: str) -> str:
+    return Path(urlparse(url).path).suffix.lower()
+
+
+def _text_suffix_for(url: str, declared: str) -> str | None:
+    """The suffix a text file at `url` is converted under, or None when
+    what arrived is not a text file kennis reads.
+
+    The address's own suffix when kennis knows it, so a downloaded `.tex`
+    is read as a local one is; a server that will not say what it sent is
+    believed only for a suffix like that. Refused before: anything but
+    markdown, plain text and HTML, which turned away a LaTeX source or a
+    reStructuredText page served as what it is.
+    """
+    suffix = _url_suffix(url)
+    textual = (
+        declared.startswith("text/") and declared not in _URL_HTML_TYPES
+    ) or declared in _URL_TEXTUAL_APPLICATION_TYPES
+    if suffix in _READ_AS_FILES and (textual or declared in _URL_UNCOMMITTED_TYPES):
+        return suffix
+    if textual:
+        return ".txt"
+    return None
 
 
 def _binary_suffix_for(declared: str, content: bytes) -> str | None:
