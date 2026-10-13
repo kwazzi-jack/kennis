@@ -173,3 +173,14 @@ def test_a_separator_in_the_title_does_not_produce_a_second_field():
     )
 
     assert stem.endswith(" - Smirnov - 2011")
+
+
+def test_an_accented_name_keeps_its_letters():
+    """`N\u00fa\u00f1ez` gave `nez` and `\u00dcber` `ber`: the accented letters were
+    dropped with their accents."""
+    assert derive_citekey(
+        authors="N\u00fa\u00f1ez, Ana", year="2020", title="\u00d3ptica"
+    ).startswith("nunez")
+    assert "Optica" in derive_citekey(
+        authors="N\u00fa\u00f1ez, Ana", year="2020", title="\u00d3ptica"
+    )

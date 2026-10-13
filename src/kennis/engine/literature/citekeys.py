@@ -9,6 +9,7 @@ the other case: a bare arXiv identifier, or a PDF with no bibliography at all.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Final
 
 # Words a title contributes nothing by including.
@@ -100,14 +101,23 @@ def _surname_part(authors: str) -> str:
     `hallowesWelman`. A *filename* keeps the hyphen, which is why
     `literature_stem` uses `_surname_of` and not this.
     """
-    surname = re.sub(r"[^A-Za-z]", "", _surname_of(authors)) or _NO_AUTHOR
+    surname = re.sub(r"[^A-Za-z]", "", _ascii(_surname_of(authors))) or _NO_AUTHOR
     return surname[:1].lower() + surname[1:]
+
+
+def _ascii(text: str) -> str:
+    """`text` with its accents taken off rather than its letters dropped:
+    `Nunez` written with its accents gave the citekey `nez`, and `Uber` `ber`. Decomposed and the
+    combining marks removed, as Better BibTeX does; a letter with no
+    decomposition (sharp s, slashed o) is still dropped by the caller's filter."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
 def _title_part(title: str) -> str:
     words = [
         word
-        for word in re.findall(r"[A-Za-z]+", title)
+        for word in re.findall(r"[A-Za-z]+", _ascii(title))
         if word.lower() not in _STOPWORDS
     ]
     return "".join(word.capitalize() for word in words[:_TITLE_WORDS])

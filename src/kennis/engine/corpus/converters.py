@@ -367,6 +367,11 @@ class MineruConverter:
                 command,
                 capture_output=True,
                 text=True,
+                # Not the locale's encoding: on Windows that is cp1252, and
+                # MinerU's own UTF-8 log lines raised `UnicodeDecodeError`,
+                # which nothing here catches.
+                encoding="utf-8",
+                errors="replace",
                 env=self._environment(),
                 check=False,
                 timeout=timeout_seconds,
