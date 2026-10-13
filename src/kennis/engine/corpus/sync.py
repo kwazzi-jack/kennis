@@ -30,10 +30,12 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 import httpx
 
 from kennis.engine.corpus.add import (
+    ARXIV_DELAY_SECONDS,
     AddOptions,
     Uniqueness,
     add_docs,
@@ -51,7 +53,14 @@ from kennis.engine.corpus.schema import (
     Source,
 )
 from kennis.engine.errors import DocumentInvalid
-from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
+from kennis.engine.events import (
+    Event,
+    EventSink,
+    ItemFinished,
+    OperationFinished,
+    Outcome,
+    Progress,
+)
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.installed import (
@@ -271,6 +280,11 @@ def _carried_out(
     for action in notes.actions:
         _applied(collection, record, action, notes.held)
 
+    progress = _Progress(
+        events,
+        total=sum(1 for action in papers.actions if action.verdict == "write")
+        + sum(1 for action in projects.actions if action.verdict in _CRAWLED),
+    )
     failed = list(
         _fetched_literature(
             corpus_root,
@@ -278,6 +292,7 @@ def _carried_out(
             arxiv=arxiv,
             request_delay_seconds=request_delay_seconds,
             events=events,
+            progress=progress,
         )
     )
     failed.extend(
@@ -290,9 +305,60 @@ def _carried_out(
             # nothing.
             request_delay_seconds=0.0 if request_delay_seconds == 0 else None,
             events=events,
+            progress=progress,
         )
     )
     return tuple(failed)
+
+
+# The docs verdicts that crawl.
+_CRAWLED: Final = frozenset({"write", "rewrite", "adopt"})
+
+
+class _Progress:
+    """One bar for the whole sync, a step per paper and per project.
+
+    The papers and the crawls are the part that takes minutes, and they drew
+    nothing: an add of one paper emits no progress of its own, a crawl's
+    first comes only once its discovery is done, and each add's
+    `OperationFinished` closed whatever bar was open. A sync that had
+    written its notes then sat silent until it was interrupted.
+    """
+
+    def __init__(self, events: EventSink | None, *, total: int) -> None:
+        self._events = events
+        self._total = total
+        self._completed = 0
+        if total:
+            self._emit()
+
+    @property
+    def inner(self) -> EventSink | None:
+        """The sink an add inside the sync reports through: everything but
+        its own bar and its own finish, which are the sync's to draw."""
+        return None if self._events is None else _WithoutBars(self._events)
+
+    def step(self) -> None:
+        self._completed += 1
+        self._emit()
+
+    def _emit(self) -> None:
+        if self._events is not None and self._total:
+            self._events.emit(
+                Progress(
+                    operation=OPERATION, completed=self._completed, total=self._total
+                )
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _WithoutBars:
+    events: EventSink
+
+    def emit(self, event: Event) -> None:
+        if isinstance(event, Progress | OperationFinished):
+            return
+        self.events.emit(event)
 
 
 def _fetched_literature(
@@ -302,6 +368,7 @@ def _fetched_literature(
     arxiv: httpx.Client | None,
     request_delay_seconds: float | None,
     events: EventSink | None,
+    progress: _Progress,
 ) -> list[str]:
     """Fetch the papers that are missing, rewrite the ones that moved.
 
@@ -312,6 +379,13 @@ def _fetched_literature(
     """
     collection = Collection(root=corpus_root, name="literature")
     failed: list[str] = []
+    # Paced here, between papers: each is its own add of one, so the add's
+    # own pacing - between the papers it is given - never came into play,
+    # and a sync asked arXiv for every paper back to back.
+    delay = (
+        ARXIV_DELAY_SECONDS if request_delay_seconds is None else request_delay_seconds
+    )
+    fetched = 0
     for action in plan.actions:
         declaration = action.declaration
         if action.verdict == "delete":
@@ -326,6 +400,9 @@ def _fetched_literature(
             continue
         entry = plan.entries[action.address]
         assert isinstance(entry, LiteratureEntry)
+        if fetched and delay:
+            time.sleep(delay)
+        fetched += 1
         report = add_literature(
             collection,
             [action.address],
@@ -340,8 +417,9 @@ def _fetched_literature(
                 request_delay_seconds=request_delay_seconds,
             ),
             arxiv=arxiv,
-            events=events,
+            events=progress.inner,
         )
+        progress.step()
         if not any(one.outcome is Outcome.ADDED for one in report.outcomes):
             failed.append(action.address)
     return failed
@@ -354,6 +432,7 @@ def _crawled_docs(
     client: httpx.Client | None,
     request_delay_seconds: float | None,
     events: EventSink | None,
+    progress: _Progress,
 ) -> list[str]:
     """Crawl the projects that are missing, drop the ones that went.
 
@@ -372,7 +451,7 @@ def _crawled_docs(
         if action.verdict == "delete":
             _removed_project(collection, action.address)
             continue
-        if action.verdict not in {"write", "rewrite", "adopt"}:
+        if action.verdict not in _CRAWLED:
             continue
         if declaration is None:
             continue
@@ -389,11 +468,46 @@ def _crawled_docs(
                 request_delay_seconds=request_delay_seconds,
             ),
             client=client,
-            events=events,
+            events=progress.inner,
         )
-        if not any(one.outcome is Outcome.ADDED for one in report.outcomes):
+        progress.step()
+        # Every page, including those the crawl found already held: they
+        # kept the old owner and digest, so the next sync judged the
+        # project changed again and crawled it again, every time.
+        _stamped_project(collection, entry.project, declaration)
+        if not any(
+            one.outcome in (Outcome.ADDED, Outcome.UNCHANGED) for one in report.outcomes
+        ):
             failed.append(action.address)
     return failed
+
+
+def _stamped_project(
+    collection: Collection, project: str, declaration: Declaration
+) -> None:
+    """Mark every page of `project` as the declaring pack's, at its digest."""
+    owner = f"pack:{declaration.pack_id}"
+    for document in collection.contents().documents:
+        frontmatter = document.frontmatter
+        if not (
+            isinstance(frontmatter, DocsFrontmatter)
+            and frontmatter.docs.project == project
+        ):
+            continue
+        if (
+            frontmatter.owner == owner
+            and frontmatter.source.pack_sha256 == declaration.digest
+        ):
+            continue
+        updated = frontmatter.model_copy(
+            update={
+                "owner": owner,
+                "source": frontmatter.source.model_copy(
+                    update={"pack_sha256": declaration.digest}
+                ),
+            }
+        )
+        write_document(document.md_path, frontmatter=updated, body=document.body)
 
 
 def _removed_project(collection: Collection, project: str) -> None:
