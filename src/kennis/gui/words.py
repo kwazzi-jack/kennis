@@ -1241,6 +1241,12 @@ WELCOME_ACTIONS: Final[tuple[tuple[str, str, str], ...]] = (
 )
 
 
+# The inspector's button beside a citekey, and what it says once pressed.
+COPY_LABEL = "Copy"
+
+COPIED_LABEL = "Copied"
+
+
 # The first tab stop on every page.
 SKIP_TO_CONTENT = "Skip to the content"
 
@@ -1335,6 +1341,8 @@ __all__ = [
     "CONTEXT_HEADING",
     "CONVERTER_MISSING",
     "CONVERTER_NAMES",
+    "COPIED_LABEL",
+    "COPY_LABEL",
     "CORPUS_BUSY",
     "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",

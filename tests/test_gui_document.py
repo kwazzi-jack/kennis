@@ -117,7 +117,10 @@ def test_the_bar_leads_back_to_the_search_the_collection_and_names_the_document(
     assert "q=bandpass" in links[words.search_crumb("bandpass")]
     assert links["notes"] == "/collection/notes"
     assert "radio" in text_of(found(bar, ".crumbs"))
-    assert text_of(found(bar, ".crumbs .here")) == identifier
+    # The title, which the reader recognises; the handle in its tooltip.
+    here = found(bar, ".crumbs .here")
+    assert here["title"] == identifier
+    assert text_of(here) == text_of(found(page_of(client, identifier), "article h1"))
 
 
 def test_without_a_search_the_bar_offers_no_way_back_to_one(
@@ -438,3 +441,41 @@ def test_the_marked_chunk_wears_the_highlighter(client: TestClient):
     assert rule, css
     assert "var(--mark)" in rule.group(1)
     assert "role-hint" not in rule.group(1)
+
+
+def test_a_paper_s_identifiers_lead_to_where_anyone_can_look_them_up():
+    """arXiv and the DOI were plain text in the inspector, and the citekey
+    - the thing typed into a paper - had no way to the clipboard."""
+    from kennis.engine.corpus.schema import LiteratureFrontmatter
+    from kennis.gui.pages import document_details
+
+    frontmatter = LiteratureFrontmatter.model_validate(
+        {
+            "id": "zyxwvutsrq",
+            "title": "A paper",
+            "owner": "user",
+            "id_from": "arxiv:1101.1764",
+            "source": {
+                "from": "arxiv:1101.1764",
+                "via": "arxiv-html",
+                "format": "html",
+            },
+            "bib": {
+                "citekey": "welman2024",
+                "arxiv_id": "1101.1764",
+                "doi": "10.1088/0004-637X/1",
+            },
+        }
+    )
+
+    rows = {
+        row.value: row
+        for row in document_details(
+            frontmatter, collection="literature", group="", state=None
+        )
+    }
+
+    assert rows["1101.1764"].href == "https://arxiv.org/abs/1101.1764"
+    assert rows["10.1088/0004-637X/1"].href == "https://doi.org/10.1088/0004-637X/1"
+    assert rows["welman2024"].copyable
+    assert not rows["arxiv:1101.1764"].href

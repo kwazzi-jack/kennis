@@ -26,3 +26,21 @@
       "inspector=" + state + "; path=/; max-age=" + YEAR + "; samesite=strict";
   });
 })();
+
+// Copy a citekey. The button is drawn hidden, because without a script it
+// could do nothing and the value beside it is already selectable text; it
+// appears only where the clipboard can be reached. Both its words arrive
+// from the server.
+(function () {
+  if (!navigator.clipboard) { return; }
+  document.querySelectorAll("button.copy[data-copy]").forEach(function (button) {
+    button.hidden = false;
+    var label = button.textContent;
+    button.addEventListener("click", function () {
+      navigator.clipboard.writeText(button.dataset.copy).then(function () {
+        button.textContent = button.dataset.copied;
+        setTimeout(function () { button.textContent = label; }, 1500);
+      });
+    });
+  });
+})();

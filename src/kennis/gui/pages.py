@@ -470,6 +470,11 @@ class ShownDetail:
     label: str
     value: str
     verbatim: bool = False
+    # Where the value leads, when it is an address anyone can follow: an
+    # arXiv id, a DOI, a bibcode, the page a document was fetched from.
+    href: str = ""
+    # Offered to the clipboard: the citekey, which is typed into a paper.
+    copyable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -530,26 +535,51 @@ def document_details(
     rows.append(ShownDetail(label["id"], frontmatter.id, verbatim=True))
     if isinstance(frontmatter, LiteratureFrontmatter):
         bib = frontmatter.bib
-        rows.append(ShownDetail(label["citekey"], bib.citekey, verbatim=True))
+        rows.append(
+            ShownDetail(label["citekey"], bib.citekey, verbatim=True, copyable=True)
+        )
         for key, value in (
             ("arxiv", bib.arxiv_id),
             ("doi", bib.doi),
             ("bibcode", bib.bibcode),
         ):
             if value:
-                rows.append(ShownDetail(label[key], value, verbatim=True))
+                rows.append(
+                    ShownDetail(
+                        label[key],
+                        value,
+                        verbatim=True,
+                        href=_RESOLVERS[key].format(quote(value, safe="/:.()")),
+                    )
+                )
     if isinstance(frontmatter, DocsFrontmatter):
         rows.append(ShownDetail(label["project"], frontmatter.docs.project))
         rows.append(ShownDetail(label["page"], frontmatter.docs.page, verbatim=True))
         if frontmatter.docs.version:
             rows.append(ShownDetail(label["version"], frontmatter.docs.version))
     source = frontmatter.source
-    rows.append(ShownDetail(label["source"], source.origin, verbatim=True))
+    fetched = source.origin.removeprefix("url:")
+    rows.append(
+        ShownDetail(
+            label["source"],
+            source.origin,
+            verbatim=True,
+            href=fetched if fetched.startswith(("https://", "http://")) else "",
+        )
+    )
     rows.append(ShownDetail(label["converted"], source.via))
     rows.append(ShownDetail(label["added"], source.at.date().isoformat()))
     if state is not None:
         rows.append(ShownDetail(label["index"], words.INDEX_STATES[state]))
     return tuple(rows)
+
+
+# Where an identifier is looked up by anyone, not by kennis.
+_RESOLVERS: Final[dict[str, str]] = {
+    "arxiv": "https://arxiv.org/abs/{}",
+    "doi": "https://doi.org/{}",
+    "bibcode": "https://ui.adsabs.harvard.edu/abs/{}",
+}
 
 
 def state_in(

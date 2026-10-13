@@ -126,6 +126,8 @@ TEMPLATES.env.globals.update(
         "overridden_by": words.overridden_by,
         "index_now": words.index_now,
         "index_now_label": words.INDEX_NOW,
+        "copy_label": words.COPY_LABEL,
+        "copied_label": words.COPIED_LABEL,
         "cancel_label": words.CANCEL,
         "more_from": words.more_from,
         "welcome_heading": words.WELCOME_HEADING,
