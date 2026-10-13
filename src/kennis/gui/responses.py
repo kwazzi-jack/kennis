@@ -111,6 +111,7 @@ TEMPLATES.env.globals.update(
         "actions": words.ACTIONS,
         "problem_heading": words.PROBLEM_HEADING,
         "skip_to_content": words.SKIP_TO_CONTENT,
+        "overridden_by": words.overridden_by,
         "progress_label": words.PROGRESS_LABEL,
         "note_text_label": words.NOTE_TEXT_LABEL,
         "title_label": words.TITLE_LABEL,

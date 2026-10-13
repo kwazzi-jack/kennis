@@ -412,6 +412,18 @@ def own_directories(corpus_root: Path) -> tuple[Path, ...]:
     return (corpus_root, config_dir(), state_dir(), log_dir())
 
 
+def overriding_variable(key: str) -> str | None:
+    """The environment variable setting `key` ("section.field") now, if any.
+
+    The environment wins over `config.toml`, so a value written to the
+    file while one of these is set changes nothing anyone can see. Named
+    as the source above names it, by exact name.
+    """
+    section, _, field = key.partition(".")
+    variable = f"{_ENVIRONMENT_PREFIX}_{section}_{field}".upper()
+    return variable if variable in os.environ else None
+
+
 def config_path() -> Path:
     return config_dir() / _CONFIG_FILE
 

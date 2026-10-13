@@ -297,6 +297,16 @@ def test_a_row_menu_stays_in_the_window_and_closes_when_focus_leaves(
     assert page.query_selector("details.menu[open]") is None
 
 
+def test_the_search_key_is_not_typed_into_the_empty_box(page: playwright.Page) -> None:
+    """The box is focused on arrival, so `/` - the key drawn in it for
+    "go to the search" - became the first character of the query."""
+    page.focus("input[name=q]")
+    page.keyboard.press("/")
+    page.keyboard.type("gain")
+
+    assert page.input_value("input[name=q]") == "gain"
+
+
 def test_the_palette_opens_on_its_shortcut(page: playwright.Page) -> None:
     page.keyboard.press("Control+k")
 

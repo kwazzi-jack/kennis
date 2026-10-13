@@ -45,18 +45,19 @@
 <label class="setting-name" for="setting-{{ setting.key }}">{{ setting.name }}</label>
 <div class="setting-control">
 {% if setting.kind == "choice" %}
-<select id="setting-{{ setting.key }}" name="{{ setting.key }}" data-redraw hx-get="/settings/kennis" hx-trigger="change" hx-include=".kennis-settings [data-redraw]" hx-target="closest section" hx-swap="outerHTML">
+<select id="setting-{{ setting.key }}" name="{{ setting.key }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw hx-get="/settings/kennis" hx-trigger="change" hx-include=".kennis-settings [data-redraw]" hx-target="closest section" hx-swap="outerHTML">
 {% for value, label in setting.choices %}<option value="{{ value }}"{% if value == setting.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
 </select>
 {% elif setting.kind == "secret" %}
 <input id="setting-{{ setting.key }}" type="password" name="{{ setting.key }}" autocomplete="off">
 {% elif setting.kind == "integer" %}
-<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}" data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}>
+<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}>
 {% else %}
-<input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}" data-redraw>
+<input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
 {% endif %}
 {% if setting.problem %}<p class="role-error">{{ setting.problem }}</p>{% endif %}
 </div>
+{% if setting.overridden_by %}<p class="notice quiet" id="overridden-{{ setting.key }}">{{ icon("info") }}<span>{{ overridden_by(setting.overridden_by) }}</span></p>{% endif %}
 <p class="setting-sentence role-muted">{{ setting.sentence }}{% if setting.credential %} {{ credential_keep }}{% endif %}</p>
 {% if setting.credential %}<p class="credential"><code class="role-command">{{ setting.credential.variable }}</code> {{ credential_set if setting.credential.is_set else credential_unset }}</p>{% endif %}
 {% if setting.install_hint %}<p class="role-warning">{{ converter_missing }} <code class="role-command">{{ setting.install_hint }}</code></p>{% endif %}

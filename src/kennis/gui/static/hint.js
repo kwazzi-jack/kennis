@@ -29,6 +29,10 @@
   document.addEventListener("keydown", function (event) {
     if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) { return; }
     var here = document.activeElement;
+    // The box itself, empty: it is focused on arrival, so the key that
+    // means "go to the search" was typed into it as the query's first
+    // character. No query begins with one.
+    if (here === box && box.value === "") { event.preventDefault(); return; }
     if (here && (here.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(here.tagName))) { return; }
     event.preventDefault();
     box.focus();
