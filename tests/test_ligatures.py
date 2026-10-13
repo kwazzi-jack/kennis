@@ -222,3 +222,50 @@ def test_the_pass_is_a_no_op_on_undamaged_text():
 
     assert repaired == clean
     assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# The review of 2026-10-13
+# ---------------------------------------------------------------------------
+
+
+def test_a_spelling_variant_is_not_ligature_damage():
+    """There is no `ll` ligature: allowing an `l` beside its own twin only
+    ever turned one spelling into another, wherever the other spelling
+    appeared elsewhere in the paper - a reference title, say."""
+    vocabulary = frozenset({"modelling", "labelled", "fulfill", "use", "data"})
+
+    repaired, count = repair_ligatures("we use modeling and labeled data", vocabulary)
+
+    assert repaired == "we use modeling and labeled data"
+    assert count == 0
+
+
+def test_a_fi_or_fl_that_lost_its_second_letter_is_repaired():
+    """The damage the `i` and `l` were there for, and which the twin rule
+    never reached: the lost letter sits after an `f`, not beside its twin."""
+    vocabulary = frozenset({"significant", "reflect", "a", "the"})
+
+    repaired, count = repair_ligatures("a signifcant refect", vocabulary)
+
+    assert repaired == "a significant reflect"
+    assert count == 2
+
+
+def test_a_repair_keeps_every_letter_s_case():
+    """`capitalize()` lowered everything after the first letter."""
+    repaired, _ = repair_ligatures("EficientNet", frozenset({"efficientnet"}))
+
+    assert repaired == "EfficientNet"
+
+
+def test_an_address_is_never_repaired():
+    vocabulary = frozenset({"stuff", "tool", "code"})
+
+    for text in (
+        "[code](https://github.com/x/stuf-tool)",
+        "<https://example.org/stuf-tool>",
+        "see https://example.org/stuf-tool today",
+    ):
+        repaired, count = repair_ligatures(text, vocabulary)
+        assert (repaired, count) == (text, 0), text
