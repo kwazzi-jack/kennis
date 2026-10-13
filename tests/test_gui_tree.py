@@ -620,3 +620,19 @@ def test_the_menu_script_opens_on_right_click_and_composes_no_words(client: Test
     assert '"Escape"' in code
     assert not re.search(r"\"[A-Za-z]+ [A-Za-z ]+\"", code)
     assert '<script defer src="/static/menu.js"></script>' in client.get("/").text
+
+
+def test_a_move_says_which_document_deleted_by_hand_it_put_back(
+    client: TestClient, states: dict[str, str]
+):
+    deleted = path_of(states["quiet"])
+    named = deleted.relative_to(existing_corpus().corpus_root).as_posix()
+    deleted.unlink()
+
+    answer = client.post(
+        "/move",
+        data={"collection": "notes", "document": states["later"], "group": "moved"},
+        headers=HTMX,
+    )
+
+    assert f"{named} was deleted outside kennis and has been restored" in answer.text

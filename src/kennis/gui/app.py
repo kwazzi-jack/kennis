@@ -645,16 +645,18 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         group = str(form.get("group") or "").strip()
         context = existing_corpus()
         held = Collection(root=context.corpus_root, name=collection)
+        restored: list[OutOfBandChange] = []
         try:
-            # A thread, because the move commits: git is a subprocess,
-            # and an `async` route waiting on one stalls every request.
-            move_a_document(context, held, held.resolve(handle), group=group)
+            move_a_document(
+                context, held, held.resolve(handle), group=group, restored=restored
+            )
         except KennisError as error:
             if _from_htmx(request):
                 return _tree(request, collection, problem=str(error))
             return _refused_a_post(request, str(error), resolution=error.resolution)
         if _from_htmx(request):
-            return _written(_tree(request, collection))
+            notes = tuple(describe_change(change) for change in restored)
+            return _written(_tree(request, collection, notes=notes))
         return RedirectResponse(f"/collection/{collection}", status_code=303)
 
     @app.get("/remember")
@@ -1978,15 +1980,21 @@ def _shown_result(job: Job) -> ShownJob:
 
 
 def _tree(
-    request: Request, collection: str, *, problem: str | None = None
+    request: Request,
+    collection: str,
+    *,
+    problem: str | None = None,
+    notes: tuple[str, ...] = (),
 ) -> HTMLResponse:
-    """One collection's branch of the pane, with a refusal at its head."""
+    """One collection's branch of the pane, with a refusal at its head, or
+    what a move from it put back."""
     return _TEMPLATES.TemplateResponse(
         request,
         "tree.html",
         {
             "tree": shown_tree(existing_corpus(), collection),
             "problem": problem,
+            "notes": notes,
             "attention_only": words.ATTENTION_ONLY,
             "menu_open": words.MENU_OPEN,
             "menu_move": words.MENU_MOVE,
