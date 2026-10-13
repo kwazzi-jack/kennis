@@ -16,6 +16,8 @@ from kennis.engine.pack.resolve import Action, Verdict
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.pack.update import PackUpdate
 from kennis.engine.pack.validate import PackProblem, PackReport, VersionRefusal
+from kennis.engine.refusals import Refusal
+from kennis.render.refusals import describe_refusal as describe_add_refusal
 from kennis.render.words import count_of, joined
 
 _DIGEST_SHOWN = 12
@@ -457,6 +459,12 @@ def describe_unfetched(failed: tuple[str, ...]) -> str:
     )
 
 
+def describe_why_unfetched(address: str, refusal: Refusal) -> str:
+    """One paper a sync could not fetch, and what the add said about it -
+    for a paper with no reachable copy, where to download one."""
+    return f"{address}: {describe_add_refusal(refusal)}"
+
+
 def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     """Declarations that lost to an earlier-installed pack.
 
@@ -539,5 +547,6 @@ __all__ = [
     "describe_verdict",
     "describe_what_remove_cannot_reach",
     "describe_when",
+    "describe_why_unfetched",
     "verdict_word",
 ]

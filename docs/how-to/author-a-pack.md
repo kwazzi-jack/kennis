@@ -5,14 +5,6 @@ declaring what it ships, plus the content it names. It is data and never
 code, so a pack cannot run anything - the worst a bad one can do is declare
 documents you did not want.
 
-!!! note "Installing works; materialising does not yet"
-    `kennis pack init`, `update`, `validate` and `add` are built.
-    `pack remove`, `list` and `status` are not, and neither are
-    `corpus sync` and `context sync` - the commands that turn an installed
-    pack's declarations into documents you can search. So today a pack can
-    be written, checked and installed, and its content sits in the store
-    rather than in the corpus.
-
 The three commands here are what a **provider** runs, in its own repository
 and its own release pipeline. A provider is any tool that wants its
 knowledge searchable in kennis.
@@ -56,16 +48,35 @@ corpus:
   literature:
     - citekey: smirnovRevisitingRIMEI2011
       title: "Revisiting the radio interferometer measurement equation I"
-      arxiv_id: "1101.1764"
+      identifier: "1101.1764"
+    - citekey: welmanCalibration2021
+      title: "A paper published in a journal"
+      identifier: "10.1093/mnras/stab1234"
+      url: "https://example.org/papers/welman2021.pdf"
   docs:
     - project: stimela
       base_url: "https://stimela.readthedocs.io/en/latest/"
 ```
 
-Every literature entry needs a real identifier - an arXiv id, a DOI or an
-ADS bibcode - and `validate` refuses without one. The citekey is a handle
-for humans; the identifier is the identity, and it is what kennis uses to
-tell a renamed citekey from a different paper.
+Every literature entry needs a real `identifier` - an arXiv id, a DOI or
+an ADS bibcode, in one field, read as whichever it is - and `validate`
+refuses without one. The citekey is a handle for humans; the identifier is
+the identity, and it is what kennis uses to tell a renamed citekey from a
+different paper.
+
+Where a paper's text comes from:
+
+- **An arXiv identifier** - or arXiv's own DOI, `10.48550/arXiv.*` - is
+  fetched from arXiv.
+- **A `url`**, when you give one, is downloaded and converted. The
+  identifier is taken as fact: a document whose first page names a
+  different paper is not filed, and the sync says what it found.
+- **A DOI alone** is looked up on Unpaywall, but only once the person
+  syncing has given it their email with `kennis config set
+  literature.unpaywall_email`. Only the published paper is fetched; an
+  authors' accepted manuscript is offered, never taken unasked.
+- **Anything else** has no copy kennis can reach. Nothing is written, and
+  the sync says where to download the paper and how to add it.
 
 Two are **content**, copied verbatim:
 
@@ -233,7 +244,7 @@ It also resolves the two things a pack **declares** rather than ships:
 | section | what sync does | key |
 |---|---|---|
 | `corpus.notes` | copies from the store | the destination address |
-| `corpus.literature` | fetches each paper | `arxiv_id`, else `doi`, else `bibcode` |
+| `corpus.literature` | fetches each paper | `identifier`, with its kind |
 | `corpus.docs` | crawls each site | `project` |
 
 So this command uses the network, which `kennis pack add` deliberately

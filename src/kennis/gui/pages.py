@@ -87,6 +87,7 @@ from kennis.render.packs import (
     describe_outcome_of,
     describe_sync,
     describe_unfetched,
+    describe_why_unfetched,
 )
 from kennis.render.refusals import describe_refusal, remedies_for_refusal
 from kennis.render.words import describe_busy_indexes, describe_uncommitted_build
@@ -1346,6 +1347,9 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
         steps.extend(f"kennis corpus claim {held}" for held in result.edited)
     if result.failed:
         notes.append(describe_unfetched(result.failed))
+        notes.extend(
+            describe_why_unfetched(address, refusal) for address, refusal in result.why
+        )
     if result.deferred:
         notes.append(describe_deferred(result.deferred))
     acted = any(action.verdict in ACTING for action in result.actions)
