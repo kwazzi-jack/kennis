@@ -151,3 +151,48 @@ jobs:
 
       - name: tests
         run: uv run --no-sync --python ${{ matrix.python }} pytest
+
+  # The window in a real Chromium (`tests/test_gui_browser.py`). One job, on
+  # Linux: what it checks - that htmx swaps the results in, that a script
+  # reads the header it is meant to, that a plain form posts - is the
+  # browser's behaviour and kennis's markup, neither of which changes with
+  # the operating system or the Python. Deselected from the job above by
+  # the `browser` marker, which needs a browser that job does not install.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv python install 3.12
+
+      # The same exclusions as the job above, for the same reason.
+      - run: >-
+          uv sync --frozen --group browser --python 3.12
+          --no-install-package torch
+          --no-install-package triton
+          --no-install-package nvidia-cublas
+          --no-install-package nvidia-cuda-cupti
+          --no-install-package nvidia-cuda-nvrtc
+          --no-install-package nvidia-cuda-runtime
+          --no-install-package nvidia-cudnn-cu13
+          --no-install-package nvidia-cufft
+          --no-install-package nvidia-cufile
+          --no-install-package nvidia-curand
+          --no-install-package nvidia-cusolver
+          --no-install-package nvidia-cusparse
+          --no-install-package nvidia-cusparselt-cu13
+          --no-install-package nvidia-nccl-cu13
+          --no-install-package nvidia-nvjitlink
+          --no-install-package nvidia-nvshmem-cu13
+          --no-install-package nvidia-nvtx
+
+      - name: chromium
+        run: uv run --no-sync --python 3.12 playwright install --with-deps chromium
+
+      - name: tests in a browser
+        run: uv run --no-sync --python 3.12 pytest -m browser

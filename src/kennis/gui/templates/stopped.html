@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{# No icon, said: without it the browser asks for /favicon.ico on every
+   page, which answers 404 and is logged as an error in the console. #}
+<link rel="icon" href="data:,">
 <title>kennis</title>
 {# Inline, because the server is gone by the time a browser would ask
    for `/static/kennis.css`. #}
