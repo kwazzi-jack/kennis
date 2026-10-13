@@ -2,7 +2,7 @@
 <p class="{{ outcome.role }}">{{ outcome.message }}</p>
 {% if outcome.where %}<p class="role-muted">{{ outcome.where }}</p>{% endif %}
 {% for note in outcome.notes %}<p class="role-muted">{{ note }}</p>{% endfor %}
-{% if outcome.resolution %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
+{% if outcome.resolution is for_the_window %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
 {% if outcome.clears %}
 {# A note was written: the strip and the pane say so at once (#457). #}
 {% include "shell-redraws.html" %}
