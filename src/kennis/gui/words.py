@@ -24,7 +24,6 @@ from kennis.render.words import (
     conversion_cost,
     conversion_repairs,
     count_of,
-    describe_freshness,
     index_state,
     joined,
     needs_an_index,
@@ -1096,7 +1095,11 @@ IMAGES_TIP = (
 
 LOAD_IMAGES = "Load figures"
 
-NEVER_INDEXED = "never indexed"
+NEVER_INDEXED = "Not indexed yet"
+SEARCHABLE = "Searchable"
+NEEDS_INDEXING = "Needs indexing"
+# The corpus page's table, by column.
+HOLDINGS_COLUMNS: Final[tuple[str, str, str]] = ("Collection", "Documents", "Search")
 
 CORPUS_CHANGED = "The corpus changed elsewhere. Reload to see the latest."
 
@@ -1164,12 +1167,10 @@ def describe_written(report: RememberReport, where: str) -> ShownOutcome:
             role="role-operation",
             where=where,
             clears=True,
-            # The note is written and is not findable, and nothing on
-            # this page can change that - so it is a command, not a
-            # clause appended to the good news. The Index section on
-            # the manage page runs it, but a deferred rebuild is the
-            # one case where waiting a moment is also an answer.
-            resolution="kennis corpus index",
+            # The note is written and is not findable: offered as the
+            # window's own Index now button, not as a command to go and
+            # type somewhere else.
+            index_after="notes",
         )
     state = index_state(report.index_outcome, report.chunk_count)
     suffix = f" - {state}" if state else ""
@@ -1202,16 +1203,20 @@ def describe_written_to_bundle(note: BundleNote, bundle_name: str) -> ShownOutco
 
 
 def describe_holding(holding: Holding) -> str:
-    """How far one collection's index has fallen behind, for a cell.
+    """Whether one collection can be searched, for a cell.
 
-    An index that was never built says so in its own words rather than
-    borrowing `describe_freshness`, which has no case for it: the
-    command line simply prints nothing and moves to the next
-    collection, and a table has a cell that must say something.
+    The window's own short form, not the command line's sentence ("the
+    notes index is stale: ..."): a cell beside the collection's name
+    says the state and, where it is a count, how many wait. An index
+    that was never built says so rather than being called stale, which
+    sends someone to rebuild an index that does not exist.
     """
     if holding.freshness is None:
         return NEVER_INDEXED
-    return describe_freshness(holding.freshness, holding.collection)
+    if holding.is_current:
+        return SEARCHABLE
+    waiting = holding.freshness.added + holding.freshness.changed
+    return index_waiting(waiting) if waiting else NEEDS_INDEXING
 
 
 def unreadable_note(count: int) -> str | None:
@@ -1488,6 +1493,7 @@ __all__ = [
     "GROUP_LABEL",
     "GROUP_NEEDS_A_NAME",
     "HIDE_PASSAGE",
+    "HOLDINGS_COLUMNS",
     "IMAGES_BLOCKED",
     "IMAGES_TIP",
     "INDEX_ACTION",
@@ -1536,6 +1542,7 @@ __all__ = [
     "MODE_LABEL",
     "MOVE_GROUP_EMPTY",
     "MOVE_GROUP_LABEL",
+    "NEEDS_INDEXING",
     "NEVER_INDEXED",
     "NOTE_TEXT_LABEL",
     "NOTHING_FOUND",
@@ -1611,6 +1618,7 @@ __all__ = [
     "RESULTS_HEADING",
     "SAVE",
     "SCOPE_LABEL",
+    "SEARCHABLE",
     "SEARCHING",
     "SEARCH_ACTION",
     "SEARCH_KEY_TITLE",

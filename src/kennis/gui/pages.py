@@ -1222,6 +1222,9 @@ class ShownOutcome:
     # What else the write did that the reader should know of: documents
     # deleted by hand that it put back.
     notes: tuple[str, ...] = ()
+    # The collection to offer an Index now button for, when what was
+    # written cannot be found until it is indexed.
+    index_after: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1269,6 +1272,9 @@ class ShownJob:
     # Whether the outcome offers to index what it wrote: "Not searchable
     # until the index is rebuilt" was a sentence with nothing to press.
     index_after: bool = False
+    # Whether to offer the syncs, after an install that brought nothing
+    # into the corpus yet.
+    sync_after: bool = False
 
     @property
     def attention(self) -> tuple[ShownItem, ...]:
@@ -1441,5 +1447,6 @@ def shown_install(install: PackInstall) -> ShownJob:
             ),
         ),
         notes=((declared,) if declared else ()) + (words.NOTHING_MATERIALISED,),
-        next_steps=("kennis corpus sync", "kennis context sync"),
+        # Buttons, not the two commands: this window has both syncs.
+        sync_after=True,
     )

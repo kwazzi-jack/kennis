@@ -3,6 +3,9 @@
 {% if outcome.where %}<p class="role-muted">{{ outcome.where }}</p>{% endif %}
 {% for note in outcome.notes %}<p class="role-muted">{{ note }}</p>{% endfor %}
 {% if outcome.resolution is for_the_window %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
+{# Inside the note's own form, so the button posts to Index by its own
+   address rather than by a form of its own. #}
+{% if outcome.index_after %}<p><button type="submit" formaction="/index" hx-post="/index" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="this" name="collection" value="{{ outcome.index_after }}">{{ index_now_label }}</button></p>{% endif %}
 {% if outcome.clears %}
 {# A note was written: the strip and the pane say so at once (#457). #}
 {% include "shell-redraws.html" %}

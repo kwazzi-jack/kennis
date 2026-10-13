@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -559,7 +560,7 @@ def test_a_collection_never_indexed_is_not_called_stale(
 
     page = client.get("/corpus")
 
-    assert "never indexed" in page.text
+    assert "Not indexed yet" in page.text
     assert "stale" not in page.text
 
 
@@ -963,3 +964,23 @@ def test_a_collection_that_is_none_is_called_a_collection(
     assert answer.status_code == 404
     assert "is not a collection" in answer.text
     assert "scope" not in answer.text.split("<main", 1)[1].split("</main>")[0]
+
+
+def test_the_holdings_table_says_in_a_word_whether_each_collection_is_searchable(
+    corpus: Path, client: TestClient
+):
+    """Its headers were typed lower case into the page, and a cell carried
+    the command line's sentence: "the notes index is stale: ..."."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    page = BeautifulSoup(client.get("/corpus").text, "html.parser")
+
+    headers = [cell.get_text() for cell in page.select("table.holdings th")]
+    assert headers == list(words.HOLDINGS_COLUMNS)
+    cells = {
+        row.select("td")[0].get_text(strip=True): row.select("td")[2].get_text()
+        for row in page.select("table.holdings tbody tr")
+    }
+    assert cells["notes"] == words.SEARCHABLE
+    assert all("stale" not in cell for cell in cells.values())
