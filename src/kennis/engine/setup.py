@@ -33,6 +33,7 @@ from kennis.engine.atomic import replace_file
 from kennis.engine.corpus.converters import DATALAB_KEY_VARIABLE
 from kennis.engine.errors import SettingsError
 from kennis.engine.settings import (
+    CREDENTIALS_KEPT,
     EMBEDDING_DEFAULTS,
     Settings,
     config_document,
@@ -243,7 +244,7 @@ def _question(
             kind=kind,
             description=(
                 f"API key for {backend}. Stored in {credentials_path().name}, "
-                f"readable only by you, and never written to the config file."
+                f"{CREDENTIALS_KEPT}, and never written to the config file."
             ),
             when=when,
         )
@@ -478,7 +479,7 @@ def _write_config(values: Mapping[str, str]) -> None:
 
 def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
     """Write API keys, each as `(section, variable)`, readable only by
-    their owner.
+    their owner where the platform has file modes.
 
     `credential` searches every section for the variable and takes the
     first, so the section is for the person reading the file - and a key

@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import os
 import shlex
+import sys
 import tomllib
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -368,6 +369,21 @@ class TomlFileSource(PydanticBaseSettingsSource):
             ) from error
 
 
+# What protects the credentials file, said no more strongly than it holds.
+# On Windows `chmod(0o600)` sets nothing but the read-only flag: the file is
+# kept from other users by the profile directory's own permissions, which an
+# administrator can read through.
+def credentials_kept(platform: str) -> str:
+    return (
+        "kept in your own user profile"
+        if platform == "win32"
+        else "readable only by you"
+    )
+
+
+CREDENTIALS_KEPT: Final = credentials_kept(sys.platform)
+
+
 def config_dir() -> Path:
     """Where kennis keeps its configuration.
 
@@ -599,7 +615,7 @@ def config_document(values: Mapping[str, Mapping[str, object]] | None = None) ->
         "# API keys do not belong here. kennis takes one from the environment",
         "# first, then .env.keys, then .env, then credentials.toml - the last",
         "# three in this directory. `kennis config init` writes the last of",
-        "# them, readable only by you.",
+        f"# them, {CREDENTIALS_KEPT}.",
     ]
     for section_name, model in section_models().items():
         defaults = model().model_dump()
