@@ -37,6 +37,7 @@ import time
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Literal
 
 import httpx
 
@@ -1557,21 +1558,21 @@ def _pages_of(
     pages: list[_Page] = []
     outcomes: list[AddOutcome] = []
 
+    # Checked whole before any site is crawled: a local page with no project
+    # name, after a minute of crawling the site beside it, threw the crawl
+    # away.
+    unusable = unusable_docs_input(identifiers, project=options.project)
+    if unusable is not None:
+        raise _docs_input_refused(*unusable)
+
     for identifier in identifiers:
         if looks_like_url(identifier):
             pages.extend(_pages_of_site(identifier, options, client, delay, sink))
             continue
 
         path = Path(identifier).expanduser()
-        if not path.is_file():
-            raise InputError(
-                f"'{identifier}' is neither a documentation site nor a file that exists"
-            )
         if options.project is None:
-            raise InputError(
-                f"'{identifier}' is a local file, so there is no site to take a "
-                "project name from: name one with --project"
-            )
+            raise _docs_input_refused(identifier, "unnamed")
         pages.append(
             _Page(
                 key=path.stem,
@@ -1580,6 +1581,38 @@ def _pages_of(
             )
         )
     return pages, outcomes
+
+
+def unusable_docs_input(
+    identifiers: Sequence[str], *, project: str | None
+) -> tuple[str, Literal["missing", "unnamed"]] | None:
+    """The first argument a docs add cannot use, and why: a file that does
+    not exist, or a local page with no project to file it under.
+
+    Its own function so a front end can ask before the add starts, while
+    what was typed is still in front of the person who typed it.
+    """
+    for identifier in identifiers:
+        if looks_like_url(identifier):
+            continue
+        if not Path(identifier).expanduser().is_file():
+            return identifier, "missing"
+        if project is None:
+            return identifier, "unnamed"
+    return None
+
+
+def _docs_input_refused(
+    identifier: str, reason: Literal["missing", "unnamed"]
+) -> InputError:
+    if reason == "missing":
+        return InputError(
+            f"'{identifier}' is neither a documentation site nor a file that exists"
+        )
+    return InputError(
+        f"'{identifier}' is a local file, so there is no site to take a "
+        "project name from: name one with --project"
+    )
 
 
 def _pages_of_site(

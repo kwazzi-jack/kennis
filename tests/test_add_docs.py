@@ -335,6 +335,29 @@ def test_a_local_page_needs_a_project(docs: Collection, tmp_path: Path):
         add_docs(docs, [str(tutorial)])
 
 
+def test_a_local_page_without_a_project_is_refused_before_any_site_is_read(
+    docs: Collection, tmp_path: Path
+):
+    """Checked in turn, a site listed first was crawled whole before the
+    local page after it was refused, and the crawl thrown away."""
+    tutorial = tmp_path / "tutorial.md"
+    tutorial.write_text("# A tutorial\n", encoding="utf-8")
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(404)
+
+    with pytest.raises(InputError, match=r"tutorial\.md"):
+        add_docs(
+            docs,
+            [BASE, str(tutorial)],
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+    assert requested == []
+
+
 # ---------------------------------------------------------------------------
 # Pacing
 # ---------------------------------------------------------------------------

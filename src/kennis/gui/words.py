@@ -860,6 +860,18 @@ def previewed_project(project: str) -> str:
     return f"Filed under the project '{project}'."
 
 
+def docs_input_refused(identifier: str, reason: str) -> str:
+    """A docs add refused before it starts, while the form is still open:
+    after the dialog had closed it came back in the strip, with what was
+    typed gone."""
+    if reason == "missing":
+        return f"'{identifier}' is neither a documentation site nor a file that exists."
+    return (
+        f"'{identifier}' is a file on this machine, so there is no site to name "
+        "its project after: give one as the project."
+    )
+
+
 PROJECT_UNNAMED = (
     "No project name can be made from this address; give one as the project."
 )
@@ -1539,6 +1551,7 @@ __all__ = [
     "describe_recent",
     "describe_written",
     "describe_written_to_bundle",
+    "docs_input_refused",
     "documents_held",
     "documents_waiting",
     "every_item",
