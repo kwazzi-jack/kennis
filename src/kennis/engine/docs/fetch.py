@@ -19,7 +19,6 @@ import httpx
 from kennis.engine.docs.http import get_within, origin_of
 from kennis.engine.errors import SourceUnreadable
 
-_USER_AGENT: Final = "kennis-docs-fetch"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
 
 # The rendered main-content container, in preference order. Sphinx themes

@@ -45,7 +45,7 @@ def a_page(title: str) -> str:
     )
 
 
-def sphinx_site() -> httpx.Client:
+def sphinx_site(robots: str = "User-agent: *\nAllow: /\n") -> httpx.Client:
     """A two-page Sphinx site, answering on whatever host it is asked about.
 
     Keyed by path rather than by full URL, so a test that varies the host to
@@ -63,7 +63,7 @@ def sphinx_site() -> httpx.Client:
         if path.endswith("documentation_options.js"):
             return httpx.Response(200, text=OPTIONS_JS)
         if path.endswith("robots.txt"):
-            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            return httpx.Response(200, text=robots)
         html = pages.get(path)
         if html is None:
             return httpx.Response(404)
@@ -394,6 +394,45 @@ def test_a_page_the_crawl_already_holds_costs_no_wait(
     # loop - and the crawl waits between its requests, not after the last.
     assert docs.contents().documents
     assert len(slept) == len(docs.contents().documents) - 1
+
+
+def test_a_site_asking_for_a_longer_crawl_delay_is_paced_by_it(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """robots.txt was read for what it allows but not for how fast: a site
+    asking for two seconds between requests got one every fifth of one."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0.5),
+        client=sphinx_site("User-agent: *\nCrawl-delay: 2\nAllow: /\n"),
+    )
+
+    assert slept == [2.0]
+
+
+def test_a_crawl_delay_is_honoured_only_up_to_a_bound(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """An hour between pages would be an add that never visibly ends."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0.5),
+        client=sphinx_site("User-agent: *\nCrawl-delay: 3600\nAllow: /\n"),
+    )
+
+    assert slept == [30.0]
 
 
 def test_an_offline_add_is_not_paced(docs: Collection, monkeypatch: pytest.MonkeyPatch):
