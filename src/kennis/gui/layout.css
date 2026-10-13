@@ -723,8 +723,9 @@ main {
   max-width: 46rem;
   margin: 0.6rem 0 1rem;
   padding: 0.6rem 0.9rem;
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--role-warning);
+  /* Framed all round, as a notice is, not striped down one side. */
+  border: 1px solid color-mix(in srgb, var(--role-warning) 45%, var(--rule));
+  border-radius: 6px;
 }
 .rebuild h3 { margin-top: 0.2rem; }
 .rebuild ul { margin: 0.3rem 0 0.6rem; padding-left: 1.2rem; }
@@ -908,7 +909,8 @@ mark {
    is only the frame and the wash. A frame all round rather than a
    stripe down one side (Brian, 2026-10-13). */
 .notice {
-  max-width: 46rem;
+  /* The text's own width, so a notice lines up with what it is about. */
+  max-width: var(--text);
   margin: 0 0 1.25rem;
   padding: 0.6rem 0.85rem;
   font-family: var(--gutter);
@@ -1253,22 +1255,22 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   gap: 1.1rem;
 }
 /* A hit is a card (Brian, 2026-10-12), as search interfaces set a quoted
-   excerpt apart: the raised surface, a hairline, and a rule down the
-   left as a block quotation has, which turns to the brand - the colour
-   of "here" in a document - when the passage is open. Nothing clips,
+   excerpt apart: the raised surface and a frame in its collection's
+   colour, with the head band (below) saying the collection loudest.
+   No stripe down one side: it was there for a day and is the commonest
+   card in every markdown preview (Brian, 2026-10-13). Nothing clips,
    because the chevron hangs off the card's bottom edge. */
 .hit {
   background: var(--raised);
   border: 1px solid var(--rule);
-  border-color: color-mix(in srgb, var(--collection) 30%, var(--rule));
-  border-left: 3px solid var(--collection);
+  border-color: color-mix(in srgb, var(--collection) 45%, var(--rule));
   border-radius: 8px;
   max-width: var(--text);
-  transition: opacity 0.2s ease, translate 0.2s ease, border-left-width 0.2s ease;
+  transition: opacity 0.2s ease, translate 0.2s ease, box-shadow 0.2s ease;
 }
-/* Open, the rule widens: its colour says which collection, so the
-   change of state is the same edge's width rather than its colour. */
-.hit:has(details[open]) { border-left-width: 6px; }
+/* Open, the frame thickens all round in the collection's colour: the
+   change of state is the edge's weight, not a new colour. */
+.hit:has(details[open]) { box-shadow: 0 0 0 1px var(--collection); }
 /* The head: what kennis says about the hit, on the page's ground so it
    reads as a band, over the passage the hit quotes. */
 .hit-head {
@@ -1281,8 +1283,9 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .hit-head > * { margin: 0 0 0.3rem; }
 .hit-head > :last-child { margin-bottom: 0; }
 
-/* The measures, above the title: an icon naming each, a bar of five
-   cells and the level's word. The cells and the word carry the level
+/* The measures, under the title: an icon naming each, a bar of five
+   cells and the level's word. Under rather than over, so a card reads
+   as what it is before how well it matched (the visual review, F4). The cells and the word carry the level
    without colour; the colour is a third cue (#421). */
 .measures {
   display: flex;
@@ -1477,23 +1480,32 @@ article img { max-width: 100%; height: auto; }
   margin: 0 0 1.6rem;
 }
 
-/* The passage a search hit pointed at, as the mockup marks it: the
-   highlighter wash with the amber rule in the margin, which is also
-   an opened passage's rule, so "here" is one colour everywhere. This
-   reverses an earlier choice of a cyan rule alone, made before the
-   brand colour existed (#450).
+/* The passage a search hit pointed at: the highlighter wash in a frame
+   of the amber that means "here" everywhere (#450). A frame all round
+   rather than a rule down the margin (Brian, 2026-10-13).
 
    `scroll-margin-top` keeps the fragment from landing flush against
    the top of the scrolling region. */
 .chunk {
   background: var(--mark);
-  border-left: 3px solid var(--brand);
-  padding: 0.3rem 0.7rem 0.3rem 1rem;
-  margin: 0 -0.7rem 1rem -1.3rem;
-  border-radius: 0 3px 3px 0;
+  border: 1px solid var(--brand);
+  padding: 0.3rem 0.7rem;
+  margin: 0 -0.8rem 1rem;
+  border-radius: 6px;
   scroll-margin-top: 2rem;
 }
 .chunk > :last-child { margin-bottom: 0; }
+/* A chunk that was only the title, which the page shows as its heading:
+   nothing to frame, and an empty bar under the title said "here" about
+   nothing. Kept as the place a link lands, far enough down that the
+   title it stood for is in view rather than under the bar. */
+.chunk:not(:has(*)) {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  scroll-margin-top: 6rem;
+}
 
 code, pre {
   font-family: var(--mono);
@@ -1512,7 +1524,9 @@ code, pre {
 pre {
   overflow-x: auto;
   padding: 0.9rem 1rem;
-  border-left: 2px solid var(--rule);
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
 }
 
 blockquote {

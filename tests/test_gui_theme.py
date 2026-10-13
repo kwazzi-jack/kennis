@@ -558,3 +558,19 @@ def test_where_the_reader_is_survives_forced_colours():
 
     assert '[aria-selected="true"]' in forced
     assert "Highlight" in forced
+
+
+def test_no_box_is_striped_down_one_side():
+    """A card, a notice or a panel is framed all round: a thick rule down
+    one side is the commonest card in every markdown preview (Brian,
+    2026-10-13). A quotation keeps its rule, which is typography, and a
+    hairline between two panes is a divider, not a stripe."""
+    code = re.sub(r"/\*.*?\*/", "", layout_css(), flags=re.S)
+    striped = [
+        selector.strip()
+        for selector, body in re.findall(r"([^{}]+)\{([^}]*)\}", code)
+        if re.search(r"border-left(-width)?:\s*(?!0)(?!1px)\d", body)
+        and selector.strip() != "blockquote"
+    ]
+
+    assert striped == []

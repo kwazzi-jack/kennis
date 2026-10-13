@@ -204,7 +204,7 @@ def test_one_attribute_on_an_ancestor_chooses_the_colour():
 @pytest.mark.parametrize(
     ("selector", "declaration"),
     [
-        (".hit", "border-left: 3px solid var(--collection)"),
+        (".hit", "color-mix(in srgb, var(--collection) 45%, var(--rule))"),
         (".hit-head", "color-mix(in srgb, var(--collection) 9%, var(--ground))"),
         (".hit .title", "color: var(--collection)"),
         (".group-head", "border-bottom: 1px solid var(--collection)"),
@@ -220,14 +220,16 @@ def test_each_place_reads_the_collection(selector: str, declaration: str):
     assert any(declaration in body for body in found), (selector, found)
 
 
-def test_an_open_card_widens_its_rule_and_keeps_its_colour():
-    """The rule says which collection; the brand no longer replaces it,
-    so an open card says so by width - the same edge, not colour alone."""
+def test_an_open_card_thickens_its_frame_and_keeps_its_colour():
+    """An open card says so by the weight of its frame, in the colour it
+    already wears - all round, with no stripe down one side (Brian,
+    2026-10-13)."""
     opened = re.search(r"\.hit:has\(details\[open\]\) \{([^}]*)\}", css())
+    card = re.search(r"^\.hit \{([^}]*)\}", css(), re.M)
 
-    assert opened
-    assert "border-left-width: 6px" in opened.group(1)
-    assert "border-left-color" not in opened.group(1)
+    assert opened and card
+    assert "box-shadow: 0 0 0 1px var(--collection)" in opened.group(1)
+    assert "border-left" not in card.group(1) + opened.group(1)
 
 
 # ---------------------------------------------------------------------------
