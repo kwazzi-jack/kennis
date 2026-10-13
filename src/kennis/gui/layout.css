@@ -824,11 +824,20 @@ main {
 
 .hits .detail span { display: block; }
 
-a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
-/* A link in the corpus's own text, in a document or an opened passage.
-   Left to the browser it was its default blue, which on the dark ground
-   is barely visible. */
-article a, .full a { color: var(--role-command); }
+/* Every link wears a token, never the browser's own blue: left to the
+   browser, the strip's "Last:" link and the Activity page's job links
+   were #0000EE, about 1.6:1 on the dark strip, and no contrast test
+   could see it because the colour was not the palette's. A rule below
+   that names its own colour still wins, by being more specific. */
+a {
+  color: var(--role-command);
+  text-underline-offset: 0.15em;
+  text-decoration-thickness: from-font;
+}
+/* The browser's placeholder grey is 4.45:1 on the light ground and
+   3.86:1 on the dark one; the muted role clears both. Firefox fades a
+   placeholder with opacity as well, hence the reset. */
+::placeholder { color: var(--role-muted); opacity: 1; }
 
 /* A result's title is underlined on hover and not before. An inline
    link inside prose keeps its underline, because there it is the only
