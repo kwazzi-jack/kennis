@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import tomllib
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -532,13 +533,48 @@ def credential(variable: str) -> str:
 
 
 def load_settings() -> Settings:
-    """Every setting, resolved."""
+    """Every setting, resolved.
+
+    A value that is refused is named with where it came from, and the
+    remedy is the one that removes it: pointing at `config show` for an
+    exported variable sent the reader to a file with nothing wrong in it.
+    """
     try:
         return Settings()
     except ValidationError as error:
-        raise SettingsError(
-            _first_problem(error), resolution="kennis config show"
-        ) from error
+        raise refused_setting(error, config_path()) from error
+
+
+def refused_setting(error: ValidationError, path: Path) -> SettingsError:
+    """The first refused value, named by its source: the variable that
+    overrides it, or the file at `path`."""
+    first = error.errors()[0]
+    location = [str(part) for part in first["loc"]]
+    key = ".".join(location[:2])
+    variable = overriding_variable(key) if len(location) > 1 else None
+    if variable is not None:
+        return SettingsError(
+            f"{key}: {first['msg']} (set by {variable})",
+            resolution=f"unset {variable}",
+        )
+    return SettingsError(
+        f"{'.'.join(location)} in {path}: {first['msg']}",
+        resolution=repair_of(key, path),
+    )
+
+
+def repair_of(key: str, path: Path) -> str:
+    """The command that puts `key` back to its default, or the edit that
+    does when its default is not one to type on a command line."""
+    section, _, name = key.partition(".")
+    model = section_models().get(section)
+    field = model.model_fields.get(name) if model is not None else None
+    default = field.default if field is not None else None
+    if isinstance(default, bool):
+        return f"kennis config set {key} {'true' if default else 'false'}"
+    if isinstance(default, int | float | str) and default != "":
+        return f"kennis config set {key} {shlex.quote(str(default))}"
+    return f"remove {key} from {path}"
 
 
 def config_document(values: Mapping[str, Mapping[str, object]] | None = None) -> str:
@@ -641,10 +677,3 @@ def toml_value(value: object) -> str:
     if isinstance(value, int | float):
         return str(value)
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _first_problem(error: ValidationError) -> str:
-    """The offending setting and why, in one line."""
-    first = error.errors()[0]
-    where = ".".join(str(part) for part in first["loc"])
-    return f"{where}: {first['msg']}"
