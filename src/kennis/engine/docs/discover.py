@@ -491,6 +491,11 @@ def _generic_pages(
     pages: list[DiscoveredPage] = []
     seen: set[str] = set()
     for url in urls:
+        # Bounded as the other two modes are: a sitemap lists every page a
+        # site has, and nothing else stopped a 10 000-page one being
+        # fetched whole.
+        if len(pages) >= max_pages:
+            break
         # The whole path, not the path below the seed: these modes have no
         # root of their own to key against, and below the seed the same page
         # had a different key for every address an add started from.
