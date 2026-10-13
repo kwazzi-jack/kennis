@@ -2259,3 +2259,38 @@ a.button:active { translate: 0 1px; }
   .cell.on { forced-color-adjust: none; background: CanvasText; }
   .cell { border: 1px solid CanvasText; }
 }
+
+/* An info tip: a small (i) beside a label, and the few words it opens.
+   The words sit in the browser's top layer, so a dialog or a scrolled
+   pane cannot clip them; `tips.js` places them beside the button. */
+.tip-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--role-muted);
+  cursor: help;
+  vertical-align: middle;
+}
+.tip-button .icon { width: 0.95rem; height: 0.95rem; }
+.tip-button:hover, .tip-button:focus-visible { color: var(--ink); }
+.tip-button:focus-visible { outline: 2px solid var(--role-hint); outline-offset: 1px; }
+.tip {
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: normal;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: normal;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ink) 18%, transparent);
+}

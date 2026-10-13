@@ -32,6 +32,7 @@ from kennis.engine.literature.metadata import ArxivMetadata
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.icons import icon
+from kennis.gui.responses import TEMPLATES
 from kennis.gui.uploads import staged
 
 TOKEN = "a-test-token"
@@ -973,3 +974,21 @@ def test_the_picker_script_says_what_was_chosen_in_the_servers_words():
 
 def test_the_picker_script_is_loaded(client: TestClient):
     assert '<script defer src="/static/uploads.js"></script>' in client.get("/").text
+
+
+def test_an_info_tip_is_the_browsers_own_popover():
+    """Opens by click, tap or keyboard and closes on Escape with no script;
+    the button says what it is about, the tip holds the words."""
+    template = TEMPLATES.env.from_string(
+        '{% from "tip.html" import tip %}'
+        '{{ tip("x", "the title", "Its own heading.") }}'
+    )
+    drawn = BeautifulSoup(template.render(), "html.parser")
+
+    button = drawn.select_one("button.tip-button")
+    tip = drawn.select_one("#tip-x")
+    assert button is not None and tip is not None
+    assert button.get("popovertarget") == "tip-x"
+    assert button.get("aria-label") == words.tip_about("the title")
+    assert tip.has_attr("popover")
+    assert tip.get_text() == "Its own heading."

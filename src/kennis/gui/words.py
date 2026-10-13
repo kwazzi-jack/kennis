@@ -813,9 +813,17 @@ ANOTHER_GROUP = "Another group"
 BLOCK_HEADING = "Group"
 
 BROWSE = "Browse"
+
+
 # The browser's own picker, beside a field that takes paths. Its file is
 # sent from the computer the reader sits at, so it works the same when
 # kennis runs on another one behind `ssh -L` - where a typed path is read.
+def tip_about(subject: str) -> str:
+    """What an info tip's button is called, to a screen reader and on
+    hover: the tip itself is the few words it opens."""
+    return f"About {subject}"
+
+
 UPLOAD_FILES = "Choose files"
 UPLOAD_FOLDER = "Choose a folder"
 UPLOAD_PDF = "Choose a PDF"
@@ -1608,6 +1616,7 @@ __all__ = [
     "search_hint_for",
     "searchable_summary",
     "time_ago",
+    "tip_about",
     "unknown_collection",
     "unknown_mode",
     "unknown_order",
