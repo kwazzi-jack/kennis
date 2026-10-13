@@ -83,7 +83,12 @@ from kennis.engine.docs.sites import (
     project_name_from_url,
     validate_project_name,
 )
-from kennis.engine.errors import ConversionFailed, InputError, KennisError
+from kennis.engine.errors import (
+    ConversionFailed,
+    ConverterRefused,
+    InputError,
+    KennisError,
+)
 from kennis.engine.events import (
     Diagnostic,
     DocumentSkipped,
@@ -658,6 +663,8 @@ def _plan_binaries(
         # in its last run landed nothing after minutes of conversion.
         try:
             batch = converter.convert(run)
+        except ConverterRefused:
+            raise
         except ConversionFailed as error:
             for path in run:
                 plan.settled[path] = AddOutcome(
