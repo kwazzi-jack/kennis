@@ -1,5 +1,5 @@
 <p class="role-muted">{{ pack_preamble }}</p>
-<form hx-disabled-elt="find button[type=submit]" hx-post="/pack" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+<form action="/pack" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/pack" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
   <input type="text" name="path" placeholder="/path/to/pack.ken.yml" autofocus>
   <button type="submit">{{ pack_action }}</button>
 </form>
