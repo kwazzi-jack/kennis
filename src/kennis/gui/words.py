@@ -1205,6 +1205,24 @@ def overridden_by(variable: str) -> str:
     )
 
 
+# The home page of an empty corpus: what kennis is, and the first things
+# to do with it, as the dialogs that do them. It was a blank centre.
+WELCOME_HEADING = "Nothing here yet"
+
+WELCOME = (
+    "kennis keeps your papers, documentation and notes on this computer "
+    "and finds them again by keyword and by meaning. Agents read the same "
+    "corpus through MCP."
+)
+
+WELCOME_ACTIONS: Final[tuple[tuple[str, str, str], ...]] = (
+    ("/add?kind=paper", "Add a paper", "file-plus"),
+    ("/add?kind=site", "Add a documentation site", "globe"),
+    ("/add?kind=file", "Add files from this computer", "folder"),
+    ("/remember", "Write a note", "pencil"),
+)
+
+
 # The first tab stop on every page.
 SKIP_TO_CONTENT = "Skip to the content"
 
@@ -1463,6 +1481,9 @@ __all__ = [
     "TITLE_HINT",
     "TITLE_LABEL",
     "UNDO",
+    "WELCOME",
+    "WELCOME_ACTIONS",
+    "WELCOME_HEADING",
     "WINDOW_SETTINGS_HEADING",
     "WINDOW_SETTINGS_NOTE",
     "attention_count",

@@ -1,0 +1,12 @@
+{# An empty corpus's home: what kennis is and the first things to do,
+   each the dialog that does it, and each a page without a script. #}
+<section class="welcome">
+  {{ icon("book-open") }}
+  <h2>{{ welcome_heading }}</h2>
+  <p>{{ welcome }}</p>
+  <p class="welcome-actions">
+    {% for href, label, icon_name in welcome_actions %}
+    <a class="button" href="{{ href }}" hx-get="{{ href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon(icon_name) }}<span>{{ label }}</span></a>
+    {% endfor %}
+  </p>
+</section>

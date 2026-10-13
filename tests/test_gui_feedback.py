@@ -651,3 +651,24 @@ def test_a_short_outcome_is_not_folded():
 
     assert "all-items" not in drawn
     assert "one.md" in drawn
+
+
+def test_an_empty_corpus_s_home_says_what_kennis_is_and_where_to_start(
+    client: TestClient,
+):
+    """A fresh install showed an empty centre."""
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+    welcome = page.find("section", class_="welcome")
+
+    assert welcome is not None
+    assert words.WELCOME_HEADING in welcome.get_text()
+    offered = [link["href"] for link in welcome.find_all("a")]
+    assert offered == [href for href, _, _ in words.WELCOME_ACTIONS]
+
+
+def test_a_corpus_with_documents_is_not_welcomed(corpus: Path, client: TestClient):
+    source = corpus / "held.md"
+    source.write_text("# Held\n\nText.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+    assert 'class="welcome"' not in client.get("/").text
