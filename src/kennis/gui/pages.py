@@ -799,6 +799,7 @@ __all__ = [
     "add_here_address",
     "byline_of",
     "document_details",
+    "known_groups",
     "ordered_by",
     "palette_entries",
     "palette_typed",
@@ -883,6 +884,20 @@ def _anchor(document: Document | DocumentFacts) -> Path:
     follows, and the spelling `document_of` gives a flagged path.
     """
     return document.wrapper_dir or document.md_path
+
+
+def known_groups(context: Context, collections: Sequence[str]) -> list[str]:
+    """Every group already held in `collections`, for a typed group field
+    to suggest: typed free, "Radio" beside "radio" quietly made a second
+    group. Read through the same cached contents the pane draws from."""
+    root = context.corpus_root
+    found: set[str] = set()
+    for collection in collections:
+        for document in contents_of(context, collection).documents:
+            group = _group_of(root, collection, _anchor(document))
+            if group:
+                found.add(group)
+    return sorted(found)
 
 
 def _group_of(corpus_root: Path, collection: str, anchor: Path) -> str:

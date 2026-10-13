@@ -529,3 +529,20 @@ def test_what_was_chosen_in_the_picker_is_said_back_and_can_be_cleared(
 
     page.set_input_files("#dialog input[name=upload][webkitdirectory]", str(folder))
     assert page.inner_text(said) == "The folder papers, 2 files"
+
+
+def test_project_shows_on_the_files_tab_only_for_docs(page: playwright.Page) -> None:
+    """It names a docs page's directory and nothing else, and was offered
+    for every collection."""
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector("#dialog .field[data-name=collection]", timeout=_WAIT_MS)
+    project = "#dialog .field[data-name=project]"
+
+    assert page.is_hidden(project)
+    page.click("#dialog .choices label:has(input[value=notes])")
+    assert page.is_hidden(project)
+    page.click("#dialog .choices label:has(input[value=docs])")
+    assert page.is_visible(project)

@@ -36,6 +36,7 @@ from kennis.gui.adding import (
     shown_paper_preview,
     shown_site_preview,
 )
+from kennis.gui.pages import known_groups
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -66,6 +67,10 @@ def _lines(given: str) -> list[str]:
     return [line.strip() for line in given.splitlines() if line.strip()]
 
 
+# The collections whose directories are groups a reader names.
+_GROUPED = ("literature", "notes")
+
+
 def _add_context(
     asked: str, given: Mapping[str, str] | None = None
 ) -> dict[str, object]:
@@ -90,6 +95,8 @@ def _add_context(
         "adds_to": words.ADDS_TO,
         "cancel": words.CANCEL,
         "destination": destination_of(kind, given or {}),
+        # Groups, not docs projects: a docs page's directory is its project.
+        "known_groups": known_groups(existing_corpus(), _GROUPED),
     }
 
 

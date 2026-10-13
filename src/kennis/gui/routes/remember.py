@@ -19,6 +19,7 @@ from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui import words
 from kennis.gui.pages import (
     ShownOutcome,
+    known_groups,
 )
 from kennis.gui.responses import (
     TEMPLATES,
@@ -44,6 +45,7 @@ def _remember_context(outcome: ShownOutcome | None) -> dict[str, object]:
         "title_hint": words.TITLE_HINT,
         "group_hint": words.GROUP_HINT,
         "action": words.REMEMBER_ACTION,
+        "known_groups": known_groups(existing_corpus(), ("notes",)),
         **frame(existing_corpus()),
     }
 
