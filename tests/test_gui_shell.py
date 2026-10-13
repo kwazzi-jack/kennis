@@ -70,6 +70,50 @@ def test_a_request_with_the_wrong_token_is_refused(client: TestClient):
     assert client.get("/", params={"token": "not-it"}).status_code == 401
 
 
+def test_a_browser_without_the_token_is_told_what_to_do(client: TestClient):
+    """It was `{"detail": ...}` as raw JSON in a tab. A browser asking for
+    a page is given one, with its stylesheet inline because the
+    stylesheet is refused too - and still not a byte of the corpus."""
+    answer = client.get("/", headers={"accept": "text/html"})
+
+    assert answer.status_code == 401
+    assert words.LOCKED_HEADING in answer.text
+    assert "<style>" in answer.text
+    assert 'href="/static/kennis.css"' not in answer.text
+
+
+def test_anything_else_without_the_token_gets_the_short_answer(client: TestClient):
+    answer = client.get("/", headers={"accept": "text/html", "hx-request": "true"})
+
+    assert answer.status_code == 401
+    assert answer.headers["content-type"].startswith("application/json")
+
+
+def test_an_address_with_no_page_is_a_page_with_a_way_back(
+    corpus: Path, client: TestClient
+):
+    """FastAPI's own `{"detail": "Not Found"}` was what `/nowhere` showed."""
+    assert client.get("/", params={"token": TOKEN}).status_code == 200
+
+    answer = client.get("/nowhere")
+
+    assert answer.status_code == 404
+    assert f"<h1>{words.NOT_FOUND_HEADING}</h1>" in answer.text
+    assert words.no_page_at("/nowhere") in answer.text
+    assert 'href="/corpus"' in answer.text
+
+
+def test_a_fragment_that_is_not_there_is_not_given_a_whole_page(
+    corpus: Path, client: TestClient
+):
+    assert client.get("/", params={"token": TOKEN}).status_code == 200
+
+    answer = client.get("/nowhere", headers={"hx-request": "true"})
+
+    assert answer.status_code == 404
+    assert "<html" not in answer.text
+
+
 def test_the_token_admits_and_is_remembered(corpus: Path, client: TestClient):
     """It arrives once in the URL and is held in a cookie afterwards, so
     it is not on every subsequent request line.

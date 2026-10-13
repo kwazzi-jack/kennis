@@ -33,10 +33,12 @@ from fastapi.responses import (
     PlainTextResponse,
 )
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kennis.engine.errors import (
     KennisError,
 )
+from kennis.gui import words
 from kennis.gui.jobs import Jobs
 from kennis.gui.responses import TEMPLATES, from_htmx, refused
 from kennis.gui.routes import (
@@ -156,6 +158,30 @@ def from_elsewhere(request: Request) -> bool:
     return origin == "null"
 
 
+def _locked(request: Request) -> Response:
+    """The answer to a request without the token.
+
+    A page for a browser, saying what to do, rather than a line of JSON:
+    a reader who opened a bookmarked address after a restart met
+    `{"detail": ...}` and nothing else. Its stylesheet is inline, because
+    a request for the stylesheet is refused for the same reason. Anything
+    that is not a page asked for by a browser keeps the short answer.
+    """
+    wants_page = "text/html" in request.headers.get("accept", "")
+    if request.method != "GET" or from_htmx(request) or not wants_page:
+        return JSONResponse({"detail": _UNAUTHORISED}, status_code=401)
+    return TEMPLATES.TemplateResponse(
+        request,
+        "locked.html",
+        {
+            "heading": words.LOCKED_HEADING,
+            "locked": words.LOCKED,
+            "stylesheet": stylesheet(),
+        },
+        status_code=401,
+    )
+
+
 def new_token() -> str:
     """A token for one launch.
 
@@ -200,7 +226,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             # refusal a client follows, and then the test that proves
             # the guard works reports 200 for a request that was
             # turned away.
-            refusal = JSONResponse({"detail": _UNAUTHORISED}, status_code=401)
+            refusal = _locked(request)
             refusal.headers["Referrer-Policy"] = _REFERRER_POLICY
             return refusal
         if from_elsewhere(request):
@@ -248,6 +274,29 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             "problem.html",
             {"problem": str(error), "resolution": error.resolution},
             status_code=500,
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    def drawn_as_not_found(request: Request, error: Exception) -> Response:
+        """An address with no page, as a page in the window.
+
+        It was FastAPI's own `{"detail": "Not Found"}`, raw JSON in a tab
+        with no way back. Only for a page a browser asked for: a fragment
+        htmx asked for, or any other failure, keeps the plain answer.
+        """
+        if not isinstance(error, StarletteHTTPException):
+            raise error
+        if error.status_code != 404 or from_htmx(request) or request.method != "GET":
+            return JSONResponse({"detail": error.detail}, status_code=error.status_code)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "problem.html",
+            {
+                "heading": words.NOT_FOUND_HEADING,
+                "problem": words.no_page_at(request.url.path),
+                "resolution": None,
+            },
+            status_code=404,
         )
 
     # Mounted, not routed one file at a time. The guard above is

@@ -4,6 +4,7 @@ was asked.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response
@@ -25,7 +26,6 @@ from kennis.gui.pages import (
     shown_skips,
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, frame, from_htmx
-from kennis.render.words import describe_lexical_fallback
 from kennis.retrieval import (
     EVERY_SCOPE,
     SCOPE_NAMES,
@@ -81,7 +81,7 @@ def _hits_context(
         "summary": None,
         "order": order,
         "skips": [],
-        "fallbacks": [],
+        "keywords_only": None,
         "key": None,
         "orders": [],
         "order_label": words.ORDER_LABEL,
@@ -142,9 +142,12 @@ def _hits_context(
         # quietly returns lexical results is a control that lies, so
         # the mode selector is what made the omission matter.
         # Concern #381.
-        context["fallbacks"] = [
-            describe_lexical_fallback(name) for name in found.degraded
-        ]
+        #
+        # One quiet notice for every collection it applies to, with the
+        # step that would change it: three bold sentences, one per
+        # collection, took the top of every page before a single result.
+        if found.degraded:
+            context["keywords_only"] = shown_keywords_only(found.degraded)
         # Here rather than in either route, because both run a search
         # and a reload, a Back and a keystroke must all record the
         # same way. A refused search is not recorded: it found
@@ -162,6 +165,19 @@ def _hits_context(
         context["problem"] = str(error)
         context["resolution"] = error.resolution
     return context
+
+
+def shown_keywords_only(degraded: Sequence[str]) -> dict[str, str]:
+    """The keywords-only notice, and what would give the search meaning.
+
+    With no meaning model configured, building again changes nothing, so
+    the way forward is Settings; with one, it is an index.
+    """
+    if existing_corpus().settings.embedding.backend == "none":
+        label, href = words.KEYWORDS_ONLY_CHOOSE, "/settings#setting-embedding.backend"
+    else:
+        label, href = words.KEYWORDS_ONLY_INDEX, "/index"
+    return {"sentence": words.keywords_only(degraded), "label": label, "href": href}
 
 
 @router.get("/")

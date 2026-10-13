@@ -1162,6 +1162,50 @@ def menu_for(name: str) -> str:
     return f"Actions for {name}"
 
 
+# A page that could not be drawn: what went wrong, said as a heading the
+# reader can find, and two ways back, so a refusal is never a dead end.
+PROBLEM_HEADING = "That could not be shown"
+
+NOT_FOUND_HEADING = "Not found"
+
+PROBLEM_BACK = "Back to search"
+
+PROBLEM_CORPUS = "See the corpus"
+
+
+def no_page_at(path: str) -> str:
+    """An address the window has no page for."""
+    return f"There is no page at {path}."
+
+
+# A request without the token: the browser was given an address with the
+# key in it, and this one has neither the key nor the cookie it leaves.
+LOCKED_HEADING = "This window needs its key"
+
+LOCKED = (
+    "This address is missing the key kennis was started with, so it will "
+    "not answer. Open the address `kennis gui` printed, or run `kennis gui` "
+    "again for a new one."
+)
+
+
+def keywords_only(collections: Sequence[str]) -> str:
+    """Searches that ran by keywords although meaning was asked for.
+
+    One sentence for every collection rather than one each: three
+    near-identical warnings took the top of every results page before
+    a single result (#381 said it; the reviews found it said too loudly).
+    """
+    names = joined(list(collections))
+    noun = "index was" if len(collections) == 1 else "indexes were"
+    return f"Matched by keywords only: the {names} {noun} built without meaning."
+
+
+KEYWORDS_ONLY_CHOOSE = "Choose a meaning model in Settings"
+
+KEYWORDS_ONLY_INDEX = "Index them with meaning"
+
+
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
@@ -1245,6 +1289,8 @@ __all__ = [
     "KENNIS_SETTINGS_HEADING",
     "KENNIS_SETTINGS_NOTE",
     "KENNIS_UNCHANGED",
+    "KEYWORDS_ONLY_CHOOSE",
+    "KEYWORDS_ONLY_INDEX",
     "KEY_HIGH",
     "KEY_LOW",
     "KEY_ORDER",
@@ -1253,6 +1299,8 @@ __all__ = [
     "LINE_HELD",
     "LINE_KINDS",
     "LOAD_IMAGES",
+    "LOCKED",
+    "LOCKED_HEADING",
     "MARK_WITHHELD",
     "MATCHES_WITHHELD",
     "MEASURE_ICONS",
@@ -1275,6 +1323,7 @@ __all__ = [
     "NOTHING_TO_REMEMBER",
     "NOTHING_TO_SHOW",
     "NOT_A_FIELD",
+    "NOT_FOUND_HEADING",
     "NOT_SEARCHABLE_YET",
     "NO_CONTEXT",
     "NO_HEADINGS",
@@ -1309,6 +1358,9 @@ __all__ = [
     "PREVIEW_ADDRESS",
     "PREVIEW_FILE",
     "PREVIEW_UNRECOGNISED",
+    "PROBLEM_BACK",
+    "PROBLEM_CORPUS",
+    "PROBLEM_HEADING",
     "PROJECT_UNNAMED",
     "QUIT",
     "QUIT_TITLE",
@@ -1368,11 +1420,13 @@ __all__ = [
     "index_collection",
     "job_crashed",
     "key_models",
+    "keywords_only",
     "last_change",
     "last_job",
     "match_in_section",
     "matches_heading",
     "menu_for",
+    "no_page_at",
     "not_a_backup_folder",
     "not_a_count",
     "not_a_folder",

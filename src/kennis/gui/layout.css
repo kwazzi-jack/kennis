@@ -712,6 +712,8 @@ main {
 /* The page Quit answers with: no shell around it, because nothing in
    the shell would work any more. */
 .stopped main { padding-top: 4rem; }
+/* A problem page's ways back. */
+.ways-back { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 /* ---- an action's dialog ---- */
 
@@ -858,6 +860,41 @@ mark {
      word is the chunk's own, and the rule is what still tells it. */
   box-shadow: inset 0 -2px 0 var(--brand);
 }
+
+/* A notice: something the reader should know about the answer, set
+   apart from the answer itself. The roles were made for a terminal's
+   inline spans, and worn by whole paragraphs they set every warning in
+   bold ochre at reading size, louder than the results it was about.
+   The text stays ink, so its contrast is the ink's; the warning colour
+   is only the frame and the wash. A frame all round rather than a
+   stripe down one side (Brian, 2026-10-13). */
+.notice {
+  max-width: 46rem;
+  margin: 0 0 1.25rem;
+  padding: 0.6rem 0.85rem;
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--role-warning) 45%, var(--rule));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--role-warning) 7%, var(--ground));
+}
+.notice p { margin: 0; }
+.notice p + p { margin-top: 0.35rem; }
+/* The quiet kind: worth saying, not worth alarm. A results page that
+   matched by keywords alone is still a results page. */
+.notice.quiet {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  border-color: var(--rule);
+  background: var(--raised);
+}
+.notice.quiet .icon { flex: none; align-self: center; color: var(--role-muted); }
+/* The answer when there is none, which is the page's whole answer and
+   so is not set pale beside a louder side note. */
+.nothing { color: var(--ink); font-weight: 600; margin: 0 0 1rem; }
 
 /* A scope the sweep could not reach, and the command that fixes it.
    One row per scope rather than the command line's one line per
