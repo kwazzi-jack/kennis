@@ -311,6 +311,44 @@ _CROSS_ORIGIN: Final = "this interface accepts changes only from its own pages"
 _SAFE_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
+def content_policy(request: Request) -> str:
+    """What a page of this window may load and run, as `Content-Security-Policy`.
+
+    **A second wall behind the renderer.** A corpus holds converted web
+    pages and papers, and `render/html.py` escapes their markup and blocks
+    their images; this says the same to the browser, so a defect in either
+    is not a script running with the reader's token or a pixel reporting
+    to a remote host that the reader opened a document.
+
+    - scripts only from here: every script is a file under `/static`;
+    - styles from here and inline, because KaTeX draws with `style=`, the
+      pane's sizes are a `style` on `<html>`, and the stopped page carries
+      its stylesheet inline (the server is gone when it arrives);
+    - images from here and `data:`, and from anywhere only on the page the
+      reader asked to load them on (`images=on`, #420's "nothing fetched on
+      the reader's behalf");
+    - no frame may hold it, so another page on loopback cannot dress it up
+      and have the reader click.
+    """
+    images = "'self' data:"
+    if request.query_params.get("images") == "on":
+        images += " http: https:"
+    return "; ".join(
+        (
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+            f"img-src {images}",
+            "font-src 'self' data:",
+            "connect-src 'self'",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+        )
+    )
+
+
 def cookie_name(request: Request) -> str:
     """The token cookie's name for the address this request was sent to.
 
@@ -429,6 +467,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         # already withholds the path across sites; this states the rule
         # rather than relying on the default (11e).
         answer.headers["Referrer-Policy"] = _REFERRER_POLICY
+        answer.headers["Content-Security-Policy"] = content_policy(request)
         if request.query_params.get("token"):
             answer.set_cookie(
                 cookie,
@@ -1867,7 +1906,14 @@ def _problem(request: Request, error: KennisError) -> HTMLResponse:
     )
 
 
-__all__ = ["COOKIE_NAME", "build_app", "cookie_name", "from_elsewhere", "new_token"]
+__all__ = [
+    "COOKIE_NAME",
+    "build_app",
+    "content_policy",
+    "cookie_name",
+    "from_elsewhere",
+    "new_token",
+]
 
 
 def _lines(given: str) -> list[str]:

@@ -224,3 +224,26 @@ def test_every_page_opens_without_an_error(page: playwright.Page, path: str) -> 
 
     assert answer is not None and answer.status == 200
     assert page.evaluate("document.styleSheets.length") >= 1
+
+
+def test_an_inline_script_does_not_run(address: str) -> None:
+    """What a converted page that escaped the renderer could add: the
+    browser refuses it under the window's content policy."""
+    with playwright.sync_playwright() as driver:
+        browser = driver.chromium.launch(
+            executable_path=os.environ.get("KENNIS_TEST_CHROMIUM") or None
+        )
+        tab = browser.new_page()
+        tab.goto(address)
+
+        ran = tab.evaluate(
+            """() => {
+                const script = document.createElement("script");
+                script.textContent = "window.injected = true";
+                document.body.appendChild(script);
+                return window.injected === true;
+            }"""
+        )
+
+        assert ran is False
+        browser.close()

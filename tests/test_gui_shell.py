@@ -865,3 +865,42 @@ def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(
     assert "context" in answer.text.lower()
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     assert not held.documents
+
+
+# ---------------------------------------------------------------------------
+# What a page may load
+# ---------------------------------------------------------------------------
+
+
+def directives_of(answer: Response) -> dict[str, str]:
+    policy = answer.headers["Content-Security-Policy"]
+    return {
+        part.split(" ", 1)[0]: part.split(" ", 1)[1]
+        for part in (piece.strip() for piece in policy.split(";"))
+    }
+
+
+def test_every_page_says_what_it_may_load(corpus: Path, client: TestClient):
+    """A second wall behind the renderer: a converted page's markup is
+    escaped and its images blocked, and the browser is told the same."""
+    admitted(client)
+
+    policy = directives_of(client.get("/"))
+
+    assert policy["script-src"] == "'self'"
+    assert policy["img-src"] == "'self' data:"
+    assert policy["frame-ancestors"] == "'none'"
+    assert policy["object-src"] == "'none'"
+
+
+def test_remote_images_are_allowed_only_where_the_reader_asked(
+    corpus: Path, client: TestClient
+):
+    identifier = a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    asked = client.get(f"/document/notes/{identifier}", params={"images": "on"})
+    not_asked = client.get(f"/document/notes/{identifier}")
+
+    assert "https:" in directives_of(asked)["img-src"]
+    assert "https:" not in directives_of(not_asked)["img-src"]
