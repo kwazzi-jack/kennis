@@ -103,4 +103,5 @@
   </li>
 {% endfor %}
 </ol>
+{% if more[group.collection] is defined %}<p class="more"><a href="{{ more[group.collection] }}">{{ more_from(group.collection) }}</a></p>{% endif %}
 {% endfor %}

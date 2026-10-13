@@ -5,6 +5,7 @@ was asked.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Final
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response
@@ -51,8 +52,21 @@ def _prefetched(request: Request) -> bool:
     )
 
 
+# How many more a "More from" link asks for, and the most one search
+# may ask for per collection: enough to look further, not so many that a
+# page of passages becomes a dump of the collection.
+MORE_STEP: Final = 20
+MOST: Final = 50
+
+
 def _hits_context(
-    question: str, scope: str, mode: str, order: str = "", *, record: bool = True
+    question: str,
+    scope: str,
+    mode: str,
+    order: str = "",
+    *,
+    k: int = 0,
+    record: bool = True,
 ) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -78,6 +92,7 @@ def _hits_context(
         # into `#hits`, which no other page has.
         "searching_here": True,
         "groups": [],
+        "more": {},
         "summary": None,
         "order": order,
         "skips": [],
@@ -106,11 +121,16 @@ def _hits_context(
         context["problem"] = words.unknown_order(order)
         return context
     asked = SCOPE_NAMES if scope == EVERY_SCOPE else (scope,)
+    # Three per collection unless "More from" asked for more: only ever
+    # the first three showed, and narrowing to one collection still gave
+    # three (the flows review, F4).
+    wanted = k if 0 < k <= MOST else existing_corpus().settings.retrieval.default_top_k
     try:
         found = sweep(
             question,
             scopes=asked,
             named=scope != EVERY_SCOPE,
+            top_k=wanted,
             # Empty is "no mode given", which lets each scope use its
             # own setting. Not the same as "hybrid": a bundle index is
             # lexical by design.
@@ -121,8 +141,17 @@ def _hits_context(
         # Any scope that filled its quota had more to give, so the
         # total is a floor. `default_top_k` is 3 per scope, which is
         # why this is the usual case rather than the exception.
-        wanted = existing_corpus().settings.retrieval.default_top_k
         capped = any(len(hits) >= wanted for hits in found.groups.values())
+        if wanted < MOST:
+            chosen = f"&mode={quote(mode)}" if mode else ""
+            context["more"] = {
+                name: (
+                    f"/?q={quote(question)}&scope={quote(name)}{chosen}"
+                    f"&k={min(wanted + MORE_STEP, MOST)}"
+                )
+                for name, hits in found.groups.items()
+                if len(hits) >= wanted
+            }
         if found_count:
             context["summary"] = words.results_for(
                 found_count, capped=capped, question=question
@@ -153,7 +182,8 @@ def _hits_context(
         # same way. A refused search is not recorded: it found
         # nothing because it could not run, which is not something to
         # offer the reader again.
-        if record:
+        # Asking for more of a search already made is not a new one.
+        if record and not k:
             history.record(
                 question,
                 scope=scope,
@@ -187,8 +217,9 @@ def serve_search(
     scope: str = EVERY_SCOPE,
     mode: str = words.MODE_DEFAULT,
     order: str = "",
+    k: int = 0,
 ) -> HTMLResponse:
-    context = _hits_context(q, scope, mode, order, record=not _prefetched(request))
+    context = _hits_context(q, scope, mode, order, k=k, record=not _prefetched(request))
     # Only with no query. With one, the results have that space -
     # a page showing both would put what was looked for before
     # beside what was just found, which is two answers to one
@@ -221,6 +252,7 @@ def serve_hits(
     scope: str = EVERY_SCOPE,
     mode: str = words.MODE_DEFAULT,
     order: str = "",
+    k: int = 0,
 ) -> HTMLResponse:
     # The partial htmx swaps in. The same context as the page, so
     # a first load and a keystroke cannot disagree about what a
@@ -228,7 +260,7 @@ def serve_hits(
     answer = TEMPLATES.TemplateResponse(
         request,
         "hits.html",
-        _hits_context(q, scope, mode, order, record=not _prefetched(request)),
+        _hits_context(q, scope, mode, order, k=k, record=not _prefetched(request)),
     )
     # **The address the reader should end up at, not the one that
     # was fetched.** `hx-push-url="true"` pushes the request URL,

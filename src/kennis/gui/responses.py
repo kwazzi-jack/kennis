@@ -114,6 +114,7 @@ TEMPLATES.env.globals.update(
         "overridden_by": words.overridden_by,
         "index_now": words.index_now,
         "index_now_label": words.INDEX_NOW,
+        "more_from": words.more_from,
         "welcome_heading": words.WELCOME_HEADING,
         "welcome": words.WELCOME,
         "welcome_actions": words.WELCOME_ACTIONS,

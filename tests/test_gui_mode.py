@@ -475,3 +475,33 @@ def test_an_old_search_repeated_with_a_new_mode_is_still_one_entry(
     held = history.recent()
     assert len(held) == 1, held
     assert held[0].mode == "bm25"
+
+
+def test_a_collection_with_more_to_give_offers_more(corpus: Path, client: TestClient):
+    """Only the first three per collection ever showed, and narrowing to
+    one collection still gave three."""
+    for at in range(5):
+        a_note(corpus, f"river-{at}", f"River number {at} carries sediment.")
+    admitted(client)
+
+    first = client.get("/", params={"q": "sediment"}).text
+    link = re.search(r'<p class="more"><a href="([^"]+)">', first)
+
+    assert link is not None, first
+    assert words.more_from("notes") in first
+    more = client.get(link.group(1).replace("&amp;", "&")).text
+    assert more.count('class="hit"') == 5
+    assert 'class="more"' not in more
+
+
+def test_asking_for_more_is_not_a_new_search_in_the_history(
+    corpus: Path, client: TestClient
+):
+    for at in range(5):
+        a_note(corpus, f"river-{at}", f"River number {at} carries sediment.")
+    admitted(client)
+    client.get("/", params={"q": "sediment"})
+
+    client.get("/", params={"q": "sediment", "scope": "notes", "k": "23"})
+
+    assert [entry.query for entry in history.recent()] == ["sediment"]
