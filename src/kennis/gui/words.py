@@ -781,8 +781,6 @@ EMPTY_MEANS: Final[dict[str, str]] = {
     "file_project": "needed only for docs, where it names the project",
     "max_pages": "300",
     "max_depth": "5",
-    # A field that takes paths beside the picker: either will do.
-    "uploaded": "only the files you choose",
 }
 
 
@@ -820,10 +818,20 @@ BROWSE = "Browse"
 # kennis runs on another one behind `ssh -L` - where a typed path is read.
 UPLOAD_FILES = "Choose files"
 UPLOAD_FOLDER = "Choose a folder"
-UPLOAD_HINT = (
-    "Sent from the computer you are at, wherever kennis runs. A typed path "
-    "is read on the computer kennis runs on."
-)
+UPLOAD_PDF = "Choose a PDF"
+UPLOAD_HINT = "From the computer you are using, wherever kennis runs."
+UPLOAD_TYPED = "Or type a path on the computer kennis runs on"
+UPLOAD_CLEAR = "Clear"
+# What was chosen, said back under the buttons. Filled in by the page's
+# script, which composes no words of its own: `{name}`, `{names}` and
+# `{count}` are its only part.
+UPLOAD_SAID: Final[dict[str, str]] = {
+    "none": "Nothing chosen yet.",
+    "one": "{name}",
+    "many": "{count} files: {names}",
+    "more": "{names} and {count} more",
+    "folder": "The folder {name}, {count} files",
+}
 CHOOSE_FOLDER = "Choose this folder"
 CHOOSER_UP = "Up one folder"
 CHOOSER_CANCEL = "Cancel"
@@ -1547,9 +1555,13 @@ __all__ = [
     "TITLE_HINT",
     "TITLE_LABEL",
     "UNDO",
+    "UPLOAD_CLEAR",
     "UPLOAD_FILES",
     "UPLOAD_FOLDER",
     "UPLOAD_HINT",
+    "UPLOAD_PDF",
+    "UPLOAD_SAID",
+    "UPLOAD_TYPED",
     "WELCOME",
     "WELCOME_ACTIONS",
     "WELCOME_HEADING",
