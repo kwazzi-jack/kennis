@@ -55,9 +55,7 @@ class CountingConverter:
     def install_hint(self) -> str:
         return "install the counting converter"
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         self.runs.append(tuple(paths))
         return ConversionBatch(
             markdown={
@@ -527,12 +525,10 @@ def test_no_conversion_is_reported_before_it_has_happened(
     seen: list[tuple[int, int]] = []
 
     class _Witness(CountingConverter):
-        def convert(
-            self, paths: Sequence[Path], *, page_limit: int | None = None
-        ) -> ConversionBatch:
+        def convert(self, paths: Sequence[Path]) -> ConversionBatch:
             reported = recorder.events_of_type(Progress)
             seen.append((len(self.runs), reported[-1].completed if reported else -1))
-            return super().convert(paths, page_limit=page_limit)
+            return super().convert(paths)
 
     add_notes(
         notes,
@@ -720,10 +716,8 @@ class PricedConverter(CountingConverter):
         super().__init__()
         self.cents = cents
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
-        batch = super().convert(paths, page_limit=page_limit)
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+        batch = super().convert(paths)
         return ConversionBatch(
             markdown=batch.markdown,
             front_page=batch.front_page,
@@ -776,10 +770,8 @@ def test_the_repair_count_reaches_the_report(notes: Collection, tmp_path: Path):
     """Concern #146's shape, for the repair count."""
 
     class RepairingConverter(CountingConverter):
-        def convert(
-            self, paths: Sequence[Path], *, page_limit: int | None = None
-        ) -> ConversionBatch:
-            batch = super().convert(paths, page_limit=page_limit)
+        def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+            batch = super().convert(paths)
             return ConversionBatch(
                 markdown=batch.markdown,
                 repairs={path: 7 for path in batch.markdown},
@@ -842,13 +834,11 @@ class CrashingRunConverter(CountingConverter):
         super().__init__()
         self.crashes = crashes
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         if any(path.name == self.crashes for path in paths):
             self.runs.append(tuple(paths))
             raise ConversionFailed("the converter stopped after 600 seconds")
-        return super().convert(paths, page_limit=page_limit)
+        return super().convert(paths)
 
 
 def test_a_run_that_fails_whole_fails_only_its_own_documents(
@@ -879,9 +869,7 @@ def test_a_run_that_fails_whole_fails_only_its_own_documents(
 class RefusingConverter(CountingConverter):
     """A hosted converter whose key is rejected."""
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         self.runs.append(tuple(paths))
         raise ConverterRefused("datalab did not accept the API key (401)")
 

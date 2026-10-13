@@ -102,9 +102,7 @@ class Converter(Protocol):
         """The command that would make it available."""
         ...
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         """Convert a whole batch in one run."""
         ...
 
@@ -274,20 +272,12 @@ class MineruConverter:
     def install_hint(self) -> str:
         return _SOURCE_INSTALL_HINT if _from_source_checkout() else _TOOL_INSTALL_HINT
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         """Convert every path in one MinerU process.
 
         The caller decides how large a run is, because MinerU writes nothing
         until the whole run finishes: a run is the unit of progress and the
         unit lost to an interruption.
-
-        `page_limit` stops MinerU after that many pages. Used to survey a
-        batch before committing to converting it - a paper states its own
-        identity on page one, so two pages are enough to learn what every
-        document in a folder *is*. The markdown that comes back is a fragment
-        and is meant to be discarded; the front page is the point.
         """
         if not paths:
             return ConversionBatch(markdown={})
@@ -305,7 +295,7 @@ class MineruConverter:
             output_dir.mkdir()
             staged = _stage(paths, staged_dir)
 
-            completed = self._run(staged_dir, output_dir, len(paths), page_limit)
+            completed = self._run(staged_dir, output_dir, len(paths))
             markdown, front_page = _collect(staged, output_dir)
 
         reason = _failure_reason(completed) if completed.returncode != 0 else None
@@ -360,7 +350,6 @@ class MineruConverter:
         staged_dir: Path,
         output_dir: Path,
         document_count: int,
-        page_limit: int | None,
     ) -> subprocess.CompletedProcess[str]:
         # The resolved path, not the bare name: a subprocess given the name
         # resolves it against PATH again, which is exactly where it is not.
@@ -373,8 +362,6 @@ class MineruConverter:
             "-b",
             self.options.backend,
         ]
-        if page_limit is not None:
-            command += ["-s", "0", "-e", str(page_limit - 1)]
         timeout_seconds = _STARTUP_GRACE_SECONDS + (
             _SECONDS_PER_DOCUMENT * document_count
         )
@@ -491,15 +478,8 @@ class DatalabConverter:
     def install_hint(self) -> str:
         return "kennis config init"
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
-        """Convert each path, one request each, and report per document.
-
-        `page_limit` is accepted and ignored: the API takes no page range, so
-        a survey costs a whole conversion. The caller's survey is a smaller
-        saving than the round trip either way.
-        """
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+        """Convert each path, one request each, and report per document."""
         if not paths:
             return ConversionBatch(markdown={})
         require_converter(self, paths)

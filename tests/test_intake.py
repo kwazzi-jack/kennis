@@ -46,9 +46,7 @@ class StubConverter:
     def install_hint(self) -> str:
         return "install the stub"
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         self.calls.append(tuple(paths))
         return ConversionBatch(
             markdown={path: self.markdown.get(path, "# Stub\n") for path in paths}
@@ -329,9 +327,7 @@ def test_a_converter_that_produced_nothing_for_this_document_fails_it(
     path.write_bytes(b"%PDF-1.7\n")
 
     class EmptyConverter(StubConverter):
-        def convert(
-            self, paths: Sequence[Path], *, page_limit: int | None = None
-        ) -> ConversionBatch:
+        def convert(self, paths: Sequence[Path]) -> ConversionBatch:
             return ConversionBatch(markdown={})
 
     with pytest.raises(ConversionFailed) as raised:
@@ -348,9 +344,7 @@ def test_a_binary_document_with_no_converter_at_all_is_refused(tmp_path: Path):
         def is_available(self) -> bool:
             return False
 
-        def convert(
-            self, paths: Sequence[Path], *, page_limit: int | None = None
-        ) -> ConversionBatch:
+        def convert(self, paths: Sequence[Path]) -> ConversionBatch:
             raise AssertionError("must not be run when unavailable")
 
     with pytest.raises(Exception) as raised:
