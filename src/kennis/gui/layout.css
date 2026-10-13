@@ -68,10 +68,12 @@
   /* Under 70 characters of the column face at 1.0625rem. */
   --measure: 33rem;
   /* What the text is set at and what the column is centred in: the
-     whole pane unless the width preference says otherwise (Brian,
-     2026-10-12). `none` is what `max-width` takes for no limit. */
-  --text: none;
-  --frame: none;
+     reading measure unless the width preference says otherwise. The
+     whole pane was the default for a day (Brian, 2026-10-12), and set
+     passages about 150 characters a line; the reviews of 2026-10-13
+     all asked for the measure back, and the pane is one choice away. */
+  --text: var(--measure);
+  --frame: calc(var(--margin) + var(--gap) + var(--measure));
   --column: 'Source Serif 4', Charter, Cambria, Georgia, serif;
   /* Two faces, divided by the rule the interface already uses.
      `--gutter` is what kennis composed - provenance, counts,
@@ -606,13 +608,10 @@ main {
   --tracking: 0.04em;
   --word-gap: 0.16em;
 }
-/* The reading measure is the width the window had before there was a
-   choice; wide is about a hundred characters of the column face. */
+/* Wide is about a hundred characters of the column face; the pane is
+   no limit at all, which is what `none` means to `max-width`. */
 :root[data-width="wide"] { --text: 56rem; --frame: 56rem; }
-:root[data-width="reading"] {
-  --text: var(--measure);
-  --frame: calc(var(--margin) + var(--gap) + var(--measure));
-}
+:root[data-width="pane"] { --text: none; --frame: none; }
 :root[data-strength="words"] .cells { display: none; }
 :root[data-labels="icons"] .measure-name { display: none; }
 :root[data-labels="words"] .measure > .icon { display: none; }
@@ -1910,7 +1909,30 @@ article table {
   display: block;
   max-width: 100%;
   overflow-x: auto;
+  border-collapse: collapse;
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+  margin: 1rem 0 1.5rem;
 }
+/* Rules between rows, cells kept apart, and digits that line up. Left
+   to the browser a table had none of these, and its cells ran together
+   ("J1000+30 4"). Shared with a passage's tables. */
+article table, .full table { font-variant-numeric: tabular-nums; }
+:is(article, .full) :is(th, td) {
+  padding: 0.3rem 1.25rem 0.3rem 0;
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+:is(article, .full) th {
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom-color: var(--role-muted);
+}
+/* A table with no header and one row is how some papers set a
+   displayed equation, and a rule under an equation is noise. */
+:is(article, .full) tbody:only-child > tr:only-child > td { border-bottom: 0; }
 
 /* A displayed equation gets room around it and is allowed to scroll
    sideways rather than force the whole page to. A long matrix is
