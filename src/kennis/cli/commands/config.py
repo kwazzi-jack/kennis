@@ -28,9 +28,10 @@ from kennis.engine.settings import (
     config_path,
     credentials_path,
     load_settings,
+    overriding_variable,
 )
 from kennis.engine.setup import Question, apply_answers, questions_for, validate_answer
-from kennis.render.settings import describe_costs
+from kennis.render.settings import describe_costs, describe_overridden
 from kennis.render.words import count_of, describe_setting
 
 
@@ -126,6 +127,9 @@ def set_command(key: str, value: str) -> None:
     _value_of(load_settings(), key)
     apply_answers({key: value})
     display.operation("Set", f"{key} = {value}")
+    overriding = overriding_variable(key)
+    if overriding is not None:
+        display.warning(describe_overridden(overriding))
     if key not in COSTED:
         return
     display.guidance(describe_costs(costs_of(key, value)))

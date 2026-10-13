@@ -153,3 +153,16 @@ def test_a_status_never_carries_the_value(monkeypatch: pytest.MonkeyPatch):
     status = credential_status("conversion.api_key")
 
     assert "sk-secret-value" not in repr(status)
+
+
+def test_config_set_says_when_the_environment_overrides_it(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """It printed "Set" while `config get` went on showing the variable's
+    value, as the window already said and the command line did not."""
+    monkeypatch.setenv("KENNIS_CHUNKING_SIZE", "500")
+
+    told = CliRunner().invoke(main, ["config", "set", "chunking.size", "800"])
+
+    assert told.exit_code == 0, told.output
+    assert "KENNIS_CHUNKING_SIZE" in told.output
