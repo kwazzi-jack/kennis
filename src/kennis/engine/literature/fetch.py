@@ -27,6 +27,7 @@ from urllib.parse import urljoin
 
 import httpx
 
+from kennis.engine.bounded import get_bounded
 from kennis.engine.errors import SourceUnreadable
 
 _ARXIV_HTML: Final = "https://arxiv.org/html/{arxiv_id}"
@@ -158,8 +159,8 @@ def _rendering_at(client: httpx.Client, page_url: str) -> tuple[str | None, str 
     both.
     """
     try:
-        response = client.get(
-            page_url, follow_redirects=True, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_bounded(
+            client, page_url, follow_redirects=True, timeout=_REQUEST_TIMEOUT_SECONDS
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as error:
