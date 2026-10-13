@@ -34,6 +34,7 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
+from kennis.engine.docs.http import get_within
 from kennis.engine.docs.sites import DocsSite
 
 _USER_AGENT: Final = "kennis-docs-fetch"
@@ -162,7 +163,7 @@ def discover_pages(
 
 def discovery_mode(client: httpx.Client, base_url: str) -> str:
     """ "sphinx", "sitemap" or "crawl", cheapest and most authoritative first."""
-    if _docnames(client, base_url) is not None:
+    if _docnames(client, _as_directory(base_url)) is not None:
         return "sphinx"
     origin = _origin_of(base_url)
     robots = robots_for(client, origin)
@@ -203,12 +204,14 @@ def robots_for(client: httpx.Client, origin: str) -> RobotFileParser:
     robots_url = urljoin(origin + "/", "robots.txt")
     parser.set_url(robots_url)
     try:
-        response = client.get(robots_url, timeout=_REQUEST_TIMEOUT_SECONDS)
+        response = get_within(client, robots_url, origin=origin)
     except httpx.HTTPError:
         parser.parse(_ALLOW_EVERYTHING)
         return parser
 
-    if response.status_code in (401, 403):
+    # A server error is "may not crawl now", as RFC 9309 has it: its body
+    # is an error page, and parsed as rules it allowed everything.
+    if response.status_code in (401, 403) or response.status_code >= 500:
         parser.parse(_FORBID_EVERYTHING)
     elif 400 <= response.status_code < 500:
         parser.parse(_ALLOW_EVERYTHING)
@@ -245,7 +248,10 @@ def crawl_site(
     found: list[str] = []
     html: dict[str, str] = {}
 
-    while queue and len(found) < max_pages:
+    # Every request counts, not only those that found a page: a page of a
+    # thousand dead links was a thousand requests, unpaced and uncounted.
+    attempts = 0
+    while queue and len(found) < max_pages and attempts < max_pages * 3:
         url, depth = queue.pop(0)
         key = _normalized(url)
         if key in visited:
@@ -254,22 +260,32 @@ def crawl_site(
         if not robots.can_fetch(_USER_AGENT, url):
             continue
 
+        if attempts and delay:
+            time.sleep(delay)
+        attempts += 1
         try:
-            response = client.get(url, timeout=_REQUEST_TIMEOUT_SECONDS)
+            response = get_within(client, url, origin=origin)
             response.raise_for_status()
         except httpx.HTTPError:
             continue
         if "html" not in response.headers.get("content-type", ""):
             continue
+        # Where the page really is, after any redirect: its links are
+        # relative to that, and a site's root redirecting to `/en/latest/`
+        # resolved every link one level too high.
+        landed = str(response.url)
+        if landed != url and (
+            not _in_scope(_normalized(landed), origin, prefix)
+            or not robots.can_fetch(_USER_AGENT, landed)
+        ):
+            continue
 
         found.append(url)
         html[url] = response.text
-        if delay:
-            time.sleep(delay)
         if depth >= max_depth:
             continue
 
-        for link in _links_in(response.text, url):
+        for link in _links_in(response.text, landed):
             normalized = _normalized(link)
             if normalized in queued or normalized in visited:
                 continue
@@ -309,16 +325,25 @@ def _sphinx_pages(
     Truncated after the robots filter rather than before, so the limit counts
     pages that may actually be fetched.
     """
-    docnames = _docnames(client, site.base_url) or []
+    base = _as_directory(site.base_url)
+    docnames = _docnames(client, base) or []
     pages = [
-        DiscoveredPage(key=docname, url=urljoin(site.base_url, f"{docname}.html"))
+        DiscoveredPage(key=docname, url=urljoin(base, f"{docname}.html"))
         for docname in docnames
         if not _excluded(docname, site.exclude)
     ]
-    allowed = [page for page in pages if robots.can_fetch(_USER_AGENT, page.url)]
+    # In scope as well as allowed: a docname is the site's own data, and
+    # `../../outside` or `//another-host/x` named a page off the site.
+    origin = _origin_of(site.base_url)
+    allowed = [
+        page
+        for page in pages
+        if _in_scope(_normalized(page.url), origin, prefix)
+        and robots.can_fetch(_USER_AGENT, page.url)
+    ]
     return Discovery(
         mode="sphinx",
-        version=_sphinx_version(client, site.base_url),
+        version=_sphinx_version(client, base),
         pages=allowed[:max_pages],
         path_prefix=prefix,
     )
@@ -327,8 +352,8 @@ def _sphinx_pages(
 def _docnames(client: httpx.Client, base_url: str) -> list[str] | None:
     """Every page name the site publishes, or None if it is not a Sphinx site."""
     try:
-        response = client.get(
-            urljoin(base_url, "searchindex.js"), timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_within(
+            client, urljoin(base_url, "searchindex.js"), origin=_origin_of(base_url)
         )
         response.raise_for_status()
     except httpx.HTTPError:
@@ -358,9 +383,10 @@ def _sphinx_version(client: httpx.Client, base_url: str) -> str | None:
     version would not be.
     """
     try:
-        response = client.get(
+        response = get_within(
+            client,
             urljoin(base_url, "_static/documentation_options.js"),
-            timeout=_REQUEST_TIMEOUT_SECONDS,
+            origin=_origin_of(base_url),
         )
         response.raise_for_status()
         match = re.search(r"VERSION:\s*['\"]([^'\"]+)['\"]", response.text)
@@ -394,7 +420,9 @@ def _generic_pages(
     if mode == "sitemap":
         urls = [
             url
-            for url in _sitemap_pages(client, _sitemap_urls(client, origin, robots))
+            for url in _sitemap_pages(
+                client, _sitemap_urls(client, origin, robots), origin=origin
+            )
             if _in_scope(_normalized(url), origin, prefix)
             and robots.can_fetch(_USER_AGENT, url)
         ]
@@ -444,17 +472,20 @@ def _sitemap_urls(
 
     fallback = urljoin(origin + "/", "sitemap.xml")
     try:
-        response = client.get(fallback, timeout=_REQUEST_TIMEOUT_SECONDS)
+        response = get_within(client, fallback, origin=origin)
     except httpx.HTTPError:
         return []
     return [fallback] if response.status_code == 200 else []
 
 
-def _sitemap_pages(client: httpx.Client, sitemap_urls: list[str]) -> list[str]:
+def _sitemap_pages(
+    client: httpx.Client, sitemap_urls: list[str], *, origin: str
+) -> list[str]:
     """The page URLs one or more sitemap files list.
 
     `sitemapindex` nesting is followed, bounded by the number of files read so
-    a sitemap that points at itself cannot loop.
+    a sitemap that points at itself cannot loop. Only files on the site's own
+    origin are read: a `Sitemap:` line or a `<loc>` may name any host.
     """
     pages: list[str] = []
     read: set[str] = set()
@@ -466,7 +497,7 @@ def _sitemap_pages(client: httpx.Client, sitemap_urls: list[str]) -> list[str]:
             continue
         read.add(url)
         try:
-            response = client.get(url, timeout=_REQUEST_TIMEOUT_SECONDS)
+            response = get_within(client, url, origin=origin)
             response.raise_for_status()
             root = ElementTree.fromstring(response.text)
         except (httpx.HTTPError, ElementTree.ParseError):
@@ -498,6 +529,19 @@ def _origin_of(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _as_directory(url: str) -> str:
+    """`url` with the slash a directory written without one is missing, so
+    names joined to it land inside it: `https://h.org/docs` and
+    `searchindex.js` gave `https://h.org/searchindex.js`."""
+    parsed = urlsplit(url)
+    last = parsed.path.rsplit("/", 1)[-1]
+    if not parsed.path or parsed.path.endswith("/") or "." in last:
+        return url
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path + "/", parsed.query, "")
+    )
+
+
 def _path_prefix_of(base_url: str) -> str:
     """The seed URL's directory, so `.../en/latest/index.html` gives
     `/en/latest/`. A seed that is already the site root gives `/`, which costs
@@ -505,6 +549,11 @@ def _path_prefix_of(base_url: str) -> str:
     path = urlsplit(base_url).path
     if not path or path.endswith("/"):
         return path or "/"
+    # `https://h.org/docs` is the docs directory, written without its
+    # slash; read as a file it gave the prefix `/` and the whole origin.
+    last = path.rsplit("/", 1)[1]
+    if "." not in last:
+        return path + "/"
     return path.rsplit("/", 1)[0] + "/"
 
 
@@ -520,7 +569,15 @@ def _in_scope(normalized_url: str, origin: str, path_prefix: str) -> bool:
     parsed = urlsplit(normalized_url)
     if f"{parsed.scheme}://{parsed.netloc}" != origin:
         return False
-    return parsed.path.startswith(path_prefix.rstrip("/")) or parsed.path == "/"
+    # The prefix as a directory: `startswith("/en/latest")` admitted
+    # `/en/latest-old/`, and the root was always admitted, where in sitemap
+    # mode it took the key `index` from the documentation's own index.
+    directory = path_prefix.rstrip("/")
+    return (
+        not directory
+        or parsed.path == directory
+        or parsed.path.startswith(directory + "/")
+    )
 
 
 def _links_in(html: str, page_url: str) -> list[str]:

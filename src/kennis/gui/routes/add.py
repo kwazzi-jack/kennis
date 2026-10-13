@@ -159,7 +159,12 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
         citekey=str(form.get("citekey") or "") or None,
         project=str(form.get("project") or "") or None,
         batch_size=context.settings.conversion.batch_size,
-        request_delay_seconds=context.settings.literature.request_delay,
+        # arXiv's pacing, for arXiv: a site gets the docs default.
+        request_delay_seconds=(
+            None
+            if form.get("kind") == "site" or form.get("collection") == "docs"
+            else context.settings.literature.request_delay
+        ),
         extra_file_types=(),
     )
 

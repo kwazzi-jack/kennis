@@ -389,7 +389,14 @@ def add_command(
         max_pages=max_pages,
         max_depth=max_depth,
         batch_size=context.settings.conversion.batch_size,
-        request_delay_seconds=context.settings.literature.request_delay,
+        # arXiv's pacing, for arXiv: a docs host gets its own default. Every
+        # caller passed this to every collection, and a 300-page site took
+        # a quarter of an hour at three seconds a page.
+        request_delay_seconds=(
+            context.settings.literature.request_delay
+            if destination == "literature"
+            else None
+        ),
         extra_file_types=(),
     )
 

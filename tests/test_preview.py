@@ -57,8 +57,13 @@ class Recording:
                 return httpx.Response(
                     200, text=LATEXML, headers={"content-type": "text/html"}
                 )
+            # The entry names the paper asked for, as arXiv's does: kennis
+            # refuses an entry for some other paper.
+            asked = request.url.params.get("id_list") or "2409.19750"
             return httpx.Response(
-                200, text=ATOM, headers={"content-type": "application/atom+xml"}
+                200,
+                text=ATOM.replace("2409.19750", asked),
+                headers={"content-type": "application/atom+xml"},
             )
 
         return httpx.Client(transport=httpx.MockTransport(handler))
