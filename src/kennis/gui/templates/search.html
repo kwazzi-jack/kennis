@@ -1,5 +1,13 @@
 {% extends "base.html" %}
+{% block title %}{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}{% endblock %}
 {% block main %}
+{# Named for a screen reader, which lists a page by its headings; the
+   bar's box already says what the page is to anyone who can see it. #}
+<h1 class="visually-hidden">{{ results_heading }}</h1>
+{# Outside `#hits`, so it survives the swap that fills it: a live
+   region replaced with its content is announced by no screen reader.
+   `searching.js` tells it the head of each answer. #}
+<p id="hits-status" class="visually-hidden" role="status"></p>
 {# The form is the bar's now, on every page; this page is where its
    results land, so it is the one that searches as you type. #}
 <div id="hits">

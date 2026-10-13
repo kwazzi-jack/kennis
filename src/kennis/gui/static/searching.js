@@ -42,7 +42,24 @@
     indicator.hidden = !stale();
   }
 
+  // A live search swaps the answer in without a navigation, so the
+  // title and a screen reader were both left saying nothing new. The
+  // title is the server's; what is heard is the answer's own first
+  // sentence - how many, or that nothing matched, or why it could not
+  // run.
+  var status = document.getElementById("hits-status");
+  function announce(event) {
+    if (!event.detail || !event.detail.target || event.detail.target.id !== "hits") {
+      return;
+    }
+    var shown = answered();
+    if (shown && shown.dataset.title) { document.title = shown.dataset.title; }
+    var head = document.querySelector("#hits .summary, #hits .nothing, #hits .notice p");
+    if (status) { status.textContent = head ? head.textContent : ""; }
+  }
+
   box.addEventListener("input", reconsider);
+  document.body.addEventListener("htmx:afterSwap", announce);
   where.addEventListener("change", reconsider);
   how.addEventListener("change", reconsider);
   document.body.addEventListener("htmx:afterSwap", reconsider);

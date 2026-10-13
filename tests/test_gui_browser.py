@@ -120,6 +120,32 @@ def test_typing_a_search_draws_its_results(page: playwright.Page) -> None:
     assert "Antenna gains drift" in page.inner_text("#hits")
 
 
+def test_a_live_search_is_announced_and_titled(page: playwright.Page) -> None:
+    """Results swapped in without a navigation: a screen reader heard
+    nothing and the tab still said "kennis"."""
+    page.fill("input[name=q]", "antenna")
+    page.wait_for_selector("#hits .hit", timeout=_WAIT_MS)
+    page.wait_for_function(
+        "document.getElementById('hits-status').textContent !== ''",
+        timeout=_WAIT_MS,
+    )
+
+    assert "antenna" in page.title()
+    assert page.inner_text("#hits .summary") in page.text_content("#hits-status")
+
+
+def test_the_first_tab_stop_skips_to_the_content(page: playwright.Page) -> None:
+    first = page.evaluate(
+        'document.querySelector(\'a[href], button:not([tabindex="-1"]), '
+        'input, select, textarea, [tabindex]:not([tabindex="-1"])\').className'
+    )
+    assert first == "skip-link"
+
+    page.focus(".skip-link")
+    page.keyboard.press("Enter")
+    assert page.evaluate("document.activeElement.id") == "main"
+
+
 def test_a_document_is_typeset(page: playwright.Page) -> None:
     page.fill("input[name=q]", "antenna")
     page.wait_for_selector("#hits .hit a.open", timeout=_WAIT_MS)

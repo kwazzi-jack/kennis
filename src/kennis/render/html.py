@@ -368,11 +368,18 @@ def _mark_text(tokens: Sequence[Token], pattern: re.Pattern[str]) -> None:
                 child.content = f"<code>{marked_text(child.content, pattern)}</code>"
 
 
+def _words_of(text: str) -> str:
+    """`text` as a comparison sees it: case folded, space collapsed."""
+    return " ".join(text.split()).casefold()
+
+
 def _without_title(tokens: list[Token], title: str) -> list[Token]:
     """`tokens` without a leading `# ` heading that repeats `title`.
 
-    Only the first block, and only an exact match once both are
-    stripped: a document whose first heading says something else is
+    Only the first block, and only the same words - regardless of case
+    and of runs of space, as a passage's head compares them (#426): the
+    reviews of 2026-10-13 found "gain solutions" over "Gain solutions".
+    A document whose first heading says something else is
     a document with a heading, and removing it would lose text the
     corpus holds. A `##` is left alone too - a second-level heading
     is structure, not a title.
@@ -389,7 +396,7 @@ def _without_title(tokens: list[Token], title: str) -> list[Token]:
     if at + 2 >= len(tokens) or tokens[at].tag != "h1":
         return tokens
     inline = tokens[at + 1]
-    if inline.type != "inline" or inline.content.strip() != title.strip():
+    if inline.type != "inline" or _words_of(inline.content) != _words_of(title):
         return tokens
     return tokens[:at] + tokens[at + 3 :]
 

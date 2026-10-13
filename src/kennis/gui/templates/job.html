@@ -2,8 +2,8 @@
 <div class="job" data-job="{{ job_id }}" data-kind="{{ kind }}">
   {# The step is what is in hand now and the clock how long the job has
      run; both arrive as words from the server (#405). #}
-  <p class="job-now"><span class="job-step"></span> <span class="job-clock role-muted"></span></p>
-  <p class="job-progress"><progress class="job-bar" hidden></progress> <span class="job-count role-muted"></span></p>
+  <p class="job-now"><span class="job-step"></span> <span class="job-clock role-muted" aria-hidden="true"></span></p>
+  <p class="job-progress"><progress class="job-bar" hidden aria-label="{{ progress_label }}"></progress> <span class="job-count role-muted"></span></p>
   <ul class="job-lines"></ul>
   <div class="job-outcome"></div>
 </div>

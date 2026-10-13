@@ -30,6 +30,9 @@
    with the results under it. Back and Forward are navigations the
    server answers. Concern #383. #}
 <body class="shell" hx-history="false">
+{# The first tab stop, so a keyboard reaches the page's content without
+   passing the bar's two dozen controls first. #}
+<a class="skip-link" href="#main">{{ skip_to_content }}</a>
 <header class="bar">
   {# In the bar, not in the pane it hides: a collapsed pane that took
      its own toggle with it could not be reopened. Both labels come
@@ -70,7 +73,7 @@
     </select>
     {# Not drawn, as the mockup has none, but kept: a browser submits on
        Enter through it, and a reader without a script needs it. #}
-    <button type="submit" class="visually-hidden">{{ search_action }}</button>
+    <button type="submit" class="visually-hidden" tabindex="-1">{{ search_action }}</button>
     {% if searching_here %}<p class="searching role-muted" id="searching" aria-live="polite" hidden>{{ searching }}</p>{% endif %}
   </form>
   <div class="actions">
@@ -147,7 +150,7 @@
    it does not scroll away with the pane's contents. #}
 {{ handle("pane-width", "pane", ".pane", "right") }}
 
-<main{% block main_class %}{% endblock %}>
+<main id="main" tabindex="-1"{% block main_class %}{% endblock %}>
 <p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision | default('') }}"
    data-message="{{ corpus_changed }}"></p>
 {# A page that lays the centre out itself - the document, with its bar
@@ -171,7 +174,10 @@
   {# Where every operation reports. Every page has it, so a dialog
      opened anywhere has somewhere to put its job (#405). #}
   {% set running = job_now(request) %}
-  <div id="job" aria-live="polite">{% if running %}{% with job_id = running.id, kind = running.kind %}{% include "job.html" %}{% endwith %}{% endif %}</div>
+  {# Not a live region: it holds a clock that ticks every second.
+     `progress.js` tells `#job-status` what is worth hearing. #}
+  <p id="job-status" class="visually-hidden" role="status"></p>
+  <div id="job">{% if running %}{% with job_id = running.id, kind = running.kind %}{% include "job.html" %}{% endwith %}{% endif %}</div>
   {# Drawn while a job runs too, so a job that finishes on this page has
      a status line to redraw (#457). #}
   {% include "strip-status.html" %}

@@ -449,6 +449,14 @@ def test_a_leading_heading_that_repeats_the_title_is_dropped():
     assert "<p>The body.</p>" in shown
 
 
+def test_the_title_is_dropped_whatever_its_case():
+    """A crawled page titled "gain solutions" opened with "# Gain
+    solutions", and the reader saw both, one under the other."""
+    shown = to_html("# Gain  solutions\n\nThe body.", without_title="gain solutions")
+
+    assert "<h1>" not in shown
+
+
 def test_a_heading_saying_something_else_is_kept():
     """Removing it would lose text the corpus holds."""
     shown = to_html("# Another heading\n\nThe body.", without_title="The title")
