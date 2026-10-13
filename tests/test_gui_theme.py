@@ -121,6 +121,48 @@ def test_every_colour_is_legible_on_its_ground(
     assert not failed, f"{mode}: below {MINIMUM_CONTRAST}:1 - {failed}"
 
 
+def composited(colour: str, ground: str, alpha: float) -> str:
+    """What `colour` at `alpha` looks like laid over `ground`."""
+    over = [int(colour.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
+    under = [int(ground.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(
+        f"{round(a * alpha + b * (1 - alpha)):02x}"
+        for a, b in zip(over, under, strict=True)
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "colours", "ground"),
+    [("light", CSS_COLOURS, LIGHT_GROUND), ("dark", CSS_COLOURS_DARK, DARK_GROUND)],
+)
+def test_every_colour_is_legible_on_the_raised_surface(
+    mode: str, colours: dict[str, str], ground: str
+):
+    """The pane and the strip are not the ground: they are the muted grey
+    laid over it at `--raised`'s alpha, and muted text is commonest
+    there. `#6A7078` passed on the page at 4.82:1 and was 4.37:1 here."""
+    alpha = int(re.search(r"--raised: #\w{6}(\w{2});", css_variables())[1], 16)
+    raised = composited(colours["bright_black"], ground, alpha / 255)
+    failed = {
+        name: round(contrast(value, raised), 2)
+        for name, value in colours.items()
+        if contrast(value, raised) < MINIMUM_CONTRAST
+    }
+    assert not failed, f"{mode}: below {MINIMUM_CONTRAST}:1 on {raised} - {failed}"
+
+
+def test_no_role_fades_its_text():
+    """Dim was an opacity of 0.75 on top of the muted grey, which took
+    every dim role to about 3:1, and faded whatever sat inside it."""
+    faded = [
+        line
+        for line in stylesheet().splitlines()
+        if line.startswith(".role-") and "opacity" in line
+    ]
+
+    assert faded == []
+
+
 @pytest.mark.parametrize(
     ("mode", "colours", "ground"),
     [("light", CSS_COLOURS, LIGHT_GROUND), ("dark", CSS_COLOURS_DARK, DARK_GROUND)],

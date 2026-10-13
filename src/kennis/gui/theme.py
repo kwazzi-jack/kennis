@@ -51,7 +51,8 @@ LIGHT_GROUND: Final = "#FBFBF9"
 DARK_GROUND: Final = "#16181C"
 
 # What the nine names look like on a light ground. Measured: the
-# worst is 4.82:1 and the closest pair of hues is dE 36.8.
+# worst is the muted grey, 5.43:1 on the page and 4.89:1 on the raised
+# surface of the pane and the strip; the closest pair of hues is dE 36.8.
 CSS_COLOURS: dict[AnsiColour, str] = {
     "black": "#1A1C1F",
     "white": "#1A1C1F",
@@ -63,7 +64,9 @@ CSS_COLOURS: dict[AnsiColour, str] = {
     "blue": "#2B4CA0",
     "magenta": "#8A3382",
     "cyan": "#15626F",
-    "bright_black": "#6A7078",
+    # Darkened from #6A7078, which was 4.82:1 on the page but 4.37:1 on
+    # the pane and the strip, where muted text is commonest.
+    "bright_black": "#626870",
 }
 
 # And on a dark one. Lighter and less saturated rather than the light
@@ -323,16 +326,19 @@ def css_weights() -> str:
     """The attribute half of a role, as a class per role.
 
     Separate from the colour because CSS keeps them apart: a colour is
-    one property and bold, dim, italic and underline are four others,
-    and a single custom property cannot carry all five.
+    one property and bold, italic and underline are three others, and a
+    single custom property cannot carry all four.
+
+    **Dim is the colour alone, never an opacity as well.** The muted
+    grey is already chosen to sit at the edge of legibility, and fading
+    it by a quarter took every dim role on every page to about 3:1 -
+    and a link or warning inside a dim span faded with it.
     """
     blocks: list[str] = []
     for name, role in ROLES.items():
         declarations = [f"color: var(--role-{name});"]
         if role.bold:
             declarations.append("font-weight: 600;")
-        if role.dim:
-            declarations.append("opacity: 0.75;")
         if role.italic:
             declarations.append("font-style: italic;")
         if role.underline:

@@ -226,6 +226,33 @@ def test_every_page_opens_without_an_error(page: playwright.Page, path: str) -> 
     assert page.evaluate("document.styleSheets.length") >= 1
 
 
+# The browser's own link colours, unvisited and visited.
+_BROWSER_BLUES = ("rgb(0, 0, 238)", "rgb(85, 26, 139)")
+
+
+def test_no_link_wears_the_browser_s_own_colour(page: playwright.Page) -> None:
+    """The strip's "Last:" link and Activity's job links were the
+    browser's blue, about 1.6:1 on the dark strip. A stylesheet test
+    cannot see that: the colour was nobody's in the palette. Both links
+    exist only once something has run, so an index runs first."""
+    root = page.url.split("?")[0]
+    page.goto(root + "index")
+    page.click("form[action='/index'] button[type=submit]")
+    page.wait_for_selector("#job .job-outcome p", timeout=_WAIT_MS)
+
+    seen: set[str] = set()
+    for path in PAGES:
+        page.goto(root + path)
+        seen |= set(
+            page.evaluate(
+                "[...document.querySelectorAll('a')]"
+                ".map(a => getComputedStyle(a).color)"
+            )
+        )
+
+    assert not seen & set(_BROWSER_BLUES)
+
+
 def test_an_inline_script_does_not_run(address: str) -> None:
     """What a converted page that escaped the renderer could add: the
     browser refuses it under the window's content policy."""
