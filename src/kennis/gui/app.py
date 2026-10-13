@@ -522,7 +522,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         mode: str = words.MODE_DEFAULT,
         order: str = "",
     ) -> HTMLResponse:
-        context = _hits_context(q, scope, mode, order)
+        context = _hits_context(q, scope, mode, order, record=not _prefetched(request))
         # Only with no query. With one, the results have that space -
         # a page showing both would put what was looked for before
         # beside what was just found, which is two answers to one
@@ -558,7 +558,9 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         # a first load and a keystroke cannot disagree about what a
         # result looks like.
         answer = _TEMPLATES.TemplateResponse(
-            request, "hits.html", _hits_context(q, scope, mode, order)
+            request,
+            "hits.html",
+            _hits_context(q, scope, mode, order, record=not _prefetched(request)),
         )
         # **The address the reader should end up at, not the one that
         # was fetched.** `hx-push-url="true"` pushes the request URL,
@@ -1713,8 +1715,24 @@ def _frame(context: Context) -> dict[str, object]:
     }
 
 
+def _prefetched(request: Request) -> bool:
+    """Whether the browser fetched this on its own, ahead of the reader.
+
+    A search is a GET, so a browser may fetch one before it is asked -
+    a link to a recent search, hovered. That is not a search the reader
+    made, and the history is a record of what the reader looked for.
+    Chromium says `Sec-Purpose: prefetch`, Firefox `X-Moz: prefetch`, and
+    older engines `Purpose: prefetch`.
+    """
+    headers = request.headers
+    return any(
+        "prefetch" in headers.get(name, "")
+        for name in ("sec-purpose", "purpose", "x-moz")
+    )
+
+
 def _hits_context(
-    question: str, scope: str, mode: str, order: str = ""
+    question: str, scope: str, mode: str, order: str = "", *, record: bool = True
 ) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -1812,13 +1830,14 @@ def _hits_context(
         # same way. A refused search is not recorded: it found
         # nothing because it could not run, which is not something to
         # offer the reader again.
-        history.record(
-            question,
-            scope=scope,
-            mode=mode,
-            hits=found_count,
-            capped=capped,
-        )
+        if record:
+            history.record(
+                question,
+                scope=scope,
+                mode=mode,
+                hits=found_count,
+                capped=capped,
+            )
     except KennisError as error:
         context["problem"] = str(error)
         context["resolution"] = error.resolution

@@ -354,3 +354,27 @@ def test_moving_to_the_top_keeps_the_newest_count(corpus: Path, client: TestClie
     moved = history.recent()[0]
     assert moved.query == "gains"
     assert moved.hits > before, "the old entry was relocated rather than replaced"
+
+
+# Written by hand: what each engine sends with a fetch it made on its own.
+PREFETCHES = [
+    {"Sec-Purpose": "prefetch"},
+    {"Sec-Purpose": "prefetch;prerender"},
+    {"X-Moz": "prefetch"},
+    {"Purpose": "prefetch"},
+]
+
+
+@pytest.mark.parametrize("headers", PREFETCHES)
+@pytest.mark.parametrize("path", ["/", "/hits"])
+def test_a_search_the_browser_fetched_ahead_is_not_recorded(
+    corpus: Path, client: TestClient, path: str, headers: dict[str, str]
+):
+    """A GET may be fetched before it is asked for - a recent search's link,
+    hovered - and that is not a search the reader made."""
+    admitted(client)
+
+    answer = client.get(path, params={"q": "gains"}, headers=headers)
+
+    assert answer.status_code == 200
+    assert history.recent() == []
