@@ -781,6 +781,8 @@ EMPTY_MEANS: Final[dict[str, str]] = {
     "file_project": "needed only for docs, where it names the project",
     "max_pages": "300",
     "max_depth": "5",
+    # A field that takes paths beside the picker: either will do.
+    "uploaded": "only the files you choose",
 }
 
 
@@ -813,6 +815,15 @@ ANOTHER_GROUP = "Another group"
 BLOCK_HEADING = "Group"
 
 BROWSE = "Browse"
+# The browser's own picker, beside a field that takes paths. Its file is
+# sent from the computer the reader sits at, so it works the same when
+# kennis runs on another one behind `ssh -L` - where a typed path is read.
+UPLOAD_FILES = "Choose files"
+UPLOAD_FOLDER = "Choose a folder"
+UPLOAD_HINT = (
+    "Sent from the computer you are at, wherever kennis runs. A typed path "
+    "is read on the computer kennis runs on."
+)
 CHOOSE_FOLDER = "Choose this folder"
 CHOOSER_UP = "Up one folder"
 CHOOSER_CANCEL = "Cancel"
@@ -1536,6 +1547,9 @@ __all__ = [
     "TITLE_HINT",
     "TITLE_LABEL",
     "UNDO",
+    "UPLOAD_FILES",
+    "UPLOAD_FOLDER",
+    "UPLOAD_HINT",
     "WELCOME",
     "WELCOME_ACTIONS",
     "WELCOME_HEADING",

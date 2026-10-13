@@ -455,3 +455,37 @@ def test_an_inline_script_does_not_run(address: str) -> None:
 
         assert ran is False
         browser.close()
+
+
+def test_a_file_chosen_in_the_browsers_picker_is_added(
+    page: playwright.Page, corpus: Path, tmp_path: Path
+) -> None:
+    """The browser's own picker, through the form: the native dialog of the
+    computer the reader sits at, which is the one that works when kennis
+    runs elsewhere behind `ssh -L`. Recorded as uploaded, not as the
+    temporary path it was read from."""
+    chosen = tmp_path / "elsewhere" / "beam-model.md"
+    chosen.parent.mkdir()
+    chosen.write_text("# Beam model\n\nThe primary beam.\n", encoding="utf-8")
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector("#dialog input[name=upload][multiple]", timeout=_WAIT_MS)
+
+    page.set_input_files("#dialog input[name=upload][multiple]", str(chosen))
+    page.click("#dialog .choices label:has(input[value=notes])")
+    page.click("#dialog form[action='/add'] button[type=submit]")
+
+    added: list[Path] = []
+    for _ in range(100):
+        added = [
+            path
+            for path in (corpus / "corpus" / "notes").rglob("*.md")
+            if "Beam model" in path.read_text(encoding="utf-8")
+        ]
+        if added:
+            break
+        page.wait_for_timeout(100)
+    [document] = added
+    assert "from: upload:beam-model.md" in document.read_text(encoding="utf-8")

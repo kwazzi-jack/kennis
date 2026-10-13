@@ -106,8 +106,10 @@ class Source(BaseModel):
 
     Whether a document is recoverable is read off this field and no other:
     `url:`, `arxiv:` and `doi:` can be refetched, `path:` cannot, because the
-    file may be gone or changed. That makes "how bad is it if this document is
-    lost" a per-document question rather than a per-collection one.
+    file may be gone or changed, and neither can `upload:` - a file sent
+    from the window, which kennis only ever held for the add. That makes
+    "how bad is it if this document is lost" a per-document question rather
+    than a per-collection one.
     """
 
     # `populate_by_name` so the field name works as well as the alias: a
@@ -124,7 +126,7 @@ class Source(BaseModel):
         # spelling `from` and leaves the constructor taking `origin`.
         validation_alias="from",
         serialization_alias="from",
-        description="url:, path:, arxiv: or doi:, with its value.",
+        description="url:, path:, upload:, arxiv: or doi:, with its value.",
     )
     via: ConversionVia
     format: SourceFormat

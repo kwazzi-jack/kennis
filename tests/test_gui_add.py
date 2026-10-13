@@ -8,8 +8,11 @@ runs on, because that is the computer `corpus add` reads from (#420).
 
 from __future__ import annotations
 
+import io
 import re
+import tempfile
 import time
+from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
 from urllib.parse import unquote
@@ -23,11 +26,13 @@ from markupsafe import escape
 
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOptions, AddReport
+from kennis.engine.corpus.intake import convert_local_file, uploaded_as
 from kennis.engine.events import EventSink
 from kennis.engine.literature.metadata import ArxivMetadata
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.icons import icon
+from kennis.gui.uploads import staged
 
 TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
@@ -150,9 +155,10 @@ def test_an_unknown_kind_is_the_paper_tab(client: TestClient):
 # Written by hand: which fields each tab cannot do without. A block's
 # fields are all required, because a block with lines needs every one.
 REQUIRED_FIELDS = {
-    "paper": {"identifiers"},
+    # A field the picker sits beside is optional: either will do.
+    "paper": set(),
     "site": {"identifiers"},
-    "file": {"identifiers", "collection"},
+    "file": {"collection"},
     "group": {
         "group-1",
         "collection-1",
@@ -190,9 +196,12 @@ def test_every_field_says_whether_it_is_needed_and_what_empty_means(
 @pytest.mark.parametrize(
     ("kind", "fields"),
     [
-        ("paper", {"identifiers", "identifier", "title", "citekey", "group"}),
+        (
+            "paper",
+            {"identifiers", "upload", "identifier", "title", "citekey", "group"},
+        ),
         ("site", {"identifiers", "project", "max_pages", "max_depth"}),
-        ("file", {"identifiers", "collection", "title", "group", "project"}),
+        ("file", {"identifiers", "upload", "collection", "title", "group", "project"}),
     ],
 )
 def test_each_tab_asks_only_its_own_fields(
@@ -550,10 +559,24 @@ def test_a_target_is_only_a_field_kennis_drew(client: TestClient, home: Path):
     assert listing.status_code == 400
 
 
-def test_every_field_that_takes_a_path_has_browse(client: TestClient):
+def test_a_field_that_takes_files_offers_the_browsers_own_picker(
+    client: TestClient,
+):
+    """The native dialog of the computer the reader sits at, sent with the
+    form: the Browse list showed the computer kennis runs on, and asked
+    for a path to be found in it."""
     for kind in ("paper", "file"):
         dialog = dialog_of(client, kind)
-        assert re.search(r'hx-get="/browse\?target=identifiers', dialog), kind
+        assert re.search(r'<input type="file" name="upload" multiple>', dialog), kind
+        assert 'enctype="multipart/form-data"' in dialog, kind
+        assert "/browse?target=identifiers" not in dialog, kind
+    assert "webkitdirectory" in dialog_of(client, "file")
+    assert "webkitdirectory" not in dialog_of(client, "paper")
+
+
+def test_a_group_block_still_browses_the_computer_kennis_runs_on(
+    client: TestClient,
+):
     group = dialog_of(client, "group")
     assert 'hx-get="/browse?target=lines-1' in group
     assert 'hx-get="/browse?target=lines-2' in group
@@ -779,7 +802,7 @@ def test_an_optional_field_says_what_empty_becomes_with_the_value_set_apart(
 
 
 def test_a_required_field_takes_the_whole_row(client: TestClient):
-    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    dialog = BeautifulSoup(dialog_of(client, "file"), "html.parser")
     css = client.get("/static/kennis.css").text
 
     needs = {str(row.get("data-need")) for row in dialog.select(".field")}
@@ -800,3 +823,122 @@ def test_the_settings_pages_choices_rule_does_not_reach_the_add_form(
     for selector, body in re.findall(r"([^{}]*)\{([^}]*)\}", css):
         if "grid-row" in body and re.search(r"\.choices\b", selector):
             assert ".setting" in selector, selector
+
+
+# ---------------------------------------------------------------------------
+# Files sent from the browser's own picker
+# ---------------------------------------------------------------------------
+
+
+def test_uploaded_files_are_added_beside_what_was_typed(
+    client: TestClient, adds: list[AddCall]
+):
+    """The picker is the native dialog of the computer the reader sits at,
+    and its files arrive through the same connection as the page - so this
+    is the same whether kennis runs there or behind `ssh -L`."""
+    client.post(
+        "/add",
+        data={"kind": "file", "collection": "notes", "identifiers": ""},
+        files=[
+            ("upload", ("calibration.md", b"# Calibration\n", "text/markdown")),
+            ("upload", ("solving.md", b"# Solving\n", "text/markdown")),
+        ],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    [(destination, identifiers, _)] = adds
+    assert destination == "notes"
+    assert [Path(one).name for one in identifiers] == ["calibration.md", "solving.md"]
+    assert Path(identifiers[0]).read_bytes() == b"# Calibration\n"
+
+
+def test_an_uploaded_folder_is_added_once_with_its_folders_kept(
+    client: TestClient, adds: list[AddCall]
+):
+    client.post(
+        "/add",
+        data={"kind": "file", "collection": "notes", "identifiers": ""},
+        files=[
+            ("upload", ("papers/a.md", b"# A\n", "text/markdown")),
+            ("upload", ("papers/deep/b.md", b"# B\n", "text/markdown")),
+        ],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    [(_, identifiers, _)] = adds
+    [folder] = identifiers
+    assert Path(folder).name == "papers"
+    assert (Path(folder) / "deep" / "b.md").read_bytes() == b"# B\n"
+
+
+def test_an_empty_picker_adds_only_what_was_typed(
+    client: TestClient, adds: list[AddCall], tmp_path: Path
+):
+    """A file input left empty still posts one part, with no name."""
+    typed = tmp_path / "typed.md"
+    typed.write_text("# Typed\n", encoding="utf-8")
+
+    client.post(
+        "/add",
+        data={"kind": "file", "collection": "notes", "identifiers": str(typed)},
+        files=[("upload", ("", b"", "application/octet-stream"))],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    [(_, identifiers, _)] = adds
+    assert identifiers == (str(typed),)
+
+
+@pytest.mark.parametrize(
+    "sent", ["../../escape.md", "/etc/escape.md", "C:\\Users\\x\\escape.md"]
+)
+def test_an_uploaded_name_cannot_place_a_file_outside_its_folder(sent: str):
+    """The name is the sender's to choose; only its last parts are kept."""
+    result = staged([UploadedPart(sent, b"# Kept\n")])
+
+    [path] = result.names
+    assert path.name == "escape.md"
+    assert tempfile.gettempdir() in str(path.resolve())
+    assert ".." not in path.parts
+
+
+@dataclass
+class UploadedPart:
+    name: str
+    body: bytes
+
+    @property
+    def filename(self) -> str:
+        return self.name
+
+    @property
+    def file(self) -> io.BytesIO:
+        return self.stream
+
+    def __post_init__(self) -> None:
+        self.stream = io.BytesIO(self.body)
+
+
+def test_an_uploaded_file_says_it_was_uploaded_not_where_it_was_staged():
+    """A temporary path is gone once the add is, and names nothing."""
+    result = staged([UploadedPart("notes/calibration.md", b"# Calibration\n")])
+    [path] = result.names
+
+    with uploaded_as(result.names):
+        converted = convert_local_file(path)
+
+    assert converted.origin == "upload:notes/calibration.md"
+    assert convert_local_file(path).origin == f"path:{path}"
+
+
+def test_a_field_beside_the_picker_takes_the_whole_row(client: TestClient):
+    """Optional now - the picker will do instead - and still the first
+    thing on its tab, so it is not squeezed into half a row."""
+    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    css = client.get("/static/kennis.css").text
+
+    assert dialog.select_one('.field[data-uploads] input[name="identifiers"]')
+    assert re.search(r"\.field\[data-uploads\][^{]*\{[^}]*grid-column: 1 / -1", css)

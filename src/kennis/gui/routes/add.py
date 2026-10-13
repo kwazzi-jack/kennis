@@ -11,12 +11,15 @@ from fastapi.datastructures import FormData
 from fastapi.responses import (
     HTMLResponse,
 )
+from starlette.datastructures import UploadFile
 
 from kennis.context import Context, existing_corpus
-from kennis.engine.corpus.add import AddOptions, unusable_docs_input
+from kennis.engine.corpus.add import AddOptions, AddReport, unusable_docs_input
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.intake import uploaded_as
 from kennis.engine.corpus.preview import check_lines, preview_paper, preview_site
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.events import EventSink
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui import words
 from kennis.gui.adding import (
@@ -43,6 +46,7 @@ from kennis.gui.responses import (
     refused_a_post,
 )
 from kennis.gui.routes.jobs import started
+from kennis.gui.uploads import staged
 from kennis.operations import (
     GroupBlock,
     add_documents,
@@ -345,7 +349,14 @@ def start_add(request: Request, form: PostedForm) -> Response:
             ),
             restored=restored,
         )
-    identifiers = _lines(str(form.get("identifiers") or ""))
+    # What the browser's own picker sent, beside whatever was typed: the
+    # one way to choose a file that works whichever computer kennis is on.
+    uploads = staged(
+        [part for part in form.getlist("upload") if isinstance(part, UploadFile)]
+    )
+    identifiers = _lines(str(form.get("identifiers") or "")) + [
+        str(path) for path in uploads.paths
+    ]
     destination = str(form.get("collection") or "")
     if not identifiers:
         return _refused_in_the_form(request, words.NOTHING_TO_ADD)
@@ -357,16 +368,16 @@ def start_add(request: Request, form: PostedForm) -> Response:
     if refusal is not None:
         return _refused_in_the_form(request, refusal)
     put_back: list[OutOfBandChange] = []
-    return started(
-        request,
-        "add",
-        lambda events: add_documents(
-            context,
-            destination,
-            identifiers,
-            options,
-            events=events,
-            restored=put_back,
-        ),
-        restored=put_back,
-    )
+
+    def add(events: EventSink) -> AddReport:
+        with uploaded_as(uploads.names):
+            return add_documents(
+                context,
+                destination,
+                identifiers,
+                options,
+                events=events,
+                restored=put_back,
+            )
+
+    return started(request, "add", add, restored=put_back)
