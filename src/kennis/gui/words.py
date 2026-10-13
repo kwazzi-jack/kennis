@@ -908,10 +908,19 @@ def job_crashed(crash: Exception) -> str:
     The exception's own words are quoted, because they are the only
     account there is of what happened; where the rest is kept is said, so
     the reader knows there is more than this line.
+
+    **And what to do next, which is the same thing again.** Each document
+    is written whole and what was written is committed as interrupted
+    (`operations.committed_if_interrupted`), and every operation a job runs
+    skips what is already there - an add finds the same content, a sync
+    converges, an index and a backup start over - so running it again
+    carries on rather than repeating.
     """
     detail = str(crash) or type(crash).__name__
     return (
-        f"That operation stopped part-way: {detail}. The details are in kennis's log."
+        f"That operation stopped part-way: {detail}. Anything it wrote before "
+        "it stopped is kept, so running it again carries on from there. The "
+        "details are in kennis's log."
     )
 
 

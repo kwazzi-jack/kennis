@@ -23,6 +23,7 @@ from kennis.context import existing_corpus
 from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.errors import CorpusBusy
+from kennis.engine.events import Outcome
 from kennis.engine.history.git import git
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
@@ -161,6 +162,35 @@ def test_an_add_that_fails_part_way_commits_what_it_wrote_as_its_own(
     assert Repository(context.corpus_root).is_clean()
     subject = git(["log", "-1", "--format=%s"], cwd=context.corpus_root).stdout
     assert subject.strip() == f"add(notes): {operations.INTERRUPTED}"
+
+
+def test_running_an_interrupted_add_again_carries_on_from_where_it_stopped(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """What the window and the terminal tell the reader to do after a
+    failure part-way. The document written before it is found again by
+    its content, so the second run adds only what the first did not."""
+    context = existing_corpus()
+    first, second = a_source(isolated, "first.md"), a_source(isolated, "second.md")
+    real = operations._ADDERS["notes"]
+
+    def stops_after_the_first(
+        target: Collection, identifiers: list[str], options: AddOptions, **rest: object
+    ) -> object:
+        real(target, identifiers[:1], options)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setitem(operations._ADDERS, "notes", stops_after_the_first)
+    with pytest.raises(OSError):
+        add_documents(context, "notes", [str(first), str(second)], AddOptions())
+    monkeypatch.setitem(operations._ADDERS, "notes", real)
+
+    again = add_documents(context, "notes", [str(first), str(second)], AddOptions())
+
+    assert [outcome.outcome for outcome in again.outcomes] == [
+        Outcome.UNCHANGED,
+        Outcome.ADDED,
+    ]
 
 
 def test_the_restore_reports_what_it_put_back(isolated: Path):
