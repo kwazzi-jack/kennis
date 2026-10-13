@@ -84,8 +84,9 @@ def address(corpus: Path) -> Iterator[str]:
 def _benign(text: str) -> bool:
     """Chromium's own note that a page's cross-fade was cut short by the
     next navigation - a test clicks faster than a person. It is the
-    browser's, not any script of kennis's, and nothing was lost by it; it
-    failed CI once. Only this message is let through."""
+    browser's, not any script of kennis's - the cross-fade is CSS's
+    `@view-transition`, and no script here starts one - and nothing was lost
+    by it. Only this message is let through."""
     return text.startswith("Transition was aborted because of invalid state")
 
 
@@ -99,7 +100,14 @@ def page(address: str) -> Iterator[object]:
         )
         tab = browser.new_page()
         problems: list[str] = []
-        tab.on("pageerror", lambda error: problems.append(str(error)))
+        # Both channels: Chromium reports the cut-short cross-fade as a
+        # console line on one navigation and as an uncaught error on another.
+        tab.on(
+            "pageerror",
+            lambda error: (
+                problems.append(str(error)) if not _benign(str(error)) else None
+            ),
+        )
         tab.on(
             "console",
             lambda message: (
