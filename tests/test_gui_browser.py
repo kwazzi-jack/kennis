@@ -81,6 +81,14 @@ def address(corpus: Path) -> Iterator[str]:
     runner.join(timeout=10)
 
 
+def _benign(text: str) -> bool:
+    """Chromium's own note that a page's cross-fade was cut short by the
+    next navigation - a test clicks faster than a person. It is the
+    browser's, not any script of kennis's, and nothing was lost by it; it
+    failed CI once. Only this message is let through."""
+    return text.startswith("Transition was aborted because of invalid state")
+
+
 @pytest.fixture
 def page(address: str) -> Iterator[object]:
     """A tab that has opened the address, failing the test on any error the
@@ -95,7 +103,9 @@ def page(address: str) -> Iterator[object]:
         tab.on(
             "console",
             lambda message: (
-                problems.append(message.text) if message.type == "error" else None
+                problems.append(message.text)
+                if message.type == "error" and not _benign(message.text)
+                else None
             ),
         )
         tab.goto(address)
