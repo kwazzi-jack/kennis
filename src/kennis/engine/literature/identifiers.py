@@ -222,9 +222,7 @@ class BibEntry:
 # A record: its type, its key and the rest up to the next record. **The key
 # cannot hold a space, a comma or a brace**: `[^,]+` ran across lines, so an
 # `@string{apj = "..."}` before an article became the article's citekey.
-_BIB_ENTRY: Final = re.compile(
-    r"@(\w+)\s*\{\s*([^,\s{}]+)\s*,(.*?)(?=\n\s*@|\Z)", re.S
-)
+_BIB_ENTRY: Final = re.compile(r"@(\w+)\s*\{\s*([^,\s{}]+)\s*,(.*?)(?=\n\s*@|\Z)", re.S)
 
 # Records that are not references: an abbreviation, a comment (JabRef keeps
 # its settings in one) and a preamble.
@@ -248,7 +246,7 @@ def _bib_fields(body: str) -> list[tuple[str, str]]:
         if named is None:
             return fields
         start = at = named.end()
-        if at < len(body) and body[at] in "{\"":
+        if at < len(body) and body[at] in '{"':
             closing = "}" if body[at] == "{" else '"'
             depth = 0
             while at < len(body):

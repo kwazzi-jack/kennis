@@ -149,3 +149,32 @@ def test_a_doi_resolution_searches_rather_than_naming_an_identifier():
     resolve_doi_to_arxiv("10.1088/x", client=client)
 
     assert "search_query" in str(seen[0])
+
+
+ERROR_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/api/errors#incorrect_id_format_for_ph/0601234</id>
+    <title>Error</title>
+    <summary>incorrect id format for ph/0601234</summary>
+    <author><name>arXiv api core</name></author>
+  </entry>
+</feed>
+"""
+
+
+def test_arxiv_s_error_entry_is_not_a_paper():
+    """arXiv answers a malformed id with HTTP 200 and an entry titled
+    "Error" by "arXiv api core"; it was written as the paper's metadata,
+    with the citekey `coreError`."""
+    assert (
+        lookup_arxiv_metadata("ph/0601234", client=client_returning(ERROR_FEED)) is None
+    )
+
+
+def test_an_entry_for_another_paper_is_not_this_one():
+    assert lookup_arxiv_metadata("2410.00001", client=client_returning(ENTRY)) is None
+
+
+def test_a_versioned_request_still_matches_its_entry():
+    assert lookup_arxiv_metadata("2409.19750v1", client=client_returning(ENTRY))
