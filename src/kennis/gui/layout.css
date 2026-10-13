@@ -1900,12 +1900,17 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 .strip-status {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem 1.2rem;
   margin: 0;
   padding: 0.3rem 0;
   font-family: var(--gutter);
   font-size: 0.8125rem;
 }
+
+/* The strip's Index button: small enough to sit in a status line. */
+.index-now { margin: 0; }
+.index-now button { padding: 0.1rem 0.55rem; font-size: 0.8125rem; }
 
 /* A form whose request is out: htmx sets `htmx-request` on it and has
    already disabled the button (`hx-disabled-elt`). The cursor and the
