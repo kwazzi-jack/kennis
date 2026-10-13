@@ -52,7 +52,7 @@ pack:
 #   literature:          # fetched over the network; needs a real identifier
 #     - citekey: smirnovRevisitingRIMEI2011
 #       title: "Revisiting the radio interferometer measurement equation I"
-#       arxiv_id: "1101.1764"
+#       identifier: "1101.1764"
 #   docs:                # crawled from base_url
 #     - project: stimela
 #       base_url: "https://stimela.readthedocs.io/en/latest/"

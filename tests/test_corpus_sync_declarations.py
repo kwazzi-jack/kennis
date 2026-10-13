@@ -33,6 +33,7 @@ from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.schema import LiteratureEntry
 from kennis.engine.pack.store import install_pack
 from kennis.engine.pack.update import update_pack
+from kennis.render.packs import describe_why_unfetched
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -123,7 +124,7 @@ def corpus(tmp_path: Path) -> Path:
 
 PAPER = (
     "corpus:\n  literature:\n    - citekey: welman2024\n"
-    '      title: "A Paper About Calibration"\n      arxiv_id: "2409.19750"\n'
+    '      title: "A Paper About Calibration"\n      identifier: "2409.19750"\n'
 )
 DOCS = f'corpus:\n  docs:\n    - project: stimela\n      base_url: "{BASE_URL}"\n'
 
@@ -135,7 +136,7 @@ DOCS = f'corpus:\n  docs:\n    - project: stimela\n      base_url: "{BASE_URL}"\
 BOTH = (
     "corpus:\n"
     "  literature:\n    - citekey: welman2024\n"
-    '      title: "A Paper About Calibration"\n      arxiv_id: "2409.19750"\n'
+    '      title: "A Paper About Calibration"\n      identifier: "2409.19750"\n'
     "  docs:\n    - project: stimela\n"
     f'      base_url: "{BASE_URL}"\n'
 )
@@ -397,24 +398,20 @@ def test_the_fetch_keeps_the_title_it_found_over_the_declarations(
 
 
 @pytest.mark.parametrize(
-    ("fields", "expected"),
+    ("identifier", "expected"),
     [
-        ({"arxiv_id": "1712.01093"}, "arxiv:1712.01093"),
-        ({"doi": "10.1000/xyz"}, "doi:10.1000/xyz"),
-        ({"bibcode": "2018MNRAS.478.2399K"}, "bibcode:2018MNRAS.478.2399K"),
-        (
-            {"arxiv_id": "1712.01093", "doi": "10.1000/xyz"},
-            "arxiv:1712.01093",
-        ),
+        ("1712.01093", "arxiv:1712.01093"),
+        ("10.48550/arXiv.1712.01093", "arxiv:1712.01093"),
+        ("10.1000/xyz", "doi:10.1000/xyz"),
+        ("2018MNRAS.478.2399K", "bibcode:2018MNRAS.478.2399K"),
     ],
 )
-def test_a_paper_is_keyed_by_the_first_identifier_it_has(
-    fields: dict[str, str], expected: str
+def test_a_paper_is_keyed_by_its_identifier_and_its_kind(
+    identifier: str, expected: str
 ):
-    """`arxiv_id`, else `doi`, else `bibcode` - section 5 step 3's order.
-    The scheme is part of the key so a DOI and an arXiv id that happen to
-    share a string cannot collide."""
-    entry = LiteratureEntry(citekey="a", title="t", **fields)
+    """The kind is part of the key so a DOI and an arXiv id that happen to
+    share a string cannot collide; arXiv's own DOI is the arXiv paper."""
+    entry = LiteratureEntry(citekey="a", title="t", identifier=identifier)
 
     assert literature_key(entry) == expected
 
@@ -525,8 +522,8 @@ def test_a_sync_paces_its_papers_as_arxiv_asks(
     )
     two = (
         "corpus:\n  literature:\n"
-        '    - citekey: one\n      title: "One"\n      arxiv_id: "2409.19750"\n'
-        '    - citekey: two\n      title: "Two"\n      arxiv_id: "2409.19751"\n'
+        '    - citekey: one\n      title: "One"\n      identifier: "2409.19750"\n'
+        '    - citekey: two\n      title: "Two"\n      identifier: "2409.19751"\n'
     )
     installed(corpus, tmp_path, body=two)
 
@@ -548,3 +545,84 @@ def test_a_changed_project_is_crawled_once_and_then_kept(corpus: Path, tmp_path:
     assert rewritten.counts.get("rewrite") == 1
     assert rewritten.failed == ()
     assert after.counts.get("keep") == 1
+
+
+# ---------------------------------------------------------------------------
+# A declared paper with an address for its text
+# ---------------------------------------------------------------------------
+
+JOURNAL_PDF = "https://journal.example/stab1234.md"
+
+
+def a_paper_at() -> str:
+    return (
+        "corpus:\n  literature:\n    - citekey: welman2021\n"
+        '      title: "A Journal Paper"\n'
+        '      identifier: "10.1093/mnras/stab1234"\n'
+        f'      url: "{JOURNAL_PDF}"\n'
+    )
+
+
+def journal(front: str) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == JOURNAL_PDF:
+            return httpx.Response(
+                200, text=front, headers={"content-type": "text/markdown"}
+            )
+        return httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_paper_declared_with_an_address_is_fetched_from_it(
+    corpus: Path, tmp_path: Path
+):
+    """A DOI alone has no text kennis can fetch; the pack says where it is."""
+    installed(corpus, tmp_path, body=a_paper_at())
+
+    result = synced(
+        corpus,
+        client=journal("# A Journal Paper\n\ndoi:10.1093/mnras/stab1234\n"),
+    )
+
+    assert result.failed == ()
+    [paper] = papers_in(corpus)
+    assert paper.frontmatter.bib.doi == "10.1093/mnras/stab1234"
+    assert paper.frontmatter.bib.citekey == "welman2021"
+
+
+def test_an_address_holding_another_paper_is_not_filed(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path, body=a_paper_at())
+
+    result = synced(
+        corpus, client=journal("# Something Else\n\ndoi:10.1093/mnras/stab9999\n")
+    )
+
+    assert result.failed == ("doi:10.1093/mnras/stab1234",)
+    assert papers_in(corpus) == []
+
+
+def test_a_paper_kennis_cannot_reach_is_handed_back_with_where_to_get_it(
+    corpus: Path, tmp_path: Path
+):
+    """A sync said only that a paper "could not be fetched and will be tried
+    again" - which it would be, and fail the same way, for a paper behind a
+    publisher. What the add knew - where to download it - was dropped."""
+    installed(
+        corpus,
+        tmp_path,
+        body=(
+            "corpus:\n  literature:\n    - citekey: welman2021\n"
+            '      title: "A Journal Paper"\n'
+            '      identifier: "10.1093/mnras/stab1234"\n'
+        ),
+    )
+
+    result = synced(corpus, arxiv=unreachable_client())
+
+    assert result.failed == ("doi:10.1093/mnras/stab1234",)
+    [(address, refusal)] = result.why
+    assert address == "doi:10.1093/mnras/stab1234"
+    assert "https://doi.org/10.1093/mnras/stab1234" in describe_why_unfetched(
+        address, refusal
+    )

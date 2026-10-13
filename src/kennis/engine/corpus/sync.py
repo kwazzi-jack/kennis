@@ -71,7 +71,7 @@ from kennis.engine.pack.installed import (
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
 from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, Pack
-from kennis.engine.refusals import Quoted
+from kennis.engine.refusals import Quoted, Refusal
 from kennis.engine.remember import title_for
 
 OPERATION = "corpus-sync"
@@ -113,6 +113,11 @@ class CorpusSync:
     # next run tries again. One unreachable host must not stop the other
     # nine papers from arriving.
     failed: tuple[str, ...] = ()
+    # Why each paper in `failed` was not fetched, where the add said: a
+    # paper with no copy kennis can reach names where to get one, and a
+    # sync that kept that to itself left the reader nothing to do but wait
+    # for a next run that would fail the same way.
+    why: tuple[tuple[str, Refusal], ...] = ()
 
 
 def sync_corpus(
@@ -148,6 +153,7 @@ def sync_corpus(
     projects = _docs_plan(corpus_root, packs)
     _refuse_what_cannot_be_classified(notes, papers, projects)
 
+    why: dict[str, Refusal] = {}
     failed = _carried_out(
         corpus_root,
         notes,
@@ -158,6 +164,7 @@ def sync_corpus(
         request_delay_seconds=request_delay_seconds,
         unpaywall_email=unpaywall_email,
         events=events,
+        why=why,
     )
 
     actions = notes.actions + papers.actions + projects.actions
@@ -173,6 +180,7 @@ def sync_corpus(
             if action.verdict == "edited"
         ),
         failed=failed,
+        why=tuple(why.items()),
     )
 
 
@@ -269,6 +277,7 @@ def _carried_out(
     request_delay_seconds: float | None,
     unpaywall_email: str,
     events: EventSink | None,
+    why: dict[str, Refusal],
 ) -> tuple[str, ...]:
     """Do what the three plans decided, and report what would not happen.
 
@@ -298,6 +307,7 @@ def _carried_out(
             unpaywall_email=unpaywall_email,
             events=events,
             progress=progress,
+            why=why,
         )
     )
     failed.extend(
@@ -376,6 +386,7 @@ def _fetched_literature(
     unpaywall_email: str,
     events: EventSink | None,
     progress: _Progress,
+    why: dict[str, Refusal],
 ) -> list[str]:
     """Fetch the papers that are missing, rewrite the ones that moved.
 
@@ -412,8 +423,11 @@ def _fetched_literature(
         fetched += 1
         report = add_literature(
             collection,
-            [action.address],
+            # The address, when the pack gives one, read as the paper the
+            # identifier names; otherwise the identifier, fetched as it is.
+            [entry.url] if entry.url is not None else [action.address],
             AddOptions(
+                identifier=entry.identifier if entry.url is not None else None,
                 # The pack's citekey, not a derived one. It is the handle
                 # the provider's own prose cites, so a document that
                 # arrived under a citekey kennis invented would answer to
@@ -431,6 +445,12 @@ def _fetched_literature(
         progress.step()
         if not any(one.outcome is Outcome.ADDED for one in report.outcomes):
             failed.append(action.address)
+            refusal = next(
+                (one.refusal for one in report.outcomes if one.refusal is not None),
+                None,
+            )
+            if refusal is not None:
+                why[action.address] = refusal
     return failed
 
 
@@ -551,6 +571,7 @@ def _rewrote_bibliography(
     assert isinstance(entry, LiteratureEntry)
     frontmatter = document.frontmatter
     assert isinstance(frontmatter, LiteratureFrontmatter)
+    declared = {entry.paper.kind: entry.paper.value}
     updated = frontmatter.model_copy(
         update={
             "owner": f"pack:{declaration.pack_id}",
@@ -558,9 +579,9 @@ def _rewrote_bibliography(
                 citekey=entry.citekey,
                 authors=frontmatter.bib.authors or entry.authors,
                 year=frontmatter.bib.year or (str(entry.year) if entry.year else None),
-                doi=frontmatter.bib.doi or entry.doi,
-                arxiv_id=frontmatter.bib.arxiv_id or entry.arxiv_id,
-                bibcode=frontmatter.bib.bibcode or entry.bibcode,
+                doi=frontmatter.bib.doi or declared.get("doi"),
+                arxiv_id=frontmatter.bib.arxiv_id or declared.get("arxiv"),
+                bibcode=frontmatter.bib.bibcode or declared.get("bibcode"),
             ),
             "source": frontmatter.source.model_copy(
                 update={"pack_sha256": declaration.digest}
@@ -691,16 +712,8 @@ def _declared_existing(key: str, document: Document) -> Existing:
 
 
 def literature_key(entry: LiteratureEntry) -> str:
-    """`arxiv:`, else `doi:`, else `bibcode:`, with the scheme in the key.
-
-    The scheme is part of it so a DOI and an arXiv id that happen to
-    share a string cannot collide.
-    """
-    if entry.arxiv_id is not None:
-        return f"arxiv:{entry.arxiv_id}"
-    if entry.doi is not None:
-        return f"doi:{entry.doi}"
-    return f"bibcode:{entry.bibcode}"
+    """`<kind>:<identifier>`, the key a declaration is diffed on."""
+    return entry.key
 
 
 def bibliography_key(bib: Bibliography) -> str | None:
@@ -734,8 +747,9 @@ def _literature_digest(entry: LiteratureEntry) -> str:
                 entry.title,
                 entry.authors or "",
                 str(entry.year or ""),
-                entry.doi or "",
-                entry.bibcode or "",
+                # Where the text is fetched from is part of what was
+                # declared: a corrected address is a declaration that moved.
+                entry.url or "",
             ]
         ).encode("utf-8")
     )

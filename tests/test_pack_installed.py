@@ -169,7 +169,7 @@ def test_a_corrupt_stored_declaration_does_not_hide_the_pack(
 DOCS = 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n'
 PAPER = (
     "corpus:\n  literature:\n    - citekey: kenyon2018\n"
-    '      title: t\n      arxiv_id: "1712.01093"\n'
+    '      title: t\n      identifier: "1712.01093"\n'
 )
 
 
@@ -476,11 +476,11 @@ def test_a_pack_whose_declaration_will_not_parse_declares_nothing(
 
 DOI_PAPER = (
     "corpus:\n  literature:\n    - citekey: a\n"
-    '      title: t\n      doi: "10.1000/xyz"\n'
+    '      title: t\n      identifier: "10.1000/xyz"\n'
 )
 BIBCODE_PAPER = (
     "corpus:\n  literature:\n    - citekey: b\n"
-    '      title: t\n      bibcode: "2018MNRAS.478.2399K"\n'
+    '      title: t\n      identifier: "2018MNRAS.478.2399K"\n'
 )
 
 

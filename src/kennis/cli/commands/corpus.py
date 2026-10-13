@@ -68,6 +68,7 @@ from kennis.render.packs import (
     describe_owner,
     describe_sync,
     describe_unfetched,
+    describe_why_unfetched,
 )
 from kennis.render.refusals import (
     choices_for_refusal,
@@ -592,6 +593,8 @@ def _report_what_a_sync_left(result: CorpusSync) -> None:
         # Named rather than counted, because which paper did not arrive
         # is the whole of what a reader needs.
         display.note(describe_unfetched(result.failed))
+        for address, refusal in result.why:
+            display.hint(describe_why_unfetched(address, refusal))
 
 
 @corpus_group.command(name="claim")
