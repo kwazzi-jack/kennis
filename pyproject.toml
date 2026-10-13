@@ -121,6 +121,9 @@ mcp = [
 kennis = "kennis.cli.__main__:main"
 
 [dependency-groups]
+browser = [
+    "playwright>=1.55",
+]
 # commitizen's floor is the one that matters: `cz bump` reads the commit log
 # to decide the version, so an older release deciding differently is a silent
 # wrong answer rather than an error.
@@ -186,13 +189,17 @@ testpaths = ["tests"]
 # opt-in live tests are run with `uv run pytest -m network`, and exist to
 # settle what a fixture cannot: a fixture agrees with its parser by
 # construction, a real host does not.
-addopts = "-ra --strict-markers --strict-config -m 'not network and not slow'"
+addopts = "-ra --strict-markers --strict-config -m 'not network and not slow and not browser'"
 markers = [
     "network: touches the real network; deselected unless asked for by name",
     # Separate from `network` because the two ask different questions and
     # cost differently: a live test needs a host to be up, a slow one needs
     # only patience. Run with `uv run pytest -m slow`.
     "slow: builds a corpus large enough to measure; deselected by default",
+    # Needs a browser, which an ordinary install and most CI jobs do not
+    # have: `uv sync --group browser && uv run playwright install chromium`,
+    # then `uv run pytest -m browser`.
+    "browser: drives the window in a real Chromium; deselected by default",
 ]
 xfail_strict = true
 # An upstream deprecation becomes a failing test at the moment it appears,

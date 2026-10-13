@@ -1,0 +1,226 @@
+"""The window in a real browser: what the rest of the suite cannot see.
+
+Every other GUI test reads markup or a stylesheet as text. That proves the
+server says the right thing; it cannot prove the page *does* it - that htmx
+swaps the results in, that a script reads the header it is meant to, that a
+style rule is not overridden by another one. Several defects were found by
+walking the interface in a headless browser and were invisible in the
+source (#340, #351, #371); this keeps those walks.
+
+**Deselected by default**, with the `browser` marker, because it needs a
+browser: `uv sync --group browser`, then `uv run playwright install
+chromium`, then `uv run pytest -m browser`. `KENNIS_TEST_CHROMIUM` names a
+Chromium to use instead of Playwright's own.
+
+Each test is one thing a person does, with the server and the browser as
+they would run them: `serve.run` on a thread, on loopback, with its token.
+"""
+
+from __future__ import annotations
+
+import os
+import threading
+from collections.abc import Iterator
+from pathlib import Path
+
+import httpx
+import pytest
+from click.testing import CliRunner
+
+from kennis.cli.__main__ import main
+from kennis.gui import serve, words
+
+playwright = pytest.importorskip("playwright.sync_api")
+
+pytestmark = pytest.mark.browser
+
+# Long enough for a cold Chromium on a loaded CI runner; a passing check is
+# over in well under a second.
+_WAIT_MS = 10_000
+
+
+@pytest.fixture
+def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("KENNIS_LOG_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+    run = CliRunner()
+    assert run.invoke(main, ["corpus", "init"]).exit_code == 0
+    source = tmp_path / "sources" / "calibration.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "# Calibration\n\nAntenna gains drift on long tracks.\n\n"
+        "The model is $$g(t) = g_0 e^{i \\phi(t)}$$\n",
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    return tmp_path
+
+
+@pytest.fixture
+def address(corpus: Path) -> Iterator[str]:
+    """The address `kennis gui` prints, token and all, for a running server."""
+    ready = threading.Event()
+    given: list[str] = []
+
+    def note(url: str) -> None:
+        given.append(url)
+        ready.set()
+
+    runner = threading.Thread(
+        target=serve.run, args=(note,), kwargs={"open_browser": False}, daemon=True
+    )
+    runner.start()
+    assert ready.wait(10)
+    yield given[0]
+    with httpx.Client(timeout=10) as http:
+        http.post(given[0].replace("/?", "/quit?"))
+    runner.join(timeout=10)
+
+
+@pytest.fixture
+def page(address: str) -> Iterator[object]:
+    """A tab that has opened the address, failing the test on any error the
+    page's own scripts raise or the console reports."""
+    with playwright.sync_playwright() as driver:
+        browser = driver.chromium.launch(
+            executable_path=os.environ.get("KENNIS_TEST_CHROMIUM") or None
+        )
+        tab = browser.new_page()
+        problems: list[str] = []
+        tab.on("pageerror", lambda error: problems.append(str(error)))
+        tab.on(
+            "console",
+            lambda message: (
+                problems.append(message.text) if message.type == "error" else None
+            ),
+        )
+        tab.goto(address)
+        yield tab
+        browser.close()
+        assert problems == []
+
+
+def test_the_page_is_drawn_in_the_theme(page: playwright.Page) -> None:
+    """The stylesheet arrived and applied: the ground is the theme's, not
+    the browser's white."""
+    ground = page.evaluate("getComputedStyle(document.body).backgroundColor")
+
+    assert ground not in ("rgba(0, 0, 0, 0)", "rgb(255, 255, 255)")
+
+
+def test_typing_a_search_draws_its_results(page: playwright.Page) -> None:
+    page.fill("input[name=q]", "antenna")
+
+    page.wait_for_selector("#hits .hit", timeout=_WAIT_MS)
+
+    assert "Antenna gains drift" in page.inner_text("#hits")
+
+
+def test_a_document_is_typeset(page: playwright.Page) -> None:
+    page.fill("input[name=q]", "antenna")
+    page.wait_for_selector("#hits .hit a.open", timeout=_WAIT_MS)
+
+    page.click("#hits .hit a.open")
+
+    page.wait_for_selector(".katex", timeout=_WAIT_MS)
+
+
+def test_a_note_written_here_is_not_announced_as_someone_else_s(
+    page: playwright.Page,
+) -> None:
+    """The banner names writers other than this window (#311). Its own
+    note does not reload the page, so the page's revision has to move
+    with it, or the next focus calls the note a change from elsewhere."""
+    page.click("a[href='/remember']")
+    page.wait_for_selector("#dialog textarea[name=text]", timeout=_WAIT_MS)
+    page.fill("#dialog textarea[name=text]", "Deconvolution needs a clean beam.")
+
+    page.click("#dialog button[type=submit]")
+    page.wait_for_selector("#dialog .role-operation", timeout=_WAIT_MS)
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    page.wait_for_timeout(500)
+
+    assert page.is_hidden("#corpus-changed")
+
+
+def test_a_write_from_a_terminal_is_announced(page: playwright.Page) -> None:
+    source = Path(os.environ["KENNIS_CORPUS_ROOT"]).parent / "sources" / "imaging.md"
+    source.write_text("# Imaging\n\nDeconvolution.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+
+    page.wait_for_selector("#corpus-changed:not([hidden])", timeout=_WAIT_MS)
+    assert page.inner_text("#corpus-changed") == words.CORPUS_CHANGED
+
+
+def test_an_index_started_here_reports_its_outcome(page: playwright.Page) -> None:
+    page.goto(page.url.split("?")[0] + "index")
+
+    page.click("form[action='/index'] button[type=submit]")
+
+    page.wait_for_selector(f"text={words.JOB_KINDS['index']}", timeout=_WAIT_MS)
+    page.wait_for_selector("#job .job-outcome p", timeout=_WAIT_MS)
+
+
+def test_an_index_starts_without_a_script(address: str) -> None:
+    """The window works without a script (11a). Six forms had only
+    `hx-post`, so here the button submitted a GET to the page it was on;
+    and with that fixed, the origin check refused the POST, because under
+    `no-referrer` a plain form's origin is sent as `null`."""
+    with playwright.sync_playwright() as driver:
+        browser = driver.chromium.launch(
+            executable_path=os.environ.get("KENNIS_TEST_CHROMIUM") or None
+        )
+        tab = browser.new_context(java_script_enabled=False).new_page()
+        tab.goto(address)
+        tab.goto(address.split("?")[0] + "index")
+
+        tab.click("form[action='/index'] button[type=submit]")
+
+        assert "/job/" in tab.url
+        browser.close()
+
+
+def test_the_pane_closes_and_stays_closed(page: playwright.Page) -> None:
+    page.click("#pane-toggle")
+    page.reload()
+
+    assert page.evaluate("document.documentElement.dataset.pane") == "closed"
+
+
+def test_the_palette_opens_on_its_shortcut(page: playwright.Page) -> None:
+    page.keyboard.press("Control+k")
+
+    page.wait_for_selector("#dialog input", timeout=_WAIT_MS)
+
+
+# Written by hand: every page a person can reach from the bar, the pane and
+# the palette. The `page` fixture fails a test on any console error.
+PAGES = [
+    "",
+    "corpus",
+    "collection/notes",
+    "settings",
+    "activity",
+    "add",
+    "add?kind=paper",
+    "add?kind=site",
+    "remember",
+    "index",
+    "sync",
+    "pack",
+    "palette",
+    "?q=antenna",
+]
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_every_page_opens_without_an_error(page: playwright.Page, path: str) -> None:
+    answer = page.goto(page.url.split("?")[0] + path)
+
+    assert answer is not None and answer.status == 200
+    assert page.evaluate("document.styleSheets.length") >= 1
