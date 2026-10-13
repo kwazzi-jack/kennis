@@ -8,6 +8,7 @@
 </nav>
 <p class="role-muted">{{ preamble }} {{ tip("add-" ~ kind, add_tab_label, add_tip) }}</p>
 <form action="/add" method="post" enctype="multipart/form-data" hx-encoding="multipart/form-data" hx-disabled-elt="find button[type=submit]" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
+<datalist id="add-groups">{% for name in known_groups %}<option value="{{ name }}">{% endfor %}</datalist>
   {# Where a refusal the form can be corrected for is answered: in the
      dialog, above the fields still holding what was typed. It closed and
      answered in the strip, and everything typed was lost. #}

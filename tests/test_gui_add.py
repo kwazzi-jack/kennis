@@ -1029,3 +1029,29 @@ def test_an_info_tip_is_the_browsers_own_popover():
     assert button.get("aria-label") == words.tip_about("the title")
     assert tip.has_attr("popover")
     assert tip.get_text() == "Its own heading."
+
+
+def test_a_group_field_suggests_the_groups_already_held(
+    corpus: Path, client: TestClient
+):
+    """Typed free, "Radio" beside "radio" quietly made a second group."""
+    note = corpus / "radio.md"
+    note.write_text("# Radio\n\nA note.\n", encoding="utf-8")
+    assert (
+        CliRunner()
+        .invoke(main, ["corpus", "add", "-n", str(note), "--group", "radio"])
+        .exit_code
+        == 0
+    )
+
+    for kind in ("paper", "file", "group"):
+        dialog = BeautifulSoup(dialog_of(client, kind), "html.parser")
+        offered = [option["value"] for option in dialog.select("#add-groups option")]
+        assert offered == ["radio"], kind
+        for field in dialog.select('input[name^="group"]'):
+            assert field.get("list") == "add-groups", kind
+    note_form = BeautifulSoup(client.get("/remember", headers=HTMX).text, "html.parser")
+    assert [option["value"] for option in note_form.select("#note-groups option")] == [
+        "radio"
+    ]
+    assert note_form.select_one('input[name="group"]')["list"] == "note-groups"

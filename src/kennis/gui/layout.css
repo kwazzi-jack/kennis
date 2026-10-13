@@ -2296,3 +2296,14 @@ a.button:active { translate: 0 1px; }
   letter-spacing: normal;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--ink) 18%, transparent);
 }
+
+/* Project names a docs page's directory and nothing else, so on the Files
+   tab it shows only while docs is the chosen collection. By the radios'
+   own state, so it holds without a script. */
+.add-tab form:has(input[type="radio"][name="collection"]) .field[data-name="project"] {
+  display: none;
+}
+.add-tab form:has(input[type="radio"][name="collection"][value="docs"]:checked)
+  .field[data-name="project"] {
+  display: grid;
+}

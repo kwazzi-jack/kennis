@@ -8,7 +8,8 @@
   <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}" aria-label="{{ note_text_label }}" aria-describedby="remember-preamble" autofocus></textarea>
   <div class="fields">
     <label class="labelled"><span class="name">{{ title_label }}</span><input id="remember-title" type="text" name="title" placeholder="{{ title_hint }}"></label>
-    <label class="labelled"><span class="name">{{ group_label }}</span><input type="text" name="group" placeholder="{{ group_hint }}"></label>
+    <label class="labelled"><span class="name">{{ group_label }}</span><input type="text" name="group" list="note-groups" placeholder="{{ group_hint }}"></label>
+    <datalist id="note-groups">{% for name in known_groups %}<option value="{{ name }}">{% endfor %}</datalist>
     <div class="labelled"><span class="name" id="remember-target-name">{{ target_label }}</span>
     <span class="segmented" role="radiogroup" aria-labelledby="remember-target-name">{% for value, label in remember_targets %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span></div>
   </div>
