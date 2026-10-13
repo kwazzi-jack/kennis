@@ -82,7 +82,7 @@ def adds(monkeypatch: pytest.MonkeyPatch) -> list[AddCall]:
         calls.append((destination, tuple(identifiers), options))
         return AddReport(outcomes=[], elapsed_seconds=0.0)
 
-    monkeypatch.setattr("kennis.gui.app.add_documents", recorded)
+    monkeypatch.setattr("kennis.gui.routes.add.add_documents", recorded)
     monkeypatch.setattr("kennis.operations.add_documents", recorded)
     return calls
 

@@ -28,7 +28,8 @@ from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.history.repository import Repository
 from kennis.gui import words
-from kennis.gui.app import REVISION_HEADER, build_app
+from kennis.gui.app import build_app
+from kennis.gui.responses import REVISION_HEADER
 from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
 from kennis.render.theme import ANSI_COLOURS, ROLES

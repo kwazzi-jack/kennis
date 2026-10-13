@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import inspect
 import re
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from starlette.routing import BaseRoute
 
 from kennis.cli.__main__ import main
 from kennis.gui import words
@@ -620,18 +622,36 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # ---------------------------------------------------------------------------
 
 
+# Written by hand: how many routes the window answers. The walk below is
+# what both tests read, and an included router it failed to enter would
+# otherwise leave them asserting over nothing.
+EXPECTED_ROUTES = 46
+
+
+def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:
+    """Each route, inside the routers `build_app` includes as well."""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route
+        included = getattr(route, "original_router", None)
+        if included is not None:
+            yield from every_route(included.routes)
+
+
+def test_every_route_is_found():
+    assert len(list(every_route(build_app(TOKEN).routes))) == EXPECTED_ROUTES
+
+
 def test_no_route_runs_on_the_event_loop():
     """An `async` route runs on the event loop, and every route here reads
     the corpus, starts git or renders the pane - 600 ms a page at a thousand
     documents. One of them running stopped every other request, a job's
     progress stream included. A plain `def` runs on a worker thread; the
     form a POST carries is read by an `async` dependency instead."""
-    app = build_app(TOKEN)
-
     on_the_loop = [
         route.path
-        for route in app.routes
-        if isinstance(route, APIRoute) and inspect.iscoroutinefunction(route.endpoint)
+        for route in every_route(build_app(TOKEN).routes)
+        if inspect.iscoroutinefunction(route.endpoint)
     ]
 
     assert on_the_loop == []

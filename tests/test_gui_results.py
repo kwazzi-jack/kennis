@@ -803,7 +803,7 @@ def hybrid(monkeypatch: pytest.MonkeyPatch) -> None:
             degraded=(),
         )
 
-    monkeypatch.setattr("kennis.gui.app.sweep", swept)
+    monkeypatch.setattr("kennis.gui.routes.search.sweep", swept)
 
 
 def titles_in(page: str) -> list[str]:
