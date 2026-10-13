@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 from bs4 import BeautifulSoup, Tag
@@ -511,7 +512,9 @@ def test_a_folder_opens_rather_than_being_chosen_unless_asked(
     ).text
 
     assert f'data-choose="{home}"' in listing
-    assert f"path={home / 'Papers'}" in listing.replace("%2F", "/")
+    # Decoded whole, not `%2F` alone: a Windows path in the address has
+    # its backslashes and drive colon encoded too.
+    assert f"path={home / 'Papers'}" in unquote(listing)
 
 
 def test_the_chooser_reads_names_and_never_contents(client: TestClient, home: Path):
