@@ -3,5 +3,10 @@
   <div class="fields">
     <label class="labelled"><span class="name">{{ pack_path_label }}</span><input type="text" name="path" placeholder="/path/to/pack.ken.yml" aria-describedby="pack-preamble" autofocus></label>
   </div>
-  <button type="submit">{{ pack_action }}</button>
+  {# Every dialog's foot, as Add's is: Cancel, then the one action the
+     form exists for, at the right. #}
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("package") }}{{ pack_action }}</button>
+  </div>
 </form>

@@ -11,8 +11,15 @@
     <div class="labelled"><span class="name" id="remember-target-name">{{ target_label }}</span>
     <span class="segmented" role="radiogroup" aria-labelledby="remember-target-name">{% for value, label in remember_targets %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span></div>
   </div>
-  <button type="submit">{{ action }}</button>
+  {# Every dialog's foot, as Add's is: Cancel, then the one action the
+     form exists for, at the right. #}
+  {# Inside the form, above its foot, so what the write answered is
+     beside what was written rather than under the buttons. A status
+     region, so it is announced; it was silent, and focus had fallen to
+     the page behind the dialog. #}
+  <div id="outcome" role="status">{% include "outcome.html" %}</div>
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("pencil") }}{{ action }}</button>
+  </div>
 </form>
-{# A status region, so what the write answered is announced; it was
-   silent, and focus had fallen to the page behind the dialog. #}
-<div id="outcome" role="status">{% include "outcome.html" %}</div>

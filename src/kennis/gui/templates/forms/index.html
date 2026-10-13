@@ -7,5 +7,10 @@
     {%- for name in collections %}<label><input type="radio" name="collection" value="{{ name }}"{% if name == chosen %} checked{% endif %}>{{ name }}</label>{% endfor %}
     </span></div>
   </div>
-  <button type="submit">{{ index_action }}</button>
+  {# Every dialog's foot, as Add's is: Cancel, then the one action the
+     form exists for, at the right. #}
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("database") }}{{ index_action }}</button>
+  </div>
 </form>

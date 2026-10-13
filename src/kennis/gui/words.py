@@ -8,6 +8,7 @@ not a fact about a document - it is a control on a page.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Final
 
@@ -626,7 +627,17 @@ def last_change(
     if operation is None or scope is None:
         return f"Last change: {summary}, {ago}"
     kind = CHANGE_KINDS.get(operation, operation)
-    return f"Last change: {kind} {scope} ({summary}), {ago}"
+    return f"Last change: {kind} {scope} ({_one_is_one(summary)}), {ago}"
+
+
+def _one_is_one(summary: str) -> str:
+    """A kennis summary read for a person: "1 documents" as "1 document".
+
+    The summary is a storage format the history parses back (`commit_
+    summary` writes every count with its plural), so it is read in the
+    singular here rather than written differently there.
+    """
+    return re.sub(r"\b1 (\w+?)s\b", r"1 \1", summary)
 
 
 def last_job(kind: str, state: str) -> str:
