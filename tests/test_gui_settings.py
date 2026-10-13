@@ -357,9 +357,11 @@ def test_words_only_hides_the_bars():
 def test_labels_hide_the_icon_or_the_name():
     sheet = stylesheet()
 
-    assert "display: none" in rules_for(
-        sheet, ':root[data-labels="icons"] .measure-name'
-    )
+    # The name leaves the eye, not the page: with `display: none` a
+    # screen reader heard a level with no measure to say what it was of.
+    icons = rules_for(sheet, ':root[data-labels="icons"] .measure-name')
+    assert "clip-path: inset(50%)" in icons
+    assert "display: none" not in icons
     assert "display: none" in rules_for(
         sheet, ':root[data-labels="words"] .measure > .icon'
     )

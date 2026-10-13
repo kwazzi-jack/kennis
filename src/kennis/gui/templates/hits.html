@@ -6,7 +6,7 @@
    because it carries no styling, and every class a template uses
    has to be styled - a test says so. #}
 <span id="answered" data-query="{{ question }}" data-scope="{{ scope }}"
-      data-mode="{{ mode }}" hidden></span>
+      data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
 {% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>

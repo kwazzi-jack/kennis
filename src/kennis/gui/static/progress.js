@@ -10,6 +10,12 @@
 // server writes to and closes when the operation ends. Nothing here
 // runs on a timer.
 //
+// **What a screen reader hears is chosen, not everything that moves.**
+// The strip was one live region holding a clock that ticked every
+// second, so a reader heard the time over and over. Now one status
+// region is told the step when it changes - at most every ten seconds -
+// and the outcome's first sentence when it ends.
+//
 // **Every panel, not the first.** A job's own page and the strip both
 // draw one for the same job, and a page drawn while a job runs carries
 // it in the strip. Each panel holds its own connection.
@@ -28,6 +34,16 @@
     var lines = panel.querySelector(".job-lines");
     var outcome = panel.querySelector(".job-outcome");
     var source = new EventSource("/job/" + id + "/events");
+    var status = document.getElementById("job-status");
+    var said = 0;
+
+    function announce(text, now) {
+      if (!status || !text) { return; }
+      var at = Date.now();
+      if (!now && at - said < 10000) { return; }
+      said = at;
+      status.textContent = text;
+    }
 
     function addLine(message) {
       var item = document.createElement("li");
@@ -80,6 +96,8 @@
         .then(function (answer) { return answer.text(); })
         .then(function (html) {
           outcome.innerHTML = html;
+          var first = outcome.querySelector("p");
+          if (first) { announce(first.textContent, true); }
           // The outcome is the record and the live lines were progress:
           // an outcome that lists its items replaces theirs, or a finished
           // sync lists every document twice. A warning stays: the
@@ -102,7 +120,11 @@
     source.onmessage = function (event) {
       var message = JSON.parse(event.data);
       if (message.kind === "closed") { finish(); return; }
-      if (message.kind === "current") { step.textContent = message.text; return; }
+      if (message.kind === "current") {
+        step.textContent = message.text;
+        announce(message.text, false);
+        return;
+      }
       if (message.kind === "elapsed") { clock.textContent = message.text; return; }
       if (message.kind === "progress") {
         bar.hidden = false;

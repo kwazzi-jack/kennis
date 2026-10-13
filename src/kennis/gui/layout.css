@@ -479,6 +479,29 @@ details.menu[open] > .menu-button { opacity: 1; }
 .menu-items form.move .item { padding-inline: 0; }
 .menu-items form.move input { font: inherit; font-size: 0.8rem; }
 
+/* Out of sight until a keyboard reaches it, then over the bar's
+   corner. Moved rather than clipped, so it is a real target when shown. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -4rem;
+  z-index: 100;
+  padding: 0.4rem 0.7rem;
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+  color: var(--ink);
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.skip-link:focus { top: 0.5rem; }
+/* `main` takes focus from the skip link; a ring round the whole centre
+   would say nothing a reader needs. */
+main:focus { outline: none; }
+/* The reader takes focus so its text scrolls from the keyboard; the
+   ring sits inside it, where the pane edges cannot clip it. */
+.reading:focus-visible { outline: 2px solid var(--role-command); outline-offset: -2px; }
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -613,7 +636,16 @@ main {
 :root[data-width="wide"] { --text: 56rem; --frame: 56rem; }
 :root[data-width="pane"] { --text: none; --frame: none; }
 :root[data-strength="words"] .cells { display: none; }
-:root[data-labels="icons"] .measure-name { display: none; }
+/* Out of sight, not out of the page: with `display: none` a screen
+   reader heard "very high" with no measure to say what was high. */
+:root[data-labels="icons"] .measure-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 :root[data-labels="words"] .measure > .icon { display: none; }
 
 /* ---- the settings page ---- */

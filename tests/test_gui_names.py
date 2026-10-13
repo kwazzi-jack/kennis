@@ -90,3 +90,31 @@ def test_every_radio_group_asks_its_question(client: TestClient, route: str):
         pointed = group.get("aria-labelledby")
         if pointed:
             assert page.find(id=pointed) is not None, pointed
+
+
+def test_the_strip_is_not_a_live_region_that_ticks(client: TestClient):
+    """`#job` held a clock updated every second inside `aria-live`, so a
+    screen reader read the time out again and again. What is worth
+    hearing goes to one status region the progress script writes."""
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+
+    assert page.find(id="job").get("aria-live") is None
+    assert page.find(id="job-status").get("role") == "status"
+
+
+def test_the_reader_can_be_scrolled_from_the_keyboard(
+    client: TestClient, tmp_path: Path
+):
+    source = tmp_path / "trees.md"
+    source.write_text("# Trees\n\nBark and rings.\n", encoding="utf-8")
+    run = CliRunner()
+    assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    corpus = BeautifulSoup(client.get("/collection/notes").text, "html.parser")
+    link = corpus.select_one("a[href^='/document/notes/']")
+    assert link is not None
+
+    page = BeautifulSoup(client.get(link["href"]).text, "html.parser")
+    reading = page.select_one(".reading")
+
+    assert reading.get("tabindex") == "0"
+    assert reading.get("aria-label") == page.select_one("article h1").text

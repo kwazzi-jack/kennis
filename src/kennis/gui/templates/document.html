@@ -22,19 +22,20 @@
           title="{{ inspector_hide if inspector_open else inspector_show }}">{{ icon("panel-right") }}</button>
 </nav>
 <div class="document-body">
-<div class="reading">
+{# Focusable and named, so the text scrolls from the keyboard: with
+   focus on the page, PageDown moved nothing, and a document without a
+   link had no stop inside it at all. #}
+<div class="reading" tabindex="0" role="region" aria-label="{{ document.title }}">
 <div class="column">
 <article>
   <h1>{{ document.title }}</h1>
   {% if document.byline %}<p class="byline">{{ document.byline }}</p>{% endif %}
   {% if document.has_blocked_images and not load_remote_images %}
-  <p class="role-warning">
-    {{ blocked_note }}
-    <a class="role-command" href="?images=on">{{ blocked_action }}</a>
-  </p>
+  <div class="notice"><p>{{ blocked_note }}
+    <a href="?images=on">{{ blocked_action }}</a></p></div>
   {% endif %}
   {% if mark_withheld %}
-  <p class="role-warning">{{ mark_withheld }}</p>
+  <p class="notice quiet">{{ icon("info") }}<span>{{ mark_withheld }}</span></p>
   {% endif %}
   {{ document.body_html | safe }}
 </article>

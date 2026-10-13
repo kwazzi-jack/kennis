@@ -1177,6 +1177,13 @@ def menu_for(name: str) -> str:
     return f"Actions for {name}"
 
 
+# The first tab stop on every page.
+SKIP_TO_CONTENT = "Skip to the content"
+
+# What a running job's bar is, to a screen reader.
+PROGRESS_LABEL = "Progress"
+
+
 # A page that could not be drawn: what went wrong, said as a heading the
 # reader can find, and two ways back, so a refusal is never a dead end.
 PROBLEM_HEADING = "That could not be shown"
@@ -1380,6 +1387,7 @@ __all__ = [
     "PROBLEM_BACK",
     "PROBLEM_CORPUS",
     "PROBLEM_HEADING",
+    "PROGRESS_LABEL",
     "PROJECT_UNNAMED",
     "QUIT",
     "QUIT_TITLE",
@@ -1410,6 +1418,7 @@ __all__ = [
     "SITE_UNREACHABLE",
     "SKIP",
     "SKIPPED",
+    "SKIP_TO_CONTENT",
     "STATE_LETTERS",
     "STATE_WORDS",
     "STILL_RUNNING",

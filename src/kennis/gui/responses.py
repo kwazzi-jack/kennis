@@ -110,6 +110,8 @@ TEMPLATES.env.globals.update(
         "icon": icon,
         "actions": words.ACTIONS,
         "problem_heading": words.PROBLEM_HEADING,
+        "skip_to_content": words.SKIP_TO_CONTENT,
+        "progress_label": words.PROGRESS_LABEL,
         "note_text_label": words.NOTE_TEXT_LABEL,
         "title_label": words.TITLE_LABEL,
         "group_label": words.GROUP_LABEL,
@@ -139,6 +141,7 @@ TEMPLATES.env.globals.update(
         "corpus_unreadable": words.CORPUS_UNREADABLE,
         "no_context": words.NO_CONTEXT,
         "recents_heading": words.RECENTS_HEADING,
+        "results_heading": words.RESULTS_HEADING,
         # The words a hit and the key carry. Globals because `hits.html`
         # is drawn by two routes, the page and the fragment.
         "show_passage": words.SHOW_PASSAGE,
