@@ -307,12 +307,13 @@ def test_the_identifier_is_derived_from_the_paper_rather_than_minted(
 
 
 def test_the_derivation_key_records_the_precedence_that_was_applied(
-    papers: Collection,
+    papers: Collection, tmp_path: Path
 ):
     """A paper with both an arXiv identifier and a DOI derives from the arXiv
     identifier, and says so."""
     bib = "@article{x,\n title={T},\n doi={10.1088/x},\n eprint={2409.19750}\n}\n"
-    path = Path(str(papers.root)) / "library.bib"
+    # Outside the corpus: a file inside it is kennis's own, never a source.
+    path = tmp_path / "sources" / "library.bib"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(bib, encoding="utf-8")
 

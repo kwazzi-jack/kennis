@@ -171,6 +171,18 @@ class SymlinkSkipped:
 
 
 @dataclass(frozen=True, slots=True)
+class KennisOwn:
+    """A directory kennis writes its own files into, met while walking.
+
+    The corpus, the configuration, the state or the log: adding one would
+    copy the corpus into itself, or make API keys and the reader's search
+    history documents an agent can read.
+    """
+
+    code: ClassVar[str] = "kennis-own"
+
+
+@dataclass(frozen=True, slots=True)
 class UnsupportedFormat:
     """A file whose extension names no format kennis can convert."""
 
@@ -196,6 +208,7 @@ type Refusal = (
     | BibliographyIncomplete
     | NothingConverted
     | SymlinkSkipped
+    | KennisOwn
     | UnsupportedFormat
 )
 
@@ -203,6 +216,7 @@ type Refusal = (
 __all__ = [
     "AmbiguousIdentity",
     "BibliographyIncomplete",
+    "KennisOwn",
     "NoArxivText",
     "NoIdentity",
     "NoPublisherText",

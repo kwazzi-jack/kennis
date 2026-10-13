@@ -37,7 +37,12 @@ from typing import Final, Literal
 from kennis.engine._glob import globstar_regex, looks_like_pattern
 from kennis.engine.corpus.intake import is_supported_suffix
 from kennis.engine.errors import InputError
-from kennis.engine.refusals import Refusal, SymlinkSkipped, UnsupportedFormat
+from kennis.engine.refusals import (
+    KennisOwn,
+    Refusal,
+    SymlinkSkipped,
+    UnsupportedFormat,
+)
 
 # Directory names never worth walking into. Dot-prefixed names are skipped
 # separately and by rule; these are the ones that are neither hidden nor
@@ -107,20 +112,35 @@ class ResolvedInputs:
 
 
 def resolve_inputs(
-    arguments: Sequence[str], *, extra_file_types: Sequence[str] = ()
+    arguments: Sequence[str],
+    *,
+    extra_file_types: Sequence[str] = (),
+    kept_out: Sequence[Path] = (),
 ) -> ResolvedInputs:
     """Expand every argument into the concrete identifiers the add path acts on.
 
     Anything that is not a directory or a shell pattern is passed through
     untouched, so this is transparent to arXiv identifiers, DOIs, URLs and
     plain paths alike.
+
+    **Nothing is taken from `kept_out`**, the directories kennis writes its
+    own files into (`settings.own_directories`). An argument inside one is
+    refused; a walk or a pattern that reaches one passes it by and says so.
+    Before this, adding the folder that held the corpus copied the corpus
+    into itself, and the search history beside it became a note.
     """
+    kept = tuple(path.resolve() for path in kept_out)
     resolved = ResolvedInputs()
     for argument in arguments:
         expanded = Path(argument).expanduser()
+        if (expanded.is_dir() or expanded.is_file()) and _within(expanded, kept):
+            raise InputError(
+                f"'{argument}' is among kennis's own files - its corpus, "
+                "configuration, state or log - which are never added"
+            )
 
         if expanded.is_dir():
-            items, skipped = _walk_directory(expanded, argument, extra_file_types)
+            items, skipped = _walk_directory(expanded, argument, extra_file_types, kept)
             if not items:
                 detail = f" ({len(skipped)} skipped as unsupported)" if skipped else ""
                 raise InputError(
@@ -152,13 +172,26 @@ def resolve_inputs(
                 f"files. Check the path, or quote it if your shell expanded it "
                 f"before kennis saw it."
             )
-        resolved.items.extend(
-            ResolvedInput(
-                identifier=str(match), origin="pattern", from_argument=argument
+        for match in matches:
+            if _within(match, kept):
+                resolved.skipped.append(
+                    SkippedInput(identifier=str(match), refusal=KennisOwn())
+                )
+                continue
+            resolved.items.append(
+                ResolvedInput(
+                    identifier=str(match), origin="pattern", from_argument=argument
+                )
             )
-            for match in matches
-        )
     return resolved
+
+
+def _within(path: Path, kept: Sequence[Path]) -> bool:
+    """Whether `path` is one of `kept` or lies inside one, links resolved."""
+    real = path.resolve()
+    return any(
+        real == directory or real.is_relative_to(directory) for directory in kept
+    )
 
 
 def split_at_anchor(pattern: PurePath) -> tuple[str, list[str]]:
@@ -241,7 +274,10 @@ def _skip_directory(name: str) -> bool:
 
 
 def _walk_directory(
-    root: Path, argument: str, extra_file_types: Sequence[str]
+    root: Path,
+    argument: str,
+    extra_file_types: Sequence[str],
+    kept: Sequence[Path] = (),
 ) -> tuple[list[ResolvedInput], list[SkippedInput]]:
     """Every file under `root` kennis can convert, with its group.
 
@@ -255,10 +291,17 @@ def _walk_directory(
 
     for current, directories, filenames in os.walk(root):
         here = Path(current)
+        for name in directories:
+            if not _skip_directory(name) and _within(here / name, kept):
+                skipped.append(
+                    SkippedInput(identifier=str(here / name), refusal=KennisOwn())
+                )
         directories[:] = sorted(
             name
             for name in directories
-            if not _skip_directory(name) and not (here / name).is_symlink()
+            if not _skip_directory(name)
+            and not (here / name).is_symlink()
+            and not _within(here / name, kept)
         )
         group = here.relative_to(root).as_posix()
         group = "" if group == "." else group

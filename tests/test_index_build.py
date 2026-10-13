@@ -548,8 +548,10 @@ def test_the_manifest_records_the_commit_it_was_built_from(tmp_path: Path):
     root = tmp_path / "corpus"
     initialise_corpus(root)
     collection = Collection(root=root, name="notes")
-    (root / "notes" / "one.md").write_text("# One\n\nBody.\n", encoding="utf-8")
-    add_notes(collection, [str(root / "notes" / "one.md")])
+    # Outside the corpus: a file inside it is kennis's own, never a source.
+    source = tmp_path / "one.md"
+    source.write_text("# One\n\nBody.\n", encoding="utf-8")
+    add_notes(collection, [str(source)])
     head = Repository(root).commit("add", scope="notes", summary="1 added")
 
     report = build_index(

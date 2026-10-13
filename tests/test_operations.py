@@ -193,6 +193,26 @@ def test_running_an_interrupted_add_again_carries_on_from_where_it_stopped(
     ]
 
 
+def test_adding_the_folder_that_holds_the_corpus_does_not_copy_it(isolated: Path):
+    """The window's chooser walks up from home, and "Choose this folder"
+    on the folder holding the corpus copied the corpus into itself, with
+    the search history and the configuration beside it as notes."""
+    context = existing_corpus()
+    (isolated / "config" / "credentials.toml").parent.mkdir(exist_ok=True)
+    (isolated / "config" / "credentials.toml").write_text("key = 'secret'\n")
+    a_source(isolated, "trees.md")
+
+    report = add_documents(context, "notes", [str(isolated)], AddOptions())
+
+    added = [outcome.identifier for outcome in report.outcomes if outcome.path]
+    assert [Path(name).name for name in added] == ["trees.md"]
+    copied = sorted(
+        path.relative_to(context.corpus_root).as_posix()
+        for path in (context.corpus_root / "notes").rglob("*.md")
+    )
+    assert copied == ["notes/sources/trees.md"]
+
+
 def test_the_restore_reports_what_it_put_back(isolated: Path):
     """It returns rather than prints, so each front end says it its own
     way. That is the whole reason it left `cli/`."""

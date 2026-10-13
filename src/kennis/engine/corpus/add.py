@@ -128,6 +128,7 @@ from kennis.engine.refusals import (
     SamePage,
     SamePaper,
 )
+from kennis.engine.settings import own_directories
 
 # Identifies kennis to a documentation host, so the traffic can be
 # attributed and, if a site wishes, blocked.
@@ -350,7 +351,11 @@ def add_notes(
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 
-    resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
+    resolved = resolve_inputs(
+        identifiers,
+        extra_file_types=options.extra_file_types,
+        kept_out=own_directories(collection.root),
+    )
     record = Uniqueness.of(collection)
     _report_problems(record, sink)
     outcomes: list[AddOutcome] = _skipped(resolved, sink)
@@ -756,7 +761,11 @@ def add_literature(
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 
-    resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
+    resolved = resolve_inputs(
+        identifiers,
+        extra_file_types=options.extra_file_types,
+        kept_out=own_directories(collection.root),
+    )
     record = Uniqueness.of(collection)
     _report_problems(record, sink)
     outcomes: list[AddOutcome] = _skipped(resolved, sink)

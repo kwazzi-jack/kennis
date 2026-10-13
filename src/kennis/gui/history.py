@@ -25,18 +25,15 @@ moves, which is the #292 and #314 pattern.
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from platformdirs import user_state_dir
-
 from kennis.engine.atomic import replace_file
+from kennis.engine.settings import state_dir
 
-_STATE_DIR_VARIABLE: Final = "KENNIS_STATE_DIR"
 _HISTORY_FILE: Final = "searches.json"
 
 # How many are kept. Enough that yesterday's work is still there,
@@ -74,22 +71,6 @@ class Search:
     # this is true of most searches.
     capped: bool
     at: float
-
-
-def state_dir() -> Path:
-    """Where kennis keeps state that is neither log nor configuration.
-
-    `KENNIS_STATE_DIR` overrides the platform default, through the
-    same mechanism a user gets rather than a back door only tests
-    know about - the pattern `log_dir` and `config_dir` already use.
-
-    On Linux the default is `~/.local/state/kennis`, the parent of
-    `user_log_dir`, so this sits beside the log rather than inside it.
-    """
-    override = os.environ.get(_STATE_DIR_VARIABLE)
-    if override:
-        return Path(override).expanduser()
-    return Path(user_state_dir("kennis"))
 
 
 def history_path() -> Path:
