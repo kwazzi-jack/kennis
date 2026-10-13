@@ -27,7 +27,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Annotated, Final
+from typing import Annotated, Final, assert_never
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Request, Response
@@ -1098,7 +1098,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
     def _started(
         request: Request,
         kind: str,
-        work: Callable[[EventSink], object],
+        work: Callable[[EventSink], JobReport],
         *,
         restored: list[OutOfBandChange] | None = None,
     ) -> Response:
@@ -1954,6 +1954,15 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
     )
 
 
+# What a job started from this window returns. `_started` takes only work
+# returning one of these, so mypy refuses a job whose report has no page, and
+# `_shown_result` matches them exhaustively, so mypy refuses a report added
+# here without one - the rule `render/refusals.py` keeps for refusals.
+JobReport = (
+    AddReport | IndexBuild | CorpusSync | BundleSync | PackInstall | BackupReport
+)
+
+
 def _shown_result(job: Job) -> ShownJob:
     """One finished job as the shape a page lays out.
 
@@ -1962,21 +1971,25 @@ def _shown_result(job: Job) -> ShownJob:
     string that disagreed with it would be a wrong page rather than an
     error.
     """
-    match job.result:
+    report = job.result
+    if not isinstance(report, JobReport):
+        # A job started without `_started` - nothing in the window does.
+        return ShownJob(headline=words.NOTHING_TO_SHOW, role="role-muted")
+    match report:
         case AddReport():
-            return shown_add(job.result)
+            return shown_add(report)
         case IndexBuild():
-            return shown_index(job.result)
+            return shown_index(report)
         case CorpusSync():
-            return shown_corpus_sync(job.result)
+            return shown_corpus_sync(report)
         case BundleSync():
-            return shown_bundle_sync(job.result)
+            return shown_bundle_sync(report)
         case PackInstall():
-            return shown_install(job.result)
+            return shown_install(report)
         case BackupReport():
-            return shown_backup(job.result)
+            return shown_backup(report)
         case _:
-            return ShownJob(headline=words.NOTHING_TO_SHOW, role="role-muted")
+            assert_never(report)
 
 
 def _tree(
