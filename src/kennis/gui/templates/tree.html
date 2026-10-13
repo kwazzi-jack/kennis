@@ -55,3 +55,5 @@
 </li>
 {% endfor %}
 </ul>
+{# A move changed what the pane counts and what is behind its index. #}
+{% if moved %}{% include "shell-redraws.html" %}{% endif %}

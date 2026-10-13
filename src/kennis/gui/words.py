@@ -1479,6 +1479,7 @@ __all__ = [
     "search_hint_for",
     "searchable_summary",
     "time_ago",
+    "unknown_collection",
     "unknown_mode",
     "unknown_order",
     "unknown_scope",

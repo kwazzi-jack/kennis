@@ -949,3 +949,17 @@ def test_remote_images_are_allowed_only_where_the_reader_asked(
 
     assert "https:" in directives_of(asked)["img-src"]
     assert "https:" not in directives_of(not_asked)["img-src"]
+
+
+def test_a_collection_that_is_none_is_called_a_collection(
+    corpus: Path, client: TestClient
+):
+    """`/collection/papers` said "There is no scope called 'papers'":
+    scope is the search box's word, and this is not the search."""
+    assert client.get("/", params={"token": TOKEN}).status_code == 200
+
+    answer = client.get("/collection/papers")
+
+    assert answer.status_code == 404
+    assert "is not a collection" in answer.text
+    assert "scope" not in answer.text.split("<main", 1)[1].split("</main>")[0]
