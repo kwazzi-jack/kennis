@@ -20,6 +20,7 @@ import pytest
 from pydantic import BaseModel
 
 from kennis.engine.settings import (
+    CREDENTIALS_KEPT,
     ChunkingSettings,
     ConversionSettings,
     Settings,
@@ -27,6 +28,7 @@ from kennis.engine.settings import (
     config_document,
     config_path,
     credential,
+    credentials_kept,
     load_settings,
 )
 
@@ -541,3 +543,11 @@ def test_no_setting_description_names_an_install_command():
             assert "uv sync" not in description, description
             assert "uv tool install" not in description, description
             assert "pip install" not in description, description
+
+
+def test_the_credentials_file_is_not_called_private_where_modes_do_nothing():
+    """On Windows `chmod(0o600)` sets the read-only flag and nothing else, so
+    "readable only by you" claimed a protection the file does not have."""
+    assert "only by you" not in credentials_kept("win32")
+    assert credentials_kept("linux") == "readable only by you"
+    assert CREDENTIALS_KEPT in config_document()
