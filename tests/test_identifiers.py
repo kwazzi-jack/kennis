@@ -320,3 +320,85 @@ def test_a_number_arxiv_could_not_have_issued_is_not_an_identifier(invalid: str)
     identifier that cannot exist."""
     assert parse_identifier(invalid) is None
     assert identifier_if_reference(invalid) is None
+
+
+# ---------------------------------------------------------------------------
+# The review of 2026-10-13
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ("https://arxiv.org/abs/astro-ph/0601234", "astro-ph/0601234"),
+        ("https://arxiv.org/pdf/hep-th/9901001v2", "hep-th/9901001"),
+        ("https://arxiv.org/abs/cond-mat/0102536", "cond-mat/0102536"),
+        ("https://arxiv.org/abs/math.GT/0309136", "math.GT/0309136"),
+    ],
+)
+def test_a_legacy_arxiv_url_gives_the_whole_identifier(given: str, expected: str):
+    """The `/` before the archive was refused, so `astro-ph/0601234` in a
+    URL matched from the hyphen as `ph/0601234` - a paper that does not
+    exist, whose lookup returns arXiv's error entry."""
+    assert normalize_arxiv_id(given) == expected
+
+
+def test_a_word_before_seven_digits_is_not_a_legacy_archive():
+    """`data-set/1234567` on a front page was read as arXiv `set/1234567`
+    and outranked the paper's real DOI."""
+    found = find_paper_identifiers("see zenodo.org/data-set/1234567, doi 10.1000/abc")
+
+    assert [identifier.kind for identifier in found] == ["doi"]
+
+
+def test_a_host_that_only_ends_like_arxiv_is_not_arxiv():
+    assert normalize_arxiv_id("https://evilarxiv.org/abs/2401.01234") is None
+    assert normalize_arxiv_id("https://export.arxiv.org/abs/2401.01234") == "2401.01234"
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        "http://dx.doi.org/10.1000/abc",
+        "https://doi.org/10.1000/abc?via=feed",
+        "https://doi.org/10.1000%2Fabc",
+    ],
+)
+def test_any_doi_resolver_address_is_the_same_doi(given: str):
+    found = identifier_if_reference(given)
+
+    assert found is not None and found.value == "10.1000/abc"
+
+
+def test_a_parenthesised_doi_loses_its_bracket():
+    assert normalize_doi("(doi:10.1000/abc).") == "10.1000/abc"
+    assert normalize_doi("10.1002/(SICI)1097-0258") == "10.1002/(SICI)1097-0258"
+
+
+BIB_WITH_ABBREVIATIONS = r"""@string{apj = "Astrophysical Journal"}
+@article{smith2020,
+  author = {M{\"{u}}ller, Hans and Doe, Jane},
+  title = {Gains {and} phases},
+  journal = apj,
+  year = 2020
+}
+@Comment{jabref-meta: databaseType:bibtex;}
+"""
+
+
+def test_an_abbreviation_or_comment_is_not_a_record_and_takes_no_key():
+    """`[^,]+` ran across lines, so the `@string` before an article became
+    the article's citekey, and JabRef's `@Comment` did the same."""
+    entries = parse_bibtex(BIB_WITH_ABBREVIATIONS)
+
+    assert [entry.citekey for entry in entries] == ["smith2020"]
+
+
+def test_a_value_nested_three_braces_deep_is_read_whole():
+    """A pattern allowing two levels read `M\\"uller` and lost every
+    co-author after him."""
+    (entry,) = parse_bibtex(BIB_WITH_ABBREVIATIONS)
+
+    assert entry.authors.endswith("Hans and Doe, Jane")
+    assert entry.title == "Gains and phases"
+    assert entry.year == "2020"
