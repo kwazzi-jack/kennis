@@ -26,7 +26,7 @@ import json
 import re
 import time
 import xml.etree.ElementTree as ElementTree
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from fnmatch import fnmatch
 from typing import Final
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -34,15 +34,19 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
-from kennis.engine.docs.http import get_within
+from kennis.engine.docs.http import USER_AGENT, get_within
 from kennis.engine.docs.sites import DocsSite
 
-_USER_AGENT: Final = "kennis-docs-fetch"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
 
 # Spacing between requests to one host. Politeness, and the reason this layer
 # is serial rather than concurrent.
 _FETCH_DELAY_SECONDS: Final = 0.2
+
+# The longest robots.txt's `Crawl-delay` is honoured to. A site asking for
+# more is still read, this slowly: three hundred pages at a minute each
+# would be a five-hour add that looks no different from a hung one.
+_MAX_CRAWL_DELAY_SECONDS: Final = 30.0
 
 # Walking a third-party site, so every axis is bounded.
 _MAX_PAGES: Final = 300
@@ -128,6 +132,9 @@ class Discovery:
     path_prefix: str
     # Pages already downloaded while discovering, keyed by URL.
     html: dict[str, str] = field(default_factory=dict)
+    # Seconds between requests to this site: the caller's, or longer when
+    # its robots.txt asks for longer. The pages left to fetch are paced by it.
+    delay: float = _FETCH_DELAY_SECONDS
 
 
 def discover_pages(
@@ -146,19 +153,34 @@ def discover_pages(
     mode = site.discovery or discovery_mode(client, site.base_url)
     prefix = site.path_prefix or _path_prefix_of(site.base_url)
     robots = robots_for(client, _origin_of(site.base_url))
+    paced = paced_by(robots, delay)
 
     if mode == "sphinx":
-        return _sphinx_pages(client, site, prefix, robots, max_pages=max_pages)
-    return _generic_pages(
-        client,
-        site,
-        prefix,
-        robots,
-        mode=mode,
-        delay=delay,
-        max_pages=max_pages,
-        max_depth=max_depth,
-    )
+        found = _sphinx_pages(client, site, prefix, robots, max_pages=max_pages)
+    else:
+        found = _generic_pages(
+            client,
+            site,
+            prefix,
+            robots,
+            mode=mode,
+            delay=paced,
+            max_pages=max_pages,
+            max_depth=max_depth,
+        )
+    return replace(found, delay=paced)
+
+
+def paced_by(robots: RobotFileParser, delay: float) -> float:
+    """`delay`, or the site's own `Crawl-delay` when that is longer.
+
+    Read but ignored before, so a site asking for ten seconds between
+    requests got one every fifth of a second.
+    """
+    asked = robots.crawl_delay(USER_AGENT)
+    if asked is None:
+        return delay
+    return max(delay, min(float(asked), _MAX_CRAWL_DELAY_SECONDS))
 
 
 def discovery_mode(client: httpx.Client, base_url: str) -> str:
@@ -257,7 +279,7 @@ def crawl_site(
         if key in visited:
             continue
         visited.add(key)
-        if not robots.can_fetch(_USER_AGENT, url):
+        if not robots.can_fetch(USER_AGENT, url):
             continue
 
         if attempts and delay:
@@ -276,7 +298,7 @@ def crawl_site(
         landed = str(response.url)
         if landed != url and (
             not _in_scope(_normalized(landed), origin, prefix)
-            or not robots.can_fetch(_USER_AGENT, landed)
+            or not robots.can_fetch(USER_AGENT, landed)
         ):
             continue
 
@@ -339,7 +361,7 @@ def _sphinx_pages(
         page
         for page in pages
         if _in_scope(_normalized(page.url), origin, prefix)
-        and robots.can_fetch(_USER_AGENT, page.url)
+        and robots.can_fetch(USER_AGENT, page.url)
     ]
     return Discovery(
         mode="sphinx",
@@ -424,7 +446,7 @@ def _generic_pages(
                 client, _sitemap_urls(client, origin, robots), origin=origin
             )
             if _in_scope(_normalized(url), origin, prefix)
-            and robots.can_fetch(_USER_AGENT, url)
+            and robots.can_fetch(USER_AGENT, url)
         ]
     else:
         crawled = crawl_site(

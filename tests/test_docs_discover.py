@@ -8,9 +8,12 @@ does not. The bounds matter because this walks an arbitrary third-party site.
 
 from __future__ import annotations
 
+import gzip
 import json
+from collections.abc import Iterator
 
 import httpx
+import pytest
 
 from kennis.engine.docs.discover import (
     _in_scope,
@@ -20,6 +23,7 @@ from kennis.engine.docs.discover import (
     page_key,
     robots_for,
 )
+from kennis.engine.docs.http import USER_AGENT, TooLarge, get_within
 from kennis.engine.docs.sites import DocsSite
 
 BASE = "https://example.org/en/latest/"
@@ -606,3 +610,97 @@ def test_a_robots_file_that_errors_forbids_rather_than_allows():
     )
 
     assert not robots.can_fetch("kennis-docs-fetch", "https://h.org/docs/")
+
+
+# ---------------------------------------------------------------------------
+# What one request may cost
+# ---------------------------------------------------------------------------
+
+
+def test_a_response_longer_than_the_limit_is_abandoned_part_way():
+    """A release archive linked from the docs was read whole into memory
+    before its content type was looked at."""
+    sent: list[int] = []
+
+    def endless() -> Iterator[bytes]:
+        for _ in range(1000):
+            sent.append(1)
+            yield b"x" * 1024
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=endless())
+        )
+    )
+
+    with pytest.raises(TooLarge):
+        get_within(client, BASE, origin="https://example.org", limit=10 * 1024)
+    assert len(sent) < 20
+
+
+def test_a_declared_length_over_the_limit_is_refused_before_reading():
+    client = serving(
+        {BASE: httpx.Response(200, headers={"content-length": "999999"}, text="x")}
+    )
+
+    with pytest.raises(TooLarge):
+        get_within(client, BASE, origin="https://example.org", limit=1000)
+
+
+def test_a_compressed_response_is_measured_as_it_inflates():
+    """A small gzip body can inflate to any size; the bytes counted are the
+    ones that would be held."""
+    packed = gzip.compress(b"x" * 100_000)
+    client = serving(
+        {
+            BASE: httpx.Response(
+                200, headers={"content-encoding": "gzip"}, content=packed
+            )
+        }
+    )
+
+    with pytest.raises(TooLarge):
+        get_within(client, BASE, origin="https://example.org", limit=10_000)
+
+
+def test_a_response_within_the_limit_reads_as_it_was_sent():
+    client = serving(
+        {
+            BASE: httpx.Response(
+                200,
+                headers={
+                    "content-encoding": "gzip",
+                    "content-type": "text/html; charset=utf-8",
+                },
+                content=gzip.compress("caf\u00e9".encode()),
+            )
+        }
+    )
+
+    response = get_within(client, BASE, origin="https://example.org")
+
+    assert response.text == "caf\u00e9"
+    assert str(response.url) == BASE
+
+
+def test_a_page_too_large_to_read_is_skipped_by_the_crawl():
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        html = page("big.html", "small.html") if url == BASE else page()
+        headers = {"content-type": "text/html"}
+        if url.endswith("big.html"):
+            headers["content-length"] = str(10**12)
+        return httpx.Response(200, text=html, headers=headers)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    robots = robots_for(serving({}), "https://example.org")
+
+    urls = crawl_site(client, BASE, robots=robots, delay=0).urls
+
+    assert BASE + "big.html" not in urls
+    assert BASE + "small.html" in urls
+
+
+def test_the_user_agent_says_what_it_is_and_where_to_ask():
+    assert USER_AGENT.startswith("kennis-docs-fetch/")
+    assert "https://" in USER_AGENT

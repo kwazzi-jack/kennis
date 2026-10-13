@@ -77,6 +77,7 @@ from kennis.engine.corpus.schema import (
 )
 from kennis.engine.docs.discover import discover_pages
 from kennis.engine.docs.fetch import convert_page, fetch_page
+from kennis.engine.docs.http import USER_AGENT as DOCS_USER_AGENT
 from kennis.engine.docs.sites import (
     DocsSite,
     project_name_from_url,
@@ -132,7 +133,6 @@ from kennis.engine.settings import own_directories
 
 # Identifies kennis to a documentation host, so the traffic can be
 # attributed and, if a site wishes, blocked.
-_DOCS_USER_AGENT = "kennis-docs-fetch"
 
 # How long kennis waits between requests to one host. The two differ because
 # the hosts do: arXiv states a three-second interval for its API and answers a
@@ -1441,6 +1441,9 @@ class _Page:
     base_url: str | None = None
     version: str | None = None
     crawl: CrawlScope | None = None
+    # Seconds to wait before fetching it, when its site asked for longer
+    # than the batch's own delay.
+    pace: float | None = None
 
     @property
     def identifier(self) -> str:
@@ -1481,7 +1484,7 @@ def add_docs(
 
     owned = client is None
     active = client or httpx.Client(
-        headers={"User-Agent": _DOCS_USER_AGENT}, follow_redirects=True
+        headers={"User-Agent": DOCS_USER_AGENT}, follow_redirects=True
     )
     delay = _delay_for(options, _DOCS_DELAY_SECONDS)
     try:
@@ -1492,8 +1495,9 @@ def add_docs(
             # request all of them back to back, which is the traffic pattern
             # the delay exists to avoid. A page the crawl already downloaded
             # costs no request, so it costs no wait either.
-            if position and delay and page.html is None:
-                time.sleep(delay)
+            wait = page.pace if page.pace is not None else delay
+            if position and wait and page.html is None:
+                time.sleep(wait)
             sink.emit(ItemStarted(operation="add", item=page.identifier))
             outcome = _add_page(collection, page, record, active, options)
             outcomes.append(outcome)
@@ -1632,6 +1636,7 @@ def _pages_of_site(
             base_url=base_url,
             version=found.version,
             crawl=crawl,
+            pace=found.delay,
         )
         for page in found.pages
     ]
