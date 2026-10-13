@@ -446,3 +446,25 @@ def test_a_bibcode_with_its_scheme_is_a_reference():
     assert identifier_if_reference("bibcode:2018MNRAS.478.2399K") == PaperIdentifier(
         kind="bibcode", value="2018MNRAS.478.2399K"
     )
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "10.48550/arXiv.2409.19750",
+        "doi:10.48550/arxiv.2409.19750",
+        "https://doi.org/10.48550/arXiv.2409.19750",
+    ],
+)
+def test_arxivs_own_doi_is_read_as_the_arxiv_paper(written: str):
+    """It names the arXiv paper itself, so its text is arXiv's; read as a
+    DOI it had no source and was refused."""
+    assert identifier_if_reference(written) == PaperIdentifier(
+        kind="arxiv", value="2409.19750"
+    )
+
+
+def test_a_journal_doi_is_not_read_as_arxiv():
+    assert identifier_if_reference("10.1093/mnras/stab123") == PaperIdentifier(
+        kind="doi", value="10.1093/mnras/stab123"
+    )
