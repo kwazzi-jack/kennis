@@ -47,7 +47,9 @@ import pypdfium2
 
 # A token is alphabetic with internal hyphens or apostrophes. Numbers,
 # symbols and LaTeX are not words and are never touched.
-_TOKEN: Final = re.compile(r"[A-Za-z][A-Za-z'-]*")
+# Ends on a letter: a closing quote or a dash is the sentence's, and
+# `'efect'` was looked up as `efect'`, which no vocabulary holds.
+_TOKEN: Final = re.compile(r"[A-Za-z](?:[A-Za-z'-]*[A-Za-z])?")
 
 # Where a PDF breaks a word across a line. Which codepoint appears depends on
 # the font: U+FFFE is what pypdfium2 produced for one arXiv paper, U+00AD is
@@ -60,8 +62,13 @@ _BREAKS: Final = re.compile("[\\ufffe\\u00ad\\ufffd]|-\\s*\\n\\s*")
 # worse failure than leaving a misspelling in place. An address is literal
 # text too: `[code](https://github.com/x/stuf-tool)` had its link rewritten
 # to `stuff-tool`, which goes nowhere.
+#
+# Inline math by Pandoc's rule: the opening `$` is not followed by a space or
+# a digit, the closing one is not preceded by a space or followed by a digit.
+# Any two dollars on a line counted before, so "$5 for the efect, $10" kept
+# everything between two prices from being repaired.
 _PROTECTED: Final = re.compile(
-    r"```.*?```|`[^`\n]*`|\$\$.*?\$\$|\$[^$\n]*\$"
+    r"```.*?```|`[^`\n]*`|\$\$.*?\$\$|\$(?=[^\s\d$])[^$\n]*?(?<=\S)\$(?!\d)"
     r"|\]\([^)\n]*\)|<[a-z][a-z0-9+.-]*://[^>\n]*>|\b[a-z][a-z0-9+.-]*://\S+",
     re.DOTALL,
 )
