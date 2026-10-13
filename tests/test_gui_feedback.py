@@ -705,3 +705,19 @@ def test_a_command_s_help_is_not_offered_as_the_window_s_remedy(client: TestClie
     page = client.get("/", params={"q": "anything"}).text
 
     assert "--help" not in page
+
+
+def test_activity_lists_the_corpus_s_changes_whoever_made_them(
+    corpus: Path, client: TestClient
+):
+    """The jobs listed are this window's and kept an hour: an add from a
+    terminal was nowhere on the page."""
+    source = corpus / "from-a-terminal.md"
+    source.write_text("# From a terminal\n\nText.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+    page = BeautifulSoup(client.get("/activity").text, "html.parser")
+    changes = page.find("table", class_="changes")
+
+    assert changes is not None
+    assert words.change_line("add", "notes", "1 added") in changes.get_text()

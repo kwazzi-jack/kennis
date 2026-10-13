@@ -538,6 +538,12 @@ PALETTE_PAGES: Final[tuple[tuple[str, str, str], ...]] = (
 
 NOTHING_RUN = "Nothing has run since kennis started. Operations are kept for an hour."
 
+# The corpus's own record, under this window's jobs: everything that
+# changed it, from here, a terminal or an agent.
+CHANGES_HEADING = "Changes to the corpus"
+
+NO_CHANGES = "The corpus has no history yet."
+
 # What each kind of job is called where a person reads it: the strip,
 # the Activity page. The keys are the kinds `app.py` starts jobs under.
 JOB_KINDS: Final[dict[str, str]] = {
@@ -625,10 +631,19 @@ def last_change(
     person made by hand is a change too (`read_history` keeps it).
     """
     ago = time_ago(seconds)
+    return f"Last change: {change_line(operation, scope, summary)}, {ago}"
+
+
+def change_line(operation: str | None, scope: str | None, summary: str) -> str:
+    """One commit of the corpus, as the Activity page and the strip say it.
+
+    A subject kennis did not write is quoted whole, because a commit a
+    person made by hand is a change too.
+    """
     if operation is None or scope is None:
-        return f"Last change: {summary}, {ago}"
+        return summary
     kind = CHANGE_KINDS.get(operation, operation)
-    return f"Last change: {kind} {scope} ({_one_is_one(summary)}), {ago}"
+    return f"{kind} {scope} ({_one_is_one(summary)})"
 
 
 def _one_is_one(summary: str) -> str:
@@ -1328,6 +1343,7 @@ __all__ = [
     "BUNDLE_NOT_COMMITTED",
     "BUSY_WITH_ANOTHER",
     "CANCEL",
+    "CHANGES_HEADING",
     "CHANGE_KINDS",
     "CHECK_SITE",
     "CHOOSER_CANCEL",
@@ -1424,6 +1440,7 @@ __all__ = [
     "NOT_A_FIELD",
     "NOT_FOUND_HEADING",
     "NOT_SEARCHABLE_YET",
+    "NO_CHANGES",
     "NO_CONTEXT",
     "NO_HEADINGS",
     "NO_MATCHES",
@@ -1514,6 +1531,7 @@ __all__ = [
     "WINDOW_SETTINGS_NOTE",
     "attention_count",
     "built_with",
+    "change_line",
     "chooser_truncated",
     "corpus_at",
     "describe_count",

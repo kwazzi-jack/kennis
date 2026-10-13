@@ -1937,6 +1937,9 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 
 /* An empty corpus's home: centred in the column, a sentence of what
    kennis is, and the first things to do as buttons. */
+/* The corpus's own record, under this window's jobs. */
+.activity.changes { margin-top: 0.5rem; }
+
 /* The inspector's Copy, small beside the value it copies. */
 .details .copy { padding: 0 0.4rem; font-size: 0.75rem; margin-left: 0.3rem; }
 
