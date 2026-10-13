@@ -187,6 +187,17 @@ def normalize_doi(identifier: str) -> str | None:
     return found
 
 
+# The prefix arXiv registers a DOI for each of its papers under.
+_ARXIV_DOI_PREFIX: Final = "10.48550/arxiv."
+
+
+def _arxiv_id_in_doi(doi: str) -> str | None:
+    """The arXiv identifier inside one of arXiv's own DOIs, or None."""
+    if not doi.lower().startswith(_ARXIV_DOI_PREFIX):
+        return None
+    return normalize_arxiv_id(doi[len(_ARXIV_DOI_PREFIX) :])
+
+
 # The hosts that resolve a DOI, any of which a reader may paste.
 _DOI_RESOLVERS: Final = ("doi.org", "dx.doi.org", "www.doi.org")
 
@@ -504,6 +515,12 @@ def identifier_if_reference(identifier: str) -> PaperIdentifier | None:
     if _DOI.fullmatch(bare.rstrip(".")) or _is_doi_url(bare):
         doi = normalize_doi(bare)
         if doi is not None:
+            # arXiv's own DOI names the arXiv paper itself, not a published
+            # version of it, so it is read as the arXiv identifier it wraps
+            # and its text comes from arXiv like any other.
+            wrapped = _arxiv_id_in_doi(doi)
+            if wrapped is not None:
+                return PaperIdentifier(kind="arxiv", value=wrapped)
             return PaperIdentifier(kind="doi", value=doi)
 
     # The prefix too, as the other two schemes have theirs: a pack sync
