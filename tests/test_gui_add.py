@@ -29,6 +29,7 @@ from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.intake import convert_local_file, uploaded_as
 from kennis.engine.events import EventSink
 from kennis.engine.literature.metadata import ArxivMetadata
+from kennis.engine.settings import load_settings
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.icons import icon
@@ -43,8 +44,8 @@ STATIC = Path(__file__).parent.parent / "src" / "kennis" / "gui" / "static"
 EXPECTED_TABS = [
     ("paper", "Paper"),
     ("site", "Documentation site"),
-    ("file", "File"),
-    ("group", "Several by group"),
+    ("file", "Files"),
+    ("group", "Several at once"),
 ]
 
 
@@ -172,12 +173,30 @@ REQUIRED_FIELDS = {
 }
 
 
+# Which of `words.EMPTY_MEANS` each tab's optional fields say, written by
+# hand (#373); `group` is `words.group_empty_means`, which reads the settings.
+EMPTY_MEANS_OF = {
+    "paper": {"identifier": "identifier", "title": "title", "citekey": "citekey"},
+    "site": {"project": "project", "max_pages": "max_pages", "max_depth": "max_depth"},
+    "file": {"title": "file_title", "project": "file_project"},
+    "group": {},
+}
+
+
+def empty_means_of(kind: str, field: str) -> str:
+    if field == "group":
+        return words.group_empty_means(load_settings().corpus.default_group)
+    return words.EMPTY_MEANS[EMPTY_MEANS_OF[kind][field]]
+
+
 @pytest.mark.parametrize("kind", [kind for kind, _ in EXPECTED_TABS])
 def test_every_field_says_whether_it_is_needed_and_what_empty_means(
     client: TestClient, kind: str
 ):
     """The right one of the two, not merely one of them: a form calling
-    every field required passes a check that each says something."""
+    every field required passes a check that each says something. What
+    empty becomes is the field's own placeholder, worded as its default,
+    so it takes no line of its own."""
     dialog = dialog_of(client, kind)
     rows = re.findall(r'<div class="field"[^>]*>(.*?)</div>', dialog, re.S)
 
@@ -193,7 +212,15 @@ def test_every_field_says_whether_it_is_needed_and_what_empty_means(
         )
         assert need.group(1) == expected, row
         if expected == words.OPTIONAL:
-            assert 'class="empty"' in row, row
+            control = re.search(
+                rf'<input id="add-{name.group(1)}" type="(?:text|number)"[^>]*>', row
+            )
+            assert control, row
+            placeholder = re.search(r'placeholder="([^"]*)"', control.group(0))
+            assert placeholder, row
+            said = unescape(placeholder.group(1))
+            assert said.startswith(words.EMPTY_PREFIX), row
+            assert empty_means_of(kind, name.group(1)) in said, row
 
 
 @pytest.mark.parametrize(
@@ -793,15 +820,25 @@ def test_the_dialog_script_copies_values_and_composes_no_words():
     assert not re.search(r'"[A-Z][a-z]+ [a-z]', code), "a sentence in the script"
 
 
-def test_an_optional_field_says_what_empty_becomes_with_the_value_set_apart(
-    client: TestClient,
+@pytest.mark.parametrize("kind", ["paper", "site", "file"])
+def test_an_optional_field_says_what_empty_becomes_as_its_default(
+    client: TestClient, kind: str
 ):
-    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
-    empty = dialog.select_one(".field .empty")
+    """In the field itself, as its placeholder, worded as the default: the
+    line under each optional field doubled the height of the form."""
+    dialog = BeautifulSoup(dialog_of(client, kind), "html.parser")
+    controls = dialog.select(
+        '.field[data-need="optional"] input[type="text"], '
+        '.field[data-need="optional"] input[type="number"]'
+    )
 
-    assert isinstance(empty, Tag)
-    assert empty.get_text(" ").startswith(words.EMPTY_PREFIX)
-    assert empty.find("b") is not None
+    assert controls
+    assert dialog.select(".field .empty") == []
+    for control in controls:
+        name = str(control["name"])
+        assert control.get("placeholder") == (
+            f"{words.EMPTY_PREFIX} {empty_means_of(kind, name)}"
+        ), name
 
 
 def test_a_required_field_takes_the_whole_row(client: TestClient):

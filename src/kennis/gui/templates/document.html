@@ -33,7 +33,8 @@
   <h1>{{ document.title }}</h1>
   {% if document.byline %}<p class="byline">{{ document.byline }}</p>{% endif %}
   {% if document.has_blocked_images and not load_remote_images %}
-  <div class="notice"><p>{{ blocked_note }}
+  {% from "tip.html" import tip %}
+  <div class="notice"><p>{{ blocked_note }} {{ tip("images", blocked_action, blocked_tip) }}
     <a href="?images=on">{{ blocked_action }}</a></p></div>
   {% endif %}
   {% if mark_withheld %}

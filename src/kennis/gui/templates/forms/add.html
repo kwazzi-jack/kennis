@@ -1,11 +1,12 @@
 {# The Add dialog: one tab per kind of thing to add (#413). A tab is a
    link: htmx swaps only this tab's content inside the open dialog, and
    without a script it is followed and the form arrives as a page. #}
+{% from "tip.html" import tip %}
 <div class="add-tab">
 <nav class="tabs" aria-label="{{ add_tabs_label }}">
   {% for tab in tabs %}<a class="tab" href="{{ tab.href }}" hx-get="{{ tab.href }}" hx-target="closest .add-tab" hx-select=".add-tab" hx-swap="outerHTML"{% if tab.current %} aria-current="page"{% endif %}>{{ icon(tab.icon) }}{{ tab.label }}</a>{% endfor %}
 </nav>
-<p class="role-muted">{{ preamble }}</p>
+<p class="role-muted">{{ preamble }} {{ tip("add-" ~ kind, add_tab_label, add_tip) }}</p>
 <form action="/add" method="post" enctype="multipart/form-data" hx-encoding="multipart/form-data" hx-disabled-elt="find button[type=submit]" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
   {# Where a refusal the form can be corrected for is answered: in the
      dialog, above the fields still holding what was typed. It closed and

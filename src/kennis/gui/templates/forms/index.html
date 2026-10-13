@@ -1,4 +1,5 @@
-<p class="role-muted">{{ index_preamble }}</p>
+{% from "tip.html" import tip %}
+<p class="role-muted">{{ index_preamble }} {{ tip("index", title, index_tip) }}</p>
 <form action="/index" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/index" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
   <div class="fields">
     <div class="labelled"><span class="name" id="index-which-name">{{ index_which_label }}</span>

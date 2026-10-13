@@ -75,6 +75,8 @@ def _add_context(
         "kind": kind,
         "tabs": add_tabs(kind),
         "preamble": words.ADD_PREAMBLES[kind],
+        "add_tip": words.ADD_TIPS[kind],
+        "add_tab_label": dict(words.ADD_TABS)[kind],
         "fields": filled(
             add_fields(
                 kind, default_group=existing_corpus().settings.corpus.default_group

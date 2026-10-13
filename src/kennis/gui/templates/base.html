@@ -1,4 +1,4 @@
-{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% set strip_open = strip_state(request) %}{% from "resize.html" import handle %}<!doctype html>
+{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% set strip_open = strip_state(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
 <html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}" data-strip="{{ strip_open }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
 <head>
 <meta charset="utf-8">
@@ -59,7 +59,7 @@
            placeholder="{{ scope_hints[asked_scope] }}" aria-label="{{ search_action }}"
            {% if searching_here %}autofocus{% endif %}>
     <kbd class="kbd" title="{{ search_key_title }}">/</kbd>
-    <select name="scope" aria-label="{{ scope_label }}">
+    <select name="scope" aria-label="{{ scope_label }}" title="{{ scope_label }}">
       <option value="{{ everywhere }}" data-hint="{{ scope_hints[everywhere] }}"{% if asked_scope == everywhere %} selected{% endif %}>{{ everywhere_label }}</option>
       {% for name in scopes %}
       <option value="{{ name }}" data-hint="{{ scope_hints[name] }}"{% if name == asked_scope %} selected{% endif %}>{{ name }}</option>
@@ -68,7 +68,7 @@
     {# Named rather than `from:select` in the trigger: htmx resolves
        that against the document, and the theme control is a select
        too - a colour change would run a search. #}
-    <select name="mode" aria-label="{{ mode_label }}">
+    <select name="mode" aria-label="{{ mode_label }}" title="{{ mode_label }}">
       {% for value, label in mode_choices %}
       <option value="{{ value }}"{% if value == mode | default(mode_default) %} selected{% endif %}>{{ label }}</option>
       {% endfor %}
@@ -129,7 +129,7 @@
       <div class="branch"></div>
     </details>
     {% else %}
-    <p class="pane-note role-muted">{{ no_context }}</p>
+    <p class="pane-note role-muted">{{ no_context }} {{ tip("no-context", context_heading, no_context_tip) }}</p>
     {% endif %}
   </section>
   <section>

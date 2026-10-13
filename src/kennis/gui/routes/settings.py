@@ -75,6 +75,7 @@ def _settings_page(
             "preference_list": list(PREFERENCES.values()),
             "window_heading": words.WINDOW_SETTINGS_HEADING,
             "window_note": words.WINDOW_SETTINGS_NOTE,
+            "window_tip": words.WINDOW_SETTINGS_TIP,
             "save_label": words.SAVE,
             **kennis,
             **(backup if backup is not None else _backup_section()),
@@ -95,7 +96,7 @@ def _kennis_section(
     """What the configuration section draws, for a page or for htmx."""
     return {
         "kennis_settings": shown_settings(answers, problems),
-        "kennis_heading": words.KENNIS_SETTINGS_HEADING,
+        "kennis_settings_heading": words.KENNIS_SETTINGS_HEADING,
         "kennis_note": words.KENNIS_SETTINGS_NOTE,
         "kennis_save": words.KENNIS_SAVE,
         "kennis_groups": words.KENNIS_GROUPS,
@@ -110,7 +111,6 @@ def _kennis_section(
         "rebuild_now": words.REBUILD_NOW,
         "rebuild_later": words.REBUILD_LATER,
         "undo_label": words.UNDO,
-        "credential_keep": words.CREDENTIAL_KEEP,
         "credential_set": words.CREDENTIAL_SET,
         "credential_unset": words.CREDENTIAL_UNSET,
         "converter_missing": words.CONVERTER_MISSING,
@@ -151,6 +151,7 @@ def _backup_section(
         else "",
         "backup_now_label": words.BACKUP_NOW,
         "backup_now_note": words.BACKUP_NOW_NOTE,
+        "backup_now_tip": words.BACKUP_NOW_TIP,
         "backup_password": words.BACKUP_PASSWORD,
         "backup_confirmation": words.BACKUP_CONFIRMATION,
         "backup_test_label": words.BACKUP_TEST,

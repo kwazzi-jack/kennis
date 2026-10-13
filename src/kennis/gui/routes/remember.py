@@ -39,6 +39,7 @@ def _remember_context(outcome: ShownOutcome | None) -> dict[str, object]:
     return {
         "outcome": outcome,
         "preamble": words.REMEMBER_PREAMBLE,
+        "remember_tip": words.REMEMBER_TIP,
         "placeholder": words.REMEMBER_PLACEHOLDER,
         "title_hint": words.TITLE_HINT,
         "group_hint": words.GROUP_HINT,
