@@ -1,0 +1,10 @@
+{# An info tip: a small button beside a label, opening a few words that
+   would otherwise sit under it as a paragraph. The browser's own popover,
+   so it opens by click, tap or keyboard, closes on Escape or a click
+   elsewhere, and needs no script; `tips.js` only places it beside its
+   button, where a browser without anchoring would centre it. `key` makes
+   the id, unique on the page; `about` names what it explains, for a
+   screen reader, and every word is the caller's. #}
+{% macro tip(key, about, text) -%}
+<button type="button" class="tip-button" popovertarget="tip-{{ key }}" aria-label="{{ tip_about(about) }}" title="{{ tip_about(about) }}">{{ icon("info") }}</button><span class="tip" id="tip-{{ key }}" popover role="tooltip">{{ text }}</span>
+{%- endmacro %}
