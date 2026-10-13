@@ -337,3 +337,20 @@ def test_a_document_is_a_frozen_record(tmp_path: Path):
     assert isinstance(written, Document)
     with pytest.raises(dataclasses.FrozenInstanceError):
         written.body = "reassigned"
+
+
+def test_a_kept_original_named_like_the_document_does_not_replace_it(tmp_path: Path):
+    """A PDF served from `.../content.md` was kept under that name and
+    written over the document just written beside it."""
+    written = write_document(
+        tmp_path / "A paper.md",
+        frontmatter=a_paper_frontmatter(),
+        body=BODY,
+        assets={WRAPPED_DOCUMENT_FILENAME: b"%PDF-1.7", "..": b"%PDF-1.7"},
+    )
+
+    assert BODY.strip() in written.md_path.read_text(encoding="utf-8")
+    kept = sorted(path.name for path in written.md_path.parent.iterdir())
+    assert kept == sorted(
+        [WRAPPED_DOCUMENT_FILENAME, f"original-{WRAPPED_DOCUMENT_FILENAME}", "original"]
+    )
