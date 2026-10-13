@@ -22,7 +22,7 @@ from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.holdings import holdings, installed_packs, revision
+from kennis.holdings import contents_of, holdings, installed_packs, revision
 
 
 @pytest.fixture(autouse=True)
@@ -227,3 +227,29 @@ def test_a_rebuilt_index_is_seen(corpus: Path, run: CliRunner):
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 
     assert held("notes").is_current
+
+
+def test_a_collection_listed_twice_is_walked_once_and_again_after_a_change(
+    corpus: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """The window lists a collection on its page and in the pane; neither
+    is a write, so neither needs `Collection.contents`'s guarantee of a
+    fresh walk - only an answer that follows the corpus."""
+    a_note(run, corpus, "calibration", "Antenna gains.")
+    walked: list[str] = []
+    walk = Collection.contents
+
+    def counted(self: Collection) -> object:
+        walked.append(self.name)
+        return walk(self)
+
+    monkeypatch.setattr(Collection, "contents", counted)
+    context = existing_corpus()
+
+    contents_of(context, "notes")
+    contents_of(context, "notes")
+    assert walked == ["notes"]
+
+    a_note(run, corpus, "imaging", "Deconvolution.")
+
+    assert len(contents_of(context, "notes").documents) == 2

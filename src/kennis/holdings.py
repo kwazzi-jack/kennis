@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Literal
 
 from kennis.context import Context
-from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.collection import Collection, CollectionContents
 from kennis.engine.corpus.layout import index_root, relative_to_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.history.freshness import (
@@ -85,7 +85,8 @@ def holdings(context: Context) -> list[Holding]:
         return list(held[1])
     repository = Repository(root)
     counted = [
-        _holding(context, repository, collection) for collection in COLLECTION_NAMES
+        _holding(context, repository, collection, state)
+        for collection in COLLECTION_NAMES
     ]
     with _HELD_GUARD:
         _HELD[root] = (state, counted)
@@ -135,8 +136,36 @@ def _stamp(path: Path) -> tuple[int, int] | None:
     return (found.st_mtime_ns, found.st_size)
 
 
-def _holding(context: Context, repository: Repository, collection: str) -> Holding:
-    contents = Collection(root=context.corpus_root, name=collection).contents()
+def contents_of(
+    context: Context, collection: str, *, state: CorpusState | None = None
+) -> CollectionContents:
+    """One collection's documents, walked again only when the corpus changed.
+
+    For a reader, as the window is: `Collection.contents` caches nothing on
+    purpose, because a command holding the lock must never read a document
+    deleted underneath it, and that is still how every write reads. A page
+    listing a collection - half a millisecond a document - asks this.
+    `state` is `corpus_state`, for a caller that has just read it.
+    """
+    root = context.corpus_root
+    now = state if state is not None else corpus_state(context)
+    with _HELD_GUARD:
+        held = _WALKED.get((root, collection))
+    if held is not None and held[0] == now:
+        return held[1]
+    walked = Collection(root=root, name=collection).contents()
+    with _HELD_GUARD:
+        _WALKED[(root, collection)] = (now, walked)
+    return walked
+
+
+_WALKED: dict[tuple[Path, str], tuple[CorpusState, CollectionContents]] = {}
+
+
+def _holding(
+    context: Context, repository: Repository, collection: str, state: CorpusState
+) -> Holding:
+    contents = contents_of(context, collection, state=state)
     return Holding(
         collection=collection,
         documents=len(contents.documents),
@@ -245,9 +274,12 @@ def last_change(context: Context) -> HistoryEntry | None:
 
 
 __all__ = [
+    "CorpusState",
     "DocumentMarks",
     "DocumentState",
     "Holding",
+    "contents_of",
+    "corpus_state",
     "document_marks",
     "freshness_of",
     "holdings",

@@ -599,7 +599,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             return _problem(
                 request, UnknownCollection(words.unknown_scope(collection, SCOPES))
             )
-        groups, unreadable = shown_groups(context.corpus_root, collection)
+        groups, unreadable = shown_groups(context, collection)
         held = next(h for h in holdings(context) if h.collection == collection)
         return _TEMPLATES.TemplateResponse(
             request,
