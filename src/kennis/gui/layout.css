@@ -1619,6 +1619,16 @@ button:focus-visible, a:focus-visible {
 .fields { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0; }
 .fields label { font-family: var(--gutter); font-size: 0.8125rem; }
 .fields input[type="text"] { flex: 1 1 12rem; }
+/* A control with its name above it, where a placeholder used to be
+   the only name it had. */
+.labelled {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1 1 12rem;
+}
+.labelled > .name { font-weight: 600; }
+.labelled > input { width: 100%; }
 
 /* ---- the Add dialog ---- */
 

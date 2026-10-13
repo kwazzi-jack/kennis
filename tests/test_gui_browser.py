@@ -164,6 +164,20 @@ def test_a_note_written_here_is_not_announced_as_someone_else_s(
     assert page.is_hidden("#corpus-changed")
 
 
+def test_after_a_note_focus_is_back_in_the_box(page: playwright.Page) -> None:
+    """The submit button is disabled while the write runs, so focus fell
+    to the page behind the dialog and the next keystroke went nowhere."""
+    page.click("a[href='/remember']")
+    page.wait_for_selector("#dialog textarea[name=text]", timeout=_WAIT_MS)
+    page.fill("#dialog textarea[name=text]", "Phase closure holds per triangle.")
+
+    page.click("#dialog button[type=submit]")
+    page.wait_for_selector("#dialog .role-operation", timeout=_WAIT_MS)
+    page.wait_for_timeout(200)
+
+    assert page.evaluate("document.activeElement.id") == "remember-text"
+
+
 def test_a_write_from_a_terminal_is_announced(page: playwright.Page) -> None:
     source = Path(os.environ["KENNIS_CORPUS_ROOT"]).parent / "sources" / "imaging.md"
     source.write_text("# Imaging\n\nDeconvolution.\n", encoding="utf-8")
