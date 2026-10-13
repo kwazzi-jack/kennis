@@ -203,6 +203,11 @@ def results_for(count: int, *, capped: bool, question: str) -> str:
     return f'{found} for "{question}"'
 
 
+def more_from(collection: str) -> str:
+    """Under a collection's results, when it had more to give."""
+    return f"More from {collection}"
+
+
 # The key hint inside the search box: the key itself is drawn, and this
 # is its tooltip.
 SEARCH_KEY_TITLE = "Press / to search from anywhere on the page"
@@ -915,6 +920,7 @@ def every_item(count: int) -> str:
     """The fold's label over a long outcome's ordinary items."""
     return f"Show all {count_of(count, 'item')}"
 
+
 NO_SUCH_JOB = "That operation has finished, or was never started here."
 
 STILL_RUNNING = "This is still running."
@@ -1509,6 +1515,7 @@ __all__ = [
     "match_in_section",
     "matches_heading",
     "menu_for",
+    "more_from",
     "no_page_at",
     "not_a_backup_folder",
     "not_a_count",

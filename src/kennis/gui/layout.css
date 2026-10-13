@@ -1908,6 +1908,9 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
   font-size: 0.8125rem;
 }
 
+/* Under a collection's results, the way to more of them. */
+.more { margin: -0.25rem 0 1.5rem; font-family: var(--gutter); font-size: 0.875rem; }
+
 /* An empty corpus's home: centred in the column, a sentence of what
    kennis is, and the first things to do as buttons. */
 .welcome {
