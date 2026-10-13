@@ -129,6 +129,11 @@ browser = [
 # wrong answer rather than an error.
 dev = [
     "commitizen>=4.18",
+    # starlette's test client, which every GUI test drives, warns on plain
+    # httpx and the suite makes a warning an error. It arrived only through
+    # the `mcp` extra, so a job without that extra - the browser job - could
+    # not import a single GUI test module.
+    "httpx2>=2.13",
     "mypy>=1.11",
     "pre-commit>=3.7",
     "pytest>=8.2",
