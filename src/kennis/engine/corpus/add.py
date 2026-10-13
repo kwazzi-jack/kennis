@@ -146,7 +146,7 @@ from kennis.engine.settings import own_directories
 # serves statically. Both are defaults a caller may override through
 # `AddOptions.request_delay_seconds`, because how patient to be with someone
 # else's server is a judgement kennis should not make on the user's behalf.
-_ARXIV_DELAY_SECONDS = 3.0
+ARXIV_DELAY_SECONDS = 3.0
 _DOCS_DELAY_SECONDS = 0.2
 
 
@@ -788,7 +788,7 @@ def add_literature(
             "ADS bibcode, so it cannot say which paper this is",
             resolution="kennis corpus add --help",
         )
-    delay = _delay_for(options, _ARXIV_DELAY_SECONDS)
+    delay = _delay_for(options, ARXIV_DELAY_SECONDS)
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 

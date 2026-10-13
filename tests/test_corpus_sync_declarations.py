@@ -21,12 +21,14 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.schema import Bibliography
 from kennis.engine.corpus.sync import (
+    OPERATION,
     CorpusSync,
     bibliography_key,
     literature_key,
     sync_corpus,
 )
 from kennis.engine.errors import DocumentInvalid
+from kennis.engine.events import Event, OperationFinished, Progress
 from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.schema import LiteratureEntry
 from kennis.engine.pack.store import install_pack
@@ -468,3 +470,81 @@ def test_two_packs_declaring_one_paper_resolve_to_the_incumbent(
     paper = papers_in(corpus)[0]
     assert paper.frontmatter.owner == "pack:alpha"
     assert paper.frontmatter.bib.citekey == "welman2024"
+
+
+# ---------------------------------------------------------------------------
+# What a sync shows, and how fast it asks
+# ---------------------------------------------------------------------------
+
+
+class Recording:
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+
+    def emit(self, event: Event) -> None:
+        self.events.append(event)
+
+
+def test_a_sync_draws_one_bar_across_its_papers_and_projects(
+    corpus: Path, tmp_path: Path
+):
+    """Its notes written, a sync sat silent through every fetch and crawl:
+    an add of one paper draws no bar, and each add's finish closed any
+    bar that was open."""
+    installed(corpus, tmp_path, body=BOTH)
+    recorded = Recording()
+
+    sync_corpus(
+        corpus,
+        arxiv=arxiv_client(),
+        client=site_client(),
+        request_delay_seconds=0.0,
+        events=recorded,
+    )
+
+    bars = [event for event in recorded.events if isinstance(event, Progress)]
+    finishes = [
+        event for event in recorded.events if isinstance(event, OperationFinished)
+    ]
+    assert [(bar.operation, bar.completed, bar.total) for bar in bars] == [
+        (OPERATION, 0, 2),
+        (OPERATION, 1, 2),
+        (OPERATION, 2, 2),
+    ]
+    assert [finish.operation for finish in finishes] == [OPERATION]
+
+
+def test_a_sync_paces_its_papers_as_arxiv_asks(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Each paper is an add of one, so the add's pacing - between the papers
+    it is given - never applied, and a sync asked arXiv back to back."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.sync.time.sleep", lambda seconds: slept.append(seconds)
+    )
+    two = (
+        "corpus:\n  literature:\n"
+        '    - citekey: one\n      title: "One"\n      arxiv_id: "2409.19750"\n'
+        '    - citekey: two\n      title: "Two"\n      arxiv_id: "2409.19751"\n'
+    )
+    installed(corpus, tmp_path, body=two)
+
+    sync_corpus(corpus, arxiv=arxiv_client(), client=site_client())
+
+    assert slept == [3.0]
+
+
+def test_a_changed_project_is_crawled_once_and_then_kept(corpus: Path, tmp_path: Path):
+    """Its pages were already held, so they kept the old digest, and every
+    later sync judged the project changed and crawled it again."""
+    installed(corpus, tmp_path, body=DOCS)
+    synced(corpus)
+    installed(corpus, tmp_path, body=DOCS + '      exclude: ["nothing/*"]\n')
+
+    rewritten = synced(corpus)
+    after = synced(corpus, client=unreachable_client())
+
+    assert rewritten.counts.get("rewrite") == 1
+    assert rewritten.failed == ()
+    assert after.counts.get("keep") == 1
