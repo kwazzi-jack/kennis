@@ -152,10 +152,9 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
             ShownField(
                 name="identifiers",
                 label=labels["paper"],
-                # Either this or the picker: a paper chosen there needs
-                # nothing typed here.
-                required=False,
-                empty=empty["uploaded"],
+                # One of the two is needed: an identifier or path typed
+                # here, or a PDF chosen in the picker beside it.
+                required=True,
                 upload="file",
                 preview="/add/preview/paper",
             ),
@@ -214,8 +213,7 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
         ShownField(
             name="identifiers",
             label=labels["file"],
-            required=False,
-            empty=empty["uploaded"],
+            required=True,
             upload="both",
         ),
         ShownField(

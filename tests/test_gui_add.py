@@ -155,10 +155,11 @@ def test_an_unknown_kind_is_the_paper_tab(client: TestClient):
 # Written by hand: which fields each tab cannot do without. A block's
 # fields are all required, because a block with lines needs every one.
 REQUIRED_FIELDS = {
-    # A field the picker sits beside is optional: either will do.
-    "paper": set(),
+    # One of the two is needed where the picker sits beside the field: a
+    # path or identifier typed, or a file chosen.
+    "paper": {"identifiers"},
     "site": {"identifiers"},
-    "file": {"collection"},
+    "file": {"identifiers", "collection"},
     "group": {
         "group-1",
         "collection-1",
@@ -181,7 +182,8 @@ def test_every_field_says_whether_it_is_needed_and_what_empty_means(
 
     assert rows, dialog
     for row in rows:
-        name = re.search(r'name="([^"]+)"', row)
+        # The field's own name, not the picker's beside it.
+        name = re.search(r'name="(?!upload")([^"]+)"', row)
         assert name, row
         need = re.search(r'<span class="need">([^<]+)</span>', row)
         assert need, row
@@ -567,7 +569,7 @@ def test_a_field_that_takes_files_offers_the_browsers_own_picker(
     for a path to be found in it."""
     for kind in ("paper", "file"):
         dialog = dialog_of(client, kind)
-        assert re.search(r'<input type="file" name="upload" multiple>', dialog), kind
+        assert re.search(r'<input type="file" name="upload" multiple', dialog), kind
         assert 'enctype="multipart/form-data"' in dialog, kind
         assert "/browse?target=identifiers" not in dialog, kind
     assert "webkitdirectory" in dialog_of(client, "file")
@@ -942,3 +944,32 @@ def test_a_field_beside_the_picker_takes_the_whole_row(client: TestClient):
 
     assert dialog.select_one('.field[data-uploads] input[name="identifiers"]')
     assert re.search(r"\.field\[data-uploads\][^{]*\{[^}]*grid-column: 1 / -1", css)
+
+
+def test_the_file_tab_leads_with_the_picker_and_folds_the_typed_path(
+    client: TestClient,
+):
+    """Two native inputs and a text field, all in view and all alike, left
+    the reader to guess which to use; the folder input's own button even
+    said "Choose File"."""
+    dialog = BeautifulSoup(dialog_of(client, "file"), "html.parser")
+    field = dialog.select_one('.field[data-uploads="both"]')
+    assert field is not None
+
+    labels = [label.get_text(strip=True) for label in field.select(".upload-button")]
+    assert labels == [words.UPLOAD_FILES, words.UPLOAD_FOLDER]
+    typed = field.select_one("details.typed-path")
+    assert typed is not None and typed.get("open") is None
+    assert typed.select_one('input[name="identifiers"]') is not None
+    assert typed.get_text(" ", strip=True).startswith(words.UPLOAD_TYPED)
+
+
+def test_the_picker_script_says_what_was_chosen_in_the_servers_words():
+    code = code_of("uploads.js")
+
+    assert "dataset.saidMany" in code and "dataset.saidFolder" in code
+    assert not re.search(r"\"[A-Za-z]+ [A-Za-z ]+\"", code)
+
+
+def test_the_picker_script_is_loaded(client: TestClient):
+    assert '<script defer src="/static/uploads.js"></script>' in client.get("/").text

@@ -489,3 +489,43 @@ def test_a_file_chosen_in_the_browsers_picker_is_added(
         page.wait_for_timeout(100)
     [document] = added
     assert "from: upload:beam-model.md" in document.read_text(encoding="utf-8")
+
+
+def test_what_was_chosen_in_the_picker_is_said_back_and_can_be_cleared(
+    page: playwright.Page, tmp_path: Path
+) -> None:
+    """The bare inputs said "Choose File" on both and "No file chosen"
+    beside them; the picker now names what it will send."""
+    chosen = []
+    for name in ("a.md", "b.md", "c.md", "d.md"):
+        path = tmp_path / name
+        path.write_text(f"# {name}\n", encoding="utf-8")
+        chosen.append(str(path))
+    folder = tmp_path / "papers"
+    (folder / "deep").mkdir(parents=True)
+    (folder / "one.md").write_text("# One\n", encoding="utf-8")
+    (folder / "deep" / "two.md").write_text("# Two\n", encoding="utf-8")
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector("#dialog .uploads[data-enhanced]", timeout=_WAIT_MS)
+    said = "#dialog .upload-said"
+
+    assert page.inner_text(said) == words.UPLOAD_SAID["none"]
+    # Hidden from sight, not from the form or the keyboard.
+    assert (
+        page.eval_on_selector(
+            "#dialog input[name=upload][multiple]", "e => getComputedStyle(e).opacity"
+        )
+        == "0"
+    )
+
+    page.set_input_files("#dialog input[name=upload][multiple]", chosen)
+    assert page.inner_text(said) == "4 files: a.md, b.md, c.md and 1 more"
+
+    page.click("#dialog [data-upload-clear]")
+    assert page.inner_text(said) == words.UPLOAD_SAID["none"]
+
+    page.set_input_files("#dialog input[name=upload][webkitdirectory]", str(folder))
+    assert page.inner_text(said) == "The folder papers, 2 files"
