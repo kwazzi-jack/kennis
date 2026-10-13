@@ -506,6 +506,11 @@ def identifier_if_reference(identifier: str) -> PaperIdentifier | None:
         if doi is not None:
             return PaperIdentifier(kind="doi", value=doi)
 
+    # The prefix too, as the other two schemes have theirs: a pack sync
+    # names a bibcode-only paper `bibcode:<code>`, which was refused as
+    # not being an identifier at all.
+    if candidate.lower().startswith("bibcode:"):
+        candidate = candidate[len("bibcode:") :].strip()
     if _ADS_BIBCODE.fullmatch(candidate):
         return PaperIdentifier(kind="bibcode", value=candidate)
     return None
