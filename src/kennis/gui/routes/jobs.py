@@ -29,9 +29,12 @@ from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import (
     ContextNotFound,
     CorpusBusy,
+    KennisError,
 )
 from kennis.engine.events import EventSink
+from kennis.engine.history.history import read_history
 from kennis.engine.history.outofband import OutOfBandChange
+from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
 from kennis.gui.jobs import AlreadyRunning, Job, Jobs
@@ -298,8 +301,39 @@ def serve_activity(request: Request) -> HTMLResponse:
         {
             "rows": [_activity_row(job) for job in request.app.state.jobs.recent()],
             "nothing_run": words.NOTHING_RUN,
+            "changes": _changes(),
+            "changes_heading": words.CHANGES_HEADING,
+            "no_changes": words.NO_CHANGES,
         },
     )
+
+
+# Enough to see what happened lately; the full record is `kennis history`.
+_CHANGES_SHOWN: Final = 30
+
+
+def _changes() -> list[dict[str, str]]:
+    """The corpus's newest commits, whoever made them.
+
+    The jobs above are only this window's, and only for an hour: an add
+    from a terminal or a note from an agent was nowhere on this page. A
+    history that cannot be read is an empty list here - the page is still
+    worth drawing - and the pane says what is wrong with the corpus.
+    """
+    try:
+        entries = read_history(
+            Repository(existing_corpus().corpus_root), limit=_CHANGES_SHOWN
+        )
+    except KennisError:
+        return []
+    return [
+        {
+            "when": entry.when.astimezone().strftime("%Y-%m-%d %H:%M"),
+            "what": words.change_line(entry.operation, entry.scope, entry.summary),
+            "commit": entry.commit[:7],
+        }
+        for entry in entries
+    ]
 
 
 @router.get("/job/{job_id}/events")
