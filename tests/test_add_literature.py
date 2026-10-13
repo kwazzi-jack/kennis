@@ -83,8 +83,16 @@ def arxiv_client(body: str = ATOM, html: str = LATEXML) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         if "/html/" in str(request.url):
             return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+        # The entry names the paper asked for, as arXiv's does: kennis
+        # refuses an entry for some other paper (the review of 2026-10-13).
+        asked = request.url.params.get("id_list")
+        answered = (
+            body.replace("2409.19750", asked.split("v")[0])
+            if asked and "/" not in asked
+            else body
+        )
         return httpx.Response(
-            200, text=body, headers={"content-type": "application/atom+xml"}
+            200, text=answered, headers={"content-type": "application/atom+xml"}
         )
 
     return httpx.Client(transport=httpx.MockTransport(handler))
@@ -1091,3 +1099,22 @@ def test_metadata_that_arrives_is_not_warned_about(papers: Collection):
         for event in events.events
         if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
     ]
+
+
+def test_an_identifier_that_is_none_is_refused_not_ignored(
+    papers: Collection, tmp_path: Path
+):
+    """A typo in `--identifier` was dropped, and the paper fell back to its
+    front page - stored under an identity nobody gave it."""
+    from kennis.engine.errors import InputError
+
+    pdf = a_pdf(tmp_path / "paper.pdf")
+
+    with pytest.raises(InputError, match="2401-01234"):
+        add_literature(
+            papers,
+            [str(pdf)],
+            AddOptions(identifier="2401-01234"),
+            client=arxiv_client(),
+            arxiv=arxiv_client(),
+        )

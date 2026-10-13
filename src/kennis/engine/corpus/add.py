@@ -757,6 +757,15 @@ def add_literature(
     a host it never contacts.
     """
     options = options or AddOptions()
+    # An identifier the reader gave that is none is refused, not ignored:
+    # ignored, the paper fell back to whatever its front page offered and
+    # was stored under an identity nobody gave it.
+    if options.identifier and identifier_if_reference(options.identifier) is None:
+        raise InputError(
+            f"'{options.identifier}' is not an arXiv identifier, a DOI or an "
+            "ADS bibcode, so it cannot say which paper this is",
+            resolution="kennis corpus add --help",
+        )
     delay = _delay_for(options, _ARXIV_DELAY_SECONDS)
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
