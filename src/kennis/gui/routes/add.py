@@ -39,6 +39,7 @@ from kennis.gui.responses import (
     action_page,
     frame,
     from_htmx,
+    refused,
     refused_a_post,
 )
 from kennis.gui.routes.jobs import started
@@ -276,6 +277,27 @@ def serve_chooser(
     )
 
 
+# Said by a refusal answered inside the Add dialog, so `dialog.js`
+# leaves the dialog open with what was typed still in it.
+REFUSED_HEADER = "X-Kennis-Refused"
+
+
+def _refused_in_the_form(request: Request, problem: str) -> HTMLResponse:
+    """A refusal the reader can correct, answered above the still-filled
+    fields rather than in the strip with the dialog closed behind it.
+
+    Without a script there is no dialog to keep, so it is the refusal
+    page every plain form gets.
+    """
+    if not from_htmx(request):
+        return refused_a_post(request, problem)
+    answer = refused(request, problem)
+    answer.headers["HX-Retarget"] = "#add-problem"
+    answer.headers["HX-Reswap"] = "innerHTML"
+    answer.headers[REFUSED_HEADER] = "true"
+    return answer
+
+
 @router.post("/add")
 def start_add(request: Request, form: PostedForm) -> Response:
     """Start an add and answer with somewhere to watch it.
@@ -288,13 +310,13 @@ def start_add(request: Request, form: PostedForm) -> Response:
     context = existing_corpus()
     options = _add_options(context, form)
     if isinstance(options, str):
-        return refused_a_post(request, options)
+        return _refused_in_the_form(request, options)
     if form.get("kind") == "group":
         blocks = _group_blocks(form)
         if isinstance(blocks, str):
-            return refused_a_post(request, blocks)
+            return _refused_in_the_form(request, blocks)
         if not blocks:
-            return refused_a_post(request, words.NOTHING_TO_ADD)
+            return _refused_in_the_form(request, words.NOTHING_TO_ADD)
         restored: list[OutOfBandChange] = []
         return started(
             request,
@@ -307,11 +329,11 @@ def start_add(request: Request, form: PostedForm) -> Response:
     identifiers = _lines(str(form.get("identifiers") or ""))
     destination = str(form.get("collection") or "")
     if not identifiers:
-        return refused_a_post(request, words.NOTHING_TO_ADD)
+        return _refused_in_the_form(request, words.NOTHING_TO_ADD)
     if not destination:
-        return refused_a_post(request, words.CHOOSE_A_COLLECTION)
+        return _refused_in_the_form(request, words.CHOOSE_A_COLLECTION)
     if destination not in COLLECTION_NAMES:
-        return refused_a_post(request, words.unknown_collection(destination))
+        return _refused_in_the_form(request, words.unknown_collection(destination))
     put_back: list[OutOfBandChange] = []
     return started(
         request,

@@ -672,3 +672,21 @@ def test_a_corpus_with_documents_is_not_welcomed(corpus: Path, client: TestClien
     assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
 
     assert 'class="welcome"' not in client.get("/").text
+
+
+def test_a_correctable_add_refusal_is_answered_inside_the_form(client: TestClient):
+    answer = client.post(
+        "/add",
+        data={"kind": "paper", "identifiers": "2401.01234"},
+        headers={**HTMX, "Origin": "http://testserver"},
+    )
+
+    assert answer.headers["HX-Retarget"] == "#add-problem"
+    assert answer.headers["X-Kennis-Refused"] == "true"
+    assert words.CHOOSE_A_COLLECTION in answer.text
+
+
+def test_the_add_form_has_somewhere_to_answer_a_refusal(client: TestClient):
+    form = BeautifulSoup(client.get("/add", headers=HTMX).text, "html.parser")
+
+    assert form.find(id="add-problem").get("role") == "alert"

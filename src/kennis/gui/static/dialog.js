@@ -48,6 +48,10 @@
     if (event.detail.requestConfig.verb !== "post") { return; }
     if (!form.matches || !form.matches("form[data-closes-dialog]")) { return; }
     var dialog = form.closest("dialog");
+    // A refusal the form can be corrected for is answered inside it, and
+    // the dialog stays open with what was typed still in it.
+    var request = event.detail.xhr;
+    if (request && request.getResponseHeader("X-Kennis-Refused")) { return; }
     if (dialog && event.detail.successful) { dialog.close(); }
   });
 
