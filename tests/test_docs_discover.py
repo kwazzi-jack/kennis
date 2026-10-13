@@ -749,3 +749,19 @@ def test_a_seed_inside_a_sphinx_site_finds_its_root():
     assert found.mode == "sphinx"
     assert [page.key for page in found.pages] == ["install/index"]
     assert found.pages[0].url == BASE + "install/index.html"
+
+
+def test_a_sitemap_is_held_to_the_page_limit():
+    """The Sphinx index and the crawl stop at the limit; a sitemap did not,
+    and listed every page of the site to be fetched."""
+    client = serving(
+        {
+            "searchindex.js": httpx.Response(404),
+            "robots.txt": httpx.Response(200, text="User-agent: *\nAllow: /\n"),
+            "sitemap.xml": httpx.Response(200, text=SITEMAP),
+        }
+    )
+
+    found = discover_pages(client, a_site(), max_pages=1)
+
+    assert len(found.pages) == 1
