@@ -439,3 +439,10 @@ def test_latex_in_a_title_is_decoded_but_not_in_a_file_path():
 
     assert entry.title == "Na\u00efve R&D"
     assert entry.file_path == "/papers/\\o\\aa/paper.pdf"
+
+
+def test_a_bibcode_with_its_scheme_is_a_reference():
+    """How a pack sync names a paper declared by its bibcode alone."""
+    assert identifier_if_reference("bibcode:2018MNRAS.478.2399K") == PaperIdentifier(
+        kind="bibcode", value="2018MNRAS.478.2399K"
+    )
