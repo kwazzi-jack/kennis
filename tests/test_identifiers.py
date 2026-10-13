@@ -402,3 +402,40 @@ def test_a_value_nested_three_braces_deep_is_read_whole():
     assert entry.authors.endswith("Hans and Doe, Jane")
     assert entry.title == "Gains and phases"
     assert entry.year == "2020"
+
+
+@pytest.mark.parametrize(
+    ("written", "read"),
+    [
+        ('M{\\"u}ller', "M\u00fcller"),
+        ('M\\"{u}ller', "M\u00fcller"),
+        ("Garc{\\'\\i}a", "Garc\u00eda"),
+        ("Fran\\c{c}ois", "Fran\u00e7ois"),
+        ("Erd\\H{o}s", "Erd\u0151s"),
+        ("\\v{S}afa\\v{r}\\'{\\i}k", "\u0160afa\u0159\u00edk"),
+        ("{\\o}stergaard", "\u00f8stergaard"),
+        ("Stra\\ss e", "Stra\u00dfe"),
+    ],
+)
+def test_latex_accents_in_an_author_are_read_as_letters(written: str, read: str):
+    """Kept as `M\\"uller`, in the author list and so in every citekey and
+    every search over it."""
+    text = f"@article{{k,\n  title = {{T}},\n  author = {{{written}}},\n}}\n"
+
+    assert parse_bibtex(text)[0].authors == read
+
+
+def test_latex_in_a_title_is_decoded_but_not_in_a_file_path():
+    """A Zotero `file` field is a path, and its backslashes are not
+    accents."""
+    text = (
+        "@article{k,\n"
+        '  title = {Na{\\"\\i}ve R\\&D},\n'
+        "  file = {Full Text:/papers/\\o\\aa/paper.pdf:application/pdf},\n"
+        "}\n"
+    )
+
+    entry = parse_bibtex(text)[0]
+
+    assert entry.title == "Na\u00efve R&D"
+    assert entry.file_path == "/papers/\\o\\aa/paper.pdf"
