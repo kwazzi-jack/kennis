@@ -482,6 +482,34 @@ def test_a_move_to_the_top_level_is_an_empty_group(
     assert path_of(states["later"]).parent == head / "notes"
 
 
+def test_a_move_redraws_the_strip_and_the_pane_with_the_branch(
+    client: TestClient, states: dict[str, str]
+):
+    """After a move the document showed "U" while the pane's dot and the
+    strip still said searchable, until the page was reloaded."""
+    answer = client.post(
+        "/move",
+        data={"collection": "notes", "document": states["later"], "group": "moved"},
+        headers=HTMX,
+    )
+    redrawn = BeautifulSoup(answer.text, "html.parser")
+
+    assert redrawn.find(id="strip-status", attrs={"hx-swap-oob": "true"})
+    assert redrawn.find(id="pane-row-notes", attrs={"hx-swap-oob": "true"})
+
+
+def test_a_refused_move_redraws_only_its_branch(
+    client: TestClient, states: dict[str, str]
+):
+    answer = client.post(
+        "/move",
+        data={"collection": "notes", "document": states["later"], "group": "../x"},
+        headers=HTMX,
+    )
+
+    assert 'hx-swap-oob="true"' not in answer.text
+
+
 @pytest.mark.parametrize("group", ["../escape", "/abs", "a/../../b", ".hidden"])
 def test_a_group_that_leaves_the_collection_is_refused_in_the_branch(
     client: TestClient, states: dict[str, str], group: str

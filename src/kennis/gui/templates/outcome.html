@@ -5,7 +5,7 @@
 {% if outcome.resolution %}<p class="role-command">{{ outcome.resolution }}</p>{% endif %}
 {% if outcome.clears %}
 {# A note was written: the strip and the pane say so at once (#457). #}
-{% with oob = true %}{% include "strip-status.html" %}{% set pane = pane_now() %}{% if pane.readable %}{% include "pane-documents.html" %}{% endif %}{% for row in pane.collections %}{% include "pane-row.html" %}{% endfor %}{% endwith %}
+{% include "shell-redraws.html" %}
 {# The text and the title belong to the note just written, so both are
    emptied: a title left behind named the next note too. The group is
    where notes are filed, so it stays for the next one. #}

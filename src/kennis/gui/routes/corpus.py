@@ -28,7 +28,6 @@ from kennis.gui.pages import (
 )
 from kennis.gui.pane import bundle_folders
 from kennis.gui.responses import (
-    SCOPES,
     TEMPLATES,
     PostedForm,
     frame,
@@ -57,6 +56,7 @@ def _tree(
     *,
     problem: str | None = None,
     notes: tuple[str, ...] = (),
+    moved: bool = False,
 ) -> HTMLResponse:
     """One collection's branch of the pane, with a refusal at its head, or
     what a move from it put back."""
@@ -67,6 +67,7 @@ def _tree(
             "tree": shown_tree(existing_corpus(), collection),
             "problem": problem,
             "notes": notes,
+            "moved": moved,
             "attention_only": words.ATTENTION_ONLY,
             "menu_open": words.MENU_OPEN,
             "menu_move": words.MENU_MOVE,
@@ -102,7 +103,7 @@ def serve_collection(request: Request, collection: str) -> HTMLResponse:
     context = existing_corpus()
     if collection not in COLLECTION_NAMES:
         return problem_page(
-            request, UnknownCollection(words.unknown_scope(collection, SCOPES))
+            request, UnknownCollection(words.unknown_collection(collection))
         )
     groups, unreadable = shown_groups(context, collection)
     held = next(h for h in holdings(context) if h.collection == collection)
@@ -134,7 +135,7 @@ def serve_tree(request: Request, collection: str) -> HTMLResponse:
             request, "tree-context.html", {"folders": folders}
         )
     if collection not in COLLECTION_NAMES:
-        return refused(request, words.unknown_scope(collection, SCOPES))
+        return refused(request, words.unknown_collection(collection))
     return _tree(request, collection)
 
 
@@ -149,7 +150,7 @@ def move_from_the_tree(request: Request, form: PostedForm) -> Response:
     """
     collection = str(form.get("collection") or "")
     if collection not in COLLECTION_NAMES:
-        return refused_a_post(request, words.unknown_scope(collection, SCOPES))
+        return refused_a_post(request, words.unknown_collection(collection))
     handle = str(form.get("document") or "")
     group = str(form.get("group") or "").strip()
     context = existing_corpus()
@@ -165,5 +166,5 @@ def move_from_the_tree(request: Request, form: PostedForm) -> Response:
         return refused_a_post(request, str(error), resolution=error.resolution)
     if from_htmx(request):
         notes = tuple(describe_change(change) for change in restored)
-        return written(_tree(request, collection, notes=notes))
+        return written(_tree(request, collection, notes=notes, moved=True))
     return RedirectResponse(f"/collection/{collection}", status_code=303)
