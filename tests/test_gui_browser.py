@@ -307,6 +307,27 @@ def test_the_search_key_is_not_typed_into_the_empty_box(page: playwright.Page) -
     assert page.input_value("input[name=q]") == "gain"
 
 
+def test_a_refused_add_keeps_the_dialog_and_what_was_typed(
+    page: playwright.Page,
+) -> None:
+    """The dialog closed on every submit, so a refusal arrived in the
+    strip and everything typed into the form was gone."""
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=group']")
+    page.wait_for_selector("#dialog textarea[name=lines-1]", timeout=_WAIT_MS)
+    page.fill("#dialog input[name=group-1]", "instruments")
+    page.fill("#dialog textarea[name=lines-1]", "a-note.md")
+
+    page.click("#dialog form[action='/add'] button[type=submit]")
+    page.wait_for_selector("#add-problem p", timeout=_WAIT_MS)
+
+    assert page.is_visible("#dialog dialog[open], #dialog dialog")
+    assert words.CHOOSE_A_COLLECTION in page.inner_text("#add-problem")
+    assert page.input_value("#dialog textarea[name=lines-1]") == "a-note.md"
+
+
 def test_the_palette_opens_on_its_shortcut(page: playwright.Page) -> None:
     page.keyboard.press("Control+k")
 
