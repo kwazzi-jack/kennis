@@ -135,10 +135,13 @@ ELSEWHERE = [
     {"Origin": "null"},
     {"Sec-Fetch-Site": "same-site"},
     {"Sec-Fetch-Site": "cross-site"},
+    {"Origin": "null", "Sec-Fetch-Site": "cross-site"},
 ]
 OWN_PAGE = [
     {"Origin": "http://127.0.0.1:41001"},
     {"Sec-Fetch-Site": "same-origin"},
+    # A plain form on kennis's own page: `no-referrer` withholds its origin.
+    {"Origin": "null", "Sec-Fetch-Site": "same-origin"},
     {},
 ]
 
