@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 # Post-2007 arXiv identifiers: YYMM.NNNN to the end of 2014 and YYMM.NNNNN
 # from January 2015, with an optional version suffix. **The month decides
@@ -34,8 +34,21 @@ _MODERN_ARXIV: Final = re.compile(
 )
 
 # Pre-2007: archive[.subject-class]/YYMMNNN, e.g. astro-ph/0601234.
+#
+# **The archives by name**, not any hyphenated word. `[a-z-]+` read
+# `zenodo.org/data-set/1234567` on a front page as arXiv `set/1234567`,
+# which outranked the real DOI and fetched arXiv's error entry. And a `/`
+# may come before the archive, because one does in every URL to a legacy
+# paper: refusing it made `/abs/astro-ph/0601234` match from the hyphen,
+# as `ph/0601234`. The list is arXiv's own, current and retired.
+_LEGACY_ARCHIVES: Final = (
+    "acc-phys|adap-org|alg-geom|ao-sci|astro-ph|atom-ph|bayes-an|chao-dyn|"
+    "chem-ph|cmp-lg|comp-gas|cond-mat|cs|dg-ga|funct-an|gr-qc|hep-ex|hep-lat|"
+    "hep-ph|hep-th|math|math-ph|mtrl-th|nlin|nucl-ex|nucl-th|patt-sol|physics|"
+    "plasm-ph|q-alg|q-bio|q-fin|quant-ph|solv-int|stat|supr-con"
+)
 _LEGACY_ARXIV: Final = re.compile(
-    r"(?<![\w/])([a-z-]+(?:\.[A-Za-z]{2})?/\d{7})(v\d+)?(?![\w])"
+    rf"(?<![\w-])((?:{_LEGACY_ARCHIVES})(?:\.[A-Za-z]{{2}})?/\d{{7}})(v\d+)?(?![\w])"
 )
 
 # A DOI is "10." followed by a registrant code, a slash, and a suffix that
@@ -91,7 +104,12 @@ def normalize_arxiv_id(identifier: str) -> str | None:
     # whose path happens to contain digits is not misread as a paper.
     if "://" in candidate:
         parsed = urlparse(candidate)
-        if not any(parsed.netloc.endswith(host) for host in _ARXIV_HOSTS):
+        # The host itself or a subdomain of it: `endswith` alone admitted
+        # `evilarxiv.org`.
+        host = (parsed.hostname or "").lower()
+        if not any(
+            host == known or host.endswith("." + known) for known in _ARXIV_HOSTS
+        ):
             return None
         candidate = parsed.path
 
@@ -147,12 +165,38 @@ def normalize_bibcode(identifier: str) -> str | None:
 
 
 def normalize_doi(identifier: str) -> str | None:
-    """Extract a bare DOI from `10.x/y`, `doi:10.x/y`, or a doi.org URL."""
-    matched = _DOI.search(identifier.strip())
+    """Extract a bare DOI from `10.x/y`, `doi:10.x/y`, or a resolver URL.
+
+    A URL is read as an address: percent-decoded, and without its query or
+    fragment, which are the resolver's and not the DOI's - `%2F` and a
+    `?via=...` were both kept, and so the same paper had two identities.
+    """
+    candidate = identifier.strip()
+    if "://" in candidate:
+        parsed = urlparse(candidate)
+        candidate = unquote(parsed.path.lstrip("/"))
+    matched = _DOI.search(candidate)
     if matched is None:
         return None
-    # Sentence-cased citations carry a trailing full stop in with them.
-    return matched.group(1).rstrip(".")
+    # Sentence-cased citations carry a trailing full stop in with them, and
+    # a parenthesised one its closing bracket.
+    found = matched.group(1).rstrip(".")
+    if found.endswith(")") and found.count("(") < found.count(")"):
+        found = found[:-1]
+    return found
+
+
+# The hosts that resolve a DOI, any of which a reader may paste.
+_DOI_RESOLVERS: Final = ("doi.org", "dx.doi.org", "www.doi.org")
+
+
+def _is_doi_url(candidate: str) -> bool:
+    if "://" not in candidate:
+        return False
+    parsed = urlparse(candidate)
+    return parsed.scheme in ("http", "https") and (
+        (parsed.hostname or "").lower() in _DOI_RESOLVERS
+    )
 
 
 def looks_like_bibtex(identifier: str) -> bool:
@@ -175,10 +219,53 @@ class BibEntry:
     file_path: str | None = None
 
 
-_BIB_ENTRY: Final = re.compile(r"@(\w+)\s*\{\s*([^,]+),(.*?)(?=\n@|\Z)", re.S)
-_BIB_FIELD: Final = re.compile(
-    r"(\w+)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\}|\"[^\"]*\"|[^,\n]+)"
+# A record: its type, its key and the rest up to the next record. **The key
+# cannot hold a space, a comma or a brace**: `[^,]+` ran across lines, so an
+# `@string{apj = "..."}` before an article became the article's citekey.
+_BIB_ENTRY: Final = re.compile(
+    r"@(\w+)\s*\{\s*([^,\s{}]+)\s*,(.*?)(?=\n\s*@|\Z)", re.S
 )
+
+# Records that are not references: an abbreviation, a comment (JabRef keeps
+# its settings in one) and a preamble.
+_BIB_NOT_ENTRIES: Final = frozenset({"string", "comment", "preamble"})
+
+_BIB_FIELD_NAME: Final = re.compile(r"[\s,]*([A-Za-z][\w-]*)\s*=\s*")
+
+
+def _bib_fields(body: str) -> list[tuple[str, str]]:
+    """Each `name = value` in a record's body, with each value whole.
+
+    A scan rather than a pattern because a value's braces nest to any depth:
+    `{M{\\"{u}}ller, Hans and Doe, Jane}` is three deep, which a pattern
+    allowing two read as `M\\"uller` and lost every co-author - and accented
+    names are ordinary in BibTeX.
+    """
+    fields: list[tuple[str, str]] = []
+    at = 0
+    while True:
+        named = _BIB_FIELD_NAME.match(body, at)
+        if named is None:
+            return fields
+        start = at = named.end()
+        if at < len(body) and body[at] in "{\"":
+            closing = "}" if body[at] == "{" else '"'
+            depth = 0
+            while at < len(body):
+                char = body[at]
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                at += 1
+                if (closing == "}" and depth == 0) or (
+                    closing == '"' and char == '"' and depth == 0 and at - 1 > start
+                ):
+                    break
+        else:
+            while at < len(body) and body[at] not in ",\n}":
+                at += 1
+        fields.append((named.group(1), body[start:at]))
 
 
 def _clean_bib_value(raw: str) -> str:
@@ -200,10 +287,11 @@ def parse_bibtex(text: str) -> list[BibEntry]:
     record in a large export does not block the rest.
     """
     entries: list[BibEntry] = []
-    for _entry_type, citekey, body in _BIB_ENTRY.findall(text):
+    for entry_type, citekey, body in _BIB_ENTRY.findall(text):
+        if entry_type.lower() in _BIB_NOT_ENTRIES:
+            continue
         fields = {
-            name.lower(): _clean_bib_value(value)
-            for name, value in _BIB_FIELD.findall(body)
+            name.lower(): _clean_bib_value(value) for name, value in _bib_fields(body)
         }
         title = fields.get("title", "")
         if not title:
@@ -341,7 +429,7 @@ def identifier_if_reference(identifier: str) -> PaperIdentifier | None:
         if candidate.lower().startswith("doi:")
         else candidate
     )
-    if _DOI.fullmatch(bare.rstrip(".")) or bare.lower().startswith("https://doi.org/"):
+    if _DOI.fullmatch(bare.rstrip(".")) or _is_doi_url(bare):
         doi = normalize_doi(bare)
         if doi is not None:
             return PaperIdentifier(kind="doi", value=doi)
