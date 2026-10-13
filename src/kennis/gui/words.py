@@ -905,6 +905,16 @@ NOT_SEARCHABLE_YET = "Not searchable until the index is rebuilt."
 
 INDEX_NOW = "Index now"
 
+# More items than this and an outcome folds the ones needing nothing
+# away: a 4,000-file add listed every one, and the line saying what
+# happened was a screen above them.
+FOLDED_AFTER = 8
+
+
+def every_item(count: int) -> str:
+    """The fold's label over a long outcome's ordinary items."""
+    return f"Show all {count_of(count, 'item')}"
+
 NO_SUCH_JOB = "That operation has finished, or was never started here."
 
 STILL_RUNNING = "This is still running."
@@ -1306,6 +1316,7 @@ __all__ = [
     "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",
     "FIELD_LABELS",
+    "FOLDED_AFTER",
     "GROUP_HINT",
     "GROUP_LABEL",
     "GROUP_NEEDS_A_NAME",
@@ -1465,6 +1476,7 @@ __all__ = [
     "describe_written_to_bundle",
     "documents_held",
     "documents_waiting",
+    "every_item",
     "group_empty_means",
     "index_collection",
     "index_now",

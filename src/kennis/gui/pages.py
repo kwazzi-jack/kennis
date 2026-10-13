@@ -1137,6 +1137,11 @@ class ShownItem:
     remedies: tuple[str, ...] = ()
     repairs: tuple[Repair, ...] = ()
 
+    @property
+    def needs_attention(self) -> bool:
+        """Whether the reader has something to do about this one."""
+        return self.outcome == "failed" or bool(self.remedies or self.repairs)
+
 
 @dataclass(frozen=True, slots=True)
 class ShownJob:
@@ -1161,6 +1166,16 @@ class ShownJob:
     # Whether the outcome offers to index what it wrote: "Not searchable
     # until the index is rebuilt" was a sentence with nothing to press.
     index_after: bool = False
+
+    @property
+    def attention(self) -> tuple[ShownItem, ...]:
+        """The items the reader has something to do about, always shown."""
+        return tuple(item for item in self.items if item.needs_attention)
+
+    @property
+    def rest(self) -> tuple[ShownItem, ...]:
+        """Everything else, which a long job folds away (`FOLDED_AFTER`)."""
+        return tuple(item for item in self.items if not item.needs_attention)
 
 
 def shown_add(report: AddReport) -> ShownJob:
