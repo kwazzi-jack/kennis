@@ -269,3 +269,30 @@ def test_an_address_is_never_repaired():
     ):
         repaired, count = repair_ligatures(text, vocabulary)
         assert (repaired, count) == (text, 0), text
+
+
+def test_a_quoted_word_is_repaired():
+    """The token kept its closing quote, and `efect'` is in no vocabulary."""
+    repaired, count = repair_ligatures("the 'efect' was 'diferent'", VOCABULARY)
+
+    assert repaired == "the 'effect' was 'different'"
+    assert count == 2
+
+
+def test_prose_between_two_prices_is_not_taken_for_math():
+    """Any two dollars on a line were inline math, so everything between
+    two prices was protected from repair."""
+    repaired, count = repair_ligatures(
+        "it cost $5 for the efect and $10 more", VOCABULARY
+    )
+
+    assert repaired == "it cost $5 for the effect and $10 more"
+    assert count == 1
+
+
+def test_inline_math_is_still_left_alone():
+    text = "where $efect + x$ is the efect"
+
+    repaired, _ = repair_ligatures(text, VOCABULARY)
+
+    assert repaired == "where $efect + x$ is the effect"
