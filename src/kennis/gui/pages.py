@@ -47,7 +47,13 @@ from kennis.gui import words
 from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
-from kennis.holdings import DocumentMarks, DocumentState, Holding, document_marks
+from kennis.holdings import (
+    DocumentMarks,
+    DocumentState,
+    Holding,
+    contents_of,
+    document_marks,
+)
 from kennis.operations import IndexBuild
 from kennis.render.backup import describe_written
 from kennis.render.hits import (
@@ -813,7 +819,7 @@ def shown_rows(held: Sequence[Holding]) -> list[ShownRow]:
 
 
 def shown_groups(
-    corpus_root: Path, collection: str
+    context: Context, collection: str
 ) -> tuple[list[tuple[str, list[ShownEntry]]], int]:
     """A collection's documents by group, and how many could not be read.
 
@@ -822,7 +828,8 @@ def shown_groups(
     shape. The ungrouped ones come first under an empty name, because
     a collection with no groups should not lead with a heading.
     """
-    contents = Collection(root=corpus_root, name=collection).contents()
+    corpus_root = context.corpus_root
+    contents = contents_of(context, collection)
     grouped: dict[str, list[ShownEntry]] = {}
     for document in sorted(contents.documents, key=_sort_key):
         grouped.setdefault(
@@ -1036,7 +1043,7 @@ class ShownTree:
 def shown_tree(context: Context, collection: str) -> ShownTree:
     """One collection as the pane draws it, each document with its state."""
     root = context.corpus_root
-    contents = Collection(root=root, name=collection).contents()
+    contents = contents_of(context, collection)
     marks = document_marks(context, collection)
     grouped: dict[str, list[ShownTreeEntry]] = {}
     for document in sorted(contents.documents, key=_sort_key):
