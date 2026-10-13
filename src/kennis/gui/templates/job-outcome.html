@@ -3,9 +3,7 @@
    strip's status and the pane, which any job may have changed (#457).
    `progress.js` redraws each only where the page has it. #}
 {% for element, route in shown.redraws + shell_redraws %}<span hidden data-redraw-id="{{ element }}" data-redraw-route="{{ route }}"></span>{% endfor %}
-{% if shown.items %}
-<ul class="items">
-  {% for item in shown.items %}
+{% macro item_row(item) %}
   <li class="role-{{ item.outcome }}">
     <span class="marker">{{ item.marker }}</span> {{ item.name }}
     {% if item.detail %}<span class="role-muted">- {{ item.detail }}</span>{% endif %}
@@ -36,8 +34,26 @@
     </div>
     {% endif %}
   </li>
-  {% endfor %}
+{% endmacro %}
+{# What needs the reader first, always shown; everything else under it,
+   folded away once there is more of it than a glance takes in. #}
+{% if shown.attention %}
+<ul class="items">
+  {% for item in shown.attention %}{{ item_row(item) }}{% endfor %}
 </ul>
+{% endif %}
+{% if shown.rest %}
+{% if shown.rest | length > folded_after %}
+<details class="all-items"><summary>{{ every_item(shown.rest | length) }}</summary>
+<ul class="items">
+  {% for item in shown.rest %}{{ item_row(item) }}{% endfor %}
+</ul>
+</details>
+{% else %}
+<ul class="items">
+  {% for item in shown.rest %}{{ item_row(item) }}{% endfor %}
+</ul>
+{% endif %}
 {% endif %}
 {% for note in shown.notes %}<p class="role-muted">{{ note }}</p>{% endfor %}
 {# The step the note above names, as a control. #}

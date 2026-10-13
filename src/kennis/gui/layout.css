@@ -1908,6 +1908,15 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
   font-size: 0.8125rem;
 }
 
+/* A long outcome's ordinary items, folded under one line. */
+.all-items > summary {
+  cursor: pointer;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--role-muted);
+  margin: 0.3rem 0;
+}
+
 /* The strip's Index button: small enough to sit in a status line. */
 .index-now { margin: 0; }
 .index-now button { padding: 0.1rem 0.55rem; font-size: 0.8125rem; }

@@ -114,6 +114,8 @@ TEMPLATES.env.globals.update(
         "overridden_by": words.overridden_by,
         "index_now": words.index_now,
         "index_now_label": words.INDEX_NOW,
+        "folded_after": words.FOLDED_AFTER,
+        "every_item": words.every_item,
         "progress_label": words.PROGRESS_LABEL,
         "note_text_label": words.NOTE_TEXT_LABEL,
         "title_label": words.TITLE_LABEL,

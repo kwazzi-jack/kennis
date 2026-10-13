@@ -619,3 +619,35 @@ def test_an_add_that_wrote_offers_to_index_what_it_wrote():
     assert added.index_after and not refused.index_after
     assert 'action="/index"' in drawn
     assert words.INDEX_NOW in drawn
+
+
+def test_a_long_outcome_folds_what_needs_nothing_and_shows_what_does():
+    """A 4,000-file add listed every file, and the one refusal among them
+    was somewhere in the list."""
+    report = AddReport(
+        [AddOutcome(f"n{at}.md", Outcome.ADDED) for at in range(30)]
+        + [AddOutcome("broken.md", Outcome.FAILED)],
+        0.1,
+    )
+    page = BeautifulSoup(
+        TEMPLATES.env.get_template("job-outcome.html").render(shown=shown_add(report)),
+        "html.parser",
+    )
+
+    fold = page.find("details", class_="all-items")
+    assert fold is not None
+    assert "open" not in fold.attrs
+    assert words.every_item(30) in fold.summary.get_text()
+    shown_first = page.find("ul", class_="items")
+    assert fold not in shown_first.parents
+    assert "broken.md" in shown_first.get_text()
+
+
+def test_a_short_outcome_is_not_folded():
+    report = AddReport([AddOutcome("one.md", Outcome.ADDED)], 0.1)
+    drawn = TEMPLATES.env.get_template("job-outcome.html").render(
+        shown=shown_add(report)
+    )
+
+    assert "all-items" not in drawn
+    assert "one.md" in drawn
