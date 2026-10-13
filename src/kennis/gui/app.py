@@ -341,11 +341,20 @@ def from_elsewhere(request: Request) -> bool:
     if request.method in _SAFE_METHODS:
         return False
     origin = request.headers.get("origin")
-    if origin is not None:
+    if origin is not None and origin != "null":
         here = f"{request.url.scheme}://{request.headers.get('host', '')}"
         return origin != here
+    # **`Origin: null` is what kennis's own plain forms send.** Every
+    # answer carries `Referrer-Policy: no-referrer`, and under it a
+    # browser withholds the origin of a form's POST as well as its
+    # referrer - so the check refused every form posted without a script,
+    # which a test in a real browser found and the suite could not.
+    # `Sec-Fetch-Site` is not withheld, and says the same thing.
     fetched = request.headers.get("sec-fetch-site")
-    return fetched is not None and fetched not in {"same-origin", "none"}
+    if fetched is not None:
+        return fetched not in {"same-origin", "none"}
+    # A browser that hid where the request came from and said nothing else.
+    return origin == "null"
 
 
 def new_token() -> str:
