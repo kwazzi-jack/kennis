@@ -59,6 +59,7 @@ from kennis.engine.corpus.intake import (
     convert_url,
     detect_format,
     looks_like_url,
+    names_a_file,
     sha256_of,
     title_from_markdown,
 )
@@ -77,7 +78,7 @@ from kennis.engine.corpus.schema import (
     Owner,
     Source,
 )
-from kennis.engine.docs.discover import discover_pages
+from kennis.engine.docs.discover import discover_pages, page_key
 from kennis.engine.docs.fetch import convert_page, fetch_page
 from kennis.engine.docs.http import USER_AGENT as DOCS_USER_AGENT
 from kennis.engine.docs.sites import (
@@ -1565,6 +1566,9 @@ class _Page:
     base_url: str | None = None
     version: str | None = None
     crawl: CrawlScope | None = None
+    # A file at an address - a PDF, a markdown or a source file - fetched and
+    # converted whole, rather than a page of a site.
+    whole_file: bool = False
     # Seconds to wait before fetching it, when its site asked for longer
     # than the batch's own delay.
     pace: float | None = None
@@ -1687,6 +1691,21 @@ def _pages_of(
         raise _docs_input_refused(*unusable)
 
     for identifier in identifiers:
+        if looks_like_url(identifier) and names_a_file(identifier):
+            # One document, not a site: crawling from a PDF's address walked
+            # the site it was on, and a file was never what that found.
+            pages.append(
+                _Page(
+                    key=page_key(identifier, "/"),
+                    project=validate_project_name(options.project)
+                    if options.project is not None
+                    else project_name_from_url(identifier),
+                    url=identifier,
+                    base_url=identifier,
+                    whole_file=True,
+                )
+            )
+            continue
         if looks_like_url(identifier):
             pages.extend(_pages_of_site(identifier, options, client, delay, sink))
             continue
@@ -1865,6 +1884,13 @@ def _converted_page(page: _Page, client: httpx.Client) -> Converted:
         return convert_local_file(page.path)
     if page.url is None:
         raise InputError(f"'{page.key}' names neither a file nor a page")
+    if page.whole_file:
+        converted = convert_url(page.url, client=client)
+        return replace(
+            converted,
+            suggested_title=converted.suggested_title
+            or title_from_markdown(converted.markdown, page.key),
+        )
 
     markdown = (
         convert_page(page.html, page.url)
