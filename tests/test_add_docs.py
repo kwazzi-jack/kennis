@@ -358,6 +358,34 @@ def test_a_local_page_without_a_project_is_refused_before_any_site_is_read(
     assert requested == []
 
 
+def test_an_address_of_a_file_is_one_document_not_a_site(docs: Collection):
+    """Every URL was a site to crawl, so a link to one markdown file or PDF
+    walked the whole site it sat on and never added the file itself."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(
+            200,
+            text="# Calibration guide\n\nSteps.\n",
+            headers={"content-type": "text/markdown"},
+        )
+
+    address = "https://example.org/guides/calibration.md"
+    report = add_docs(
+        docs,
+        [address],
+        AddOptions(project="example"),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert asked == [address]
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+    [page] = docs.contents().documents
+    assert page.frontmatter.docs.project == "example"
+    assert page.frontmatter.title == "Calibration guide"
+
+
 # ---------------------------------------------------------------------------
 # Pacing
 # ---------------------------------------------------------------------------
