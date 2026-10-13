@@ -458,6 +458,23 @@ def test_a_crawl_delay_is_honoured_only_up_to_a_bound(
     assert slept == [30.0]
 
 
+def test_a_site_already_held_is_not_paced_again(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """Every page is held, so none is asked for - and a re-crawl still slept
+    before each one, which a pack sync of a large sitemap paid in full."""
+    options = AddOptions(project="example", request_delay_seconds=0.5)
+    add_docs(docs, [BASE], options, client=sphinx_site())
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+
+    add_docs(docs, [BASE], options, client=sphinx_site())
+
+    assert slept == []
+
+
 def test_an_offline_add_is_not_paced(docs: Collection, monkeypatch: pytest.MonkeyPatch):
     slept: list[float] = []
     monkeypatch.setattr(

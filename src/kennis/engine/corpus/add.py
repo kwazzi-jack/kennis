@@ -1497,15 +1497,20 @@ def add_docs(
     delay = _delay_for(options, _DOCS_DELAY_SECONDS)
     try:
         pages, outcomes = _pages_of(identifiers, options, active, delay, sink)
+        requested = 0
         for position, page in enumerate(pages):
             # Pacing belongs here rather than in the crawl alone: the Sphinx
             # and sitemap paths know every page up front and would otherwise
             # request all of them back to back, which is the traffic pattern
-            # the delay exists to avoid. A page the crawl already downloaded
-            # costs no request, so it costs no wait either.
+            # the delay exists to avoid. A page that costs no request - one
+            # the crawl already downloaded, a local file, or one already
+            # held - costs no wait either: a re-crawl of a held site slept
+            # before every page it then skipped.
             wait = page.pace if page.pace is not None else delay
-            if position and wait and page.html is None:
-                time.sleep(wait)
+            if _requests(page, record):
+                if requested and wait:
+                    time.sleep(wait)
+                requested += 1
             sink.emit(ItemStarted(operation="add", item=page.identifier))
             outcome = _add_page(collection, page, record, active, options)
             outcomes.append(outcome)
@@ -1680,6 +1685,14 @@ def _pages_of_site(
         )
         for page in found.pages
     ]
+
+
+def _requests(page: _Page, record: Uniqueness) -> bool:
+    """Whether adding `page` will ask its site for it."""
+    if page.html is not None or page.url is None:
+        return False
+    natural_key = natural_key_for_docs(project=page.project, page=page.key)
+    return natural_key not in record.identities
 
 
 def _add_page(
