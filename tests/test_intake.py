@@ -26,7 +26,7 @@ from kennis.engine.corpus.intake import (
     strip_markdown_inline,
     title_from_markdown,
 )
-from kennis.engine.errors import ConversionFailed
+from kennis.engine.errors import ConversionFailed, SourceUnreadable
 
 
 class StubConverter:
@@ -486,3 +486,66 @@ def test_a_fetched_page_has_no_source_name():
     converted = convert_url("https://x/y", client=client)
 
     assert converted.source_name is None
+
+
+# ---------------------------------------------------------------------------
+# Any text file at an address
+# ---------------------------------------------------------------------------
+
+
+def serving_file(body: str, content_type: str) -> httpx.Client:
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, text=body, headers={"content-type": content_type}
+            )
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("address", "content_type"),
+    [
+        ("https://example.org/paper/main.tex", "application/x-tex"),
+        ("https://example.org/paper/main.tex", "text/x-tex"),
+        ("https://example.org/paper/main.tex", "application/octet-stream"),
+        ("https://example.org/data/table.csv", "text/csv"),
+    ],
+)
+def test_a_source_file_at_an_address_is_read_as_the_file_would_be(
+    address: str, content_type: str
+):
+    """Refused before - anything but markdown, plain text and HTML - so a
+    LaTeX source served as what it is could not be added at all."""
+    converted = convert_url(
+        address, client=serving_file("\\section{Calibration}\n", content_type)
+    )
+
+    assert "\\section{Calibration}" in converted.markdown
+    assert converted.origin == f"url:{address}"
+
+
+def test_restructured_text_is_kept_as_text():
+    converted = convert_url(
+        "https://example.org/guide/index.rst",
+        client=serving_file("Calibration\n===========\n\nSteps.\n", "text/x-rst"),
+    )
+
+    assert converted.markdown.startswith("Calibration")
+    assert converted.format == "text"
+
+
+def test_an_unknown_text_type_is_read_as_plain_text():
+    converted = convert_url(
+        "https://example.org/notes", client=serving_file("Some notes.\n", "text/x-log")
+    )
+
+    assert "Some notes." in converted.markdown
+
+
+def test_a_binary_kennis_cannot_read_is_still_refused():
+    with pytest.raises(SourceUnreadable, match="no converter"):
+        convert_url(
+            "https://example.org/release.zip",
+            client=serving_file("PK", "application/zip"),
+        )
