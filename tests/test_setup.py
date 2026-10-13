@@ -580,3 +580,31 @@ def test_an_answer_left_empty_does_not_rewrite_an_existing_file(
     apply_answers({"chunking.size": ""})
 
     assert (tmp_path / "config.toml").read_bytes() == before
+
+
+def test_a_word_that_is_not_true_or_false_is_refused(isolated: Path):
+    """`ture` was stored as `false`, said "Set", and quietly turned ligature
+    repair off."""
+    from kennis.engine.errors import SettingsError
+
+    with pytest.raises(SettingsError, match="ture"):
+        apply_answers({"conversion.repair_ligatures": "ture"})
+
+
+def test_a_truncated_credentials_file_is_named_and_nothing_is_half_written(
+    isolated: Path,
+):
+    """A truncated `credentials.toml` raised a bare `TOMLDecodeError` after
+    `config.toml` already named the backend whose key was never saved."""
+    from kennis.engine.errors import SettingsError
+
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "credentials.toml").write_text("[conversion\nDATALAB", encoding="utf-8")
+
+    with pytest.raises(SettingsError, match=r"credentials\.toml"):
+        apply_answers(
+            {"conversion.backend": "datalab", "conversion.api_key": "dl-notarealkey"}
+        )
+
+    config = isolated / "config.toml"
+    assert not config.is_file() or "datalab" not in config.read_text(encoding="utf-8")

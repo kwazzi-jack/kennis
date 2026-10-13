@@ -23,11 +23,13 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, Literal, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
+from kennis.engine.atomic import replace_file
 from kennis.engine.corpus.converters import DATALAB_KEY_VARIABLE
 from kennis.engine.errors import SettingsError
 from kennis.engine.settings import (
@@ -170,7 +172,8 @@ def apply_answers(answers: Mapping[str, str]) -> Settings:
     settings = _validated(given)
 
     secrets = {key: value for key, value in given.items() if _is_secret(key)}
-    _write_config({key: value for key, value in given.items() if key not in secrets})
+    # The key first: a configuration naming a backend whose key failed to
+    # save is the half-written state this function promises not to leave.
     if secrets:
         _write_credentials(
             {
@@ -178,6 +181,7 @@ def apply_answers(answers: Mapping[str, str]) -> Settings:
                 for key, value in secrets.items()
             }
         )
+    _write_config({key: value for key, value in given.items() if key not in secrets})
     return settings
 
 
@@ -368,7 +372,7 @@ def _validated(given: Mapping[str, str]) -> Settings:
             continue
         section, _, name = key.partition(".")
         field = _field_of(key)
-        sections.setdefault(section, {})[name] = _as_typed(field, value)
+        sections.setdefault(section, {})[name] = _as_typed(key, field, value)
 
     merged = load_settings().model_dump()
     for section, values in sections.items():
@@ -383,7 +387,11 @@ def _validated(given: Mapping[str, str]) -> Settings:
         ) from error
 
 
-def _as_typed(field: FieldInfo, value: str) -> object:
+_TRUE: Final = frozenset({"true", "yes", "on", "1"})
+_FALSE: Final = frozenset({"false", "no", "off", "0"})
+
+
+def _as_typed(key: str, field: FieldInfo, value: str) -> object:
     """A command-line string as the type the field declares.
 
     Guessing from the string's shape would make `"800"` an integer for one
@@ -396,7 +404,17 @@ def _as_typed(field: FieldInfo, value: str) -> object:
     # whatever the model declared.
     declared: object = field.annotation
     if declared is bool:
-        return value.lower() in {"true", "yes", "1"}
+        # Refused rather than read as false: `ture` was stored as `false`,
+        # said "Set" and quietly turned a feature off.
+        answer = value.strip().lower()
+        if answer in _TRUE:
+            return True
+        if answer in _FALSE:
+            return False
+        raise SettingsError(
+            f"'{value}' is not true or false",
+            resolution=f"kennis config set {key} true",
+        )
     if declared is int:
         try:
             return int(value)
@@ -428,21 +446,19 @@ def _write_config(values: Mapping[str, str]) -> None:
     if path.is_file():
         held = {
             section: dict(entries)
-            for section, entries in tomllib.loads(
-                path.read_text(encoding="utf-8")
-            ).items()
+            for section, entries in _toml_of(path).items()
             if isinstance(entries, dict)
         }
 
     for key, value in values.items():
         section, _, name = key.partition(".")
-        held.setdefault(section, {})[name] = _as_typed(_field_of(key), value)
+        held.setdefault(section, {})[name] = _as_typed(key, _field_of(key), value)
 
     complete = {
         section: model.model_validate(held.get(section, {})).model_dump()
         for section, model in section_models().items()
     }
-    path.write_text(config_document(complete), encoding="utf-8", newline="\n")
+    replace_file(path, config_document(complete))
 
 
 def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
@@ -454,8 +470,7 @@ def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
     is kept in its own, because one filed under a new section would sit
     behind an older value of the same name rather than replace it.
 
-    The mode is set **before** the content is written, so the key is never
-    on disk world-readable even briefly.
+    The file is never on disk world-readable, even briefly: see below.
     """
     path = credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -463,18 +478,32 @@ def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
     if path.is_file():
         existing = {
             section: dict(values)
-            for section, values in tomllib.loads(
-                path.read_text(encoding="utf-8")
-            ).items()
+            for section, values in _toml_of(path).items()
             if isinstance(values, dict)
         }
 
     for (section, variable), value in secrets.items():
         existing.setdefault(section, {})[variable] = value
 
-    path.touch(mode=0o600, exist_ok=True)
+    # Written whole and swapped in: `mkstemp` makes the temporary file 0600
+    # before a byte is written, and the rename carries that mode over an
+    # existing file too. A Ctrl-C part-way leaves the old file, not half of
+    # a new one.
+    replace_file(path, _as_toml_document(existing))
+    # Said as well as relied on; a no-op where the platform has no mode.
     path.chmod(0o600)
-    path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
+
+
+def _toml_of(path: Path) -> dict[str, object]:
+    """A TOML file kennis keeps, or a refusal naming it: a truncated file
+    raised a bare `TOMLDecodeError` out of a save, with a traceback."""
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        raise SettingsError(
+            f"{path} is not valid TOML ({error})",
+            resolution=f"fix or remove {path}",
+        ) from error
 
 
 def _as_toml_document(sections: Mapping[str, Mapping[str, object]]) -> str:

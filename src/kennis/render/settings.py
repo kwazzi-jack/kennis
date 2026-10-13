@@ -32,4 +32,16 @@ def describe_costs(costs: Sequence[SettingCost]) -> str:
     return "; ".join(describe_cost(cost) for cost in costs)
 
 
-__all__ = ["describe_cost", "describe_costs"]
+__all__ = ["describe_cost", "describe_costs", "describe_overridden"]
+
+
+def describe_overridden(variable: str) -> str:
+    """A value just written that the environment goes on overriding.
+
+    Said after `config set`, which wrote the file and printed "Set" while
+    `config get` went on showing the variable's value.
+    """
+    return (
+        f"{variable} is set and overrides the file, so this takes effect only "
+        f"once it is unset"
+    )
