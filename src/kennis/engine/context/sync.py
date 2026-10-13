@@ -33,7 +33,7 @@ from kennis.engine.context.bundle import LANDING_FILENAME
 from kennis.engine.context.notes import bundle_files
 from kennis.engine.errors import DocumentInvalid, PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
-from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.frontmatter import join_frontmatter, split_frontmatter
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.installed import (
     declared_content,
@@ -326,21 +326,23 @@ def _document(declaration: Declaration) -> str:
     title = shipped.get("title") or Path(declaration.address).stem
     description = shipped.get("description") or ""
     written_at = datetime.now(UTC).isoformat(timespec="seconds")
-    return (
-        "---\n"
-        f"title: {title}\n"
-        f"description: '{description}'\n"
-        f"owner: pack:{declaration.pack_id}\n"
-        "source:\n"
-        "  via: pack\n"
-        f"  pack: {declaration.pack_id}\n"
-        f"  at: '{written_at}'\n"
-        f"  address: {declaration.address}\n"
-        f"  sha256: {content_digest(body.encode('utf-8'))}\n"
-        f"  pack_sha256: {declaration.digest}\n"
-        "---\n"
-        "\n"
-        f"{body}"
+    # Dumped, never formatted: a pack's title or description with a colon
+    # or an apostrophe in it would otherwise be a file that is not YAML.
+    return join_frontmatter(
+        {
+            "title": title,
+            "description": description,
+            "owner": f"pack:{declaration.pack_id}",
+            "source": {
+                "via": "pack",
+                "pack": declaration.pack_id,
+                "at": written_at,
+                "address": declaration.address,
+                "sha256": content_digest(body.encode("utf-8")),
+                "pack_sha256": declaration.digest,
+            },
+        },
+        body,
     )
 
 

@@ -184,3 +184,24 @@ def test_kennis_does_not_commit_to_the_users_repository(bundle: Path):
         stdin=subprocess.DEVNULL,
     ).stdout.strip()
     assert before == after
+
+
+# Written by hand: first lines a person types that are not plain YAML scalars.
+AWKWARD_TITLES = [
+    "Decision: use Briggs robust -0.5",
+    "It's the beam's sidelobe",
+    "# not a comment",
+    "- not a list",
+    "yes",
+    "1.4e9",
+    "{braces} and [brackets]",
+]
+
+
+@pytest.mark.parametrize("title", AWKWARD_TITLES)
+def test_a_title_is_written_as_the_words_it_is(bundle: Path, title: str):
+    """Formatted into the header unquoted, "Decision: use Briggs" was not
+    YAML, and the project's next sync refused the whole bundle over it."""
+    note = remember_in_bundle(bundle, "We image with Briggs weighting.", title=title)
+
+    assert frontmatter_of(note.path)["title"] == title
