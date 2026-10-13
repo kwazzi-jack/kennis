@@ -1908,6 +1908,20 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
   font-size: 0.8125rem;
 }
 
+/* An empty corpus's home: centred in the column, a sentence of what
+   kennis is, and the first things to do as buttons. */
+.welcome {
+  max-width: 30rem;
+  margin: 3rem auto 2rem;
+  text-align: center;
+  font-family: var(--gutter);
+}
+.welcome > .icon { width: 2rem; height: 2rem; color: var(--role-muted); }
+.welcome h2 { font-family: var(--column); font-size: 1.25rem; margin: 0.6rem 0 0.4rem; }
+.welcome p { margin: 0 0 1rem; line-height: 1.5; }
+.welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+.welcome-actions .button { display: inline-flex; align-items: center; gap: 0.4rem; }
+
 /* A long outcome's ordinary items, folded under one line. */
 .all-items > summary {
   cursor: pointer;

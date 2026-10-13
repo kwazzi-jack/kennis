@@ -13,6 +13,8 @@
 <div id="hits">
 {% include "hits.html" %}
 </div>
+{% set held = pane_now() %}
+{% if held.readable and held.collections | sum(attribute="documents") == 0 %}{% include "welcome.html" %}{% endif %}
 {% include "recents.html" %}
 <script defer src="/static/focus.js"></script>
 <script defer src="/static/searching.js"></script>
