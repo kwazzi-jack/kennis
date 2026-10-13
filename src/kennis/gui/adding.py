@@ -70,7 +70,7 @@ _TARGET: Final = re.compile(r"identifiers|lines-[0-9]{1,3}|backup\.folder")
 FIRST_BLOCKS: Final[tuple[int, ...]] = (1, 2)
 
 type Widget = Literal["text", "number", "choice"]
-type Browse = Literal["file", "both"]
+type Upload = Literal["file", "both"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +107,8 @@ class ShownField:
 
     `empty` is what an optional field left empty becomes, and None for a
     required one. `preview` is the route the field asks as it is typed;
-    `browse` says whether the chooser may pick a file, or a file or a
-    folder.
+    `upload` says whether the browser's own picker may send files, or files
+    or a whole folder.
     """
 
     name: str
@@ -116,7 +116,7 @@ class ShownField:
     required: bool
     widget: Widget = "text"
     empty: str | None = None
-    browse: Browse | None = None
+    upload: Upload | None = None
     preview: str | None = None
     choices: tuple[str, ...] = ()
     # What the field holds when it is drawn: empty, unless the reader
@@ -152,8 +152,11 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
             ShownField(
                 name="identifiers",
                 label=labels["paper"],
-                required=True,
-                browse="file",
+                # Either this or the picker: a paper chosen there needs
+                # nothing typed here.
+                required=False,
+                empty=empty["uploaded"],
+                upload="file",
                 preview="/add/preview/paper",
             ),
             ShownField(
@@ -209,7 +212,11 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
         ]
     return [
         ShownField(
-            name="identifiers", label=labels["file"], required=True, browse="both"
+            name="identifiers",
+            label=labels["file"],
+            required=False,
+            empty=empty["uploaded"],
+            upload="both",
         ),
         ShownField(
             name="collection",

@@ -1730,6 +1730,9 @@ button:focus-visible, a:focus-visible {
   gap: 0 1rem;
 }
 .field[data-need="required"] { grid-column: 1 / -1; }
+/* A field beside the browser's picker is optional - either will do - and
+   still the first thing on the tab, so it and its picker take the row. */
+.field[data-uploads], .add-tab .uploads { grid-column: 1 / -1; }
 .add-fields > .chooser { grid-column: 1 / -1; }
 
 /* A field: its name with whether it is needed beside it, the control
@@ -1768,6 +1771,48 @@ button:focus-visible, a:focus-visible {
 .add-tab .empty { color: var(--role-muted); font-size: 0.75rem; }
 .add-tab .empty b { color: var(--ink); font-weight: 600; }
 .add-tab .browse { display: inline-flex; align-items: center; gap: 0.3rem; }
+/* The browser's own file picker, kept visible: its button opens the
+   native dialog of the computer the reader sits at, and the count of
+   what was chosen beside it is the only feedback a form without a script
+   has. Only its button is restyled, as one of kennis's own. */
+.add-tab .uploads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: -0.25rem 0 0.75rem;
+}
+.add-tab .upload { display: flex; flex-direction: column; gap: 0.25rem; }
+.add-tab .upload-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--role-muted);
+}
+/* Unframed: the dialog's fields draw a box, and a picker drawn as one
+   read as a second place to type. */
+.add-tab .upload input[type="file"] {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+.add-tab .upload input[type="file"]::file-selector-button {
+  margin-right: 0.5rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.add-tab .upload input[type="file"]:focus-visible { outline: 2px solid var(--role-hint); outline-offset: 2px; }
+.add-tab .upload-hint { flex-basis: 100%; margin: 0; font-size: 0.75rem; }
 .add-tab .preview { min-height: 1.2rem; margin: 0 0 0.75rem; }
 .add-tab .preview p { margin: 0 0 0.3rem; }
 .add-tab .probe { margin: 0 0 0.75rem; }

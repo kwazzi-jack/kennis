@@ -110,9 +110,15 @@ says whether it is required, and an optional one says what an empty field
 becomes. As you type, the dialog previews what the add would do: the
 paper's title and the citekey it would get, a paper you already hold, or
 the reason the add would refuse. It asks arXiv only once the identifier is
-complete. **Browse** lists the folders of the computer kennis is running
-on, which is the computer the add reads from - not necessarily the one
-your browser is on.
+complete.
+
+**Choose files** opens your own computer's file dialog, and **Choose a
+folder** sends a whole folder with its sub-folders. The files go to kennis
+through the same connection as the page, so this works the same when kennis
+runs on another machine behind `ssh -L`. A document added this way records
+that it was uploaded, under the name it was sent with. A path typed into
+the field instead is read on the computer kennis runs on, without copying;
+**Browse**, in a Several by group block, lists that computer's folders.
 
 Each operation runs in the background and reports in the strip at the
 bottom of every page, so a document conversion or a documentation crawl

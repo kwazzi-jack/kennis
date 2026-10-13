@@ -20,7 +20,9 @@ from __future__ import annotations
 import hashlib
 import re
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -281,6 +283,33 @@ def html_title(html: str) -> str | None:
     return " ".join(title_tag.text.split())
 
 
+# Files staged from an upload, by resolved path, each with the name it was
+# sent under. Set for the length of one add by the front end that staged
+# them, so the document says it was uploaded rather than naming a temporary
+# file that is gone once the add is.
+_UPLOADED: ContextVar[Mapping[Path, str] | None] = ContextVar("uploaded", default=None)
+
+
+@contextmanager
+def uploaded_as(names: Mapping[Path, str]) -> Iterator[None]:
+    """Within this, a file in `names` is recorded as `upload:<its name>`."""
+    token = _UPLOADED.set({path.resolve(): name for path, name in names.items()})
+    try:
+        yield
+    finally:
+        _UPLOADED.reset(token)
+
+
+def _origin_of_file(path: Path) -> str:
+    """`path:` and not a bare path. Design section 4 makes `source.from` a
+    scheme plus a value, and the recoverability table keys on the scheme:
+    it is how `corpus status` counts the documents that cannot be
+    refetched, which is the number a user wants before trusting a backup.
+    A bare path has no scheme to read."""
+    sent = (_UPLOADED.get() or {}).get(path.resolve())
+    return f"upload:{sent}" if sent is not None else f"path:{path}"
+
+
 def convert_local_file(
     path: Path,
     *,
@@ -325,12 +354,7 @@ def convert_local_file(
         markdown=markdown,
         via=via,
         format=source_format,
-        # `path:` and not a bare path. Design section 4 makes `source.from` a
-        # scheme plus a value, and the recoverability table keys on the
-        # scheme: it is how `corpus status` counts the documents that cannot
-        # be refetched, which is the number a user wants before trusting a
-        # backup. A bare path has no scheme to read.
-        origin=f"path:{path}",
+        origin=_origin_of_file(path),
         sha256=sha256_of(raw),
         original_bytes=raw if keep_original else None,
         original_name=path.name if keep_original else None,
