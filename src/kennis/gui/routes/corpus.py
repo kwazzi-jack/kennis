@@ -89,6 +89,7 @@ def serve_corpus(request: Request) -> HTMLResponse:
         "corpus.html",
         {
             "rows": shown_rows(held),
+            "holdings_columns": words.HOLDINGS_COLUMNS,
             "empty": not any(holding.documents for holding in held),
             "packs": describe_holdings(installed_packs(context)),
             "nothing_held": words.NOTHING_HELD,

@@ -4,7 +4,7 @@
 <h1>{{ corpus_heading }}</h1>
 {% if empty %}<p class="role-muted">{{ nothing_held }}</p>{% endif %}
 <table class="holdings">
-  <thead><tr><th>collection</th><th>documents</th><th>index</th></tr></thead>
+  <thead><tr>{% for column in holdings_columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
   <tbody>
   {% for row in rows %}
     <tr>

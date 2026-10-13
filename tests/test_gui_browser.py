@@ -471,7 +471,12 @@ def test_a_file_chosen_in_the_browsers_picker_is_added(
     page.click("a.action[href='/add']")
     page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
     page.click("#dialog a.tab[href*='kind=file']")
-    page.wait_for_selector("#dialog input[name=upload][multiple]", timeout=_WAIT_MS)
+    # The Files tab's own picker: the Paper tab, open first, has one too,
+    # and a wait that matched it could act on a tab about to be replaced.
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] input[name=upload][multiple]',
+        timeout=_WAIT_MS,
+    )
 
     page.set_input_files("#dialog input[name=upload][multiple]", str(chosen))
     page.click("#dialog .choices label:has(input[value=notes])")
@@ -509,7 +514,10 @@ def test_what_was_chosen_in_the_picker_is_said_back_and_can_be_cleared(
     page.click("a.action[href='/add']")
     page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
     page.click("#dialog a.tab[href*='kind=file']")
-    page.wait_for_selector("#dialog .uploads[data-enhanced]", timeout=_WAIT_MS)
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] .uploads[data-enhanced]',
+        timeout=_WAIT_MS,
+    )
     said = "#dialog .upload-said"
 
     assert page.inner_text(said) == words.UPLOAD_SAID["none"]

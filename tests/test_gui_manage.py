@@ -33,8 +33,12 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.events import Outcome
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
+from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.pages import shown_install
+from kennis.gui.pane import Pane
+from kennis.gui.responses import TEMPLATES
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.logs import log_path, start_logging, stop_logging
 
@@ -569,3 +573,37 @@ def test_the_index_dialog_marks_and_chooses_what_needs_indexing(
     assert marked["notes"] is not None
     assert marked["notes"].get_text() == words.index_waiting(2)
     assert marked["literature"] is None and marked[""] is None
+
+
+def test_an_installed_pack_offers_the_sync_as_a_button_not_a_command(
+    client: TestClient,
+):
+    """The outcome printed `kennis corpus sync` while the bar has a Sync
+    button that does exactly that."""
+    shown = shown_install(
+        PackInstall(
+            pack_id="boepie", outcome="Installed", files=2, literature=1, docs=0
+        )
+    )
+    drawn = TEMPLATES.get_template("job-outcome.html").render(
+        shown=shown, pane_now=lambda: Pane(collections=(), project=None)
+    )
+
+    assert shown.next_steps == ()
+    page = BeautifulSoup(drawn, "html.parser")
+    assert page.select_one('form[hx-post="/sync"] button') is not None
+    assert "kennis corpus sync" not in drawn
+
+
+def test_a_saved_note_waiting_for_its_index_offers_index_now(client: TestClient):
+    """It said to go and type `kennis corpus index` elsewhere."""
+    answer = client.post(
+        "/remember",
+        data={"text": "Antenna gains drift.", "title": "Drift", "target": "notes"},
+        headers={"HX-Request": "true"},
+    )
+
+    page = BeautifulSoup(answer.text, "html.parser")
+    button = page.select_one('button[formaction="/index"]')
+    assert button is not None and button["value"] == "notes"
+    assert "kennis corpus index" not in answer.text
