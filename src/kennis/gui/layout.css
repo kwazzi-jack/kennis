@@ -759,7 +759,11 @@ main {
 
 .dialog {
   width: min(38rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
+  /* Anchored near the top rather than centred: centred, a dialog moved
+     every time its height did - between Add's tabs, and while the
+     palette filtered - so the field being typed in moved too. */
+  margin: 10vh auto auto;
+  max-height: calc(90dvh - 2rem);
   padding: 0;
   border: 1px solid var(--rule);
   border-radius: 8px;
@@ -768,7 +772,8 @@ main {
   font-family: var(--gutter);
   font-size: 0.875rem;
 }
-.dialog::backdrop { background: var(--rule); }
+/* Strong enough to say the page behind is out of reach for now. */
+.dialog::backdrop { background: color-mix(in srgb, var(--ink) 35%, transparent); }
 .dialog-head {
   display: flex;
   align-items: center;
@@ -1682,7 +1687,10 @@ button:focus-visible, a:focus-visible {
   flex: 1 1 12rem;
 }
 .labelled > .name { font-weight: 600; }
-.labelled > input { width: 100%; }
+/* Not the row's flex basis: in a column that basis is a height, and
+   the Note dialog's two fields were 12rem tall. */
+.labelled > input,
+.fields .labelled > input[type="text"] { width: 100%; flex: none; }
 
 /* ---- the Add dialog ---- */
 

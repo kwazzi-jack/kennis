@@ -204,6 +204,19 @@ def test_after_a_note_focus_is_back_in_the_box(page: playwright.Page) -> None:
     assert page.evaluate("document.activeElement.id") == "remember-text"
 
 
+def test_the_note_dialog_s_fields_are_one_line_tall(page: playwright.Page) -> None:
+    """A labelled field took the row's flex basis as its height, and the
+    Title and Group fields were drawn 190px tall."""
+    page.click("a[href='/remember']")
+    page.wait_for_selector("#dialog input[name=title]", timeout=_WAIT_MS)
+
+    height = page.evaluate(
+        "document.querySelector('#dialog input[name=title]').offsetHeight"
+    )
+
+    assert height < 60
+
+
 def test_a_write_from_a_terminal_is_announced(page: playwright.Page) -> None:
     source = Path(os.environ["KENNIS_CORPUS_ROOT"]).parent / "sources" / "imaging.md"
     source.write_text("# Imaging\n\nDeconvolution.\n", encoding="utf-8")
