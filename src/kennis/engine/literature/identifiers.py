@@ -15,6 +15,7 @@ at all.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
@@ -228,6 +229,10 @@ _BIB_ENTRY: Final = re.compile(r"@(\w+)\s*\{\s*([^,\s{}]+)\s*,(.*?)(?=\n\s*@|\Z)
 # its settings in one) and a preamble.
 _BIB_NOT_ENTRIES: Final = frozenset({"string", "comment", "preamble"})
 
+# The fields read as prose, where LaTeX is decoded. Not the rest: a Zotero
+# `file` field holds a Windows path, whose backslashes are not commands.
+_BIB_LATEX_FIELDS: Final = frozenset({"title", "author"})
+
 _BIB_FIELD_NAME: Final = re.compile(r"[\s,]*([A-Za-z][\w-]*)\s*=\s*")
 
 
@@ -266,14 +271,80 @@ def _bib_fields(body: str) -> list[tuple[str, str]]:
         fields.append((named.group(1), body[start:at]))
 
 
-def _clean_bib_value(raw: str) -> str:
+def _clean_bib_value(raw: str, *, latex: bool = False) -> str:
     value = raw.strip().rstrip(",").strip()
     if (value.startswith("{") and value.endswith("}")) or (
         value.startswith('"') and value.endswith('"')
     ):
         value = value[1:-1]
+    if latex:
+        value = _from_latex(value)
     # The inner braces protect capitalisation for LaTeX and mean nothing here.
     return " ".join(value.replace("{", "").replace("}", "").split())
+
+
+# Accent commands, as the combining mark each puts over its letter. Written
+# as escapes because the source is ASCII.
+_LATEX_ACCENTS: Final = {
+    "`": "\u0300",
+    "'": "\u0301",
+    "^": "\u0302",
+    "~": "\u0303",
+    "=": "\u0304",
+    "u": "\u0306",
+    ".": "\u0307",
+    '"': "\u0308",
+    "r": "\u030a",
+    "H": "\u030b",
+    "v": "\u030c",
+    "d": "\u0323",
+    "c": "\u0327",
+    "k": "\u0328",
+    "b": "\u0331",
+}
+_LATEX_LETTERS: Final = {
+    "ss": "\u00df",
+    "aa": "\u00e5",
+    "AA": "\u00c5",
+    "ae": "\u00e6",
+    "AE": "\u00c6",
+    "oe": "\u0153",
+    "OE": "\u0152",
+    "o": "\u00f8",
+    "O": "\u00d8",
+    "l": "\u0142",
+    "L": "\u0141",
+    "i": "i",
+    "j": "j",
+}
+# `\'e`, `\'{e}` and `{\'e}`; a letter command (`\c`, `\v`) needs a brace
+# or a space before its letter, or `\cc` would be a command named `cc`.
+_LATEX_SYMBOL_ACCENT: Final = re.compile(
+    r"\\([`'^~=.\"])\s*(?:\{\s*(\\[ij]|[A-Za-z])\s*\}|(\\[ij]|[A-Za-z]))"
+)
+_LATEX_LETTER_ACCENT: Final = re.compile(
+    r"\\([uvHckrbd])(?:\s*\{\s*(\\[ij]|[A-Za-z])\s*\}|\s+([A-Za-z]))"
+)
+_LATEX_LETTER: Final = re.compile(
+    r"\\(ss|aa|AA|ae|AE|oe|OE|o|O|l|L|i|j)(?![A-Za-z])\s?"
+)
+_LATEX_ESCAPE: Final = re.compile(r"\\([&%_$#])")
+
+
+def _from_latex(value: str) -> str:
+    """`M{\\"u}ller` as `M\u00fcller`: the accents a BibTeX export writes as
+    commands, which were kept as `M\\"uller` in a title and an author list
+    and so in every citekey and search over them."""
+
+    def accented(match: re.Match[str]) -> str:
+        letter = match.group(2) or match.group(3)
+        base = _LATEX_LETTERS[letter[1:]] if letter.startswith("\\") else letter
+        return unicodedata.normalize("NFC", base + _LATEX_ACCENTS[match.group(1)])
+
+    value = _LATEX_SYMBOL_ACCENT.sub(accented, value)
+    value = _LATEX_LETTER_ACCENT.sub(accented, value)
+    value = _LATEX_LETTER.sub(lambda match: _LATEX_LETTERS[match.group(1)], value)
+    return _LATEX_ESCAPE.sub(r"\1", value)
 
 
 def parse_bibtex(text: str) -> list[BibEntry]:
@@ -289,7 +360,10 @@ def parse_bibtex(text: str) -> list[BibEntry]:
         if entry_type.lower() in _BIB_NOT_ENTRIES:
             continue
         fields = {
-            name.lower(): _clean_bib_value(value) for name, value in _bib_fields(body)
+            name.lower(): _clean_bib_value(
+                value, latex=name.lower() in _BIB_LATEX_FIELDS
+            )
+            for name, value in _bib_fields(body)
         }
         title = fields.get("title", "")
         if not title:
