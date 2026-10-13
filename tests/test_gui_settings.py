@@ -345,7 +345,8 @@ def test_the_text_is_set_at_a_reading_measure_unless_a_width_is_chosen():
     assert "max-width: var(--frame)" in rules_for(sheet, ".column")
     # Every width a reading measure set now goes through the choice.
     assert "max-width: var(--measure)" not in code
-    assert code.count("max-width: var(--text)") == 5
+    # Six: the notice (2026-10-13) lines up with the text it is about.
+    assert code.count("max-width: var(--text)") == 6
 
 
 def test_words_only_hides_the_bars():
