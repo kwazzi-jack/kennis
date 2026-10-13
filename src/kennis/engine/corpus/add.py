@@ -82,7 +82,7 @@ from kennis.engine.docs.sites import (
     project_name_from_url,
     validate_project_name,
 )
-from kennis.engine.errors import InputError, KennisError
+from kennis.engine.errors import ConversionFailed, InputError, KennisError
 from kennis.engine.events import (
     Diagnostic,
     DocumentSkipped,
@@ -652,7 +652,21 @@ def _plan_binaries(
     # takes, which reads as a hang rather than as progress. Concern #191.
     sink.emit(Progress(operation="add", completed=0, total=len(runs)))
     for number, run in enumerate(runs, start=1):
-        batch = converter.convert(run)
+        # A run that fails as a whole - a timeout, a crash with no output -
+        # fails its own documents and no others. Raised on, it took every
+        # run already converted with it, and a 50-PDF add with one bad file
+        # in its last run landed nothing after minutes of conversion.
+        try:
+            batch = converter.convert(run)
+        except ConversionFailed as error:
+            for path in run:
+                plan.settled[path] = AddOutcome(
+                    identifier=str(path),
+                    outcome=Outcome.FAILED,
+                    refusal=NothingConverted(name=path.name, problem=str(error)),
+                )
+            sink.emit(Progress(operation="add", completed=number, total=len(runs)))
+            continue
         for path in run:
             markdown = batch.markdown.get(path)
             if markdown is None:

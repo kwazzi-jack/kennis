@@ -15,7 +15,7 @@ import pytest
 from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.converters import ConversionBatch
-from kennis.engine.errors import InputError
+from kennis.engine.errors import ConversionFailed, InputError
 from kennis.engine.events import (
     Diagnostic,
     DocumentSkipped,
@@ -832,3 +832,45 @@ def test_a_duplicate_of_a_document_with_no_readable_title_still_reports(
 
     assert report.outcomes[0].outcome is Outcome.UNCHANGED
     assert report.outcomes[0].title in (None, "")
+
+
+class CrashingRunConverter(CountingConverter):
+    """A converter whose run holding `crashes` fails as a whole, as a
+    timeout or a crash with no output does."""
+
+    def __init__(self, crashes: str) -> None:
+        super().__init__()
+        self.crashes = crashes
+
+    def convert(
+        self, paths: Sequence[Path], *, page_limit: int | None = None
+    ) -> ConversionBatch:
+        if any(path.name == self.crashes for path in paths):
+            self.runs.append(tuple(paths))
+            raise ConversionFailed("the converter stopped after 600 seconds")
+        return super().convert(paths, page_limit=page_limit)
+
+
+def test_a_run_that_fails_whole_fails_only_its_own_documents(
+    notes: Collection, tmp_path: Path
+):
+    """A whole run raising took every run already converted with it: a
+    50-PDF add with one bad file in its last run landed nothing."""
+    pdfs = [
+        a_pdf(tmp_path / f"{name}.pdf", f"%PDF-1.7\n{name}\n".encode())
+        for name in ("one", "two", "three")
+    ]
+
+    report = add_notes(
+        notes,
+        [str(pdf) for pdf in pdfs],
+        AddOptions(batch_size=2),
+        converter=CrashingRunConverter("three.pdf"),
+    )
+
+    outcomes = {Path(outcome.identifier).name: outcome for outcome in report.outcomes}
+    assert outcomes["one.pdf"].outcome is Outcome.ADDED
+    assert outcomes["two.pdf"].outcome is Outcome.ADDED
+    assert outcomes["three.pdf"].outcome is Outcome.FAILED
+    assert isinstance(outcomes["three.pdf"].refusal, NothingConverted)
+    assert "600 seconds" in (outcomes["three.pdf"].refusal.problem or "")

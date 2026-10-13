@@ -534,11 +534,20 @@ class DatalabConverter:
             )
         except httpx.HTTPError as error:
             raise ConversionFailed(f"could not reach datalab: {error}") from error
+        if response.status_code in (401, 403):
+            # The key, not the document: said so, with the service's own
+            # words, rather than as a refused document and `--help`.
+            raise ConversionFailed(
+                f"datalab did not accept the API key ({response.status_code}"
+                f"{': ' + _detail_of(response) if _detail_of(response) else ''})",
+                resolution="kennis config init",
+            )
         if response.status_code >= 400:
             raise ConversionFailed(
-                f"datalab refused the document ({response.status_code})"
+                f"datalab refused the document ({response.status_code}"
+                f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
             )
-        check_url = _as_text(response.json().get("request_check_url"))
+        check_url = _as_text(_json_of(response).get("request_check_url"))
         if not check_url:
             raise ConversionFailed("datalab returned no url to poll")
         return check_url
@@ -555,11 +564,24 @@ class DatalabConverter:
         """
         for _ in range(self._max_polls):
             try:
-                result = client.get(
+                response = client.get(
                     url, headers=self._headers(), timeout=_REQUEST_TIMEOUT
-                ).json()
+                )
             except httpx.HTTPError as error:
                 raise ConversionFailed(f"could not reach datalab: {error}") from error
+            # A refusal on the poll is final, not "still pending": a 401 or a
+            # 429 whose body had no `status` was polled 300 times, ten
+            # minutes a document. A server error is waited out like a
+            # pending answer, within the same bound.
+            if 400 <= response.status_code < 500:
+                raise ConversionFailed(
+                    f"datalab refused the poll ({response.status_code}"
+                    f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
+                )
+            if response.status_code >= 500:
+                time.sleep(self._poll_seconds)
+                continue
+            result = _json_of(response)
             if result.get("success") is False or result.get("status") == "failed":
                 raise ConversionFailed(
                     _as_text(result.get("error")) or "datalab could not convert it"
@@ -574,6 +596,35 @@ class DatalabConverter:
             f"datalab did not finish converting {path.name} within "
             f"{int(self._max_polls * self._poll_seconds)}s and was given up on"
         )
+
+
+def _json_of(response: httpx.Response) -> dict[str, object]:
+    """A response's JSON object, or a refusal saying it was not one.
+
+    An HTML error page from a proxy is not JSON, and its `JSONDecodeError`
+    is neither an `HTTPError` nor a `ConversionFailed`: it crashed the whole
+    batch, the other documents with it.
+    """
+    try:
+        body = response.json()
+    except ValueError as error:
+        raise ConversionFailed(
+            f"datalab answered with something that is not JSON ({response.status_code})"
+        ) from error
+    if not isinstance(body, dict):
+        raise ConversionFailed("datalab answered with something that is not an object")
+    return body
+
+
+def _detail_of(response: httpx.Response) -> str:
+    """The service's own `detail` or `error`, when it gave one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    return _as_text(body.get("detail")) or _as_text(body.get("error"))
 
 
 def _as_text(value: object) -> str:
