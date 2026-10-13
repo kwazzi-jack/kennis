@@ -244,6 +244,15 @@ class LiteratureSettings(BaseModel):
         le=60.0,
         description="Seconds between arXiv requests. arXiv states three.",
     )
+    unpaywall_email: str = Field(
+        default="",
+        pattern=r"^$|^[^@\s]+@[^@\s]+$",
+        description=(
+            "Your email address, which Unpaywall requires, to look up a free "
+            "and legal copy of a paper known only by its DOI. Empty: Unpaywall "
+            "is not asked, and such a paper needs your own copy."
+        ),
+    )
 
 
 class LoggingSettings(BaseModel):

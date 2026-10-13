@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+from typing import Final
+from urllib.parse import quote
 
 from kennis.engine.refusals import (
     AmbiguousIdentity,
@@ -101,19 +103,19 @@ def describe_refusal(refusal: Refusal) -> str:
                 f"({offered}) and kennis cannot tell which names the paper; "
                 f"choose one, or add it as a note instead"
             )
-        case NoPublisherText(kind=kind, value=value):
+        case NoPublisherText(
+            kind=kind,
+            value=value,
+            asked_unpaywall=asked,
+            accepted_manuscript=accepted,
+        ):
             # Deliberately not the wording of `NoIdentity`. That one
             # means kennis does not know *what* the paper is and notes is
             # the honest home for it; this one means the paper is
             # identified perfectly well and its text is elsewhere.
             # Offering notes here would file a known paper in the wrong
             # collection.
-            named = "a DOI" if kind == "doi" else "an ADS bibcode"
-            return (
-                f"{named} names a publisher's copy, which kennis cannot "
-                f"fetch; supply the document with -l and --identifier "
-                f"'{value}'"
-            )
+            return _no_publisher_text(kind, value, asked=asked, accepted=accepted)
         case NoArxivText(named=named, arxiv_id=arxiv_id, declined=declined):
             said = f" ({declined})" if declined else ""
             return (
@@ -199,6 +201,41 @@ def choices_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             )
         case _:
             return ()
+
+
+# Where a reader opens a paper to download it, by the kind of identifier.
+_PAPER_PAGES: Final[dict[str, str]] = {
+    "doi": "https://doi.org/{}",
+    "bibcode": "https://ui.adsabs.harvard.edu/abs/{}/abstract",
+}
+
+
+def _no_publisher_text(
+    kind: str, value: str, *, asked: bool, accepted: str | None
+) -> str:
+    """A paper kennis has no copy of, with where to get one and how to add
+    it - and, where there is one, the manuscript it would not take unasked.
+    """
+    named = "the DOI" if kind == "doi" else "the ADS bibcode"
+    page = _PAPER_PAGES.get(kind, "{}").format(quote(value, safe="/"))
+    said = (
+        f"kennis has no copy of {named} '{value}' it can fetch"
+        + (": Unpaywall knows no open copy of the published paper" if asked else "")
+        + f"; download it from {page} and supply the document with -l and "
+        f"--identifier '{value}'"
+    )
+    if accepted is not None:
+        said += (
+            f". The authors' accepted manuscript is open at {accepted} and may "
+            f"differ from the published paper; if it will do, supply that "
+            f"address the same way"
+        )
+    elif kind == "doi" and not asked:
+        said += (
+            ". Or set literature.unpaywall_email, and kennis will look for a "
+            "free, legal copy"
+        )
+    return said
 
 
 __all__ = ["choices_for_refusal", "describe_refusal", "remedies_for_refusal"]

@@ -722,7 +722,10 @@ def test_a_doi_refused_for_no_text_names_the_pdf_and_not_notes(papers: Collectio
     # document, because the paper's identity was established perfectly
     # well and notes would be the wrong collection for it.
     assert remedies_for_refusal(refusal) == ()
-    assert "supply" in describe_refusal(refusal).lower()
+    said = describe_refusal(refusal)
+    assert "https://doi.org/10.1093/mnras/stab1234" in said
+    assert "-l and --identifier '10.1093/mnras/stab1234'" in said
+    assert "notes" not in said
 
 
 def test_a_markdown_paper_does_not_need_the_pdf_converter(
@@ -1116,3 +1119,103 @@ def test_an_identifier_that_is_none_is_refused_not_ignored(
             client=arxiv_client(),
             arxiv=arxiv_client(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Unpaywall: the published paper, and nothing else unasked
+# ---------------------------------------------------------------------------
+
+DOI = "10.1093/mnras/stab1234"
+PUBLISHED = "https://journal.example/stab1234.md"
+ACCEPTED = "https://repository.example/stab1234-accepted.md"
+
+
+def unpaywall(*locations: tuple[str, str]) -> tuple[httpx.Client, list[str]]:
+    """Unpaywall listing `(version, address)` locations, and the open copies
+    themselves, recording every address asked for."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if request.url.host == "api.unpaywall.org":
+            return httpx.Response(
+                200,
+                json={
+                    "oa_locations": [
+                        {"version": version, "url_for_pdf": address}
+                        for version, address in locations
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            text="# The Published Paper\n\nIts text.\n",
+            headers={"content-type": "text/markdown"},
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), asked
+
+
+def test_a_doi_is_fetched_from_its_published_open_copy(papers: Collection):
+    """Only with the reader's email set: Unpaywall requires one."""
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    report = add_literature(
+        papers,
+        [DOI],
+        AddOptions(unpaywall_email="reader@example.org"),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    assert report.outcomes[0].outcome is Outcome.ADDED
+    assert PUBLISHED in asked
+    assert "email=reader%40example.org" in asked[0]
+
+
+def test_an_accepted_manuscript_is_offered_and_never_fetched(papers: Collection):
+    """It may differ from the published paper the DOI names, so whether it
+    will do is the reader's to say, not kennis's to assume."""
+    client, asked = unpaywall(("acceptedVersion", ACCEPTED))
+
+    report = add_literature(
+        papers,
+        [DOI],
+        AddOptions(unpaywall_email="reader@example.org"),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    refusal = report.outcomes[0].refusal
+    assert refusal == NoPublisherText(
+        kind="doi", value=DOI, asked_unpaywall=True, accepted_manuscript=ACCEPTED
+    )
+    assert ACCEPTED not in asked
+    assert ACCEPTED in describe_refusal(refusal)
+
+
+def test_a_preprint_is_neither_fetched_nor_offered(papers: Collection):
+    client, asked = unpaywall(("submittedVersion", ACCEPTED))
+
+    report = add_literature(
+        papers,
+        [DOI],
+        AddOptions(unpaywall_email="reader@example.org"),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    assert report.outcomes[0].refusal == NoPublisherText(
+        kind="doi", value=DOI, asked_unpaywall=True
+    )
+    assert ACCEPTED not in asked
+
+
+def test_without_an_email_unpaywall_is_not_asked(papers: Collection):
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    report = add_literature(papers, [DOI], arxiv=no_preprint_client(), client=client)
+
+    assert asked == []
+    assert report.outcomes[0].refusal == NoPublisherText(kind="doi", value=DOI)
+    assert "unpaywall_email" in describe_refusal(report.outcomes[0].refusal)

@@ -385,6 +385,7 @@ def add_command(
         ),
         identifier=identifier,
         citekey=citekey,
+        unpaywall_email=context.settings.literature.unpaywall_email,
         project=project,
         max_pages=max_pages,
         max_depth=max_depth,

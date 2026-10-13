@@ -121,6 +121,7 @@ from kennis.engine.literature.identifiers import (
     parse_bibtex_file,
 )
 from kennis.engine.literature.metadata import lookup_arxiv_metadata
+from kennis.engine.literature.unpaywall import open_copy_of
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
@@ -161,6 +162,10 @@ class AddOptions:
     # does not state one on its own first page. Literature only.
     identifier: str | None = None
     citekey: str | None = None
+    # The reader's email for Unpaywall, which looks up a free, legal copy
+    # of a paper known only by its DOI. Empty: it is not asked. Literature
+    # only.
+    unpaywall_email: str = ""
     # The docs project a page belongs to: a frontmatter field and a directory
     # name both. Derived from the site's host when it is not given, which a
     # local file has none of. Docs only.
@@ -1243,6 +1248,15 @@ def _converted_for(
                 None,
             )
 
+    if (
+        paper.path is None
+        and identity.arxiv_id is None
+        and identity.doi
+        and options.unpaywall_email
+    ):
+        # No arXiv paper to read, so the published copy Unpaywall knows of,
+        # when the reader has asked for it to be looked up.
+        return _open_copy(paper, identity, options, client), None
     if paper.path is None:
         fetched = (
             fetch_paper(identity.arxiv_id, client=arxiv) if identity.arxiv_id else None
@@ -1270,7 +1284,7 @@ def _converted_for(
             AddOutcome(
                 identifier=paper.identifier,
                 outcome=Outcome.FAILED,
-                refusal=_textless(paper, identity, fetched),
+                refusal=_textless(paper, identity, fetched, options),
             ),
             None,
         )
@@ -1295,8 +1309,45 @@ def _converted_for(
         )
 
 
+def _open_copy(
+    paper: _Paper,
+    identity: _Identity,
+    options: AddOptions,
+    client: httpx.Client | None,
+) -> Converted | AddOutcome:
+    """The published paper from the open copy Unpaywall knows of, or the
+    refusal saying there is none - offering an accepted manuscript where
+    one exists, for the reader to choose, rather than taking it."""
+    assert identity.doi is not None
+    copies = open_copy_of(identity.doi, email=options.unpaywall_email, client=client)
+    if copies.published is None:
+        return AddOutcome(
+            identifier=paper.identifier,
+            outcome=Outcome.FAILED,
+            refusal=NoPublisherText(
+                kind="doi",
+                value=identity.doi,
+                asked_unpaywall=True,
+                accepted_manuscript=copies.accepted,
+            ),
+        )
+    try:
+        return convert_url(
+            copies.published, keep_original=options.keep_original, client=client
+        )
+    except KennisError as error:
+        return AddOutcome(
+            identifier=paper.identifier,
+            outcome=Outcome.FAILED,
+            refusal=Quoted(str(error)),
+        )
+
+
 def _textless(
-    paper: _Paper, identity: _Identity, fetched: PaperText | None
+    paper: _Paper,
+    identity: _Identity,
+    fetched: PaperText | None,
+    options: AddOptions,
 ) -> NoPublisherText | NoArxivText:
     """Why this paper has no body, as one of two distinct refusals.
 
