@@ -249,7 +249,7 @@ def test_a_mode_that_is_not_offered_is_named_rather_than_ignored(
     # marker carries `data-mode="psychic"` whatever the message says,
     # so asserting the word appears passed for a page that named
     # nothing. Found by injection. Concern #382.
-    warning = re.search(r'<p class="role-warning">([^<]*)</p>', page.text)
+    warning = re.search(r'<div class="notice"><p>([^<]*)</p>', page.text)
     assert warning is not None, page.text
     assert "psychic" in warning.group(1), warning.group(1)
     # And the search did not run: no hit carries a handle.
@@ -275,8 +275,8 @@ def test_a_named_mode_reaches_the_engine(corpus: Path, client: TestClient):
         "/hits", params={"q": "sediment", "scope": "notes", "mode": "bm25"}
     ).text
 
-    assert "matched keywords only" in default, default
-    assert "matched keywords only" not in chosen, chosen
+    assert words.keywords_only(["notes"]) in default, default
+    assert "Matched by keywords only" not in chosen, chosen
     # Both found the note, so the difference is the warning and not
     # one of them having failed to run.
     assert "chunk=" in default and "chunk=" in chosen
@@ -299,8 +299,34 @@ def test_the_page_says_when_a_search_ran_lexically_after_all(
         "/", params={"q": "sediment", "scope": "notes", "mode": "dense"}
     ).text
 
-    assert "no meaning leg" in page
-    assert "notes" in page
+    assert words.keywords_only(["notes"]) in page
+
+
+def test_a_search_that_ran_lexically_is_said_once_with_its_way_forward(
+    corpus: Path, client: TestClient
+):
+    """Three bold sentences, one per collection, took the top of every
+    results page before a single result. One quiet notice says it for
+    all of them, with the step that changes it: with no meaning model
+    configured, that is Settings, because building again would not."""
+    a_note(corpus, "rivers", "Rivers carry sediment to the delta.")
+    admitted(client)
+
+    page = client.get("/", params={"q": "sediment", "mode": "dense"}).text
+
+    assert page.count('class="notice quiet"') == 1
+    assert words.KEYWORDS_ONLY_CHOOSE in page
+    assert 'href="/settings#setting-embedding.backend"' in page
+
+
+def test_the_keywords_only_sentence_names_every_collection_once():
+    assert words.keywords_only(["literature", "docs", "notes"]) == (
+        "Matched by keywords only: the literature, docs and notes indexes "
+        "were built without meaning."
+    )
+    assert words.keywords_only(["notes"]).endswith(
+        "notes index was built without meaning."
+    )
 
 
 def test_the_page_keeps_no_client_side_history_snapshot(

@@ -1,6 +1,11 @@
 {% extends "base.html" %}
-{% block title %}kennis{% endblock %}
+{% set shown_heading = heading | default(problem_heading, true) %}
+{% block title %}kennis - {{ shown_heading }}{% endblock %}
 {% block main %}
-<p class="role-error">{{ problem }}</p>
-{% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
+{# A heading to find it by, the refusal as a notice, and two ways back:
+   it was one red sentence and a command, with nowhere to go. #}
+<h1>{{ shown_heading }}</h1>
+<div class="notice"><p>{{ problem }}</p>
+{% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>
+<p class="ways-back"><a class="button" href="/">{{ problem_back }}</a> <a class="button" href="/corpus">{{ problem_corpus }}</a></p>
 {% endblock %}
