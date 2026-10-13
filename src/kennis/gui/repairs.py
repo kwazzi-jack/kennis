@@ -26,6 +26,7 @@ from urllib.parse import quote
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    KennisOwn,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -100,6 +101,7 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
             | BibliographyIncomplete()
             | NothingConverted()
             | SymlinkSkipped()
+            | KennisOwn()
             | UnsupportedFormat()
         ):
             return ()

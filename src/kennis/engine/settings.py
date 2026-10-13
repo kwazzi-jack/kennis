@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Final, Literal, get_args, get_origin
 
 from dotenv import dotenv_values
-from platformdirs import user_config_dir
+from platformdirs import user_config_dir, user_log_dir, user_state_dir
 from pydantic import BaseModel, Field, ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -49,6 +49,8 @@ from kennis.engine.errors import SettingsError
 
 _ENVIRONMENT_PREFIX: Final = "KENNIS"
 _CONFIG_DIR_VARIABLE: Final = "KENNIS_CONFIG_DIR"
+_STATE_DIR_VARIABLE: Final = "KENNIS_STATE_DIR"
+_LOG_DIR_VARIABLE: Final = "KENNIS_LOG_DIR"
 _CONFIG_FILE: Final = "config.toml"
 _CREDENTIALS_FILE: Final = "credentials.toml"
 
@@ -376,6 +378,38 @@ def config_dir() -> Path:
     if override:
         return Path(override).expanduser()
     return Path(user_config_dir("kennis"))
+
+
+def state_dir() -> Path:
+    """Where kennis keeps state that is neither log nor configuration.
+
+    `KENNIS_STATE_DIR` overrides the platform default, by the mechanism
+    `config_dir` uses. On Linux the default is `~/.local/state/kennis`, the
+    parent of the log directory, so the two sit together.
+    """
+    override = os.environ.get(_STATE_DIR_VARIABLE)
+    if override:
+        return Path(override).expanduser()
+    return Path(user_state_dir("kennis"))
+
+
+def log_dir() -> Path:
+    """Where kennis keeps its log, overridden by `KENNIS_LOG_DIR`."""
+    override = os.environ.get(_LOG_DIR_VARIABLE)
+    if override:
+        return Path(override).expanduser()
+    return Path(user_log_dir("kennis"))
+
+
+def own_directories(corpus_root: Path) -> tuple[Path, ...]:
+    """Every directory kennis writes its own files into.
+
+    Nothing in them is ever a source to add: the corpus would be copied into
+    itself, the configuration holds API keys in `credentials.toml`, and the
+    state holds the reader's search history - each a supported format, and
+    each, once added, a document an agent can read.
+    """
+    return (corpus_root, config_dir(), state_dir(), log_dir())
 
 
 def config_path() -> Path:

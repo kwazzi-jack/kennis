@@ -27,6 +27,7 @@ import subprocess
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    KennisOwn,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -141,6 +142,8 @@ def describe_refusal(refusal: Refusal) -> str:
             )
         case SymlinkSkipped():
             return "a symbolic link, which the walk does not follow"
+        case KennisOwn():
+            return "kennis's own files, which are never added to the corpus"
         case UnsupportedFormat(suffix=suffix):
             return f"unsupported file type '{suffix}'"
 
@@ -172,6 +175,7 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             | BibliographyIncomplete()
             | NothingConverted()
             | SymlinkSkipped()
+            | KennisOwn()
             | UnsupportedFormat()
         ):
             return ()

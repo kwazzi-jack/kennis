@@ -23,6 +23,7 @@ from kennis.engine import refusals as refusal_module
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    KennisOwn,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -62,6 +63,7 @@ EVERY_REFUSAL: list[Refusal] = [
     NothingConverted(name="paper.pdf", problem="mineru produced nothing"),
     NothingConverted(name="paper.pdf"),
     SymlinkSkipped(),
+    KennisOwn(),
     UnsupportedFormat(suffix=".zip"),
 ]
 
