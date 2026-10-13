@@ -40,4 +40,11 @@
 </ul>
 {% endif %}
 {% for note in shown.notes %}<p class="role-muted">{{ note }}</p>{% endfor %}
+{# The step the note above names, as a control. #}
+{% if shown.index_after %}
+<form class="index-now" action="/index" method="post" hx-post="/index" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+  <input type="hidden" name="collection" value="">
+  <button type="submit">{{ index_now_label }}</button>
+</form>
+{% endif %}
 {% for step in shown.next_steps %}<p class="role-command">{{ step }}</p>{% endfor %}

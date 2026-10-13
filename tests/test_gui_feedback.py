@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
+from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.events import EventSink, ItemFinished, ItemStarted, Outcome
 from kennis.engine.history.repository import Repository
@@ -35,7 +36,8 @@ from kennis.engine.refusals import Quoted
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.jobs import Elapsed, Jobs
-from kennis.gui.pages import shown_corpus_sync
+from kennis.gui.pages import shown_add, shown_corpus_sync
+from kennis.gui.responses import TEMPLATES
 from kennis.gui.stream import as_message
 from kennis.render.words import running_for
 
@@ -578,3 +580,42 @@ def test_a_job_that_crashes_is_reported_as_failed(app: FastAPI, client: TestClie
     assert words.NOTHING_TO_SHOW not in outcome
     assert words.JOB_FAILED in activity.get_text()
     assert words.JOB_FINISHED not in activity.get_text()
+
+
+def test_what_needs_indexing_has_a_button_beside_it(corpus: Path, client: TestClient):
+    """ "2 documents need indexing" was a sentence, and the reader had to
+    find the Index dialog themselves. One collection behind is indexed
+    alone."""
+    run = CliRunner()
+    for name in ("first", "second"):
+        source = corpus / f"{name}.md"
+        source.write_text(f"# {name}\n\nText.\n", encoding="utf-8")
+        assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+        if name == "first":
+            assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    strip = BeautifulSoup(client.get("/").text, "html.parser").find(id="strip-status")
+    form = strip.find("form", class_="index-now")
+
+    assert form is not None, strip
+    assert form["action"] == form["hx-post"] == "/index"
+    assert form.find("input", attrs={"name": "collection"})["value"] == "notes"
+    assert words.index_now(["notes"]) in form.get_text()
+
+
+def test_nothing_behind_offers_no_index_button(client: TestClient):
+    strip = BeautifulSoup(client.get("/").text, "html.parser").find(id="strip-status")
+
+    assert strip.find("form") is None
+
+
+def test_an_add_that_wrote_offers_to_index_what_it_wrote():
+    """ "Not searchable until the index is rebuilt" was a sentence with
+    nothing to press beside it."""
+    added = shown_add(AddReport([AddOutcome("x.md", Outcome.ADDED)], 0.1))
+    refused = shown_add(AddReport([AddOutcome("x.md", Outcome.FAILED)], 0.1))
+    drawn = TEMPLATES.env.get_template("job-outcome.html").render(shown=added)
+
+    assert added.index_after and not refused.index_after
+    assert 'action="/index"' in drawn
+    assert words.INDEX_NOW in drawn

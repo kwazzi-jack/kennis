@@ -1158,6 +1158,9 @@ class ShownJob:
     # had been written while the strip beside it said one had. The
     # strip's status and the pane are added for every job (#457).
     redraws: tuple[tuple[str, str], ...] = ()
+    # Whether the outcome offers to index what it wrote: "Not searchable
+    # until the index is rebuilt" was a sentence with nothing to press.
+    index_after: bool = False
 
 
 def shown_add(report: AddReport) -> ShownJob:
@@ -1173,6 +1176,7 @@ def shown_add(report: AddReport) -> ShownJob:
         # interface to do what the interface does.
         notes=(words.NOT_SEARCHABLE_YET,) if added else (),
         role="role-added" if added else "role-muted",
+        index_after=bool(added),
     )
 
 
@@ -1259,6 +1263,7 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
         ),
         notes=tuple(notes),
         next_steps=tuple(steps),
+        index_after=acted,
     )
 
 

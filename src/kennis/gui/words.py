@@ -573,6 +573,14 @@ def documents_waiting(count: int) -> str:
     return f"{count_of(count, 'document')} {verb} indexing"
 
 
+def index_now(collections: Sequence[str]) -> str:
+    """The strip's button beside what needs indexing: the sentence was
+    plain text, and the reader had to find the Index dialog themselves."""
+    if len(collections) == 1:
+        return f"Index {collections[0]}"
+    return "Index them"
+
+
 def time_ago(seconds: float) -> str:
     """How long ago something happened, to the unit a person would say.
 
@@ -894,6 +902,8 @@ SYNC_CONTEXT_ACTION = "Synchronise this project"
 # and Index is third, so the sentence was wrong as well as
 # fragile. A message does not name a position on a page.
 NOT_SEARCHABLE_YET = "Not searchable until the index is rebuilt."
+
+INDEX_NOW = "Index now"
 
 NO_SUCH_JOB = "That operation has finished, or was never started here."
 
@@ -1303,6 +1313,7 @@ __all__ = [
     "IMAGES_BLOCKED",
     "INDEX_ACTION",
     "INDEX_EVERY",
+    "INDEX_NOW",
     "INDEX_PREAMBLE",
     "INDEX_STATES",
     "INDEX_WHICH_LABEL",
@@ -1456,6 +1467,7 @@ __all__ = [
     "documents_waiting",
     "group_empty_means",
     "index_collection",
+    "index_now",
     "job_crashed",
     "key_models",
     "keywords_only",
