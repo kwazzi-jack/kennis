@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import time
+from html import unescape
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -625,6 +626,58 @@ def test_an_add_with_no_collection_is_refused(client: TestClient, adds: list[Add
     assert adds == []
     assert words.CHOOSE_A_COLLECTION in refused.text
     assert words.CHOOSE_A_COLLECTION in grouped.text
+
+
+def test_a_local_page_into_docs_without_a_project_is_refused_in_the_form(
+    client: TestClient, adds: list[AddCall], tmp_path: Path
+):
+    """Refused by the add once it had started, after the dialog had closed,
+    so what was typed was gone by the time the reason arrived."""
+    page = tmp_path / "tutorial.md"
+    page.write_text("# A tutorial\n", encoding="utf-8")
+
+    refused = client.post(
+        "/add",
+        data={"kind": "file", "identifiers": str(page), "collection": "docs"},
+        headers=HTMX,
+    )
+    grouped = client.post(
+        "/add",
+        data={
+            "kind": "group",
+            "group-1": "g",
+            "lines-1": str(page),
+            "collection-1": "docs",
+        },
+        headers=HTMX,
+    )
+
+    assert adds == []
+    assert refused.headers["HX-Retarget"] == "#add-problem"
+    assert unescape(words.docs_input_refused(str(page), "unnamed")) in unescape(
+        refused.text
+    )
+    assert "tutorial.md" in grouped.text
+
+
+def test_a_local_page_into_docs_with_a_project_starts(
+    client: TestClient, adds: list[AddCall], tmp_path: Path
+):
+    page = tmp_path / "tutorial.md"
+    page.write_text("# A tutorial\n", encoding="utf-8")
+
+    client.post(
+        "/add",
+        data={
+            "kind": "file",
+            "identifiers": str(page),
+            "collection": "docs",
+            "project": "example",
+        },
+        headers=HTMX,
+    )
+
+    assert len(adds) == 1
 
 
 # ---------------------------------------------------------------------------

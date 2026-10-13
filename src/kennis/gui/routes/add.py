@@ -13,7 +13,7 @@ from fastapi.responses import (
 )
 
 from kennis.context import Context, existing_corpus
-from kennis.engine.corpus.add import AddOptions
+from kennis.engine.corpus.add import AddOptions, unusable_docs_input
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.preview import check_lines, preview_paper, preview_site
 from kennis.engine.corpus.schema import COLLECTION_NAMES
@@ -87,7 +87,7 @@ def _add_context(
     }
 
 
-def _group_blocks(form: FormData) -> list[GroupBlock] | str:
+def _group_blocks(form: FormData, project: str | None) -> list[GroupBlock] | str:
     """The Several by group tab's blocks that have lines, or why not.
 
     A block with no lines is skipped - two are drawn whether or not both
@@ -112,6 +112,9 @@ def _group_blocks(form: FormData) -> list[GroupBlock] | str:
             return words.CHOOSE_A_COLLECTION
         if destination not in COLLECTION_NAMES:
             return words.unknown_collection(destination)
+        refusal = _docs_refusal(destination, identifiers, project)
+        if refusal is not None:
+            return refusal
         blocks.append(
             GroupBlock(
                 collection=destination, group=name, identifiers=tuple(identifiers)
@@ -287,6 +290,16 @@ def serve_chooser(
 REFUSED_HEADER = "X-Kennis-Refused"
 
 
+def _docs_refusal(
+    destination: str, identifiers: list[str], project: str | None
+) -> str | None:
+    """Why a docs add of these lines cannot start, asked before it does."""
+    if destination != "docs":
+        return None
+    unusable = unusable_docs_input(identifiers, project=project)
+    return None if unusable is None else words.docs_input_refused(*unusable)
+
+
 def _refused_in_the_form(request: Request, problem: str) -> HTMLResponse:
     """A refusal the reader can correct, answered above the still-filled
     fields rather than in the strip with the dialog closed behind it.
@@ -317,7 +330,7 @@ def start_add(request: Request, form: PostedForm) -> Response:
     if isinstance(options, str):
         return _refused_in_the_form(request, options)
     if form.get("kind") == "group":
-        blocks = _group_blocks(form)
+        blocks = _group_blocks(form, options.project)
         if isinstance(blocks, str):
             return _refused_in_the_form(request, blocks)
         if not blocks:
@@ -339,6 +352,9 @@ def start_add(request: Request, form: PostedForm) -> Response:
         return _refused_in_the_form(request, words.CHOOSE_A_COLLECTION)
     if destination not in COLLECTION_NAMES:
         return _refused_in_the_form(request, words.unknown_collection(destination))
+    refusal = _docs_refusal(destination, identifiers, options.project)
+    if refusal is not None:
+        return _refused_in_the_form(request, refusal)
     put_back: list[OutOfBandChange] = []
     return started(
         request,
