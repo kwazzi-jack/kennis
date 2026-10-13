@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from kennis.engine.bounded import get_bounded
 from kennis.engine.corpus.converters import (
     Converter,
     default_converter,
@@ -413,7 +414,7 @@ def convert_url(
         headers={"User-Agent": _USER_AGENT}, follow_redirects=True
     )
     try:
-        response = active.get(url, timeout=_REQUEST_TIMEOUT_SECONDS)
+        response = get_bounded(active, url, timeout=_REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise SourceUnreadable(f"could not fetch '{url}': {error}") from error

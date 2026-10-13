@@ -18,6 +18,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from kennis import __version__
+from kennis.engine.bounded import MAX_RESPONSE_BYTES, TooLarge, read_bounded
 
 _REQUEST_TIMEOUT_SECONDS: Final = 30
 
@@ -31,20 +32,6 @@ USER_AGENT: Final = (
 # As many hops as a documentation host plausibly needs: a scheme upgrade,
 # a trailing slash and a version alias.
 _MAX_REDIRECTS: Final = 5
-
-# The most one response may hold, decoded. A sitemap may be 50 MB by its
-# own specification and is the largest thing a documentation site serves on
-# purpose; anything over it is a release archive or a video linked from the
-# docs, read whole into memory before its content type was ever looked at.
-MAX_RESPONSE_BYTES: Final = 50 * 1024 * 1024
-
-
-class TooLarge(httpx.RequestError):
-    """A response longer than `MAX_RESPONSE_BYTES`, abandoned part-way.
-
-    A request error for the same reason as `OffSite`: to every caller it is
-    a page that could not be had.
-    """
 
 
 class OffSite(httpx.RequestError):
@@ -65,7 +52,7 @@ def get_within(
     url: str,
     *,
     origin: str,
-    limit: int = MAX_RESPONSE_BYTES,
+    limit: int | None = None,
 ) -> httpx.Response:
     """GET `url`, following redirects only while they stay on `origin`, and
     reading no more than `limit` bytes of what comes back.
@@ -84,44 +71,9 @@ def get_within(
         ) as response:
             location = response.headers.get("location")
             if not response.is_redirect or not location:
-                return _read_within(response, limit)
+                return read_bounded(response, limit=limit)
             target = urljoin(str(response.url), location)
     raise httpx.TooManyRedirects(f"more than {_MAX_REDIRECTS} redirects from '{url}'")
-
-
-def _read_within(response: httpx.Response, limit: int) -> httpx.Response:
-    """The response, read whole, or `TooLarge` once it passes `limit`.
-
-    Counted as it is decoded, so a small compressed body that inflates
-    without end is stopped too, and the declared length is believed only
-    when it already says too much. What is returned is a new response over
-    the bytes read, without the encoding they no longer have.
-    """
-    declared = response.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > limit:
-        raise TooLarge(
-            f"'{response.url}' is {declared} bytes, more than {limit}",
-            request=response.request,
-        )
-    body = bytearray()
-    for chunk in response.iter_bytes():
-        body.extend(chunk)
-        if len(body) > limit:
-            raise TooLarge(
-                f"'{response.url}' is more than {limit} bytes",
-                request=response.request,
-            )
-    headers = [
-        (name, value)
-        for name, value in response.headers.multi_items()
-        if name.lower() not in ("content-encoding", "content-length")
-    ]
-    return httpx.Response(
-        response.status_code,
-        headers=headers,
-        content=bytes(body),
-        request=response.request,
-    )
 
 
 __all__ = [

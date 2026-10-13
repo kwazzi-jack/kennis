@@ -22,6 +22,7 @@ from typing import Final
 
 import httpx
 
+from kennis.engine.bounded import get_bounded
 from kennis.engine.literature.identifiers import normalize_arxiv_id
 
 _ATOM_API: Final = "https://export.arxiv.org/api/query"
@@ -94,8 +95,8 @@ def _entry(
     owned = client is None
     active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
     try:
-        response = active.get(
-            _ATOM_API, params=params, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_bounded(
+            active, _ATOM_API, params=params, timeout=_REQUEST_TIMEOUT_SECONDS
         )
         response.raise_for_status()
     except httpx.HTTPError:
