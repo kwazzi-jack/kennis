@@ -216,6 +216,7 @@ TEMPLATES.env.globals.update(
         "index_waiting": words.index_waiting,
         "upload_pdf": words.UPLOAD_PDF,
         "upload_typed": words.UPLOAD_TYPED,
+        "upload_typed_pdf": words.UPLOAD_TYPED_PDF,
         "upload_clear": words.UPLOAD_CLEAR,
         "upload_said": words.UPLOAD_SAID,
         "another_group": words.ANOTHER_GROUP,

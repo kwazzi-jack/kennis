@@ -2311,3 +2311,30 @@ a.button:active { translate: 0 1px; }
 /* A collection in the Index dialog with documents a search cannot find. */
 .segmented .waiting { margin-left: 0.35rem; color: var(--role-warning); font-size: 0.75rem; }
 .sync-foot .primary { order: 1; }
+
+/* The Paper tab's two ways in, as Zotero has them: an identifier or a
+   PDF. A field belonging to one shows only while it is chosen, by the
+   radios' own state, so it holds without a script; and what is hidden is
+   not added from, so nothing out of sight changes the add. */
+.add-tab form:has(input[type="radio"][name="source"]) .field[data-when] {
+  display: none;
+}
+.add-tab form:has(input[name="source"][value="identifier"]:checked)
+  .field[data-when="identifier"],
+.add-tab form:has(input[name="source"][value="pdf"]:checked)
+  .field[data-when="pdf"] {
+  display: grid;
+}
+.add-tab .ways { grid-column: 1 / -1; justify-self: start; margin: 0 0 0.85rem; }
+.segmented label .icon { width: 0.9rem; height: 0.9rem; margin-right: 0.35rem; }
+/* The identifier is looked up as it is typed: the wand inside its box. */
+.add-tab .entry-row.wand { position: relative; }
+.add-tab .entry-row.wand > .icon {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--brand);
+  pointer-events: none;
+}
+.add-tab .entry-row.wand input { padding-left: 2.2rem; }

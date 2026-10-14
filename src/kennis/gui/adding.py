@@ -69,7 +69,7 @@ _TARGET: Final = re.compile(r"identifiers|lines-[0-9]{1,3}|backup\.folder")
 # How many blocks the group tab draws before "Another group" is used.
 FIRST_BLOCKS: Final[tuple[int, ...]] = (1, 2)
 
-type Widget = Literal["text", "number", "choice"]
+type Widget = Literal["text", "number", "choice", "ways"]
 type Upload = Literal["file", "both"]
 
 
@@ -102,13 +102,23 @@ def add_tabs(kind: str) -> list[ShownTab]:
 
 
 @dataclass(frozen=True, slots=True)
+class ShownChoice:
+    """One of a choice field's options: what it posts and what it says."""
+
+    value: str
+    label: str
+    icon: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ShownField:
     """One form field, with what a reader needs to fill it in.
 
     `empty` is what an optional field left empty becomes, and None for a
     required one. `preview` is the route the field asks as it is typed;
     `upload` says whether the browser's own picker may send files, or files
-    or a whole folder.
+    or a whole folder. `when` is the Paper tab's way in that the field
+    belongs to, shown only while that way is chosen.
     """
 
     name: str
@@ -118,7 +128,8 @@ class ShownField:
     empty: str | None = None
     upload: Upload | None = None
     preview: str | None = None
-    choices: tuple[str, ...] = ()
+    choices: tuple[ShownChoice, ...] = ()
+    when: str | None = None
     # What the field holds when it is drawn: empty, unless the reader
     # opened the dialog from a place in the tree (11f).
     value: str = ""
@@ -150,19 +161,41 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
     if kind == "paper":
         return [
             ShownField(
+                name="source",
+                label=labels["source"],
+                required=True,
+                widget="ways",
+                preview="/add/preview/paper",
+                choices=tuple(
+                    ShownChoice(value, label, icon)
+                    for value, label, icon in words.SOURCE_CHOICES
+                ),
+                value="identifier",
+            ),
+            ShownField(
                 name="identifiers",
                 label=labels["paper"],
-                # One of the two is needed: an identifier or path typed
-                # here, or a PDF chosen in the picker beside it.
+                required=True,
+                preview="/add/preview/paper",
+                when="identifier",
+            ),
+            ShownField(
+                name="pdf",
+                label=labels["pdf"],
+                # One of the two is needed: a PDF chosen in the picker, or
+                # its address or path typed in the fold under it.
                 required=True,
                 upload="file",
                 preview="/add/preview/paper",
+                when="pdf",
             ),
             ShownField(
                 name="identifier",
                 label=labels["identifier"],
                 required=False,
                 empty=empty["identifier"],
+                preview="/add/preview/paper",
+                when="pdf",
             ),
             ShownField(
                 name="title",
@@ -221,7 +254,7 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
             label=labels["collection"],
             required=True,
             widget="choice",
-            choices=COLLECTION_NAMES,
+            choices=tuple(ShownChoice(name, name) for name in COLLECTION_NAMES),
         ),
         ShownField(
             name="title",
@@ -417,6 +450,7 @@ __all__ = [
     "FIXED_COLLECTIONS",
     "PLACE_FIELDS",
     "ShownCheck",
+    "ShownChoice",
     "ShownEntry",
     "ShownField",
     "ShownLine",

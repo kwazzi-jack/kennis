@@ -554,3 +554,20 @@ def test_project_shows_on_the_files_tab_only_for_docs(page: playwright.Page) -> 
     assert page.is_hidden(project)
     page.click("#dialog .choices label:has(input[value=docs])")
     assert page.is_visible(project)
+
+
+def test_the_paper_tab_shows_only_the_way_in_chosen(page: playwright.Page) -> None:
+    """The identifier field up front, and a PDF's picker and identifier
+    only once PDF is chosen - an arXiv ID was typed into both."""
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .ways", timeout=_WAIT_MS)
+    typed = "#dialog .field[data-name=identifiers]"
+    pdf = "#dialog .field[data-name=pdf]"
+    which = "#dialog .field[data-name=identifier]"
+
+    assert page.is_visible(typed)
+    assert page.is_hidden(pdf) and page.is_hidden(which)
+    page.click("#dialog .choices label:has(input[value=pdf])")
+    assert page.is_hidden(typed)
+    assert page.is_visible(pdf) and page.is_visible(which)

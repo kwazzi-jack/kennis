@@ -767,7 +767,7 @@ ADD_TAB_ICONS: Final[dict[str, str]] = {
 }
 
 ADD_PREAMBLES: Final[dict[str, str]] = {
-    "paper": "An arXiv ID, DOI, ADS bibcode, or a PDF.",
+    "paper": "Look a paper up by its identifier, or add it from a PDF.",
     "site": "The web address of a documentation site.",
     "file": "Files or a folder, into the collection you choose.",
     "group": "Many items at once: one block per group, one item per line.",
@@ -807,10 +807,12 @@ NOT_A_FIELD = "That field does not take a path."
 # What each form field is called where a person reads it. One label per
 # name, whichever tab shows the field.
 FIELD_LABELS: Final[dict[str, str]] = {
-    "paper": "Paper",
+    "source": "Add from",
+    "paper": "arXiv ID, DOI or bibcode",
+    "pdf": "PDF",
     "site": "Site address",
     "file": "Files or folder",
-    "identifier": "Identifier for a PDF",
+    "identifier": "Its identifier",
     "title": "Title",
     "citekey": "Citekey",
     "group": "Group",
@@ -825,7 +827,8 @@ FIELD_LABELS: Final[dict[str, str]] = {
 # whose name alone does not say enough.
 FIELD_TIPS: Final[dict[str, str]] = {
     "identifier": (
-        "Fill this in only if kennis reads the wrong identifier from the PDF."
+        "The arXiv ID, DOI or bibcode of the paper in the PDF. Fill it in "
+        "when the PDF does not show one, or shows the wrong one."
     ),
     "citekey": "The key you cite it by in LaTeX or BibTeX.",
     "project": "The name its pages are filed under in docs.",
@@ -851,6 +854,17 @@ def group_empty_means(default_group: str | None) -> str:
         return f"'{default_group}', from your settings"
     return "no group"
 
+
+# The Paper tab's two ways in, as Zotero has them: an identifier, looked
+# up as it is typed, or a PDF, read for its identifier. Each shows only
+# its own fields, and the one chosen is the one added from.
+SOURCE_CHOICES: Final[tuple[tuple[str, str, str], ...]] = (
+    ("identifier", "Identifier", "wand-sparkles"),
+    ("pdf", "PDF", "file-text"),
+)
+# The Paper tab added from with nothing to add from.
+NO_IDENTIFIER = "Enter an arXiv ID, DOI or ADS bibcode."
+NO_PDF = "Choose a PDF, or give its web address or path."
 
 GROUP_NEEDS_A_NAME = "Give each block that has items a group name."
 
@@ -890,6 +904,7 @@ UPLOAD_FOLDER = "Choose a folder"
 UPLOAD_PDF = "Choose a PDF"
 UPLOAD_HINT = "Sent from this computer, even when kennis runs on another."
 UPLOAD_TYPED = "Or type a path on the kennis computer"
+UPLOAD_TYPED_PDF = "Or give a web address, or a path on the kennis computer"
 UPLOAD_CLEAR = "Clear"
 # What was chosen, said back under the buttons. Filled in by the page's
 # script, which composes no words of its own: `{name}`, `{names}` and
@@ -938,7 +953,7 @@ ARXIV_SILENT = (
 PREVIEW_FILE = "A file on the kennis computer. It is converted when added."
 PREVIEW_ADDRESS = "A web address. Its file is converted when added."
 PREVIEW_UNRECOGNISED = (
-    "Not recognised. Enter an arXiv ID, DOI, ADS bibcode, or a path to a PDF."
+    "Not recognised. Enter an arXiv ID, DOI or ADS bibcode, or add from a PDF."
 )
 
 
@@ -1560,8 +1575,10 @@ __all__ = [
     "NO_CONTEXT",
     "NO_CONTEXT_TIP",
     "NO_HEADINGS",
+    "NO_IDENTIFIER",
     "NO_MATCHES",
     "NO_PACKS",
+    "NO_PDF",
     "NO_SUCH_JOB",
     "OPEN_AT_PASSAGE",
     "OPTIONAL",
@@ -1631,6 +1648,7 @@ __all__ = [
     "SKIP",
     "SKIPPED",
     "SKIP_TO_CONTENT",
+    "SOURCE_CHOICES",
     "STATE_LETTERS",
     "STATE_WORDS",
     "STILL_RUNNING",
@@ -1653,6 +1671,7 @@ __all__ = [
     "UPLOAD_PDF",
     "UPLOAD_SAID",
     "UPLOAD_TYPED",
+    "UPLOAD_TYPED_PDF",
     "WELCOME",
     "WELCOME_ACTIONS",
     "WELCOME_HEADING",
