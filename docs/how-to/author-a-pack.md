@@ -27,7 +27,7 @@ and dashes.
 The first line of the scaffold is the part worth knowing about:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/kwazzi-jack/kennis/main/schema/ken-1.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kwazzi-jack/kennis/main/src/kennis/schema/ken-1.json
 ```
 
 With the `redhat.vscode-yaml` extension, that one comment gives completion

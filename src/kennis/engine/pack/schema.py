@@ -2,7 +2,7 @@
 
 **The models are the single declaration.** The published JSON Schema is
 generated from them with `model_json_schema()` and committed as
-`schema/ken-1.json`, so there is no second source to drift. A test
+`src/kennis/schema/ken-1.json`, so there is no second source to drift. A test
 regenerates it and compares.
 
 **No aliases anywhere.** The YAML key is the field name, spelled out, so

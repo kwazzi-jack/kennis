@@ -128,3 +128,14 @@ def test_the_scaffold_shows_where_content_goes_without_declaring_it(
 
     for section in ("literature", "docs", "notes", "context"):
         assert section in text
+
+
+def test_the_header_names_a_schema_file_the_repository_holds():
+    """The header pointed at `main/schema/ken-1.json`, a path that never
+    existed: the schema is committed under `src/kennis/schema/`, so every
+    scaffolded pack's editor fetched a 404 and checked nothing."""
+    root = Path(__file__).resolve().parents[1]
+    prefix = "https://raw.githubusercontent.com/kwazzi-jack/kennis/main/"
+
+    assert SCHEMA_URL.startswith(prefix)
+    assert (root / SCHEMA_URL.removeprefix(prefix)).is_file()

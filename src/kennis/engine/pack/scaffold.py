@@ -26,7 +26,7 @@ from kennis.engine.pack.schema import SCHEMA_VERSION, load_pack
 # where kennis is published rather than about packs, which is why it is one
 # constant and not spread through the template.
 SCHEMA_URL: Final = (
-    "https://raw.githubusercontent.com/kwazzi-jack/kennis/main/schema/"
+    "https://raw.githubusercontent.com/kwazzi-jack/kennis/main/src/kennis/schema/"
     f"ken-{SCHEMA_VERSION}.json"
 )
 
