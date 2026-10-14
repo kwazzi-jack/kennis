@@ -60,3 +60,15 @@ def test_a_trickling_url_is_refused_as_unreadable_not_waited_on(
 
     with pytest.raises(SourceUnreadable):
         convert_url(URL, client=trickling(1000))
+
+
+def test_a_clock_that_has_not_moved_still_reaches_a_deadline_of_none(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Windows's clock moves in steps of about 15ms, so every chunk of a
+    fast response can read the same time as the start; a deadline of none
+    is still reached."""
+    monkeypatch.setattr("kennis.engine.bounded.time.monotonic", lambda: 100.0)
+
+    with pytest.raises(TooSlow):
+        get_bounded(trickling(3), URL, timeout=30, deadline=0.0)

@@ -86,7 +86,9 @@ def read_bounded(
                 f"'{response.url}' is more than {limit} bytes",
                 request=response.request,
             )
-        if time.monotonic() - started > deadline:
+        # At or past: Windows's clock moves in steps of about 15ms, so a
+        # deadline of none could read as not yet passed.
+        if time.monotonic() - started >= deadline:
             raise TooSlow(
                 f"'{response.url}' was still arriving after {deadline:.0f}s",
                 request=response.request,
