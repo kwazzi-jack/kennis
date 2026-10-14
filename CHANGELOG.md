@@ -1,3 +1,139 @@
+## v0.7.0 (2026-10-14)
+
+### Feat
+
+- **gui**: give the Paper tab two ways in, Identifier and PDF, each showing and adding from only its own fields
+- **gui**: offer Sync and Index as buttons where outcomes printed commands, and say on the corpus page in a word whether each collection is searchable
+- **gui**: give Sync the usual foot with Sync corpus as its action, and have Index mark and choose what needs indexing
+- **gui**: suggest the groups already held in every group field, and show Project on the Files tab only for docs
+- **gui**: reword the window shorter and plainer, move explanations into info tips, and show each field's default as its placeholder
+- **gui**: an info tip, the browser's own popover beside a label, for words that need not take a line
+- **gui**: give the file picker two clear buttons, say back what was chosen, and fold the typed path away
+- **gui**: choose files and folders with the browser's own picker, sent to kennis wherever it runs, and record them as uploaded
+- **docs**: add a link to a file as one document instead of crawling the site it sits on
+- **add**: read any text file at an address as the same file on disk would be, LaTeX and reStructuredText included
+- **pack**: declare a paper by one identifier and an optional url, and have a sync say where to download what it could not fetch
+- **literature**: ask, with what was found, when a fetched document names a different paper from the identifier given, instead of filing it
+- **literature**: fetch a DOI's published open copy through Unpaywall when given an email, offer an accepted manuscript without taking it, and say where to download the rest
+- **literature**: read arXiv's own DOI as the arXiv paper it names
+- **gui**: list the corpus's own changes on the activity page, from a terminal or an agent as well as this window
+- **gui**: link a paper's identifiers and fetched source, offer its citekey to the clipboard, and end the reader's breadcrumb with its title
+- **gui**: let the palette find documents by title and past searches once something is typed
+- **gui**: give every dialog Add's foot and anchor it near the top, and read a summary of one in the singular
+- **gui**: answer an add the form can correct inside the dialog, keeping what was typed
+- **gui**: put a card's title before its measures, frame every box all round instead of striping one side, and draw no bar for a title-only chunk
+- **gui**: offer more from a collection whose results filled their quota
+- **gui**: welcome an empty corpus with what kennis is and the first things to add
+- **gui**: show an outcome's items that need the reader first and fold a long list of the rest
+- **gui**: put an index button beside what needs indexing, in the strip and in add and sync outcomes
+- **gui**: keep the bar's names and the pane as a drawer at phone width, keep row menus in the window, and tell state by shape
+- **gui**: announce live results and job steps through status regions, add a skip link, and let the reader scroll from the keyboard
+- **gui**: name every dialog field and radio group with a label, announce a note's outcome and put focus back in its box
+- **gui**: set text at the reading measure by default, and give document tables padding, rules and aligned digits
+- **gui**: say a keywords-only search once as a quiet notice with its way forward, and give problem, not-found and locked answers a page
+- **gui**: send a content security policy that allows scripts only from kennis and remote images only where asked
+- **gui**: give each collection its own measured colour across cards, groups, the pane and documents
+- **gui**: let the panes and the strip be resized, collapse the strip, and draw scrollbars in the theme
+- **gui**: make each hit one card whose head carries its measures, title and section
+- **gui**: fit the text to the pane by default and head each passage with its section
+- **gui**: set each passage in a card opened by a chevron and slide what opens
+- **gui**: bring dialogs, menus, results and pages in with short css motion
+- **gui**: choose each control by a rule and draw every input as the mockup does
+- **gui**: draw a passage once, faded where it is cut, and grow it in place
+- **gui**: open a document with its breadcrumbs, byline and an inspector of details, matches and outline
+- **config**: write every setting to the configuration file and ask before replacing it
+- **gui**: add a backup section to settings that backs up, tests and redraws itself
+- **backup**: add an encrypted archive of the corpus with create, check and restore
+- **gui**: add kennis's configuration to settings with what each change costs
+- **gui**: add a settings page with this window's preferences behind a gear
+- **gui**: add a palette of every action and place behind ctrl k
+- **gui**: mark each document's index state in the tree and give every row a menu
+- **gui**: add one kind at a time with a preview of the add and a chooser for this computer
+- **gui**: show each hit's measures as bars beside one opening passage and call the lexical measure keywords
+- **gui**: report what a job is doing on every page and answer a plain form with a page
+- **gui**: open kennis in a browser tab and stop it from the page
+- **gui**: rebuild the window as a three-pane workbench
+
+### Fix
+
+- reach a zero deadline on Windows's coarse clock, and make two tests hold on Windows (short temp path, racing appends)
+- **gui**: space the Index dialog's count from its collection, and say docs needs a project on the Files tab
+- **literature**: read a bibcode named with its scheme, as a pack sync names one
+- **docs**: hold a sitemap to the page limit, as the index and the crawl are
+- **docs**: wait only before a page that will be asked for, not before every page a re-crawl already holds
+- **net**: end every response kennis reads at 50 MB or five minutes, so a trickling host cannot hold a command open
+- **sync**: draw one bar through a sync's fetches and crawls, pace its papers for arXiv, and stop re-crawling a changed project every run
+- **docs**: key a page by the site's own root or its whole path, so the address an add starts from never files it twice
+- **add**: refuse a local docs page with no project before anything is crawled, and in the open form in the window
+- **convert**: repair a ligature in a quoted word or between two prices
+- **convert**: keep a staged filename short enough that mineru's output stays under the Windows path limit
+- **config**: say the credentials file is kept in the user profile on Windows, where file modes protect nothing
+- **literature**: read LaTeX accents in a BibTeX title or author as the letters they make
+- **convert**: end mineru's helpers with it when a run times out, and let a locked staging file not mask the error
+- **convert**: end an add on a refused API key with its remedy, and name conversion.batch_size when a run times out
+- **docs**: stop reading a response past 50 MB, honour robots.txt's Crawl-delay, and say who is crawling
+- **config**: name a refused setting's source and repair, and let config set mend a bad file or variable
+- **corpus**: never let a kept original's name replace its document or leave its directory
+- **literature**: keep an accented name's letters in its citekey, and read mineru's output as utf-8 on every platform
+- **config**: refuse a word that is not true or false, write the key before the file atomically, and say when the environment overrides a set value
+- **convert**: fail only the run that failed, and turn datalab's non-json replies, refused polls and refused keys into a document's refusal
+- **convert**: repair only what a ligature loses, keep each letter's case, and never touch an address
+- **docs**: keep every request and redirect on the site being read, resolve links where a redirect landed, and scope by directory
+- **literature**: refuse arxiv's error entry and an entry for another paper as metadata, and an identifier that does not parse
+- **literature**: read legacy arxiv urls whole, name the legacy archives, match hosts exactly, and parse bibtex keys and nested braces
+- **gui**: leave a command's --help out of the window's remedies, where its dialogs are
+- **gui**: redraw the strip and the pane after a move, and call a collection page's unknown name a collection
+- **gui**: keep the search key out of the empty box, and show a setting the environment decides as decided rather than saved
+- **gui**: stop fading dim text, darken the muted grey for the pane, and give every link and placeholder a token colour
+- **gui**: list jobs by the order they started, since two started within one windows clock tick tie
+- **corpus**: never take a source from the corpus, configuration, state or log, so adding their parent cannot copy them in
+- **gui**: empty a written note's title with its text so the next note is not given it
+- **context**: dump a note's and a pack file's frontmatter rather than format it, so a colon in a title stays yaml
+- **gui**: accept a plain form's post, whose origin no-referrer sends as null, by its fetch site
+- **gui**: give every form htmx posts a plain action and method so it posts without a script
+- **gui**: keep a search the browser prefetched out of the reader's history
+- **gui**: say which document deleted by hand a move from the tree put back
+- **corpus**: refuse a second init as a corpus that exists, not one that is busy
+- **gui**: tell the reader of a job that stopped part-way that running it again carries on
+- **chunking**: open an oversized block's window with the heading above it rather than leaving the heading alone
+- **gui**: draw a domain error any route raises as a page with its remedy, and keep a refused backup folder beside its field
+- **gui**: say which documents deleted by hand an add, index, sync or note put back
+- **gui**: move the page's revision with this window's own writes so the banner names only other writers
+- **gui**: refuse a write from another page on loopback, and hold each window's token under its own port
+- **gui**: run every route on a worker thread so no page or write stops the server
+- **gui**: report a job that dies of an unexpected exception as failed, not finished
+- **corpus**: commit what an interrupted add, move, sync or note wrote under its own name
+- **history**: commit past a person's signing and hooks, and call a refused commit what it is
+- **remember**: restore a hand deletion before a note is committed, and say so
+- **index**: record the commit an index was built from before reading its documents
+- **corpus**: keep only each index's pointer and binding in history, and rebuild the rest
+- **gui**: redraw the strip and pane after a job, ask twice on ctrl-c during one, and settle four more open concerns
+- **gui**: keep a job's warnings when its outcome replaces the live item lines
+- **gui**: report a sync once, in the words its lines use, and call a current index up to date
+- **gui**: keep the browser's own messages out of the terminal kennis prints to
+- **gui**: draw the add dialog as the mockup does and keep the settings choices rule off its radios
+- **gui**: draw the search box and the head of the results as the mockup does
+- **gui**: scroll only the centre pane and say where the corpus stands in the strip and pane
+- **gui**: open a passage as the mockup drew it, in ink, with tables as tables
+- **setup**: offer each embedding backend's own model and width when it is chosen
+- **setup**: write an api key under the variable its reader asks for
+- **corpus**: keep each collection's index lock out of the corpus history
+- **engine**: refuse a group or docs project that leaves its collection
+- **gui**: post repairs to the add route, choose no candidate, and add skip and registry links
+
+### Refactor
+
+- **convert**: drop the page limit no caller passes
+- **gui**: split the application into a router per area around one module of shared responses
+- **gui**: keep the layout stylesheet in its own css file rather than a python string
+- **gui**: match every job report exhaustively so a report without a page fails the type check
+- **embedding**: remove the vector width setting, which the model fixes
+
+### Perf
+
+- **gui**: walk a collection for its page and the pane only when the corpus has changed
+- **holdings**: count a corpus again only when its commit, working tree or indexes have changed
+
 ## v0.6.3 (2026-10-08)
 
 ### Fix
