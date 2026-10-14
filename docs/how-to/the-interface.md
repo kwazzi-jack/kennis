@@ -102,8 +102,12 @@ a dialog, or a page if scripts are off:
 | Sync | converge the corpus, or this project's bundle, with every installed pack |
 | Pack | install a pack from the path to its `.ken.yml` |
 
-**Add has a tab for each kind of thing.** Paper takes an arXiv identifier,
-a DOI, an ADS bibcode or a PDF; Documentation site takes the address of
+**Add has a tab for each kind of thing.** Paper has two ways in, as Zotero
+has them: **Identifier** takes an arXiv ID, a DOI or an ADS bibcode and
+looks it up as you type; **PDF** takes a PDF, chosen, by web address or by
+path, with its identifier when the PDF does not show it or shows the wrong
+one. Only the fields of the way chosen show, and only they are added from.
+Documentation site takes the address of
 its first page; File takes a file or a folder and asks which collection;
 Several by group takes a block per group, one item per line. Every field
 says whether it is required, and an optional one says what an empty field

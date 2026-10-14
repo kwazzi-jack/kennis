@@ -158,8 +158,9 @@ def test_an_unknown_kind_is_the_paper_tab(client: TestClient):
 # fields are all required, because a block with lines needs every one.
 REQUIRED_FIELDS = {
     # One of the two is needed where the picker sits beside the field: a
-    # path or identifier typed, or a file chosen.
-    "paper": {"identifiers"},
+    # path or identifier typed, or a file chosen. The Paper tab needs the
+    # field of the way in chosen.
+    "paper": {"source", "identifiers", "pdf"},
     "site": {"identifiers"},
     "file": {"identifiers", "collection"},
     "group": {
@@ -228,7 +229,16 @@ def test_every_field_says_whether_it_is_needed_and_what_empty_means(
     [
         (
             "paper",
-            {"identifiers", "upload", "identifier", "title", "citekey", "group"},
+            {
+                "source",
+                "identifiers",
+                "pdf",
+                "upload",
+                "identifier",
+                "title",
+                "citekey",
+                "group",
+            },
         ),
         ("site", {"identifiers", "project", "max_pages", "max_depth"}),
         ("file", {"identifiers", "upload", "collection", "title", "group", "project"}),
@@ -980,7 +990,7 @@ def test_a_field_beside_the_picker_takes_the_whole_row(client: TestClient):
     dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
     css = client.get("/static/kennis.css").text
 
-    assert dialog.select_one('.field[data-uploads] input[name="identifiers"]')
+    assert dialog.select_one('.field[data-uploads] input[name="pdf"]')
     assert re.search(r"\.field\[data-uploads\][^{]*\{[^}]*grid-column: 1 / -1", css)
 
 
@@ -1055,3 +1065,136 @@ def test_a_group_field_suggests_the_groups_already_held(
         "radio"
     ]
     assert note_form.select_one('input[name="group"]')["list"] == "note-groups"
+
+
+# ---------------------------------------------------------------------------
+# The Paper tab's two ways in
+# ---------------------------------------------------------------------------
+
+
+def test_the_paper_tab_offers_an_identifier_or_a_pdf_with_identifier_chosen(
+    client: TestClient,
+):
+    """As Zotero has it: the identifier field alone up front, and the PDF's
+    fields - the picker and which paper it is - only once a PDF is the way
+    in. Both were in view at once, and an arXiv ID was typed into both."""
+    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    radios = dialog.select('input[name="source"]')
+    css = client.get("/static/kennis.css").text
+
+    assert [radio["value"] for radio in radios] == ["identifier", "pdf"]
+    assert [radio.has_attr("checked") for radio in radios] == [True, False]
+    # A switch with one way always chosen, not a field to be told is needed.
+    switch = dialog.select_one(".ways")
+    assert switch is not None and switch.find_parent(class_="field") is None
+    assert switch["aria-label"] == words.FIELD_LABELS["source"]
+    assert all(radio["hx-get"] == "/add/preview/paper" for radio in radios)
+    when = {
+        field["data-name"]: field.get("data-when") for field in dialog.select(".field")
+    }
+    assert when["identifiers"] == "identifier"
+    assert when["pdf"] == when["identifier"] == "pdf"
+    assert when["title"] is when["citekey"] is when["group"] is None
+    assert re.search(
+        r'\[name="source"\]\) \.field\[data-when\] \{\s*display: none', css
+    )
+    assert 'value="pdf"]:checked)\n  .field[data-when="pdf"]' in css
+
+
+def test_the_pdf_way_in_leads_with_the_picker_and_folds_an_address_or_path(
+    client: TestClient,
+):
+    dialog = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    field = dialog.select_one('.field[data-when="pdf"][data-uploads="file"]')
+    assert field is not None
+
+    labels = [label.get_text(strip=True) for label in field.select(".upload-button")]
+    assert labels == [words.UPLOAD_PDF]
+    typed = field.select_one("details.typed-path")
+    assert typed is not None and typed.get("open") is None
+    assert typed.select_one('input[name="pdf"]') is not None
+    assert typed.get_text(" ", strip=True).startswith(words.UPLOAD_TYPED_PDF)
+
+
+def test_by_identifier_adds_only_the_identifier_typed(
+    client: TestClient, adds: list[AddCall]
+):
+    """A PDF left in the other way's picker, and an identifier left in its
+    field, are out of sight: neither is added, nor changes the add."""
+    client.post(
+        "/add",
+        data={
+            "kind": "paper",
+            "collection": "literature",
+            "source": "identifier",
+            "identifiers": "2409.19750",
+            "identifier": "10.1093/mnras/stab1234",
+        },
+        files=[("upload", ("other.pdf", b"%PDF-1.4\n", "application/pdf"))],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    [(destination, identifiers, options)] = adds
+    assert destination == "literature"
+    assert identifiers == ("2409.19750",)
+    assert options.identifier is None
+
+
+def test_from_a_pdf_adds_the_pdf_as_the_paper_its_identifier_names(
+    client: TestClient, adds: list[AddCall]
+):
+    client.post(
+        "/add",
+        data={
+            "kind": "paper",
+            "collection": "literature",
+            "source": "pdf",
+            "identifiers": "2409.19750",
+            "pdf": "",
+            "identifier": "10.1093/mnras/stab1234",
+        },
+        files=[("upload", ("paper.pdf", b"%PDF-1.4\n", "application/pdf"))],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    [(_, identifiers, options)] = adds
+    assert [Path(one).name for one in identifiers] == ["paper.pdf"]
+    assert options.identifier == "10.1093/mnras/stab1234"
+
+
+@pytest.mark.parametrize(
+    ("source", "said"),
+    [("identifier", words.NO_IDENTIFIER), ("pdf", words.NO_PDF)],
+)
+def test_an_empty_way_in_is_told_what_it_needs(
+    client: TestClient, adds: list[AddCall], source: str, said: str
+):
+    refused = client.post(
+        "/add",
+        data={"kind": "paper", "collection": "literature", "source": source},
+        headers=HTMX,
+    )
+
+    assert adds == []
+    assert said in refused.text
+
+
+def test_from_a_pdf_the_preview_looks_up_the_identifier_given(
+    client: TestClient, lookups: list[str]
+):
+    """So the reader sees which paper the PDF will be recorded as."""
+    shown = client.get(
+        "/add/preview/paper",
+        params={
+            "source": "pdf",
+            "identifiers": "",
+            "pdf": "/tmp/paper.pdf",
+            "identifier": "2409.19750",
+        },
+        headers=HTMX,
+    ).text
+
+    assert lookups == ["2409.19750"]
+    assert "A Paper About Calibration" in shown

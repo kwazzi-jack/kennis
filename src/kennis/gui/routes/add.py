@@ -162,7 +162,11 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
     max_depth = _count(form, "max_depth", defaults.max_depth)
     if isinstance(max_depth, str):
         return max_depth
-    identifier = str(form.get("identifier") or "") or None
+    # Which paper a PDF is: asked only on the way in that adds a PDF, and
+    # ignored on the other, where it is out of sight.
+    identifier = (
+        (str(form.get("identifier") or "") or None) if _from_a_pdf(form) else None
+    )
     return AddOptions(
         max_pages=max_pages,
         max_depth=max_depth,
@@ -184,6 +188,18 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
         ),
         extra_file_types=(),
     )
+
+
+def _from_a_pdf(form: FormData) -> bool:
+    """Whether the Paper tab's PDF way in is the one chosen."""
+    return form.get("kind") == "paper" and form.get("source") == "pdf"
+
+
+def _nothing_to_add(form: FormData) -> str:
+    """What to give, said for the tab that was left empty."""
+    if form.get("kind") != "paper":
+        return words.NOTHING_TO_ADD
+    return words.NO_PDF if _from_a_pdf(form) else words.NO_IDENTIFIER
 
 
 @router.get("/add")
@@ -215,9 +231,20 @@ def serve_add_block(request: Request, index: int = 1) -> HTMLResponse:
 # other request until it answered. FastAPI runs these on a thread.
 @router.get("/add/preview/paper")
 def preview_a_paper(
-    request: Request, identifiers: str = "", citekey: str = "", title: str = ""
+    request: Request,
+    identifiers: str = "",
+    citekey: str = "",
+    title: str = "",
+    source: str = "",
+    pdf: str = "",
+    identifier: str = "",
 ) -> HTMLResponse:
-    first = next(iter(_lines(identifiers)), "")
+    # From a PDF, the paper is the one its identifier names, when given:
+    # looked up as it is typed, so the reader sees which paper it will be.
+    if source == "pdf":
+        first = identifier.strip() or next(iter(_lines(pdf)), "")
+    else:
+        first = next(iter(_lines(identifiers)), "")
     papers = Collection(root=existing_corpus().corpus_root, name="literature")
     preview = preview_paper(
         papers, first, citekey=citekey.strip() or None, title=title.strip() or None
@@ -360,15 +387,24 @@ def start_add(request: Request, form: PostedForm) -> Response:
         )
     # What the browser's own picker sent, beside whatever was typed: the
     # one way to choose a file that works whichever computer kennis is on.
-    uploads = staged(
-        [part for part in form.getlist("upload") if isinstance(part, UploadFile)]
-    )
-    identifiers = _lines(str(form.get("identifiers") or "")) + [
+    # The Paper tab adds from the way in chosen and only that: a PDF left
+    # in the picker of the way not chosen is out of sight, and is not
+    # added behind the reader's back.
+    parts = [part for part in form.getlist("upload") if isinstance(part, UploadFile)]
+    if form.get("kind") == "paper" and not _from_a_pdf(form):
+        uploads = staged([])
+        for part in parts:
+            part.file.close()
+        typed = "identifiers"
+    else:
+        uploads = staged(parts)
+        typed = "pdf" if form.get("kind") == "paper" else "identifiers"
+    identifiers = _lines(str(form.get(typed) or "")) + [
         str(path) for path in uploads.paths
     ]
     destination = str(form.get("collection") or "")
     if not identifiers:
-        return _refused_in_the_form(request, words.NOTHING_TO_ADD)
+        return _refused_in_the_form(request, _nothing_to_add(form))
     if not destination:
         return _refused_in_the_form(request, words.CHOOSE_A_COLLECTION)
     if destination not in COLLECTION_NAMES:
