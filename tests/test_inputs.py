@@ -14,7 +14,8 @@ import pytest
 
 from kennis.engine.corpus.inputs import resolve_inputs
 from kennis.engine.errors import InputError
-from kennis.engine.refusals import SymlinkSkipped, UnsupportedFormat
+from kennis.engine.refusals import KennisOwn, SymlinkSkipped, UnsupportedFormat
+from kennis.engine.settings import own_directories
 
 
 def make_file(path: Path, text: str = "x") -> Path:
@@ -316,3 +317,68 @@ def test_no_arguments_resolve_to_nothing():
 
     assert resolved.items == []
     assert resolved.skipped == []
+
+
+# ---------------------------------------------------------------------------
+# kennis's own files are never a source
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def home(tmp_path: Path) -> Path:
+    """A folder holding kennis's own directories beside a person's notes, as
+    `~/.local/share` holds the corpus and `~/.config` the keys."""
+    make_file(tmp_path / "notes" / "beam.md", "# Beam\n")
+    make_file(tmp_path / "corpus" / "notes" / "held.md", "# Held\n")
+    make_file(tmp_path / "config" / "credentials.toml", "key = 'secret'\n")
+    make_file(tmp_path / "state" / "searches.json", "[]\n")
+    return tmp_path
+
+
+def kennis_own(home: Path) -> tuple[Path, ...]:
+    return (home / "corpus", home / "config", home / "state")
+
+
+def test_a_walk_passes_by_kennis_s_own_directories_and_says_so(home: Path):
+    """Adding the folder that held the corpus copied the corpus into itself,
+    and made the search history - and the API keys beside it - notes."""
+    resolved = resolve_inputs([str(home)], kept_out=kennis_own(home))
+
+    assert [Path(item.identifier).name for item in resolved.items] == ["beam.md"]
+    passed_by = {
+        Path(skip.identifier).name
+        for skip in resolved.skipped
+        if isinstance(skip.refusal, KennisOwn)
+    }
+    assert passed_by == {"corpus", "config", "state"}
+
+
+@pytest.mark.parametrize(
+    "inside",
+    ["corpus", "corpus/notes", "corpus/notes/held.md", "config/credentials.toml"],
+)
+def test_an_argument_among_kennis_s_own_files_is_refused(home: Path, inside: str):
+    with pytest.raises(InputError, match="kennis's own files"):
+        resolve_inputs([str(home / inside)], kept_out=kennis_own(home))
+
+
+def test_a_pattern_does_not_reach_into_kennis_s_own_files(home: Path):
+    resolved = resolve_inputs([str(home / "**" / "*.md")], kept_out=kennis_own(home))
+
+    assert [Path(item.identifier).name for item in resolved.items] == ["beam.md"]
+    assert [Path(skip.identifier).name for skip in resolved.skipped] == ["held.md"]
+
+
+def test_every_directory_kennis_writes_to_is_kept_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    for variable, name in (
+        ("KENNIS_CONFIG_DIR", "config"),
+        ("KENNIS_STATE_DIR", "state"),
+        ("KENNIS_LOG_DIR", "log"),
+    ):
+        monkeypatch.setenv(variable, str(tmp_path / name))
+
+    kept = own_directories(tmp_path / "corpus")
+
+    assert {path.name for path in kept} == {"corpus", "config", "state", "log"}

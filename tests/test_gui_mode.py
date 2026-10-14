@@ -37,6 +37,7 @@ from kennis.cli.__main__ import main
 from kennis.gui import history, words
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_recents
+from kennis.render.hits import LEG_LABELS
 from kennis.retrieval import as_mode
 
 TOKEN = "a-test-token"
@@ -90,14 +91,16 @@ def a_note(tmp_path: Path, name: str, body: str) -> None:
 
 
 def test_the_modes_are_named_for_what_a_band_is_named_for():
-    """`lexical` and `meaning` are what a hit's margin says. A control
-    offering `bm25` and `dense` beside it would make the reader hold
-    two vocabularies for one distinction, and the engine's names are
-    for the mechanism rather than for what it measures."""
+    """`keywords` and `meaning` are what a hit's bars are labelled. A
+    control offering `bm25` and `dense` beside them would make the
+    reader hold two vocabularies for one distinction, and the engine's
+    names are for the mechanism rather than for what it measures. The
+    whole vocabulary is written by hand in `test_gui_results.py`."""
     labels = " ".join(label for _, label in words.MODE_CHOICES).lower()
 
-    assert "lexical" in labels
-    assert "meaning" in labels
+    for label in LEG_LABELS.values():
+        assert label in labels
+    assert "bm25" not in labels and "dense" not in labels
     for mechanism in ("bm25", "dense", "hybrid", "embedding", "cosine"):
         assert mechanism not in labels, mechanism
 
@@ -164,11 +167,11 @@ def test_the_control_shows_the_mode_the_address_asked_for(
 
 def test_changing_the_mode_re_runs_the_search(corpus: Path, client: TestClient):
     """By name, not `from:select`. htmx resolves that against the
-    document and the theme control in the sidebar is a select, so a
+    document and the theme control in the bar is a select, so a
     colour change would fire a search."""
     admitted(client)
 
-    form = re.search(r'<form class="search".*?>', client.get("/").text, re.DOTALL)
+    form = re.search(r'<form class="searchbox".*?>', client.get("/").text, re.DOTALL)
     assert form is not None
     trigger = form.group(0)
 
@@ -246,7 +249,7 @@ def test_a_mode_that_is_not_offered_is_named_rather_than_ignored(
     # marker carries `data-mode="psychic"` whatever the message says,
     # so asserting the word appears passed for a page that named
     # nothing. Found by injection. Concern #382.
-    warning = re.search(r'<p class="role-warning">([^<]*)</p>', page.text)
+    warning = re.search(r'<div class="notice"><p>([^<]*)</p>', page.text)
     assert warning is not None, page.text
     assert "psychic" in warning.group(1), warning.group(1)
     # And the search did not run: no hit carries a handle.
@@ -272,8 +275,8 @@ def test_a_named_mode_reaches_the_engine(corpus: Path, client: TestClient):
         "/hits", params={"q": "sediment", "scope": "notes", "mode": "bm25"}
     ).text
 
-    assert "lexical search" in default, default
-    assert "lexical search" not in chosen, chosen
+    assert words.keywords_only(["notes"]) in default, default
+    assert "Matched by keywords only" not in chosen, chosen
     # Both found the note, so the difference is the warning and not
     # one of them having failed to run.
     assert "chunk=" in default and "chunk=" in chosen
@@ -296,8 +299,34 @@ def test_the_page_says_when_a_search_ran_lexically_after_all(
         "/", params={"q": "sediment", "scope": "notes", "mode": "dense"}
     ).text
 
-    assert "no dense leg" in page
-    assert "notes" in page
+    assert words.keywords_only(["notes"]) in page
+
+
+def test_a_search_that_ran_lexically_is_said_once_with_its_way_forward(
+    corpus: Path, client: TestClient
+):
+    """Three bold sentences, one per collection, took the top of every
+    results page before a single result. One quiet notice says it for
+    all of them, with the step that changes it: with no meaning model
+    configured, that is Settings, because building again would not."""
+    a_note(corpus, "rivers", "Rivers carry sediment to the delta.")
+    admitted(client)
+
+    page = client.get("/", params={"q": "sediment", "mode": "dense"}).text
+
+    assert page.count('class="notice quiet"') == 1
+    assert words.KEYWORDS_ONLY_CHOOSE in page
+    assert 'href="/settings#setting-embedding.backend"' in page
+
+
+def test_the_keywords_only_sentence_names_every_collection_once():
+    assert words.keywords_only(["literature", "docs", "notes"]) == (
+        "Matched by keywords only: the literature, docs and notes indexes "
+        "were built without meaning."
+    )
+    assert words.keywords_only(["notes"]).endswith(
+        "notes index was built without meaning."
+    )
 
 
 def test_the_page_keeps_no_client_side_history_snapshot(
@@ -446,3 +475,33 @@ def test_an_old_search_repeated_with_a_new_mode_is_still_one_entry(
     held = history.recent()
     assert len(held) == 1, held
     assert held[0].mode == "bm25"
+
+
+def test_a_collection_with_more_to_give_offers_more(corpus: Path, client: TestClient):
+    """Only the first three per collection ever showed, and narrowing to
+    one collection still gave three."""
+    for at in range(5):
+        a_note(corpus, f"river-{at}", f"River number {at} carries sediment.")
+    admitted(client)
+
+    first = client.get("/", params={"q": "sediment"}).text
+    link = re.search(r'<p class="more"><a href="([^"]+)">', first)
+
+    assert link is not None, first
+    assert words.more_from("notes") in first
+    more = client.get(link.group(1).replace("&amp;", "&")).text
+    assert more.count('class="hit"') == 5
+    assert 'class="more"' not in more
+
+
+def test_asking_for_more_is_not_a_new_search_in_the_history(
+    corpus: Path, client: TestClient
+):
+    for at in range(5):
+        a_note(corpus, f"river-{at}", f"River number {at} carries sediment.")
+    admitted(client)
+    client.get("/", params={"q": "sediment"})
+
+    client.get("/", params={"q": "sediment", "scope": "notes", "k": "23"})
+
+    assert [entry.query for entry in history.recent()] == ["sediment"]

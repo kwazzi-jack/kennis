@@ -44,6 +44,11 @@ from pydantic import (
 )
 
 from kennis.engine.errors import PackInvalid
+from kennis.engine.groups import group_problem
+from kennis.engine.literature.identifiers import (
+    PaperIdentifier,
+    identifier_if_reference,
+)
 
 type JsonSchema = dict[str, Any]
 
@@ -97,33 +102,80 @@ class LiteratureEntry(BaseModel):
     """A paper the pack declares, fetched over the network rather than copied.
 
     The citekey is a handle for humans - it goes in a `.bib`, in prose and in
-    a read call. The **identifier** is the identity, which is why at least
-    one is required and why section 5 keys the diff on it: correcting a
-    citekey against an unchanged identifier is a rename, not a delete and a
-    refetch.
+    a read call. The **identifier** is the identity, which is why it is
+    required and why section 5 keys the diff on it: correcting a citekey
+    against an unchanged identifier is a rename, not a delete and a refetch.
+
+    **One identifier field**, which takes an arXiv identifier, a DOI or an
+    ADS bibcode and is read as whichever it is. Three fields, one per kind,
+    asked an author which kind a paper's identifier was and then which wins
+    when two were given.
+
+    `url` is where the text is, when the identifier alone does not reach it.
+    The document found there must not name a different paper.
     """
 
     model_config = _FORBID
 
     citekey: str
     title: str
-    arxiv_id: str | None = None
-    doi: str | None = None
-    bibcode: str | None = None
+    identifier: str
+    url: str | None = None
     authors: str | None = None
     # An int, because `year_min` filtering compares numerically and a string
     # year invites a lexicographic comparison bug at the filter.
     year: int | None = None
 
-    @model_validator(mode="after")
-    def _has_an_identifier(self) -> LiteratureEntry:
-        if self.arxiv_id is None and self.doi is None and self.bibcode is None:
+    @model_validator(mode="before")
+    @classmethod
+    def _one_identifier_field(cls, data: object) -> object:
+        """Name the replacement for the three fields packs used to have.
+
+        No compatibility before 1.0, so they are refused - but with the
+        field to write instead, not "extra inputs are not permitted".
+        """
+        if isinstance(data, dict):
+            for retired in _RETIRED_IDENTIFIER_FIELDS:
+                if retired in data:
+                    raise ValueError(
+                        f"'{retired}' is now 'identifier', one field that takes "
+                        "an arXiv identifier, a DOI or an ADS bibcode"
+                    )
+        return data
+
+    @field_validator("identifier")
+    @classmethod
+    def _an_identifier(cls, value: str) -> str:
+        if identifier_if_reference(value) is None:
             raise ValueError(
-                f"'{self.citekey}' needs at least one of arxiv_id, doi or "
-                "bibcode: a citekey invented from a title cites nothing and "
-                "defeats duplicate detection"
+                f"'{value}' is not an arXiv identifier, a DOI or an ADS bibcode"
             )
-        return self
+        return value.strip()
+
+    @field_validator("url")
+    @classmethod
+    def _an_address(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith(("https://", "http://")):
+            raise ValueError(f"'{value}' is not an http or https address")
+        return value
+
+    @property
+    def paper(self) -> PaperIdentifier:
+        """The identifier, read as the kind it is."""
+        parsed = identifier_if_reference(self.identifier)
+        # Checked when the entry was made, so there is always one.
+        assert parsed is not None
+        return parsed
+
+    @property
+    def key(self) -> str:
+        """What a sync diffs this declaration on: the identifier with its
+        kind, never the citekey. The kind is part of it so a DOI and an
+        arXiv identifier that happen to share a string cannot collide."""
+        return f"{self.paper.kind}:{self.paper.value}"
+
+
+_RETIRED_IDENTIFIER_FIELDS: Final = ("arxiv_id", "doi", "bibcode")
 
 
 class DocsEntry(BaseModel):
@@ -134,6 +186,16 @@ class DocsEntry(BaseModel):
     project: str
     base_url: str
     exclude: list[str] = Field(default_factory=list)
+
+    @field_validator("project")
+    @classmethod
+    def _names_a_folder_inside_docs(cls, value: str) -> str:
+        # A project is the directory its pages are written to, so it is a
+        # group by another name and the same rule applies.
+        problem = group_problem(value)
+        if problem is not None:
+            raise ValueError(f"the project '{value}' {problem}")
+        return value
 
 
 class ContentSource(BaseModel):
@@ -167,6 +229,16 @@ class ContentSource(BaseModel):
             raise ValueError(f"'{value}' names a home directory, not the pack")
         if any(".." in path.parts for path in flavours):
             raise ValueError(f"'{value}' leaves the pack root")
+        return value
+
+    @field_validator("group")
+    @classmethod
+    def _stays_inside_its_collection(cls, value: str | None) -> str | None:
+        # The same rule every writer applies, so a pack is refused when it
+        # is read rather than part way through a sync.
+        problem = None if value is None else group_problem(value)
+        if problem is not None:
+            raise ValueError(f"the group '{value}' {problem}")
         return value
 
 

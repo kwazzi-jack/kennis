@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}kennis - {{ title }}{% endblock %}
+{% block main %}
+{# The same form as the dialog, inside the whole window: where an
+   action's link leads when nothing turned it into a fetch. #}
+<section class="action-page">
+  <h2>{{ title }}</h2>
+  {% include form_template %}
+</section>
+{% endblock %}

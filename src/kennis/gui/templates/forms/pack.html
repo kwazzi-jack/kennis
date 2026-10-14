@@ -1,0 +1,13 @@
+{% from "tip.html" import tip %}
+<p class="role-muted"><span id="pack-preamble">{{ pack_preamble }}</span> {{ tip("pack", title, pack_tip) }}</p>
+<form action="/pack" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/pack" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+  <div class="fields">
+    <label class="labelled"><span class="name">{{ pack_path_label }}</span><input type="text" name="path" placeholder="/path/to/pack.ken.yml" aria-describedby="pack-preamble" autofocus></label>
+  </div>
+  {# Every dialog's foot, as Add's is: Cancel, then the one action the
+     form exists for, at the right. #}
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("package") }}{{ pack_action }}</button>
+  </div>
+</form>

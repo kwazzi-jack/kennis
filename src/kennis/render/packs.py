@@ -12,10 +12,12 @@ from collections.abc import Sequence
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.pack.installed import InstalledPack, Overlap, PackRemoval
-from kennis.engine.pack.resolve import ACTING, Action, Verdict
+from kennis.engine.pack.resolve import Action, Verdict
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.pack.update import PackUpdate
 from kennis.engine.pack.validate import PackProblem, PackReport, VersionRefusal
+from kennis.engine.refusals import Refusal
+from kennis.render.refusals import describe_refusal as describe_add_refusal
 from kennis.render.words import count_of, joined
 
 _DIGEST_SHOWN = 12
@@ -319,7 +321,13 @@ _VERDICT_WORDS: dict[Verdict, str] = {
 
 
 def describe_action(action: Action) -> str:
-    """One line about one address, naming who it belongs to.
+    """One line about one address, for a front end that prints the
+    address nowhere else on the line - the command line."""
+    return f"{action.address}: {describe_outcome_of(action)}"
+
+
+def describe_outcome_of(action: Action) -> str:
+    """What happened to one address, naming who it belongs to.
 
     The owner is named on the lines where it changed or is in question,
     and left out where it would be noise: "unchanged" does not need to
@@ -327,42 +335,63 @@ def describe_action(action: Action) -> str:
     """
     word = _VERDICT_WORDS[action.verdict]
     if action.verdict in {"write", "rewrite"} and action.declaration is not None:
-        return f"{action.address}: {word} by {action.declaration.pack_id}"
+        return f"{word} by {action.declaration.pack_id}"
     if action.verdict == "adopt" and action.declaration is not None:
         previous = action.existing.owner if action.existing else "another pack"
-        return (
-            f"{action.address}: {word} by {action.declaration.pack_id}, "
-            f"which was {previous}"
-        )
-    return f"{action.address}: {word}"
+        return f"{word} by {action.declaration.pack_id}, which was {previous}"
+    return word
+
+
+# A count's word in a sync's headline, in the order the headline gives
+# them. The same words the lines use, so the headline and the list
+# beneath it cannot disagree (Brian, 2026-10-12). `edited` and `yours`
+# share one: both are left to the user, and the lines say why.
+_COUNT_WORDS: tuple[tuple[tuple[Verdict, ...], str], ...] = (
+    (("write",), "added"),
+    (("rewrite",), "updated"),
+    (("adopt",), "taken over"),
+    (("delete",), "removed"),
+    (("keep",), "unchanged"),
+    (("edited", "yours"), "left as yours"),
+)
+
+
+def verdict_word(name: str) -> str:
+    """A verdict's name, as an event quotes it, in a reader's words; a
+    name kennis does not know is shown as it is rather than hidden."""
+    for verdicts, word in _COUNT_WORDS:
+        if name in verdicts:
+            return word
+    return name
 
 
 def describe_sync(counts: dict[Verdict, int], *, noun: str = "file") -> str:
-    """The one line above the detail, counting what actually happened.
+    """The one line above the detail: each kind of outcome, counted.
 
-    Counts the verdicts that changed something and says so, rather than
-    counting every address looked at: a destination where nothing moved
-    should not report the same number as one where everything did.
+    In the lines' own words and a fixed order - `1 document added, 2
+    unchanged` - so a destination where nothing moved does not read like
+    one where everything did, and a file kennis declined to write is
+    "left as yours", never counted with what was unchanged: saying so
+    would report the protection as if it were agreement.
 
     Takes the counts rather than either sync's result, because the two
     destinations differ in what they hold and not at all in how the line
     reads - `noun` is the whole of the difference.
     """
-    changed = sum(count for verdict, count in counts.items() if verdict in ACTING)
-    looked = sum(counts.values())
-    if not looked:
+    parts = [
+        (count, word)
+        for verdicts, word in _COUNT_WORDS
+        if (count := sum(counts.get(verdict, 0) for verdict in verdicts))
+    ]
+    if not parts:
         return "nothing declared by any installed pack"
-    if changed:
-        return f"{count_of(changed, noun)} changed, of {looked}"
-    held = counts.get("edited", 0) + counts.get("yours", 0)
-    if held:
-        # Not "already in step": something kennis declined to write is
-        # precisely something that is *not* in step, and saying otherwise
-        # would report the protection as if it were agreement.
-        if looked == held:
-            return f"{count_of(held, noun)} left as yours"
-        return f"{count_of(looked - held, noun)} in step, {held} left as yours"
-    return f"{count_of(looked, noun)} already in step"
+    (first, word), *rest = parts
+    return ", ".join(
+        [
+            f"{count_of(first, noun)} {word}",
+            *(f"{count} {word}" for count, word in rest),
+        ]
+    )
 
 
 def describe_claim_needed(count: int) -> str:
@@ -430,6 +459,12 @@ def describe_unfetched(failed: tuple[str, ...]) -> str:
     )
 
 
+def describe_why_unfetched(address: str, refusal: Refusal) -> str:
+    """One paper a sync could not fetch, and what the add said about it -
+    for a paper with no reachable copy, where to download one."""
+    return f"{address}: {describe_add_refusal(refusal)}"
+
+
 def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     """Declarations that lost to an earlier-installed pack.
 
@@ -459,9 +494,9 @@ def describe_moved(moved: tuple[tuple[str, str], ...]) -> str:
     """
     where = "; ".join(f"{address} is at {path}" for address, path in moved)
     kept = (
-        "is kept in step where it is"
+        "is kept up to date where it is"
         if len(moved) == 1
-        else "are kept in step where they are"
+        else "are kept up to date where they are"
     )
     return (
         f"{count_of(len(moved), 'file')} is not at the address its pack "
@@ -496,6 +531,7 @@ __all__ = [
     "describe_installed",
     "describe_lost_source",
     "describe_moved",
+    "describe_outcome_of",
     "describe_overlap",
     "describe_owner",
     "describe_problem",
@@ -511,4 +547,6 @@ __all__ = [
     "describe_verdict",
     "describe_what_remove_cannot_reach",
     "describe_when",
+    "describe_why_unfetched",
+    "verdict_word",
 ]

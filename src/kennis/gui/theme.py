@@ -37,7 +37,8 @@ the reason this file can be edited safely.
 
 from __future__ import annotations
 
-from typing import Final
+from pathlib import Path
+from typing import Final, Literal
 
 from pygments.token import STANDARD_TYPES, Token, _TokenType
 
@@ -50,7 +51,8 @@ LIGHT_GROUND: Final = "#FBFBF9"
 DARK_GROUND: Final = "#16181C"
 
 # What the nine names look like on a light ground. Measured: the
-# worst is 4.82:1 and the closest pair of hues is dE 36.8.
+# worst is the muted grey, 5.43:1 on the page and 4.89:1 on the raised
+# surface of the pane and the strip; the closest pair of hues is dE 36.8.
 CSS_COLOURS: dict[AnsiColour, str] = {
     "black": "#1A1C1F",
     "white": "#1A1C1F",
@@ -62,7 +64,9 @@ CSS_COLOURS: dict[AnsiColour, str] = {
     "blue": "#2B4CA0",
     "magenta": "#8A3382",
     "cyan": "#15626F",
-    "bright_black": "#6A7078",
+    # Darkened from #6A7078, which was 4.82:1 on the page but 4.37:1 on
+    # the pane and the strip, where muted text is commonest.
+    "bright_black": "#626870",
 }
 
 # And on a dark one. Lighter and less saturated rather than the light
@@ -92,8 +96,80 @@ for _map, _mode in ((CSS_COLOURS, "light"), (CSS_COLOURS_DARK, "dark")):
         )
 
 
+# How strongly a hit matched, as five colours from weakest to strongest.
+#
+# **The one place the window chooses colours by meaning rather than by
+# role**, so it lives here beside the role adapter and not in
+# `render/theme.py`, whose nine names are a terminal's (#416). Sequential
+# scales, because an ordered strength is a sequential quantity, and not
+# red against green, which is the pair the commonest colour-vision
+# deficiency cannot separate.
+#
+# The four named maps are matplotlib's, sampled at five even steps over
+# [0, 0.82] for a light ground and [0.3, 1] for a dark one, so the
+# weakest step is never the end of the map that vanishes into the page.
+# matplotlib's Greys flattens near white, so both grey scales are
+# written by hand at even steps of CIE lightness: L* 12 to 84 light, 40
+# to 96 dark. `tests/test_gui_results.py` holds every scale, in both
+# themes, to monotone lightness and to adjacent steps that stay apart
+# under a simulated deuteranopia - which is what makes this table safe
+# to edit.
+#
+# Only the bar wears these. The level's word stays in ink (#421).
+type StrengthScale = dict[str, tuple[str, str, str, str, str]]
+
+STRENGTH_SCALES: Final[dict[str, StrengthScale]] = {
+    "viridis": {
+        "light": ("#440154", "#404588", "#297a8e", "#25ac82", "#86d549"),
+        "dark": ("#355f8d", "#238a8d", "#2fb47c", "#8bd646", "#fde725"),
+    },
+    "cividis": {
+        "light": ("#00224e", "#36466c", "#686a71", "#989277", "#cebc63"),
+        "dark": ("#4f576c", "#777776", "#a19975", "#d0be62", "#fee838"),
+    },
+    "plasma": {
+        "light": ("#0d0887", "#6c00a8", "#b32c8e", "#e4695e", "#fdae32"),
+        "dark": ("#8f0da4", "#c5407e", "#ea7457", "#fdb130", "#f0f921"),
+    },
+    "magma": {
+        "light": ("#000004", "#3d0f71", "#902a81", "#e34e65", "#fea973"),
+        "dark": ("#641a80", "#ab337c", "#ed5a5f", "#feac76", "#fcfdbf"),
+    },
+    "greys": {
+        "light": ("#1f1f1f", "#474747", "#727272", "#a0a0a0", "#d1d1d1"),
+        "dark": ("#5e5e5e", "#818181", "#a6a6a6", "#cccccc", "#f3f3f3"),
+    },
+}
+
+# What the bars wear until the reader chooses another (the `scale`
+# preference, `gui/preferences.py`).
+DEFAULT_STRENGTH_SCALE: Final = "viridis"
+
+# Which collection something belongs to, as one accent per collection
+# and theme (Brian, 2026-10-12): a hit's card, its group's heading, the
+# pane's rows and a document's bar wear it. **Chosen by meaning**, like
+# the strength scales, so here and not in the terminal's palette.
+#
+# From the Okabe-Ito set, which was drawn for colour-vision deficiency,
+# then moved in lightness until docs and notes - a green and a purple,
+# the pair a deuteranope merges - separated. `tests/
+# test_gui_collection_colours.py` holds every one to 4.5:1 on the ground
+# and on a card, every pair to dE 40 and to dE 20 as a deuteranope sees
+# them, and each to dE 20 from the brand; the measurements are in
+# `sketches/2026-10-12-collection-colours.md`. Each collection keeps its
+# own icon as well, so the colour is never the only cue.
+COLLECTION_COLOURS: Final[dict[str, dict[str, str]]] = {
+    "literature": {"light": "#0B6BA8", "dark": "#5BB2E6"},
+    "docs": {"light": "#0A7B4C", "dark": "#7FE0A8"},
+    "notes": {"light": "#8A2F6B", "dark": "#DA6A9A"},
+    "context": {"light": "#B14A12", "dark": "#EE8A57"},
+}
+
+
 def css_variables(
-    colours: dict[AnsiColour, str] | None = None, ground: str | None = None
+    colours: dict[AnsiColour, str] | None = None,
+    ground: str | None = None,
+    scheme: Literal["light", "dark"] = "light",
 ) -> str:
     """One custom property per role, plus the ground and the rule.
 
@@ -119,6 +195,28 @@ def css_variables(
     # trick as the hairline: one of the nine at low alpha, composed
     # here because the layout may name no colour.
     lines.append(f"  --mark: {table['yellow']}33;")
+    # The brand: the highlighter amber, which is already this palette's
+    # `yellow` and already measured against the ground. Used for what
+    # is chosen - the open place in the pane, a pressed control - so
+    # the colour of a marked passage is also the colour of "here".
+    lines.append(f"  --brand: {table['yellow']};")
+    lines.append(f"  --brand-wash: {table['yellow']}1f;")
+    # The surface of the pane and the strip: the muted grey at a low
+    # alpha, so it works on both grounds without a tenth colour.
+    lines.append(f"  --raised: {table['bright_black']}14;")
+    # Every scale's steps for this theme, and the bars pointed at the
+    # default. `scale_css` repoints them at the reader's choice; `var()`
+    # resolves when the value is computed, after the theme block in force
+    # has set these, so the scale and the theme are independent.
+    for name, themes in STRENGTH_SCALES.items():
+        for step, colour in enumerate(themes[scheme], start=1):
+            lines.append(f"  --scale-{name}-{step}: {colour};")
+    for step in range(1, 6):
+        lines.append(
+            f"  --strength-{step}: var(--scale-{DEFAULT_STRENGTH_SCALE}-{step});"
+        )
+    for name, accents in COLLECTION_COLOURS.items():
+        lines.append(f"  --collection-{name}: {accents[scheme]};")
     for name, role in ROLES.items():
         lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)
@@ -228,16 +326,19 @@ def css_weights() -> str:
     """The attribute half of a role, as a class per role.
 
     Separate from the colour because CSS keeps them apart: a colour is
-    one property and bold, dim, italic and underline are four others,
-    and a single custom property cannot carry all five.
+    one property and bold, italic and underline are three others, and a
+    single custom property cannot carry all four.
+
+    **Dim is the colour alone, never an opacity as well.** The muted
+    grey is already chosen to sit at the edge of legibility, and fading
+    it by a quarter took every dim role on every page to about 3:1 -
+    and a link or warning inside a dim span faded with it.
     """
     blocks: list[str] = []
     for name, role in ROLES.items():
         declarations = [f"color: var(--role-{name});"]
         if role.bold:
             declarations.append("font-weight: 600;")
-        if role.dim:
-            declarations.append("opacity: 0.75;")
         if role.italic:
             declarations.append("font-style: italic;")
         if role.underline:
@@ -263,7 +364,7 @@ def stylesheet() -> str:
     Generated rather than a static file because the roles are, and a
     static copy would be the second place a colour lives.
     """
-    dark = css_variables(CSS_COLOURS_DARK, DARK_GROUND)
+    dark = css_variables(CSS_COLOURS_DARK, DARK_GROUND, "dark")
     return (
         f":root {{\n{css_variables()}\n}}\n\n"
         # The guard is the load-bearing part. This block is later in
@@ -279,555 +380,51 @@ def stylesheet() -> str:
         # attribute matching either of these, so the default is the
         # behaviour that existed before there was a choice.
         f':root[data-theme="dark"] {{\n{dark}\n}}\n\n'
-        f"{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
+        f"{scale_css()}\n\n{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
     )
 
 
-# Layout only. No colour appears here: every visible colour comes
-# through a `--role-`, `--ground`, `--ink` or `--rule` property above,
-# and a test asserts it.
-#
-# The organising idea is a margin and a column. **What kennis composed
-# goes in the margin; what kennis is quoting goes in the column.** The
-# margin is the terminal's gutter, kept rather than disguised, and it
-# is set in a monospace because that is genuinely what kennis's own
-# output is. The column is set in a serif at a reading measure,
-# because it holds papers.
-_LAYOUT = """\
-@font-face {
-  font-family: 'Source Serif 4';
-  font-style: normal;
-  font-weight: 200 900;
-  font-display: swap;
-  src: url(/static/vendor/fonts/SourceSerif4-Roman.woff2) format('woff2');
-}
-
-@font-face {
-  font-family: 'Source Serif 4';
-  font-style: italic;
-  font-weight: 200 900;
-  font-display: swap;
-  src: url(/static/vendor/fonts/SourceSerif4-Italic.woff2) format('woff2');
-}
-
-:root {
-  /* The margin holds a line like `relevance: low id=nwgswtko72`,
-     which is 40 monospace characters at its longest. */
-  --margin: 11rem;
-  --gap: 1.75rem;
-  /* Under 70 characters of the column face at 1.0625rem. */
-  --measure: 33rem;
-  --column: 'Source Serif 4', Charter, Cambria, Georgia, serif;
-  /* Two faces, divided by the rule the interface already uses.
-     `--gutter` is what kennis composed - provenance, counts,
-     labels, buttons, messages - and `--mono` is what must be read
-     or typed verbatim.
-
-     They were one variable, and `code, pre` was set in it. Making
-     the margin proportional, which is what was asked for, would
-     have put every code block in a sans and undone the syntax
-     highlighting with it. Nothing would have failed. */
-  --gutter: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans',
-            'DejaVu Sans', Arial, sans-serif;
-  --mono: ui-monospace, 'DejaVu Sans Mono', 'Cascadia Mono', Menlo, monospace;
-
-  /* The sidebar's width, which is the whole of what collapsing
-     changes: the column is centred in whatever is left. */
-  --sidebar: 13rem;
-}
-
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: var(--ground);
-  color: var(--ink);
-  font-family: var(--column);
-  font-size: 1.0625rem;
-  /* A serif wants more leading than a sans at the same size. */
-  line-height: 1.6;
-}
-
-main {
-  max-width: calc(var(--margin) + var(--gap) + var(--measure));
-  margin: 0 auto;
-  padding: 2.5rem 1.5rem 6rem;
-}
-
-/* The header is the one hairline in the design. It separates the
-   interface's own furniture from everything below it, which is
-   either kennis speaking or the corpus speaking. */
-:root[data-sidebar="closed"] { --sidebar: 3.25rem; }
-
-/* The column is centred in what the sidebar leaves, which is why
-   the padding is on `body` and `main` keeps its own `margin: auto`.
-   Putting the offset on `main` instead would centre it in the whole
-   viewport and slide it under the sidebar. */
-body { padding-left: var(--sidebar); }
-
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: var(--sidebar);
-  box-sizing: border-box;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.2rem 1rem;
-  border-right: 1px solid var(--rule);
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-}
-
-.sidebar nav { display: flex; flex-direction: column; gap: 0.55rem; }
-.sidebar a { color: var(--role-muted); text-decoration: none; }
-.sidebar a:hover { color: var(--ink); text-decoration: underline; }
-
-/* The whole row is the target, not the width of the word: a list
-   of six destinations in a narrow column is easier to hit than to
-   aim at. */
-.sidebar-link { display: block; }
-
-/* The wordmark keeps full ink inside the sidebar, and needs saying
-   because `.sidebar a` is more specific than `.wordmark` - one
-   class plus an element beats one class - so the name of the
-   interface was rendered in the muted grey meant for navigation.
-   Measured in the browser: the muted grey where the body's ink
-   was expected. The second time a colour has been lost to a
-   rule nobody was looking at; concern #351 was the first. */
-.sidebar .wordmark,
-.sidebar .wordmark:hover { color: var(--ink); }
-
-.sidebar-toggle { align-self: flex-start; padding: 0.45rem 0.55rem; }
-
-/* Last in the sidebar and pushed to the bottom of it: a preference
-   is not a destination, and putting it in the list of six would
-   make it read as one. */
-.theme { margin-top: auto; font-size: 0.75rem; padding: 0.3rem 0.4rem; }
-:root[data-sidebar="closed"] .theme { display: none; }
-
-/* A shortcut lands its section against the top of the viewport
-   otherwise, with the heading touching the edge. */
-#add, #index { scroll-margin-top: 1.5rem; }
-
-/* Three bars, drawn rather than typed: the ASCII rule leaves no
-   hamburger glyph and no arrows, and an image would be a fourth
-   vendored asset for twelve pixels. */
-.bars {
-  display: block;
-  width: 1rem;
-  height: 2px;
-  background: currentColor;
-  box-shadow: 0 5px currentColor, 0 10px currentColor;
-  margin: 0 0 10px;
-}
-
-/* Collapsed, only the toggle is left - the rail keeps a width so
-   there is something to click, which is what "always present for
-   the user to open" means. */
-:root[data-sidebar="closed"] .sidebar { padding: 1.2rem 0.5rem; }
-:root[data-sidebar="closed"] .wordmark { display: none; }
-:root[data-sidebar="closed"] .sidebar nav { display: none; }
-
-/* The one place the interface says its own name, and it says it
-   once. It was the first item in the navigation, at the same size
-   as "manage", so the page had no title at all - the search page
-   in particular opened on a box and nothing saying what it
-   searched. Set in the text face rather than the gutter's
-   monospace, because it is a name and not a field. */
-.wordmark {
-  display: block;
-  font-family: var(--column);
-  font-size: 1.6rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1;
-  color: var(--ink);
-}
-.wordmark:hover { text-decoration: none; }
-
-/* Past searches, offered again. Shaped like the hits list because
-   it occupies the same place and answers the same question - the
-   margin says where the search looked and what it found, the
-   column carries the reader's own words. */
-.recents { margin-top: 2.5rem; }
-/* Tighter than a hit, because an entry is one line of the reader's
-   own words with no snippet under it. The hit's 1.5rem left four
-   queries occupying a screen. */
-.recents .hits li { padding: 0.7rem 0; }
-.recents .hits li > * { margin-bottom: 0; }
-.recents h2 {
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-  font-weight: 400;
-  color: var(--role-muted);
-  margin: 0 0 1rem;
-}
-.recents form { margin-top: 1.25rem; }
-.recents button {
-  background: none;
-  border: none;
-  padding: 0;
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-  color: var(--role-muted);
-  cursor: pointer;
-  text-decoration: underline;
-}
-.recents button:hover { color: var(--ink); }
-
-#corpus-changed { margin: 0; padding: 0.6rem 1.5rem; font-size: 0.875rem; }
-
-/* ---------------------------------------------------------------- */
-/* The margin and the column                                        */
-/* ---------------------------------------------------------------- */
-
-.hits { list-style: none; margin: 0; padding: 0; }
-
-.hits li {
-  display: grid;
-  grid-template-columns: var(--margin) 1fr;
-  /* Only across. One gap value put the same 1.75rem between the
-     headline and its own snippet as between the margin and the
-     column, which read as two unrelated things. */
-  column-gap: var(--gap);
-  row-gap: 0;
-  padding: 1.5rem 0;
-  border-top: 1px solid var(--rule);
-}
-
-.hits li > * { grid-column: 2; margin: 0 0 0.5rem; }
-
-/* The margin: right-aligned against the column's left edge, so the
-   text forms a rule without one being drawn. */
-.hits .detail {
-  grid-column: 1;
-  grid-row: 1 / span 3;
-  text-align: right;
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  line-height: 1.5;
-  /* A long identifier rather than overflow the gutter. Fields are
-     separated by the block below, not by `white-space: pre-wrap`,
-     which preserved the two spaces and then wrapped wherever the
-     line ran out - splitting `meaning:` from `medium` as soon as a
-     hit carried two bands. Concern #380. */
-  word-break: break-word;
-}
-
-.hits .detail span { display: block; }
-
-a { text-underline-offset: 0.15em; text-decoration-thickness: from-font; }
-
-/* A result's title is underlined on hover and not before. An inline
-   link inside prose keeps its underline, because there it is the only
-   thing distinguishing it from the sentence around it; a title in a
-   list of results is already the one bold line in its row, and three
-   underlined lines per hit was the loudest thing on the page. */
-.hits a { color: var(--ink); font-weight: 600; text-decoration: none; }
-.hits a:hover, .hits a:focus-visible { text-decoration: underline; }
-.hits .body { color: var(--role-muted); }
-/* Where the query matched. A wash rather than a block of colour:
-   the marked words are still the corpus's prose and should read as
-   prose with something behind them, not as a separate element. */
-mark {
-  background: var(--mark);
-  color: var(--ink);
-  border-radius: 0.15em;
-  padding: 0 0.1em;
-}
-
-/* A scope the sweep could not reach, and the command that fixes it.
-   One row per scope rather than the command line's one line per
-   command: a list has a row to spare where a margin does not. */
-.skipped {
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  margin: 0.4rem 0 0;
-  display: flex;
-  gap: 0.75rem;
-}
-
-/* Back to the results, and to the collection. A document reached
-   from a search had no way to anything: its only links were the
-   figures control and the citations in its own text. */
-.back {
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  display: flex;
-  gap: 1rem;
-  margin: 0 0 1.5rem;
-}
-
-.back a { color: var(--role-muted); }
-.back a:hover { color: var(--ink); }
-
-/* The scale a group's bands are measured on. Relevance is never
-   shown without it. */
-.basis {
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  color: var(--role-muted);
-  margin: 2rem 0 0;
-}
-
-.count { font-family: var(--gutter); font-size: 0.8125rem; margin: 0; }
-
-/* ---------------------------------------------------------------- */
-/* Reading                                                          */
-/* ---------------------------------------------------------------- */
-
-h1, h2, h3 { line-height: 1.25; font-weight: 600; }
-h1 { font-size: 1.75rem; margin: 0 0 1.25rem; }
-h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; }
-h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
-
-article { max-width: var(--measure); }
-article h1 { margin: 0 0 0.5rem; }
-article p { margin: 0 0 1rem; }
-article img { max-width: 100%; height: auto; }
-
-.provenance {
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  color: var(--role-muted);
-  margin: 0 0 2rem;
-  /* The three facts on three lines. A row of them joined by
-     separators is the shape every generated page reaches for, and it
-     reads as decoration rather than as three different answers. */
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-/* The passage a search hit pointed at. A rule in the margin rather
-   than a background wash: the mark has to be findable at a glance
-   while a paper is scrolled, and a wash behind body text competes
-   with the text for the eight colours available here.
-
-   `scroll-margin-top` is what makes the fragment land correctly -
-   without it the browser puts the anchor at the top of the viewport,
-   where the header sits over it. */
-.chunk {
-  border-left: 2px solid var(--role-hint);
-  padding-left: 1rem;
-  margin-left: -1.25rem;
-  scroll-margin-top: 2rem;
-}
-
-code, pre {
-  font-family: var(--mono);
-  font-size: 0.9em;
-}
-
-/* A printed command had no face of its own. `.role-command` is a
-   generated colour role, so it inherited its surroundings: the
-   monospace inside `.skipped`, and the serif body face in
-   `problem.html`, `outcome.html`, `job-outcome.html` and
-   `document.html`. The same command read two ways depending on
-   which page refused. rules.md 4.4 says a printed command must run
-   as printed; it should look like one too. */
-.role-command { font-family: var(--mono); }
-
-pre {
-  overflow-x: auto;
-  padding: 0.9rem 1rem;
-  border-left: 2px solid var(--rule);
-}
-
-blockquote {
-  margin: 0 0 1rem;
-  padding-left: 1rem;
-  border-left: 2px solid var(--rule);
-  color: var(--role-muted);
-}
-
-/* ---------------------------------------------------------------- */
-/* Tables and listings                                              */
-/* ---------------------------------------------------------------- */
-
-/* Wider than the reading measure, and deliberately: a table is not
-   prose and cramming it to 33rem would wrap every cell. */
-.holdings { border-collapse: collapse; width: 100%; font-size: 0.9375rem; }
-.holdings th {
-  text-align: left;
-  font-family: var(--gutter);
-  font-size: 0.75rem;
-  font-weight: 400;
-  color: var(--role-muted);
-  padding: 0 1.25rem 0.5rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-.holdings td { padding: 0.55rem 1.25rem 0.55rem 0; vertical-align: top; }
-.holdings tr + tr td { border-top: 1px solid var(--rule); }
-.holdings a { color: var(--ink); }
-
-.documents, .packs, .items { list-style: none; margin: 0; padding: 0; }
-.documents li, .packs li { padding: 0.35rem 0; font-size: 0.9375rem; }
-.documents a { color: var(--ink); }
-.documents .role-muted { font-family: var(--gutter); font-size: 0.75rem; }
-
-.items li { padding: 0.3rem 0; font-size: 0.9375rem; }
-.items .marker { font-family: var(--gutter); }
-
-/* ---------------------------------------------------------------- */
-/* Forms                                                            */
-/* ---------------------------------------------------------------- */
-
-.search { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1rem; }
-.search input[type="search"] { flex: 1 1 12rem; }
-
-/* kennis composed this sentence, so it wears the gutter's face -
-   the same division the margin makes. `align-self: center` because
-   the form is a flex row of controls and an unaligned line of text
-   sits on their top edge. */
-.searching {
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-  align-self: center;
-}
-
-input, select, textarea, button {
-  font: inherit;
-  font-size: 0.9375rem;
-  color: var(--ink);
-  background: var(--ground);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 0.4rem 0.6rem;
-}
-
-textarea { width: 100%; font-family: var(--column); resize: vertical; }
-
-button {
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  padding: 0.45rem 1rem;
-}
-
-button:hover { border-color: var(--role-muted); }
-
-input:focus-visible, select:focus-visible, textarea:focus-visible,
-button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--role-hint);
-  outline-offset: 2px;
-}
-
-.fields { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0; }
-.fields label { font-family: var(--gutter); font-size: 0.8125rem; }
-.fields input[type="text"] { flex: 1 1 12rem; }
-
-section { margin: 0 0 3rem; }
-section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
-
-.repair { margin: 0.5rem 0 0; }
-
-/* ---------------------------------------------------------------- */
-/* A running operation                                              */
-/* ---------------------------------------------------------------- */
-
-.job { margin: 1.5rem 0 0; }
-.job-bar { width: 100%; height: 0.35rem; }
-.job-step { font-family: var(--gutter); font-size: 0.8125rem; margin: 0.4rem 0; }
-.job-lines {
-  list-style: none;
-  margin: 0.5rem 0;
-  padding: 0;
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-}
-.job-outcome { margin: 1rem 0 0; }
-
-/* ---------------------------------------------------------------- */
-/* Narrow screens                                                   */
-/* ---------------------------------------------------------------- */
-
-/* A table scrolls sideways rather than pushing the page wider.
-   Measured: one paper sets 55 of its equations inside single-cell
-   tables, and the widest is 1050px against a 1280px viewport that
-   the margin has already spent 300px of - so the whole page gained
-   a horizontal scrollbar and the reading column moved under the
-   reader's thumb. `display: block` is what makes `overflow-x` apply
-   to a table at all; the rows keep their own layout inside it. */
-article table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-/* A displayed equation gets room around it and is allowed to scroll
-   sideways rather than force the whole page to. A long matrix is
-   wider than a reading measure and shrinking the text to fit would
-   make the equation the least legible thing on the page. */
-.math.block {
-  margin: 1.4rem 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-/* An equation number sits at the right margin of the column, which
-   is where a paper puts it and where a cross-reference expects to
-   find it. */
-.math-label {
-  float: right;
-  font-family: var(--gutter);
-  font-size: 0.85em;
-}
-
-@media (max-width: 46rem) {
-  /* The margin goes above the column rather than beside it, and
-     takes its place in document order - so the title comes first and
-     the provenance follows it. That is a different order from the
-     wide layout, and the right one here: a phone screen opens with
-     the thing a reader recognises, not with an identifier. */
-  .hits li { grid-template-columns: 1fr; row-gap: 0.4rem; }
-  .hits li > * { grid-column: 1; }
-  .hits .detail { grid-row: auto; text-align: left; }
-  /* Back across the top rather than off-canvas. A sliding overlay
-     is a great deal of machinery for a width this interface is not
-     used at, and a static bar is what it already was. */
-  :root, :root[data-sidebar="closed"] { --sidebar: 0px; }
-  body { padding-left: 0; }
-  .sidebar {
-    position: static;
-    width: auto;
-    flex-direction: row;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 0.9rem;
-    padding: 1.1rem 1rem 0.8rem;
-    border-right: none;
-    border-bottom: 1px solid var(--rule);
-  }
-  .sidebar-toggle { display: none; }
-  :root[data-sidebar="closed"] .wordmark { display: block; }
-  .sidebar nav,
-  :root[data-sidebar="closed"] .sidebar nav {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0.9rem;
-  }
-  main { padding: 1.5rem 1rem 4rem; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}
-"""
+def scale_css() -> str:
+    """The bars and the swatches, by the reader's chosen scale.
+
+    After the theme blocks, because a rule here has the specificity of
+    the dark block's own `--strength-N` and order is what lets the
+    reader's scale win in either theme. Generated, because the scales
+    are a table and a hand-written copy would be the second place one
+    is named.
+    """
+    rules: list[str] = []
+    for name in STRENGTH_SCALES:
+        steps = "\n".join(
+            f"  --strength-{step}: var(--scale-{name}-{step});" for step in range(1, 6)
+        )
+        rules.append(f':root[data-scale="{name}"] {{\n{steps}\n}}')
+    for name in STRENGTH_SCALES:
+        for step in range(1, 6):
+            rules.append(
+                f'.swatch[data-scale="{name}"][data-step="{step}"] '
+                f"{{ background: var(--scale-{name}-{step}); }}"
+            )
+    return "\n".join(rules)
+
+
+# Layout only, in its own file so it is edited as CSS. No colour appears
+# there: every visible colour comes through a `--role-`, `--ground`,
+# `--ink` or `--rule` property above, and a test asserts it.
+_LAYOUT: Final = (Path(__file__).parent / "layout.css").read_text(encoding="utf-8")
 
 
 __all__ = [
     "CSS_COLOURS",
     "CSS_COLOURS_DARK",
     "DARK_GROUND",
+    "DEFAULT_STRENGTH_SCALE",
     "LIGHT_GROUND",
+    "STRENGTH_SCALES",
+    "StrengthScale",
     "css_variables",
     "css_weights",
     "layout_css",
+    "scale_css",
     "stylesheet",
 ]

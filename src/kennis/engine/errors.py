@@ -107,6 +107,32 @@ class IndexBusy(KennisError):
     default_resolution = "kennis corpus index"
 
 
+class CorpusExists(KennisError):
+    """`corpus init` was asked for where a corpus already is.
+
+    Not `CorpusBusy`, which it was: busy says another process holds the
+    lock and to try again, and initialising again would discard the
+    history the first one made.
+    """
+
+    default_message = "a kennis corpus is already here"
+    default_resolution = "kennis corpus status"
+
+
+class HistoryUnwritable(KennisError):
+    """Git refused to record a change kennis made.
+
+    Not `CorpusBusy`, which it was: that says another process holds the
+    lock and nothing was changed, so the front ends offer a retry. Here the
+    documents were already written and only their commit failed, for a
+    reason git states - which is carried in the message - and retrying
+    meets the same reason again.
+    """
+
+    default_message = "the corpus history could not be written"
+    default_resolution = None
+
+
 class GitUnavailable(KennisError):
     """The `git` binary is missing.
 
@@ -217,6 +243,19 @@ class ConversionFailed(KennisError):
     default_resolution = "kennis corpus add --help"
 
 
+class ConverterRefused(ConversionFailed):
+    """The converter turned kennis away, whatever the document: a hosted
+    service rejecting its API key.
+
+    Not one document's failure, so it ends the add rather than being filed
+    against each document in turn - where its remedy was dropped and the
+    same refusal was paid for once per file.
+    """
+
+    default_message = "the converter refused every document"
+    default_resolution = "kennis config init"
+
+
 class NothingToIndex(KennisError):
     """There is no text to build an index over.
 
@@ -288,3 +327,29 @@ class PackNotInstalled(KennisError):
 
     default_message = "no pack of that id is installed"
     default_resolution = "kennis pack list"
+
+
+class BackupRefused(KennisError):
+    """A backup or a restore that kennis will not start.
+
+    An empty password, a folder that is not there or cannot be written,
+    a restore onto something that is not empty, or an archive naming a
+    path outside the corpus. Each is refused before anything is written,
+    so a refusal never leaves a partial file or a half-restored corpus.
+    """
+
+    default_message = "the backup could not be started"
+    default_resolution = None
+
+
+class BackupUnreadable(KennisError):
+    """An archive that would not open, or failed its test.
+
+    One error for two causes, because they cannot be told apart: with
+    the names encrypted, a wrong password decrypts the header into
+    arbitrary bytes, and the library then fails however those bytes
+    lead it to.
+    """
+
+    default_message = "the password is wrong or the archive is damaged"
+    default_resolution = None

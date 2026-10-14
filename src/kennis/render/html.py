@@ -44,6 +44,7 @@ import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Final
 from urllib.parse import urlparse
 
@@ -97,6 +98,8 @@ def to_html(
     load_remote_images: bool = False,
     marked: MarkedRange | None = None,
     without_title: str | None = None,
+    terms: Sequence[str] = (),
+    heading_anchors: bool = False,
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
 
@@ -119,23 +122,264 @@ def to_html(
     `Chunk.char_start` and `char_end` address `Document.body`, so
     editing that string before rendering would put every chunk mark
     out by the heading's length. Concern #353.
+
+    `terms` are the reader's own words, marked on the text the corpus
+    holds and never inside code or maths, by the rule a snippet uses.
+
+    `heading_anchors` gives each heading the id `headings_of` names, for
+    a page that offers an outline. Off by default, because a results
+    page draws several passages and the same id twice is not HTML.
     """
     parser = _parser(load_remote_images=load_remote_images)
-    if marked is None and without_title is None:
+    pattern = query_pattern(terms)
+    if (
+        marked is None
+        and without_title is None
+        and pattern is None
+        and not heading_anchors
+    ):
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
     if marked is not None:
         tokens = _wrapped(tokens, markdown, marked)
     if without_title is not None:
         tokens = _without_title(tokens, without_title)
+    if pattern is not None:
+        _mark_text(tokens, pattern)
+    if heading_anchors:
+        for token in tokens:
+            if token.type in _HEADINGS and token.map is not None:
+                token.attrSet("id", _heading_anchor(token.map[0]))
     return str(parser.renderer.render(tokens, parser.options, {}))
+
+
+@dataclass(frozen=True, slots=True)
+class Heading:
+    """One heading of a document, for an outline."""
+
+    level: int
+    text: str
+    anchor: str
+
+
+def _heading_anchor(line: int) -> str:
+    """A heading's id, from the source line it starts on.
+
+    The line rather than a count of headings, so the anchor is the same
+    whether or not the leading title heading was dropped from the tokens.
+    """
+    return f"heading-{line}"
+
+
+def headings_of(markdown: str, *, without_title: str | None = None) -> list[Heading]:
+    """The headings `to_html` draws, in order, with the ids it gives them.
+
+    The text is the heading's source, which is what a reader recognises;
+    inline markup in a heading is rare and is shown as written.
+    """
+    tokens = _parser(load_remote_images=False).parse(markdown)
+    if without_title is not None:
+        tokens = _without_title(tokens, without_title)
+    return [
+        Heading(
+            level=int(opening.tag.removeprefix("h")),
+            text=inline.content.strip(),
+            anchor=_heading_anchor(opening.map[0]),
+        )
+        for opening, inline in pairwise(tokens)
+        if opening.type in _HEADINGS and opening.map is not None
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class PassageHtml:
+    """A chunk rendered once, parted where the reader's words first occur.
+
+    `lead` is the blocks before the first block holding a mark, and
+    `body` the rest; together they are exactly `to_html(markdown,
+    terms=...)`. `fits` says whether both could be shown whole with
+    nothing to open: short enough, and holding nothing - a table, a code
+    block, a display equation - whose height its characters do not say.
+    It counts the lead too, since a passage that fits shows its lead; a
+    note's title heading alone is no reason to offer an opening.
+
+    `heading` is the section the passage is from, escaped and marked, for
+    the card's header; empty when there is no section to name.
+    """
+
+    lead: str
+    body: str
+    fits: bool
+    heading: str = ""
+
+
+# Blocks whose height is not their length in characters.
+_TALL: Final = frozenset(
+    {"table_open", "fence", "code_block", "math_block", "math_block_label"}
+)
+
+
+def passage_html(
+    markdown: str,
+    *,
+    terms: Sequence[str],
+    fits: int,
+    section: str | None = None,
+    title: str | None = None,
+) -> PassageHtml:
+    """`markdown` rendered as `to_html` would, in two parts (#454).
+
+    The part is decided after marking, by where a mark was drawn, so a
+    term that occurs only in a link's address - which the reader never
+    sees - does not move it. With no mark at all everything is `body`:
+    a hit found by meaning alone is shown from its start.
+
+    The card's head says the `section` and the document's `title`, so a
+    heading opening the passage with either's words is dropped from the
+    tokens rather than said twice (#426) - the title regardless of case,
+    as `hit_title_parts` compares them. Only the first block and only the
+    same words: any other heading is text the reader has not been shown
+    elsewhere.
+    """
+    parser = _parser(load_remote_images=False)
+    tokens = parser.parse(markdown)
+    if len(tokens) >= 3 and tokens[0].type == "heading_open":
+        words = tokens[1].content.strip()
+        if (section and words == section.strip()) or (
+            title and words.casefold() == title.strip().casefold()
+        ):
+            tokens = tokens[3:]
+    pattern = query_pattern(terms)
+    if pattern is not None:
+        _mark_text(tokens, pattern)
+    starts = [
+        at for at, token in enumerate(tokens) if token.level == 0 and token.nesting >= 0
+    ]
+    first = next(
+        (
+            start
+            for start, end in pairwise([*starts, len(tokens)])
+            if any(_holds_a_mark(token) for token in tokens[start:end])
+        ),
+        0,
+    )
+    length = sum(len(token.content) for token in tokens if token.type == "inline")
+    return PassageHtml(
+        lead=str(parser.renderer.render(tokens[:first], parser.options, {})),
+        body=str(parser.renderer.render(tokens[first:], parser.options, {})),
+        fits=length <= fits and not any(token.type in _TALL for token in tokens),
+        heading=(
+            ""
+            if not section
+            else _escaped(section)
+            if pattern is None
+            else marked_text(section, pattern)
+        ),
+    )
+
+
+def _holds_a_mark(token: Token) -> bool:
+    """Whether `_mark_text` drew a mark in this token."""
+    return any(
+        child.type == "html_inline" and "<mark>" in child.content
+        for child in token.children or ()
+    )
+
+
+def terms_of(question: str) -> tuple[str, ...]:
+    """The reader's words, as the marker looks for them.
+
+    Split on whitespace and nothing cleverer. The index tokenises its
+    own way and this does not pretend to match it - what is marked is
+    what was typed.
+    """
+    return tuple(question.split())
+
+
+# Below this a term matches most of the page. Two characters is not
+# a judgement about which words are worth marking - it is the point
+# at which the mark stops carrying information.
+_SHORTEST_TERM: Final = 2
+
+
+def query_pattern(terms: Sequence[str]) -> re.Pattern[str] | None:
+    """One expression matching any term, whole and regardless of case.
+
+    `re.escape`, because these are a person's words and a query of
+    `.*` must match those two characters rather than everything. Nothing
+    is stemmed: the index stems and this does not, so "calibration" will
+    not mark "calibrate", and prefix-matching to fix that would mark
+    "calibrate" inside "recalibrated", a match the search did not make.
+    """
+    wanted = sorted(
+        {term for term in terms if len(term) >= _SHORTEST_TERM},
+        key=len,
+        reverse=True,
+    )
+    if not wanted:
+        return None
+    joined = "|".join(re.escape(term) for term in wanted)
+    # `\b` alone fails on a term ending in a non-word character, so
+    # the boundary is asserted by lookaround on word characters.
+    return re.compile(rf"(?<!\w)(?:{joined})(?!\w)", re.IGNORECASE)
+
+
+def marked_text(text: str, pattern: re.Pattern[str]) -> str:
+    """Escape the text and wrap each match, keeping the corpus's spelling.
+
+    The replacement uses what was matched rather than what was searched
+    for, so "ASTRONOMY" in the document stays "ASTRONOMY" when the query
+    said "astronomy". The text kennis quotes is not kennis's to re-spell.
+    """
+    out: list[str] = []
+    last = 0
+    for found in pattern.finditer(text):
+        out.append(_escaped(text[last : found.start()]))
+        out.append(f"<mark>{_escaped(found.group(0))}</mark>")
+        last = found.end()
+    out.append(_escaped(text[last:]))
+    return "".join(out)
+
+
+def _mark_text(tokens: Sequence[Token], pattern: re.Pattern[str]) -> None:
+    """Mark the reader's words on text and inline code, in place.
+
+    **On tokens, never on finished HTML**, where a query of "class"
+    would rewrite `class="..."`. A marked token becomes `html_inline`,
+    whose content the renderer writes as it is: `html=False` stops the
+    parser making such tokens from the corpus's text, not the renderer
+    writing one kennis made, and `marked_text` escaped every character.
+
+    Inline code is marked, as the snippet marks it: a search for
+    `solve_gains` is a search for the code. Maths is another token
+    type and never reached, because a `<mark>` inside TeX is markup
+    KaTeX renders or refuses. A fenced block is left alone, because
+    its HTML is the highlighter's.
+    """
+    for token in tokens:
+        for child in token.children or ():
+            if not pattern.search(child.content):
+                continue
+            if child.type == "text":
+                child.type = "html_inline"
+                child.content = marked_text(child.content, pattern)
+            elif child.type == "code_inline":
+                child.type = "html_inline"
+                child.content = f"<code>{marked_text(child.content, pattern)}</code>"
+
+
+def _words_of(text: str) -> str:
+    """`text` as a comparison sees it: case folded, space collapsed."""
+    return " ".join(text.split()).casefold()
 
 
 def _without_title(tokens: list[Token], title: str) -> list[Token]:
     """`tokens` without a leading `# ` heading that repeats `title`.
 
-    Only the first block, and only an exact match once both are
-    stripped: a document whose first heading says something else is
+    Only the first block, and only the same words - regardless of case
+    and of runs of space, as a passage's head compares them (#426): the
+    reviews of 2026-10-13 found "gain solutions" over "Gain solutions".
+    A document whose first heading says something else is
     a document with a heading, and removing it would lose text the
     corpus holds. A `##` is left alone too - a second-level heading
     is structure, not a title.
@@ -152,7 +396,7 @@ def _without_title(tokens: list[Token], title: str) -> list[Token]:
     if at + 2 >= len(tokens) or tokens[at].tag != "h1":
         return tokens
     inline = tokens[at + 1]
-    if inline.type != "inline" or inline.content.strip() != title.strip():
+    if inline.type != "inline" or _words_of(inline.content) != _words_of(title):
         return tokens
     return tokens[:at] + tokens[at + 3 :]
 
@@ -311,15 +555,8 @@ _MATHS_ELEMENTS: Final[tuple[tuple[str, str, str], ...]] = (
 _EMPTY_OPTION: Final = re.compile(r"(\\begin\{[A-Za-z*]+\})\[\s*\]")
 
 
-def without_empty_options(maths: str) -> str:
-    """`maths` with an empty `\\begin{...}[]` option removed.
-
-    Public because `gui/snippet.py` renders the same TeX with its own
-    parser and needs the same repair - otherwise an expression fails
-    to parse in the search results and renders in the document, from
-    one string. The dependency runs `gui -> render -> engine`, so
-    this is the layer both can read.
-    """
+def _without_empty_options(maths: str) -> str:
+    """`maths` with an empty `\\begin{...}[]` option removed."""
     return _EMPTY_OPTION.sub(r"\1", maths)
 
 
@@ -341,7 +578,7 @@ def _maths_rule(element: str, classes: str) -> RenderRule:
         env: EnvType,
     ) -> str:
         token = tokens[index]
-        maths = without_empty_options(token.content)
+        maths = _without_empty_options(token.content)
         drawn = f'<{element} class="{classes}">{_escaped(maths)}</{element}>'
         if token.info:
             # `$$ ... $$ (eq1)` - the label is what the document's own
@@ -437,7 +674,13 @@ def _escaped(text: str) -> str:
 __all__ = [
     "IMAGE_BLOCKED",
     "IMAGE_MISSING",
+    "Heading",
     "MarkedRange",
+    "PassageHtml",
+    "headings_of",
+    "marked_text",
+    "passage_html",
+    "query_pattern",
+    "terms_of",
     "to_html",
-    "without_empty_options",
 ]

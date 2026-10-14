@@ -9,7 +9,6 @@ How chunks and queries become vectors.
 |---|---|---|---|
 | `backend` | `fastembed` / `ollama` / `openai` / `none` | `fastembed` | Backend used to embed chunks. fastembed downloads a 65 MB model the first time you index; none means lexical search only. |
 | `model` | `str` | `BAAI/bge-small-en-v1.5` | Model name, interpreted by the backend. |
-| `dimensions` | `int` | `384` | Width of a vector. |
 | `normalise` | `bool` | `True` | Scale vectors to unit length, so cosine is a dot product. |
 | `batch_size` | `int` | `64` | Texts per backend request. |
 | `base_url` | `str` | `""` | Server address. Unused for fastembed. |
@@ -51,7 +50,7 @@ How binary documents become markdown.
 
 | key | type | default | what it does |
 |---|---|---|---|
-| `backend` | `mineru` / `datalab` | `mineru` | Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and is installed with the mineru extra; datalab is hosted, needs an API key, and sends the document to a third party. |
+| `backend` | `mineru` / `datalab` | `mineru` | Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and is installed with kennis; datalab is hosted, needs an API key, and sends the document to a third party. |
 | `mode` | `fast` / `balanced` / `accurate` | `balanced` | How hard the datalab backend works, and what it charges. Measured per page: fast 0.4c, balanced 0.4c, accurate 1.0c. The server only reuses a conversion when the mode matches, so changing this and re-adding a document pays for it again. mineru ignores this - it runs locally and costs nothing. |
 | `repair_ligatures` | `bool` | `True` | Repair ligature damage against the PDF's own text layer, read with pypdfium2. mineru drops a letter from ff, fi and fl on some documents, which no reindex can undo. Costs 0.7ms a page and applies to mineru only - datalab showed no such damage. |
 | `batch_size` | `int` | `8` | Documents per converter run. 0 is one run. |
@@ -63,6 +62,7 @@ How papers are identified and fetched.
 | key | type | default | what it does |
 |---|---|---|---|
 | `request_delay` | `float` | `3.0` | Seconds between arXiv requests. arXiv states three. |
+| `unpaywall_email` | `str` | `""` | Your email address, which Unpaywall requires, to look up a free and legal copy of a paper known only by its DOI. Empty: Unpaywall is not asked, and such a paper needs your own copy. |
 
 ### `[logging]`
 
@@ -73,3 +73,11 @@ What is written to the log file.
 | `level` | `debug` / `info` / `warning` / `error` | `info` | Detail written to the log file. |
 | `max_bytes` | `int` | `1048576` | Size at which the log rotates. |
 | `backup_count` | `int` | `3` | Rotated log files kept. |
+
+### `[backup]`
+
+Where the encrypted backup of the corpus is written.
+
+| key | type | default | what it does |
+|---|---|---|---|
+| `folder` | `str` | `""` | Folder the encrypted backup is written to, often one a cloud client synchronises. The backup holds the full text of every document. |

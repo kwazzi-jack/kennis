@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,7 @@ from kennis.engine.corpus.converters import (
     ConversionBatch,
     MineruConverter,
     MineruOptions,
+    _stage,
     default_converter,
 )
 from kennis.engine.errors import ConversionFailed, ConverterUnavailable
@@ -58,7 +60,7 @@ def test_a_missing_converter_reports_how_to_install_it(no_mineru: None, tmp_path
 
     message = f"{raised.value} {raised.value.resolution}"
     assert "mineru" in message
-    assert "--extra mineru" in message
+    assert "uv sync" in message
 
 
 def test_the_install_hint_is_reported_once_for_a_whole_batch(
@@ -257,14 +259,6 @@ def test_an_explicit_setting_reaches_the_process(fake_mineru: Path, tmp_path: Pa
     assert "source=huggingface" in fake_mineru.read_text(encoding="utf-8")
 
 
-def test_a_page_limit_restricts_the_run(fake_mineru: Path, tmp_path: Path):
-    """Two pages are enough to learn what every document in a folder *is*, at
-    about a second each against sixteen for a full conversion."""
-    batch = MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")], page_limit=2)
-
-    assert batch.markdown
-
-
 @needs_a_posix_shell
 def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -284,6 +278,50 @@ def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_writt
         MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
 
     assert "Nothing was written" in str(raised.value)
+
+
+@needs_a_posix_shell
+def test_a_cancelled_run_ends_what_it_started_as_well(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Only the process kennis started was killed, so MinerU's own helpers -
+    a model server holding the GPU - went on running after the run was
+    said to be cancelled."""
+    marker = tmp_path / "still-running"
+    binary_dir = tmp_path / "bin"
+    binary_dir.mkdir()
+    script = binary_dir / "mineru"
+    script.write_text(
+        f"#!/bin/sh\n(sleep 2; touch '{marker}') &\nsleep 30\n", encoding="utf-8"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr("kennis.engine.corpus.converters._STARTUP_GRACE_SECONDS", 0)
+    monkeypatch.setattr("kennis.engine.corpus.converters._SECONDS_PER_DOCUMENT", 1)
+
+    with pytest.raises(ConversionFailed):
+        MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+    time.sleep(2.5)
+
+    assert not marker.exists()
+
+
+def test_a_run_that_times_out_names_the_setting_that_shortens_it(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """ "Convert the documents in smaller batches" named an option no command
+    has; the size of a run is `conversion.batch_size`."""
+
+    def expire(*args: object, **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(cmd="mineru", timeout=1)
+
+    monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", expire)
+    pdfs = [a_pdf(tmp_path / f"{name}.pdf") for name in ("a", "b", "c", "d")]
+
+    with pytest.raises(ConversionFailed) as raised:
+        MineruConverter().convert(pdfs)
+
+    assert raised.value.resolution == "kennis config set conversion.batch_size 2"
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +376,7 @@ def test_mineru_converts_a_real_pdf(tmp_path: Path):
     and what this costs afterwards is patience rather than a host being up.
     """
     if shutil.which("mineru") is None:
-        pytest.skip("mineru is not installed; uv sync --extra mineru")
+        pytest.skip("mineru is not installed; uv sync")
 
     path = a_real_pdf(tmp_path / "paper.pdf")
 
@@ -531,7 +569,7 @@ def test_mineru_is_found_beside_the_interpreter_when_it_is_not_on_path(
 ):
     """**Reported from a real install.**
 
-    `uv tool install "kennis[mineru]"` installs mineru into the tool's own
+    `uv tool install kennis` installs mineru into the tool's own
     virtual environment and links only *kennis's* entry point into
     `~/.local/bin` - it says so itself: `Installed 1 executable: kennis`. So
     `~/.local/share/uv/tools/kennis/bin/mineru` exists, is never on PATH, and
@@ -579,7 +617,7 @@ def test_the_run_invokes_the_mineru_it_found(
         invoked.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(subprocess, "run", record)
+    monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", record)
     MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
 
     assert invoked, "mineru was never run"
@@ -595,16 +633,17 @@ def test_the_install_hint_matches_how_kennis_was_installed(
     """Brian, on the hint he was given: "It should say to install
     kennis[mineru]".
 
-    `uv sync --extra mineru` is right in a source checkout and meaningless to
-    somebody who installed the tool - there is no project to sync. An error
-    names the command that resolves it, so which command that is depends on
-    which of the two they are.
+    `uv sync` is right in a source checkout and meaningless to somebody who
+    installed the tool - there is no project to sync. An error names the
+    command that resolves it, so which command that is depends on which of
+    the two they are. Since #423 mineru is in the base install, so neither
+    names an extra: the remedy is to install kennis again.
     """
     monkeypatch.setattr(converters, "_from_source_checkout", lambda: True)
-    assert MineruConverter().install_hint() == "uv sync --extra mineru"
+    assert MineruConverter().install_hint() == "uv sync"
 
     monkeypatch.setattr(converters, "_from_source_checkout", lambda: False)
-    assert MineruConverter().install_hint() == 'uv tool install "kennis[mineru]"'
+    assert MineruConverter().install_hint() == "uv tool install --reinstall kennis"
 
 
 def test_this_checkout_is_recognised_as_one():
@@ -655,3 +694,17 @@ def test_a_checkout_is_recognised_by_its_layout(tmp_path: Path):
 
     (tmp_path / "src" / "kennis").mkdir(parents=True)
     assert converters._is_source_checkout(tmp_path)
+
+
+def test_a_staged_name_leaves_room_under_the_windows_path_limit(tmp_path: Path):
+    """MinerU writes the staged stem into its output path twice; a long
+    filename pushed that past the 260 characters Windows opens."""
+    source = a_pdf(tmp_path / f"{'a-very-long-paper-title-' * 10}.pdf")
+    staged_dir = tmp_path / "input"
+    staged_dir.mkdir()
+
+    stem = next(iter(_stage([source], staged_dir)))
+    windows_temp = "C:\\Users\\someone\\AppData\\Local\\Temp\\kennis-mineru-abcdefgh"
+    deepest = f"{windows_temp}\\output\\{stem}\\hybrid_auto\\{stem}_content_list.json"
+
+    assert len(deepest) < 260

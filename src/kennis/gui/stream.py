@@ -23,6 +23,8 @@ import json
 from collections.abc import Iterator
 from typing import Final
 
+from kennis.engine.context.sync import OPERATION as CONTEXT_SYNC
+from kennis.engine.corpus.sync import OPERATION as CORPUS_SYNC
 from kennis.engine.events import (
     Diagnostic,
     Event,
@@ -32,9 +34,13 @@ from kennis.engine.events import (
     Outcome,
     Progress,
 )
+from kennis.engine.rag.embedding import FETCH_MODEL
+from kennis.engine.refusals import Quoted
+from kennis.gui.jobs import Elapsed
 from kennis.render.diagnostics import describe_diagnostic
+from kennis.render.packs import verdict_word
 from kennis.render.refusals import describe_refusal
-from kennis.render.words import count_of
+from kennis.render.words import count_of, fetching_model, progress_label, running_for
 
 # The marker each outcome is shown under, the same vocabulary the
 # command line prints. Not imported from `cli/`, which `gui/` may not
@@ -65,16 +71,40 @@ SYNC_MARKERS: Final[dict[str, str]] = {
 }
 
 
-def as_message(event: Event) -> dict[str, object] | None:
+def as_message(event: Event | Elapsed) -> dict[str, object] | None:
     """One event as something a page can draw, or None to ignore it.
 
-    `ItemStarted` is dropped: an item that has started has no outcome
-    yet, and a line that appears and is then replaced by its own result
-    reads as a list twice as long as the work.
+    `ItemStarted` is the step line - what is in hand now - and never a
+    line of the list: an item that has started has no outcome yet, and a
+    line replaced by its own result reads as a list twice as long as the
+    work. It was dropped altogether until #405, so a single PDF read
+    "0 of 1" for twenty seconds of MinerU with no name on it.
     """
     match event:
+        case Elapsed():
+            return {"kind": "elapsed", "text": running_for(event.seconds)}
+        case ItemStarted(operation=operation) if operation == FETCH_MODEL:
+            return {
+                "kind": "current",
+                "text": f"Downloading {fetching_model(event.item)}",
+            }
         case ItemStarted():
-            return None
+            return {
+                "kind": "current",
+                "text": f"{progress_label(event.operation)} {event.item}",
+            }
+        case ItemFinished(operation=operation, refusal=Quoted(text=verdict)) if (
+            operation in {CORPUS_SYNC, CONTEXT_SYNC}
+        ):
+            # A sync quotes its verdict's name; the reader is told the
+            # word the outcome's lines use for it.
+            return {
+                "kind": "item",
+                "marker": MARKERS[event.outcome],
+                "outcome": event.outcome.value,
+                "text": event.item,
+                "detail": verdict_word(verdict),
+            }
         case ItemFinished():
             return {
                 "kind": "item",
@@ -121,7 +151,9 @@ def sent_event(message: dict[str, object]) -> str:
     return f"data: {json.dumps(message)}\n\n"
 
 
-def as_stream(events: Iterator[Event], closing: dict[str, object]) -> Iterator[str]:
+def as_stream(
+    events: Iterator[Event | Elapsed], closing: dict[str, object]
+) -> Iterator[str]:
     """Every event as a wire message, then one that says it is over.
 
     The closing message is always sent, including when the operation

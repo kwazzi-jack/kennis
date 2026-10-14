@@ -102,7 +102,6 @@ class ModelBinding:
 
     kind: str
     model: str
-    dim: int
     host: str | None = None
     normalise: bool = True
     max_async: int | None = None
@@ -158,9 +157,10 @@ def embed_texts(
     returned.
     """
     if not texts:
-        # Shaped rather than empty, so a caller can stack this without a
-        # special case for the collection that had nothing in it.
-        return np.zeros((0, binding.dim), dtype=np.float32)
+        # No rows, and no columns either: the width is the model's, and is
+        # not known until it has embedded something. A caller stacks only
+        # blocks that have rows.
+        return np.zeros((0, 0), dtype=np.float32)
 
     active = embedder if embedder is not None else embedder_for(binding, events=events)
     batches = [texts[at : at + batch_size] for at in range(0, len(texts), batch_size)]

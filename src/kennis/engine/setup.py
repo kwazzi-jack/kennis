@@ -23,29 +23,30 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, Literal, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
+from kennis.engine.atomic import replace_file
+from kennis.engine.corpus.converters import DATALAB_KEY_VARIABLE
 from kennis.engine.errors import SettingsError
 from kennis.engine.settings import (
+    CREDENTIALS_KEPT,
+    EMBEDDING_DEFAULTS,
     Settings,
+    config_document,
     config_path,
+    credential,
     credentials_path,
     load_settings,
+    repair_of,
+    section_models,
+    toml_value,
 )
 
 type QuestionKind = Literal["choice", "text", "integer", "boolean", "secret"]
-
-# Which environment variable a hosted backend's key is read from. Named here
-# rather than asked, because the *name* is a setting and the *value* is a
-# credential, and a user who has to choose both is being asked a question
-# about kennis's internals.
-_KEY_VARIABLES: Final[dict[str, str]] = {
-    "openai": "OPENAI_API_KEY",
-    "datalab": "DATALAB_API_KEY",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,17 +56,23 @@ class Question:
     Facts only, per #81: the key it sets, what kind of value it takes, what
     is currently in effect, and the constraints. `description` is the
     pydantic field's own, which is schema metadata rather than composed
-    prose - the same text `config_template` emits, for the same reason.
+    prose - the same text `config_document` emits, for the same reason.
 
     `when` is a conjunction of `(key, value)` pairs over the answers given so
     far. A value rather than a callback, so a form can evaluate it to decide
     what to show without running kennis's code per keystroke.
+
+    `current` is what is in force and `suggested` what to offer. They
+    differ only for the model asked under a backend not in force (#441). A
+    front end offers `suggested`, and compares an answer with `current` to
+    say what changed; every setting is written either way (#445).
     """
 
     key: str
     kind: QuestionKind
     description: str
     current: str = ""
+    suggested: str = ""
     options: tuple[str, ...] = ()
     minimum: int | None = None
     maximum: int | None = None
@@ -86,7 +93,6 @@ class Question:
 _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]] = (
     ("embedding.backend", "choice", ()),
     ("embedding.model", "text", (("embedding.backend", "fastembed"),)),
-    ("embedding.dimensions", "integer", (("embedding.backend", "fastembed"),)),
     ("embedding.base_url", "text", (("embedding.backend", "ollama"),)),
     ("embedding.model", "text", (("embedding.backend", "ollama"),)),
     ("embedding.model", "text", (("embedding.backend", "openai"),)),
@@ -168,10 +174,56 @@ def apply_answers(answers: Mapping[str, str]) -> Settings:
     settings = _validated(given)
 
     secrets = {key: value for key, value in given.items() if _is_secret(key)}
-    _write_config({key: value for key, value in given.items() if key not in secrets})
+    # The key first: a configuration naming a backend whose key failed to
+    # save is the half-written state this function promises not to leave.
     if secrets:
-        _write_credentials(secrets)
+        _write_credentials(
+            {
+                (key.partition(".")[0], _key_variable(key, settings)): value
+                for key, value in secrets.items()
+            }
+        )
+    _write_config({key: value for key, value in given.items() if key not in secrets})
     return settings
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialStatus:
+    """Which variable a key is read from, and whether anything holds it.
+
+    Never the value: a status is drawn on a page and written to a log, and a
+    key that reached either would be a key sent somewhere it was not meant
+    to go.
+    """
+
+    variable: str
+    is_set: bool
+
+
+def credential_status(key: str) -> CredentialStatus:
+    """The variable `key`'s value is read from, and whether it is set.
+
+    The variable is the one the reader of the key consults, under the
+    settings in force.
+    """
+    variable = _key_variable(key, load_settings())
+    return CredentialStatus(variable=variable, is_set=bool(credential(variable)))
+
+
+def _key_variable(key: str, settings: Settings) -> str:
+    """The variable the reader of `key` asks `credential` for.
+
+    The one answer to that question, for the writer and for the status
+    alike: two tables answering it separately filed the embedding key
+    under `OPENAI_API_KEY` while embedding read `embedding.api_key_env`
+    (#440). An unknown key raises rather than being filed under a name
+    nobody reads.
+    """
+    if key == "embedding.api_key":
+        return settings.embedding.api_key_env
+    if key == "conversion.api_key":
+        return DATALAB_KEY_VARIABLE
+    raise KeyError(key)
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +244,7 @@ def _question(
             kind=kind,
             description=(
                 f"API key for {backend}. Stored in {credentials_path().name}, "
-                f"readable only by you, and never written to the config file."
+                f"{CREDENTIALS_KEPT}, and never written to the config file."
             ),
             when=when,
         )
@@ -204,6 +256,7 @@ def _question(
         kind=kind,
         description=field.description or key,
         current=_current(key, settings),
+        suggested=_suggested(key, when, settings),
         options=_options_of(field.annotation),
         minimum=lower,
         maximum=upper,
@@ -225,6 +278,21 @@ def _current(key: str, settings: Settings) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _suggested(key: str, when: tuple[tuple[str, str], ...], settings: Settings) -> str:
+    """What a front end offers for `key`: the value in force, unless it is
+    the model asked for an embedding backend other than the one in force.
+
+    Then the model in force belongs to the other backend, and this
+    backend's own model is offered instead (#441). Not `current`, because
+    `current` is what an answer is compared with to say what changed.
+    """
+    backend = dict(when).get("embedding.backend")
+    model = EMBEDDING_DEFAULTS.get(backend or "")
+    if key == "embedding.model" and model and backend != settings.embedding.backend:
+        return model
+    return _current(key, settings)
 
 
 def _options_of(annotation: object) -> tuple[str, ...]:
@@ -296,32 +364,56 @@ def _refuse_boolean(value: str) -> bool:
 def _validated(given: Mapping[str, str]) -> Settings:
     """The settings these answers produce, or the first reason they do not.
 
-    Built through the model rather than by checking the strings, so the
+    Built through the models rather than by checking the strings, so the
     answer to "is this acceptable" is the same one `load_settings` would
     give and cannot drift from it.
+
+    **Against the file, not the environment**, as `_write_config` writes
+    it. Settled through `load_settings`, a bad value in the file - or one
+    exported for this shell - refused every `config set`, including the
+    one that would have replaced it. An answer replaces the file's value
+    for its own key, so the repair a refusal names always goes through.
     """
-    sections: dict[str, dict[str, object]] = {}
+    held = _held()
     for key, value in given.items():
         if _is_secret(key):
             continue
         section, _, name = key.partition(".")
         field = _field_of(key)
-        sections.setdefault(section, {})[name] = _as_typed(field, value)
+        held.setdefault(section, {})[name] = _as_typed(key, field, value)
 
-    merged = load_settings().model_dump()
-    for section, values in sections.items():
-        merged[section] = {**merged.get(section, {}), **values}
-    try:
-        return Settings.model_validate(merged)
-    except ValidationError as error:
-        first = error.errors()[0]
-        where = ".".join(str(part) for part in first["loc"])
-        raise SettingsError(
-            f"{where}: {first['msg']}", resolution="kennis config init"
-        ) from error
+    sections: dict[str, BaseModel] = {}
+    for section, model in section_models().items():
+        try:
+            sections[section] = model.model_validate(held.get(section, {}))
+        except ValidationError as error:
+            first = error.errors()[0]
+            key = ".".join(str(part) for part in (section, *first["loc"][:1]))
+            path = config_path()
+            where = key if key in given else f"{key} in {path}"
+            raise SettingsError(
+                f"{where}: {first['msg']}", resolution=repair_of(key, path)
+            ) from error
+    return Settings.model_construct().model_copy(update=sections)
 
 
-def _as_typed(field: FieldInfo, value: str) -> object:
+def _held() -> dict[str, dict[str, object]]:
+    """What `config.toml` holds, section by section, unchecked."""
+    path = config_path()
+    if not path.is_file():
+        return {}
+    return {
+        section: dict(entries)
+        for section, entries in _toml_of(path).items()
+        if isinstance(entries, dict)
+    }
+
+
+_TRUE: Final = frozenset({"true", "yes", "on", "1"})
+_FALSE: Final = frozenset({"false", "no", "off", "0"})
+
+
+def _as_typed(key: str, field: FieldInfo, value: str) -> object:
     """A command-line string as the type the field declares.
 
     Guessing from the string's shape would make `"800"` an integer for one
@@ -334,7 +426,17 @@ def _as_typed(field: FieldInfo, value: str) -> object:
     # whatever the model declared.
     declared: object = field.annotation
     if declared is bool:
-        return value.lower() in {"true", "yes", "1"}
+        # Refused rather than read as false: `ture` was stored as `false`,
+        # said "Set" and quietly turned a feature off.
+        answer = value.strip().lower()
+        if answer in _TRUE:
+            return True
+        if answer in _FALSE:
+            return False
+        raise SettingsError(
+            f"'{value}' is not true or false",
+            resolution=f"kennis config set {key} true",
+        )
     if declared is int:
         try:
             return int(value)
@@ -349,44 +451,42 @@ def _as_typed(field: FieldInfo, value: str) -> object:
 
 
 def _write_config(values: Mapping[str, str]) -> None:
-    """Merge `values` into the config file, keeping everything else.
+    """Write the whole file: every section's defaults, then what the file
+    holds, then `values`.
 
-    Read, merge, write - rather than dumping the whole settings model, which
-    would write every default as an active value and freeze it at the moment
-    the setup was run. `config_template`'s comment about that is the reason.
+    Every setting is written, including one at its default, so the file
+    says what is in use and can be synced (Brian, 2026-10-12). **The
+    environment is not a source**: a variable exported for one shell would
+    otherwise outlive it, so each section is read through its own model,
+    which does not consult the environment as `Settings` does. A key the
+    model no longer has is dropped; kennis keeps no compatibility before
+    v1.0.0.
     """
-    if not values:
-        # Nothing to merge, so nothing is written. Without this a setup where
-        # every answer was left unchanged - the ordinary re-run, and the
-        # ordinary first run for somebody happy with the defaults - created a
-        # 0-byte `config.toml`, which `config show` then found and printed
-        # verbatim. An empty file is worse than no file: with no file at all
-        # `show` prints the defaults and says where they came from.
-        return
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing: dict[str, dict[str, object]] = {}
-    if path.is_file():
-        existing = {
-            section: dict(values)
-            for section, values in tomllib.loads(
-                path.read_text(encoding="utf-8")
-            ).items()
-            if isinstance(values, dict)
-        }
+    held = _held()
 
     for key, value in values.items():
         section, _, name = key.partition(".")
-        existing.setdefault(section, {})[name] = _as_typed(_field_of(key), value)
+        held.setdefault(section, {})[name] = _as_typed(key, _field_of(key), value)
 
-    path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
+    complete = {
+        section: model.model_validate(held.get(section, {})).model_dump()
+        for section, model in section_models().items()
+    }
+    replace_file(path, config_document(complete))
 
 
-def _write_credentials(secrets: Mapping[str, str]) -> None:
-    """Write API keys, readable only by their owner.
+def _write_credentials(secrets: Mapping[tuple[str, str], str]) -> None:
+    """Write API keys, each as `(section, variable)`, readable only by
+    their owner where the platform has file modes.
 
-    The mode is set **before** the content is written, so the key is never
-    on disk world-readable even briefly.
+    `credential` searches every section for the variable and takes the
+    first, so the section is for the person reading the file - and a key
+    is kept in its own, because one filed under a new section would sit
+    behind an older value of the same name rather than replace it.
+
+    The file is never on disk world-readable, even briefly: see below.
     """
     path = credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -394,27 +494,32 @@ def _write_credentials(secrets: Mapping[str, str]) -> None:
     if path.is_file():
         existing = {
             section: dict(values)
-            for section, values in tomllib.loads(
-                path.read_text(encoding="utf-8")
-            ).items()
+            for section, values in _toml_of(path).items()
             if isinstance(values, dict)
         }
 
-    for key, value in secrets.items():
-        section, _, _name = key.partition(".")
-        backend = _backend_for(key)
-        existing.setdefault(section, {})[_KEY_VARIABLES.get(backend, "API_KEY")] = value
+    for (section, variable), value in secrets.items():
+        existing.setdefault(section, {})[variable] = value
 
-    path.touch(mode=0o600, exist_ok=True)
+    # Written whole and swapped in: `mkstemp` makes the temporary file 0600
+    # before a byte is written, and the rename carries that mode over an
+    # existing file too. A Ctrl-C part-way leaves the old file, not half of
+    # a new one.
+    replace_file(path, _as_toml_document(existing))
+    # Said as well as relied on; a no-op where the platform has no mode.
     path.chmod(0o600)
-    path.write_text(_as_toml_document(existing), encoding="utf-8", newline="\n")
 
 
-def _backend_for(key: str) -> str:
-    for asked, kind, when in _ASKED:
-        if asked == key and kind == "secret" and when:
-            return when[0][1]
-    return ""
+def _toml_of(path: Path) -> dict[str, object]:
+    """A TOML file kennis keeps, or a refusal naming it: a truncated file
+    raised a bare `TOMLDecodeError` out of a save, with a traceback."""
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        raise SettingsError(
+            f"{path} is not valid TOML ({error})",
+            resolution=f"fix or remove {path}",
+        ) from error
 
 
 def _as_toml_document(sections: Mapping[str, Mapping[str, object]]) -> str:
@@ -424,23 +529,17 @@ def _as_toml_document(sections: Mapping[str, Mapping[str, object]]) -> str:
             continue
         lines.append(f"[{section}]")
         for name in sorted(sections[section]):
-            lines.append(f"{name} = {_as_toml_value(sections[section][name])}")
+            lines.append(f"{name} = {toml_value(sections[section][name])}")
         lines.append("")
     return "\n".join(lines)
 
 
-def _as_toml_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int | float):
-        return str(value)
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
 __all__ = [
+    "CredentialStatus",
     "Question",
     "QuestionKind",
     "apply_answers",
+    "credential_status",
     "questions_for",
     "setup_questions",
     "validate_answer",

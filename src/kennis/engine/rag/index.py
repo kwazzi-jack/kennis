@@ -164,6 +164,13 @@ def build_index(
     started_at = time.monotonic()
     collection_root = index_root / loader.name
 
+    # **Read before the documents are, never after.** The corpus lock is
+    # released during a build (#167), so a note can be committed between
+    # loading and publishing. Recorded at publish, that commit would count
+    # as indexed: freshness diffs from `built_from`, so the note would never
+    # be reported as missing, and an edit made meanwhile never as stale.
+    # Read first, anything committed during the build is a change since it.
+    built_from = repository.head() if repository else None
     documents = loader.documents(events=events)
     chunked = [
         (
@@ -189,7 +196,7 @@ def build_index(
             embedder=embedder,
             events=events,
             embed_batch_size=embed_batch_size,
-            repository=repository,
+            built_from=built_from,
             started_at=started_at,
         )
 
@@ -205,7 +212,7 @@ def _publish(
     embedder: Embedder | None,
     events: EventSink | None,
     embed_batch_size: int,
-    repository: Repository | None,
+    built_from: str | None,
     started_at: float,
 ) -> BuildReport:
     """Everything that writes, with this collection's index lock held.
@@ -237,7 +244,7 @@ def _publish(
                     # The commit this index was built from. Freshness is a
                     # diff between it and HEAD, which is O(changed files)
                     # rather than O(corpus).
-                    "built_from": repository.head() if repository else None,
+                    "built_from": built_from,
                     "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     # The digests a later staleness check compares against
                     # the corpus: there is one notion of "this document's
@@ -348,6 +355,37 @@ def read_manifest(index_root: Path, collection: str) -> IndexManifest | None:
     )
 
 
+def published_files(index_root: Path, collection: str) -> list[Path]:
+    """The pointer for `collection` and the manifest it names, which are
+    what `read_manifest` reads - for a caller that asks whether either has
+    changed without reading them."""
+    pointer = index_root / collection / _POINTER_FILE
+    try:
+        named = str(json.loads(pointer.read_text(encoding="utf-8"))["index_id"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return [pointer]
+    return [pointer, index_root / collection / named / _MANIFEST_FILE]
+
+
+def read_binding(index_root: Path, collection: str) -> Binding | None:
+    """How the published index for `collection` was built, or None.
+
+    Without loading the chunks, the BM25 tables or the vectors: a settings
+    page asks this of every collection to say which model each index keeps
+    using after the setting has changed, and the binding is a few hundred
+    bytes beside megabytes. None on the same terms as `read_manifest`.
+    """
+    collection_root = index_root / collection
+    pointer_path = collection_root / _POINTER_FILE
+    if not pointer_path.is_file():
+        return None
+    index_id = str(json.loads(pointer_path.read_text(encoding="utf-8"))["index_id"])
+    binding_path = collection_root / index_id / _BINDING_FILE
+    if not binding_path.is_file():
+        return None
+    return Binding.from_recorded(json.loads(binding_path.read_text(encoding="utf-8")))
+
+
 def load_index(index_root: Path, collection: str) -> LoadedIndex:
     """Read back the published index for `collection`."""
     collection_root = index_root / collection
@@ -359,6 +397,14 @@ def load_index(index_root: Path, collection: str) -> LoadedIndex:
         )
     index_id = str(json.loads(pointer_path.read_text(encoding="utf-8"))["index_id"])
     index_dir = collection_root / index_id
+    # Only the pointer and the binding are in history, so a corpus restored
+    # from a backup, or checked out afresh, names an index this machine has
+    # not built. That is an index to build, not a damaged one.
+    if not (index_dir / _CHUNKS_FILE).is_file():
+        raise NothingToIndex(
+            f"the '{collection}' collection's index has not been built here",
+            resolution=f"kennis corpus index --collection {collection}",
+        )
 
     chunks = [
         Chunk.model_validate_json(line)
@@ -456,11 +502,11 @@ def _vectors_for(
         if events is not None:
             events.emit(Progress(operation="index", completed=done, total=total))
 
-    stacked = (
-        np.vstack(blocks)
-        if blocks
-        else np.zeros((0, binding.model.dim), dtype=np.float32)
-    )
+    # A document with no chunks gives a block with no rows and no columns,
+    # which cannot stand beside the others. It adds no rows, so leaving it
+    # out keeps row `i` on chunk `i`.
+    filled = [block for block in blocks if block.shape[0]]
+    stacked = np.vstack(filled) if filled else np.zeros((0, 0), dtype=np.float32)
     return stacked, embedded
 
 

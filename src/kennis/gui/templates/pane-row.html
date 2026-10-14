@@ -1,0 +1,9 @@
+{# One collection's row in the pane: the `<summary>`, not its
+   `<details>`, so a redraw after a job (#457) leaves an opened folder
+   open. The name is also a link: the way in without a script. #}
+<summary id="pane-row-{{ row.collection }}" class="node top"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {{ icon("chevron-right") }}{{ icon(collection_icons[row.collection]) }}
+  <a class="name" href="/collection/{{ row.collection }}">{{ row.collection }}</a>
+  <span class="count">{{ row.documents }}</span>
+  <span class="state state-{{ row.state }}" title="{{ pane_states[row.state] }}"><span class="visually-hidden">{{ pane_states[row.state] }}</span></span>
+</summary>

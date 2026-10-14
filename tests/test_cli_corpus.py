@@ -276,7 +276,7 @@ def test_status_says_nothing_to_do_when_every_index_is_current(
     result = run.invoke(main, ["corpus", "status"])
 
     assert result.exit_code == 0, result.output
-    assert "in step" in result.output
+    assert "up to date" in result.output
     assert "kennis corpus index" not in result.output
 
 

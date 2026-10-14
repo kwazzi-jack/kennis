@@ -120,8 +120,7 @@ corpus:
   literature:
     - citekey: smirnovRevisitingRIMEI2011
       title: "Revisiting the radio interferometer measurement equation I"
-      arxiv_id: "1101.1764"
-      doi: "10.1051/0004-6361/201016082"
+      identifier: "1101.1764"
       authors: "Smirnov, O. M."
       year: 2011
   docs:
@@ -222,15 +221,45 @@ corpus:
       title: "A paper with no identifier"
 """)
 
-    message = str(raised.value)
-    assert "arxiv_id" in message and "doi" in message and "bibcode" in message
+    assert "identifier" in str(raised.value)
 
 
-@pytest.mark.parametrize("identifier", ["arxiv_id", "doi", "bibcode"])
-def test_any_one_of_the_three_identifiers_is_enough(identifier: str):
-    entry = LiteratureEntry(citekey="k", title="t", **{identifier: "x"})
+@pytest.mark.parametrize(
+    ("identifier", "kind"),
+    [
+        ("1101.1764", "arxiv"),
+        ("10.1051/0004-6361/201016082", "doi"),
+        ("2018MNRAS.478.2399K", "bibcode"),
+        ("https://doi.org/10.1051/0004-6361/201016082", "doi"),
+    ],
+)
+def test_one_identifier_field_takes_any_of_the_three_kinds(identifier: str, kind: str):
+    """One field, read as whichever kind it is: three asked an author which
+    kind a paper's identifier was, and then which wins when two were given."""
+    entry = LiteratureEntry(citekey="k", title="t", identifier=identifier)
 
-    assert getattr(entry, identifier) == "x"
+    assert entry.paper.kind == kind
+
+
+def test_an_identifier_that_is_none_of_the_three_is_refused():
+    with pytest.raises(ValueError, match="not an arXiv identifier"):
+        LiteratureEntry(citekey="k", title="t", identifier="not-a-paper")
+
+
+@pytest.mark.parametrize("retired", ["arxiv_id", "doi", "bibcode"])
+def test_a_retired_identifier_field_names_its_replacement(retired: str):
+    """No compatibility before 1.0, but the refusal says what to write."""
+    with pytest.raises(ValueError, match=f"'{retired}' is now 'identifier'"):
+        LiteratureEntry.model_validate(
+            {"citekey": "k", "title": "t", retired: "1101.1764"}
+        )
+
+
+def test_a_url_must_be_a_web_address():
+    with pytest.raises(ValueError, match="not an http"):
+        LiteratureEntry(
+            citekey="k", title="t", identifier="1101.1764", url="/tmp/paper.pdf"
+        )
 
 
 @pytest.mark.parametrize(

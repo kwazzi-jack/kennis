@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from platformdirs import user_data_dir, user_state_dir
+from platformdirs import user_config_dir, user_data_dir, user_log_dir, user_state_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
@@ -64,7 +64,7 @@ FORBIDDEN_BY_THE_SERVER = (
 )
 
 # The graphical front end is the third peer. It may import its own
-# interface libraries - fastapi, uvicorn, jinja2, pywebview - and it
+# interface libraries - fastapi, uvicorn, jinja2 - and it
 # renders through `render/`. What it may not import is either of the
 # other two, for the same reason neither of them may import it.
 FORBIDDEN_BY_THE_INTERFACE = (
@@ -279,52 +279,6 @@ def test_interface_module_imports_no_other_front_end(path: Path):
     assert not violations, f"{module_name_of(path)} imports {violations}"
 
 
-def test_the_command_line_builds_without_the_gui_extra():
-    """`kennis --help` works on an install that never asked for fastapi.
-
-    The same property `serve` has and for the same reason: `gui` is an
-    optional extra, so the deferred import inside `gui_command` is what
-    keeps every other command runnable - and a deferred import is
-    exactly the kind of thing that gets tidied to the top of a module.
-    """
-    program = """
-import sys
-
-BLOCKED = {"fastapi", "uvicorn", "webview", "starlette"}
-
-
-class Refuse:
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.partition(".")[0] in BLOCKED:
-            raise ImportError("the gui extra is not installed")
-        return None
-
-
-sys.meta_path.insert(0, Refuse())
-
-from click.testing import CliRunner
-
-from kennis.cli.__main__ import main
-
-helped = CliRunner().invoke(main, ["--help"])
-assert helped.exit_code == 0, helped.output
-assert "gui" in helped.output, helped.output
-
-opened = CliRunner().invoke(main, ["gui"])
-assert opened.exit_code != 0
-assert isinstance(opened.exception, ImportError), opened.exception
-"""
-    completed = subprocess.run(
-        [sys.executable, "-c", program],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        stdin=subprocess.DEVNULL,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-
-
 def test_the_command_line_builds_without_the_mcp_extra():
     """`kennis --help` works on an install that never asked for fastmcp.
 
@@ -471,3 +425,25 @@ def test_a_test_does_not_write_to_the_real_state_directory():
 
     assert written_to != Path(user_state_dir("kennis"))
     assert not written_to.is_relative_to(Path.home() / ".local" / "state")
+
+
+def test_a_test_does_not_read_the_real_configuration():
+    """The configuration a test reads is a test's, not Brian's.
+
+    The real directory holds a key file `credential` reads. The
+    autouse `no_real_configuration` fixture redirects it, and this is
+    what fails if that is removed. Concern #442.
+    """
+    from kennis.engine.settings import config_dir
+
+    assert config_dir() != Path(user_config_dir("kennis"))
+    assert not config_dir().is_relative_to(Path.home() / ".config")
+
+
+def test_a_test_does_not_write_to_the_real_log():
+    """The log a test writes is a test's. 311 lines of test runs were
+    found in the real one, from a subprocess with no override."""
+    from kennis.logs import log_dir
+
+    assert log_dir() != Path(user_log_dir("kennis"))
+    assert not log_dir().is_relative_to(Path.home() / ".local" / "state")

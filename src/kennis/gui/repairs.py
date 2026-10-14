@@ -20,10 +20,14 @@ offer that cannot work is worse than none.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
+from urllib.parse import quote
 
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
+    KennisOwn,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -54,6 +58,17 @@ class Repair:
     collection: str
     identifiers: str
     choices: tuple[str, ...] = ()
+    # The kind every choice is, so each can link to its registry's page
+    # for the reader to decide by (11e).
+    kind: str | None = None
+
+    @property
+    def candidates(self) -> tuple[tuple[str, str | None], ...]:
+        """Each choice and the page that says which paper it names."""
+        return tuple(
+            (choice, candidate_address(self.kind, choice) if self.kind else None)
+            for choice in self.choices
+        )
 
 
 def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
@@ -65,15 +80,26 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
             # bibliographic identity is exactly what that collection
             # is for.
             return (_as_a_note(named),)
-        case AmbiguousIdentity(named=named, values=values):
+        case AmbiguousIdentity(named=named, kind=kind, values=values):
             return (
                 Repair(
                     label="Use this identifier",
                     collection="literature",
                     identifiers=named,
                     choices=values,
+                    kind=kind,
                 ),
                 _as_a_note(named),
+            )
+        case IdentityMismatch(named=named, kind=kind, found=found):
+            return (
+                Repair(
+                    label="Use the identifier it names",
+                    collection="literature",
+                    identifiers=named,
+                    choices=found,
+                    kind=kind,
+                ),
             )
         case (
             Quoted()
@@ -86,9 +112,31 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
             | BibliographyIncomplete()
             | NothingConverted()
             | SymlinkSkipped()
+            | KennisOwn()
             | UnsupportedFormat()
         ):
             return ()
+
+
+# Where each kind of identifier is answered by its own registry. The
+# public page for the paper, not an API: the reader is deciding which
+# paper this is, and that is decided by reading its title and authors.
+_REGISTRY_PAGES: Final[dict[str, str]] = {
+    "arxiv": "https://arxiv.org/abs/{}",
+    "doi": "https://doi.org/{}",
+    "bibcode": "https://ui.adsabs.harvard.edu/abs/{}/abstract",
+}
+
+
+def candidate_address(kind: str, value: str) -> str:
+    """The registry's page for one candidate identifier.
+
+    Composed here rather than in a template, because a template choosing
+    by kind would be a template deciding where a paper lives (#332). A DOI
+    may hold `#`, `?` and brackets, which would end or reshape a path, so
+    the value is quoted with only its own slashes kept.
+    """
+    return _REGISTRY_PAGES[kind].format(quote(value, safe="/"))
 
 
 def _as_a_note(named: str) -> Repair:
@@ -97,4 +145,4 @@ def _as_a_note(named: str) -> Repair:
     )
 
 
-__all__ = ["Repair", "repairs_for"]
+__all__ = ["Repair", "candidate_address", "repairs_for"]

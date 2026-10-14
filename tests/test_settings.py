@@ -12,18 +12,23 @@ import logging
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Final
 
 import pytest
+from pydantic import BaseModel
 
 from kennis.engine.settings import (
+    CREDENTIALS_KEPT,
+    ChunkingSettings,
     ConversionSettings,
     Settings,
     config_dir,
+    config_document,
     config_path,
-    config_template,
     credential,
+    credentials_kept,
     load_settings,
 )
 
@@ -177,36 +182,51 @@ def test_the_default_directory_is_the_platform_one(
 def test_the_template_is_valid_toml():
     import tomllib
 
-    tomllib.loads(config_template())
+    tomllib.loads(config_document())
 
 
 def test_every_section_appears_in_the_template():
-    template = config_template()
+    template = config_document()
 
     for section in Settings.model_fields:
         assert f"[{section}]" in template
 
 
-def test_every_key_appears_commented_at_its_default():
-    """Commented rather than live: writing defaults as active values freezes
-    them at install time, so a later kennis that improves a default would
-    never reach anyone who ran `config init`."""
-    template = config_template()
+def test_every_key_is_written_active_at_its_default():
+    """Active, not commented: the value a person accepted is the value
+    saved, and a complete file is one that can be synced. A default kennis
+    later changes does not reach it, which is Brian's choice (2026-10-12);
+    compatibility starts at v1.0.0."""
+    document = tomllib.loads(config_document())
 
-    assert "# backend = " in template
-    assert "\nbackend = " not in template
+    for section, field in Settings.model_fields.items():
+        model = field.annotation
+        assert isinstance(model, type) and issubclass(model, BaseModel)
+        assert document[section] == model().model_dump(), section
+
+
+def test_a_document_carries_the_values_it_is_given():
+    """Including a string TOML must escape, which a Windows path is."""
+    folder = 'C:\\Users\\someone\\Dropbox "kennis"'
+    document = tomllib.loads(
+        config_document({"backup": {"folder": folder}, "chunking": {"size": 900}})
+    )
+
+    assert document["backup"]["folder"] == folder
+    assert document["chunking"]["size"] == 900
+    assert document["chunking"]["overlap"] == ChunkingSettings().overlap
 
 
 def test_a_closed_set_lists_its_options():
-    assert "Options: fastembed | ollama | openai" in config_template()
+    assert "Options: fastembed | ollama | openai" in config_document()
 
 
 def test_a_bounded_number_states_its_range():
-    assert "Range: 1-100" in config_template()
+    assert "Range: 1-100" in config_document()
 
 
 def test_a_free_form_key_carries_an_example():
-    template = config_template()
+    template = config_document()
 
     assert "Examples:" in template
     assert "BAAI/bge-small-en-v1.5" in template
@@ -216,7 +236,7 @@ def test_the_template_carries_no_credential():
     """`config show` writes this to standard output by design, and a user
     debugging will paste it into an issue. A key among the settings would
     make every printing path need redaction."""
-    template = config_template().lower()
+    template = config_document().lower()
 
     assert "api_key =" not in template
     assert "secret" not in template
@@ -231,7 +251,7 @@ def test_the_options_come_from_the_model_rather_than_from_prose():
 
     backends = get_args(EmbeddingSettings.model_fields["backend"].annotation)
     for backend in backends:
-        assert backend in config_template()
+        assert backend in config_document()
 
 
 # ---------------------------------------------------------------------------
@@ -523,3 +543,11 @@ def test_no_setting_description_names_an_install_command():
             assert "uv sync" not in description, description
             assert "uv tool install" not in description, description
             assert "pip install" not in description, description
+
+
+def test_the_credentials_file_is_not_called_private_where_modes_do_nothing():
+    """On Windows `chmod(0o600)` sets the read-only flag and nothing else, so
+    "readable only by you" claimed a protection the file does not have."""
+    assert "only by you" not in credentials_kept("win32")
+    assert credentials_kept("linux") == "readable only by you"
+    assert CREDENTIALS_KEPT in config_document()

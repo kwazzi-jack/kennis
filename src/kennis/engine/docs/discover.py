@@ -26,7 +26,7 @@ import json
 import re
 import time
 import xml.etree.ElementTree as ElementTree
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from fnmatch import fnmatch
 from typing import Final
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -34,14 +34,19 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
+from kennis.engine.docs.http import USER_AGENT, get_within
 from kennis.engine.docs.sites import DocsSite
 
-_USER_AGENT: Final = "kennis-docs-fetch"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
 
 # Spacing between requests to one host. Politeness, and the reason this layer
 # is serial rather than concurrent.
 _FETCH_DELAY_SECONDS: Final = 0.2
+
+# The longest robots.txt's `Crawl-delay` is honoured to. A site asking for
+# more is still read, this slowly: three hundred pages at a minute each
+# would be a five-hour add that looks no different from a hung one.
+_MAX_CRAWL_DELAY_SECONDS: Final = 30.0
 
 # Walking a third-party site, so every axis is bounded.
 _MAX_PAGES: Final = 300
@@ -127,6 +132,9 @@ class Discovery:
     path_prefix: str
     # Pages already downloaded while discovering, keyed by URL.
     html: dict[str, str] = field(default_factory=dict)
+    # Seconds between requests to this site: the caller's, or longer when
+    # its robots.txt asks for longer. The pages left to fetch are paced by it.
+    delay: float = _FETCH_DELAY_SECONDS
 
 
 def discover_pages(
@@ -145,24 +153,39 @@ def discover_pages(
     mode = site.discovery or discovery_mode(client, site.base_url)
     prefix = site.path_prefix or _path_prefix_of(site.base_url)
     robots = robots_for(client, _origin_of(site.base_url))
+    paced = paced_by(robots, delay)
 
     if mode == "sphinx":
-        return _sphinx_pages(client, site, prefix, robots, max_pages=max_pages)
-    return _generic_pages(
-        client,
-        site,
-        prefix,
-        robots,
-        mode=mode,
-        delay=delay,
-        max_pages=max_pages,
-        max_depth=max_depth,
-    )
+        found = _sphinx_pages(client, site, prefix, robots, max_pages=max_pages)
+    else:
+        found = _generic_pages(
+            client,
+            site,
+            prefix,
+            robots,
+            mode=mode,
+            delay=paced,
+            max_pages=max_pages,
+            max_depth=max_depth,
+        )
+    return replace(found, delay=paced)
+
+
+def paced_by(robots: RobotFileParser, delay: float) -> float:
+    """`delay`, or the site's own `Crawl-delay` when that is longer.
+
+    Read but ignored before, so a site asking for ten seconds between
+    requests got one every fifth of a second.
+    """
+    asked = robots.crawl_delay(USER_AGENT)
+    if asked is None:
+        return delay
+    return max(delay, min(float(asked), _MAX_CRAWL_DELAY_SECONDS))
 
 
 def discovery_mode(client: httpx.Client, base_url: str) -> str:
     """ "sphinx", "sitemap" or "crawl", cheapest and most authoritative first."""
-    if _docnames(client, base_url) is not None:
+    if _sphinx_root(client, base_url) is not None:
         return "sphinx"
     origin = _origin_of(base_url)
     robots = robots_for(client, origin)
@@ -203,12 +226,14 @@ def robots_for(client: httpx.Client, origin: str) -> RobotFileParser:
     robots_url = urljoin(origin + "/", "robots.txt")
     parser.set_url(robots_url)
     try:
-        response = client.get(robots_url, timeout=_REQUEST_TIMEOUT_SECONDS)
+        response = get_within(client, robots_url, origin=origin)
     except httpx.HTTPError:
         parser.parse(_ALLOW_EVERYTHING)
         return parser
 
-    if response.status_code in (401, 403):
+    # A server error is "may not crawl now", as RFC 9309 has it: its body
+    # is an error page, and parsed as rules it allowed everything.
+    if response.status_code in (401, 403) or response.status_code >= 500:
         parser.parse(_FORBID_EVERYTHING)
     elif 400 <= response.status_code < 500:
         parser.parse(_ALLOW_EVERYTHING)
@@ -245,31 +270,44 @@ def crawl_site(
     found: list[str] = []
     html: dict[str, str] = {}
 
-    while queue and len(found) < max_pages:
+    # Every request counts, not only those that found a page: a page of a
+    # thousand dead links was a thousand requests, unpaced and uncounted.
+    attempts = 0
+    while queue and len(found) < max_pages and attempts < max_pages * 3:
         url, depth = queue.pop(0)
         key = _normalized(url)
         if key in visited:
             continue
         visited.add(key)
-        if not robots.can_fetch(_USER_AGENT, url):
+        if not robots.can_fetch(USER_AGENT, url):
             continue
 
+        if attempts and delay:
+            time.sleep(delay)
+        attempts += 1
         try:
-            response = client.get(url, timeout=_REQUEST_TIMEOUT_SECONDS)
+            response = get_within(client, url, origin=origin)
             response.raise_for_status()
         except httpx.HTTPError:
             continue
         if "html" not in response.headers.get("content-type", ""):
             continue
+        # Where the page really is, after any redirect: its links are
+        # relative to that, and a site's root redirecting to `/en/latest/`
+        # resolved every link one level too high.
+        landed = str(response.url)
+        if landed != url and (
+            not _in_scope(_normalized(landed), origin, prefix)
+            or not robots.can_fetch(USER_AGENT, landed)
+        ):
+            continue
 
         found.append(url)
         html[url] = response.text
-        if delay:
-            time.sleep(delay)
         if depth >= max_depth:
             continue
 
-        for link in _links_in(response.text, url):
+        for link in _links_in(response.text, landed):
             normalized = _normalized(link)
             if normalized in queued or normalized in visited:
                 continue
@@ -309,26 +347,62 @@ def _sphinx_pages(
     Truncated after the robots filter rather than before, so the limit counts
     pages that may actually be fetched.
     """
-    docnames = _docnames(client, site.base_url) or []
+    found = _sphinx_root(client, site.base_url)
+    base, docnames = found if found is not None else (site.base_url, [])
     pages = [
-        DiscoveredPage(key=docname, url=urljoin(site.base_url, f"{docname}.html"))
+        DiscoveredPage(key=docname, url=urljoin(base, f"{docname}.html"))
         for docname in docnames
         if not _excluded(docname, site.exclude)
     ]
-    allowed = [page for page in pages if robots.can_fetch(_USER_AGENT, page.url)]
+    # In scope as well as allowed: a docname is the site's own data, and
+    # `../../outside` or `//another-host/x` named a page off the site.
+    origin = _origin_of(site.base_url)
+    allowed = [
+        page
+        for page in pages
+        if _in_scope(_normalized(page.url), origin, prefix)
+        and robots.can_fetch(USER_AGENT, page.url)
+    ]
     return Discovery(
         mode="sphinx",
-        version=_sphinx_version(client, site.base_url),
+        version=_sphinx_version(client, base),
         pages=allowed[:max_pages],
         path_prefix=prefix,
     )
 
 
+# How far above the seed a Sphinx site's root is looked for: a seed is
+# usually the root or a section of it, rarely more than a few levels down.
+_MAX_ROOT_DEPTH: Final = 4
+
+
+def _sphinx_root(client: httpx.Client, seed: str) -> tuple[str, list[str]] | None:
+    """The Sphinx site the seed is in - the directory holding its search
+    index - and every page name it publishes, or None if it is not one.
+
+    Looked for upwards from the seed, not only at it. A page's key is its
+    name below this root, so the same page is filed under the same key
+    whichever address the add started from; keyed below the seed, a site
+    added from `/en/latest/` and again from `/en/latest/guide/` was two
+    copies of its guide.
+    """
+    directory = _as_directory(seed)
+    for _ in range(_MAX_ROOT_DEPTH + 1):
+        docnames = _docnames(client, directory)
+        if docnames is not None:
+            return directory, docnames
+        parent = urljoin(directory, "..")
+        if parent == directory:
+            return None
+        directory = parent
+    return None
+
+
 def _docnames(client: httpx.Client, base_url: str) -> list[str] | None:
     """Every page name the site publishes, or None if it is not a Sphinx site."""
     try:
-        response = client.get(
-            urljoin(base_url, "searchindex.js"), timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_within(
+            client, urljoin(base_url, "searchindex.js"), origin=_origin_of(base_url)
         )
         response.raise_for_status()
     except httpx.HTTPError:
@@ -358,9 +432,10 @@ def _sphinx_version(client: httpx.Client, base_url: str) -> str | None:
     version would not be.
     """
     try:
-        response = client.get(
+        response = get_within(
+            client,
             urljoin(base_url, "_static/documentation_options.js"),
-            timeout=_REQUEST_TIMEOUT_SECONDS,
+            origin=_origin_of(base_url),
         )
         response.raise_for_status()
         match = re.search(r"VERSION:\s*['\"]([^'\"]+)['\"]", response.text)
@@ -394,9 +469,11 @@ def _generic_pages(
     if mode == "sitemap":
         urls = [
             url
-            for url in _sitemap_pages(client, _sitemap_urls(client, origin, robots))
+            for url in _sitemap_pages(
+                client, _sitemap_urls(client, origin, robots), origin=origin
+            )
             if _in_scope(_normalized(url), origin, prefix)
-            and robots.can_fetch(_USER_AGENT, url)
+            and robots.can_fetch(USER_AGENT, url)
         ]
     else:
         crawled = crawl_site(
@@ -414,7 +491,15 @@ def _generic_pages(
     pages: list[DiscoveredPage] = []
     seen: set[str] = set()
     for url in urls:
-        key = page_key(url, prefix)
+        # Bounded as the other two modes are: a sitemap lists every page a
+        # site has, and nothing else stopped a 10 000-page one being
+        # fetched whole.
+        if len(pages) >= max_pages:
+            break
+        # The whole path, not the path below the seed: these modes have no
+        # root of their own to key against, and below the seed the same page
+        # had a different key for every address an add started from.
+        key = page_key(url, "/")
         if key in seen or _excluded(key, site.exclude):
             continue
         seen.add(key)
@@ -444,17 +529,20 @@ def _sitemap_urls(
 
     fallback = urljoin(origin + "/", "sitemap.xml")
     try:
-        response = client.get(fallback, timeout=_REQUEST_TIMEOUT_SECONDS)
+        response = get_within(client, fallback, origin=origin)
     except httpx.HTTPError:
         return []
     return [fallback] if response.status_code == 200 else []
 
 
-def _sitemap_pages(client: httpx.Client, sitemap_urls: list[str]) -> list[str]:
+def _sitemap_pages(
+    client: httpx.Client, sitemap_urls: list[str], *, origin: str
+) -> list[str]:
     """The page URLs one or more sitemap files list.
 
     `sitemapindex` nesting is followed, bounded by the number of files read so
-    a sitemap that points at itself cannot loop.
+    a sitemap that points at itself cannot loop. Only files on the site's own
+    origin are read: a `Sitemap:` line or a `<loc>` may name any host.
     """
     pages: list[str] = []
     read: set[str] = set()
@@ -466,7 +554,7 @@ def _sitemap_pages(client: httpx.Client, sitemap_urls: list[str]) -> list[str]:
             continue
         read.add(url)
         try:
-            response = client.get(url, timeout=_REQUEST_TIMEOUT_SECONDS)
+            response = get_within(client, url, origin=origin)
             response.raise_for_status()
             root = ElementTree.fromstring(response.text)
         except (httpx.HTTPError, ElementTree.ParseError):
@@ -498,6 +586,19 @@ def _origin_of(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _as_directory(url: str) -> str:
+    """`url` with the slash a directory written without one is missing, so
+    names joined to it land inside it: `https://h.org/docs` and
+    `searchindex.js` gave `https://h.org/searchindex.js`."""
+    parsed = urlsplit(url)
+    last = parsed.path.rsplit("/", 1)[-1]
+    if not parsed.path or parsed.path.endswith("/") or "." in last:
+        return url
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path + "/", parsed.query, "")
+    )
+
+
 def _path_prefix_of(base_url: str) -> str:
     """The seed URL's directory, so `.../en/latest/index.html` gives
     `/en/latest/`. A seed that is already the site root gives `/`, which costs
@@ -505,6 +606,11 @@ def _path_prefix_of(base_url: str) -> str:
     path = urlsplit(base_url).path
     if not path or path.endswith("/"):
         return path or "/"
+    # `https://h.org/docs` is the docs directory, written without its
+    # slash; read as a file it gave the prefix `/` and the whole origin.
+    last = path.rsplit("/", 1)[1]
+    if "." not in last:
+        return path + "/"
     return path.rsplit("/", 1)[0] + "/"
 
 
@@ -520,7 +626,15 @@ def _in_scope(normalized_url: str, origin: str, path_prefix: str) -> bool:
     parsed = urlsplit(normalized_url)
     if f"{parsed.scheme}://{parsed.netloc}" != origin:
         return False
-    return parsed.path.startswith(path_prefix.rstrip("/")) or parsed.path == "/"
+    # The prefix as a directory: `startswith("/en/latest")` admitted
+    # `/en/latest-old/`, and the root was always admitted, where in sitemap
+    # mode it took the key `index` from the documentation's own index.
+    directory = path_prefix.rstrip("/")
+    return (
+        not directory
+        or parsed.path == directory
+        or parsed.path.startswith(directory + "/")
+    )
 
 
 def _links_in(html: str, page_url: str) -> list[str]:

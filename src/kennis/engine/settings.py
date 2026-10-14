@@ -29,14 +29,16 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
+import sys
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Final, Literal, get_args, get_origin
 
 from dotenv import dotenv_values
-from platformdirs import user_config_dir
+from platformdirs import user_config_dir, user_log_dir, user_state_dir
 from pydantic import BaseModel, Field, ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -49,6 +51,8 @@ from kennis.engine.errors import SettingsError
 
 _ENVIRONMENT_PREFIX: Final = "KENNIS"
 _CONFIG_DIR_VARIABLE: Final = "KENNIS_CONFIG_DIR"
+_STATE_DIR_VARIABLE: Final = "KENNIS_STATE_DIR"
+_LOG_DIR_VARIABLE: Final = "KENNIS_LOG_DIR"
 _CONFIG_FILE: Final = "config.toml"
 _CREDENTIALS_FILE: Final = "credentials.toml"
 
@@ -56,6 +60,18 @@ _CREDENTIALS_FILE: Final = "credentials.toml"
 # the conventional name; `.env.keys` is preferred over it because a file whose
 # only job is secrets can be given a mode and a backup policy of its own.
 _ENV_FILES: Final[tuple[str, ...]] = (".env.keys", ".env")
+
+
+# Each backend's own model. A model name means something only to its
+# backend, so the setup offers this one when the backend is changed rather
+# than keeping the previous backend's, which failed only at the next index
+# (#441). There is no width beside it: the model fixes the width of its
+# vectors, and as a setting it could only be wrong in silence.
+EMBEDDING_DEFAULTS: Final[dict[str, str]] = {
+    "fastembed": "BAAI/bge-small-en-v1.5",
+    "ollama": "nomic-embed-text",
+    "openai": "text-embedding-3-small",
+}
 
 
 class EmbeddingSettings(BaseModel):
@@ -74,16 +90,13 @@ class EmbeddingSettings(BaseModel):
         ),
     )
     model: str = Field(
-        default="BAAI/bge-small-en-v1.5",
+        default=EMBEDDING_DEFAULTS["fastembed"],
         description="Model name, interpreted by the backend.",
         examples=[
             '"BAAI/bge-small-en-v1.5"    (fastembed)',
             '"nomic-embed-text"          (ollama)',
             '"text-embedding-3-small"    (openai)',
         ],
-    )
-    dimensions: int = Field(
-        default=384, ge=1, le=8192, description="Width of a vector."
     )
     normalise: bool = Field(
         default=True,
@@ -191,8 +204,8 @@ class ConversionSettings(BaseModel):
             # that, and is `MineruConverter.install_hint()`. Concerns #185,
             # #195.
             "Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and "
-            "is installed with the mineru extra; datalab is hosted, needs an "
-            "API key, and sends the document to a third party."
+            "is installed with kennis; datalab is hosted, needs an API key, "
+            "and sends the document to a third party."
         ),
     )
     mode: Literal["fast", "balanced", "accurate"] = Field(
@@ -231,6 +244,15 @@ class LiteratureSettings(BaseModel):
         le=60.0,
         description="Seconds between arXiv requests. arXiv states three.",
     )
+    unpaywall_email: str = Field(
+        default="",
+        pattern=r"^$|^[^@\s]+@[^@\s]+$",
+        description=(
+            "Your email address, which Unpaywall requires, to look up a free "
+            "and legal copy of a paper known only by its DOI. Empty: Unpaywall "
+            "is not asked, and such a paper needs your own copy."
+        ),
+    )
 
 
 class LoggingSettings(BaseModel):
@@ -247,6 +269,19 @@ class LoggingSettings(BaseModel):
     )
 
 
+class BackupSettings(BaseModel):
+    """Where the encrypted backup of the corpus is written."""
+
+    folder: str = Field(
+        default="",
+        description=(
+            "Folder the encrypted backup is written to, often one a cloud "
+            "client synchronises. The backup holds the full text of every "
+            "document."
+        ),
+    )
+
+
 class Settings(BaseSettings):
     """Every setting kennis honours."""
 
@@ -259,6 +294,7 @@ class Settings(BaseSettings):
     conversion: ConversionSettings = ConversionSettings()
     literature: LiteratureSettings = LiteratureSettings()
     logging: LoggingSettings = LoggingSettings()
+    backup: BackupSettings = BackupSettings()
 
     @classmethod
     def settings_customise_sources(
@@ -342,6 +378,21 @@ class TomlFileSource(PydanticBaseSettingsSource):
             ) from error
 
 
+# What protects the credentials file, said no more strongly than it holds.
+# On Windows `chmod(0o600)` sets nothing but the read-only flag: the file is
+# kept from other users by the profile directory's own permissions, which an
+# administrator can read through.
+def credentials_kept(platform: str) -> str:
+    return (
+        "kept in your own user profile"
+        if platform == "win32"
+        else "readable only by you"
+    )
+
+
+CREDENTIALS_KEPT: Final = credentials_kept(sys.platform)
+
+
 def config_dir() -> Path:
     """Where kennis keeps its configuration.
 
@@ -353,6 +404,50 @@ def config_dir() -> Path:
     if override:
         return Path(override).expanduser()
     return Path(user_config_dir("kennis"))
+
+
+def state_dir() -> Path:
+    """Where kennis keeps state that is neither log nor configuration.
+
+    `KENNIS_STATE_DIR` overrides the platform default, by the mechanism
+    `config_dir` uses. On Linux the default is `~/.local/state/kennis`, the
+    parent of the log directory, so the two sit together.
+    """
+    override = os.environ.get(_STATE_DIR_VARIABLE)
+    if override:
+        return Path(override).expanduser()
+    return Path(user_state_dir("kennis"))
+
+
+def log_dir() -> Path:
+    """Where kennis keeps its log, overridden by `KENNIS_LOG_DIR`."""
+    override = os.environ.get(_LOG_DIR_VARIABLE)
+    if override:
+        return Path(override).expanduser()
+    return Path(user_log_dir("kennis"))
+
+
+def own_directories(corpus_root: Path) -> tuple[Path, ...]:
+    """Every directory kennis writes its own files into.
+
+    Nothing in them is ever a source to add: the corpus would be copied into
+    itself, the configuration holds API keys in `credentials.toml`, and the
+    state holds the reader's search history - each a supported format, and
+    each, once added, a document an agent can read.
+    """
+    return (corpus_root, config_dir(), state_dir(), log_dir())
+
+
+def overriding_variable(key: str) -> str | None:
+    """The environment variable setting `key` ("section.field") now, if any.
+
+    The environment wins over `config.toml`, so a value written to the
+    file while one of these is set changes nothing anyone can see. Named
+    as the source above names it, by exact name.
+    """
+    section, _, field = key.partition(".")
+    variable = f"{_ENVIRONMENT_PREFIX}_{section}_{field}".upper()
+    return variable if variable in os.environ else None
 
 
 def config_path() -> Path:
@@ -463,50 +558,104 @@ def credential(variable: str) -> str:
 
 
 def load_settings() -> Settings:
-    """Every setting, resolved."""
+    """Every setting, resolved.
+
+    A value that is refused is named with where it came from, and the
+    remedy is the one that removes it: pointing at `config show` for an
+    exported variable sent the reader to a file with nothing wrong in it.
+    """
     try:
         return Settings()
     except ValidationError as error:
-        raise SettingsError(
-            _first_problem(error), resolution="kennis config show"
-        ) from error
+        raise refused_setting(error, config_path()) from error
 
 
-def config_template() -> str:
-    """The configuration file as `config init` writes it.
+def refused_setting(error: ValidationError, path: Path) -> SettingsError:
+    """The first refused value, named by its source: the variable that
+    overrides it, or the file at `path`."""
+    first = error.errors()[0]
+    location = [str(part) for part in first["loc"]]
+    key = ".".join(location[:2])
+    variable = overriding_variable(key) if len(location) > 1 else None
+    if variable is not None:
+        return SettingsError(
+            f"{key}: {first['msg']} (set by {variable})",
+            resolution=f"unset {variable}",
+        )
+    return SettingsError(
+        f"{'.'.join(location)} in {path}: {first['msg']}",
+        resolution=repair_of(key, path),
+    )
 
-    Every key, at its default, **commented out**. Writing defaults as active
-    values would freeze them at install time, so a later kennis that improves
-    a default would never reach anyone who ran this.
+
+def repair_of(key: str, path: Path) -> str:
+    """The command that puts `key` back to its default, or the edit that
+    does when its default is not one to type on a command line."""
+    section, _, name = key.partition(".")
+    model = section_models().get(section)
+    field = model.model_fields.get(name) if model is not None else None
+    default = field.default if field is not None else None
+    if isinstance(default, bool):
+        return f"kennis config set {key} {'true' if default else 'false'}"
+    if isinstance(default, int | float | str) and default != "":
+        return f"kennis config set {key} {shlex.quote(str(default))}"
+    return f"remove {key} from {path}"
+
+
+def config_document(values: Mapping[str, Mapping[str, object]] | None = None) -> str:
+    """The configuration file, with every key of every section active.
+
+    `values` overrides the defaults by section and key; anything it does not
+    name is written at its default. Every key is written, including one at
+    its default, because the value a person accepted is the value saved and
+    a complete file is one that can be synced (Brian, 2026-10-12). This
+    reverses a template that commented the defaults out so that a later
+    kennis could change them: compatibility starts at v1.0.0.
 
     The `Options`, `Range` and `Examples` lines are derived from the model, so
     they cannot drift from what it actually accepts - which is precisely what
     a hand-written comment does.
     """
+    given = values or {}
     lines = [
-        "# kennis configuration. Every key is shown at its default, commented",
-        "# out, so improving a default still reaches you. Uncomment to change.",
+        "# kennis configuration. Every setting is written, including those at",
+        "# their default, and `kennis config init` replaces the whole file.",
         "#",
         "# API keys do not belong here. kennis takes one from the environment",
         "# first, then .env.keys, then .env, then credentials.toml - the last",
         "# three in this directory. `kennis config init` writes the last of",
-        "# them, readable only by you.",
+        f"# them, {CREDENTIALS_KEPT}.",
     ]
-    for section_name, section_field in Settings.model_fields.items():
-        annotation = section_field.annotation
-        if not (isinstance(annotation, type) and issubclass(annotation, BaseModel)):
-            continue
+    for section_name, model in section_models().items():
+        defaults = model().model_dump()
+        section_values = {**defaults, **given.get(section_name, {})}
         lines.append("")
         lines.append(f"[{section_name}]")
         entries = [
-            _described(key, field) for key, field in annotation.model_fields.items()
+            _described(key, field, section_values[key])
+            for key, field in model.model_fields.items()
         ]
         lines.append("\n#\n".join(entries))
     return "\n".join(lines) + "\n"
 
 
-def _described(key: str, field: FieldInfo) -> str:
-    """One key: what it is for, what it accepts, and its default."""
+def section_models() -> dict[str, type[BaseModel]]:
+    """Each section's own model, by section name.
+
+    Plain models, which read no environment: `Settings` does, even through
+    `model_validate`, so a value exported for one shell would otherwise be
+    taken for a value to keep.
+    """
+    models: dict[str, type[BaseModel]] = {}
+    for section_name, section_field in Settings.model_fields.items():
+        annotation = section_field.annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            models[section_name] = annotation
+    return models
+
+
+def _described(key: str, field: FieldInfo, value: object) -> str:
+    """One key: what it is for, what it accepts, and its value."""
     lines = [f"# {field.description}" if field.description else f"# {key}"]
 
     options = _options_of(field.annotation)
@@ -520,7 +669,7 @@ def _described(key: str, field: FieldInfo) -> str:
             f"# Examples: {example}" if index == 0 else f"#           {example}"
         )
 
-    lines.append(f"# {key} = {_as_toml(field.default)}")
+    lines.append(f"{key} = {toml_value(value)}")
     return "\n".join(lines)
 
 
@@ -545,16 +694,11 @@ def _range_of(field: FieldInfo) -> str | None:
     return f"{lower}-{upper}"
 
 
-def _as_toml(value: object) -> str:
+def toml_value(value: object) -> str:
+    """One value as TOML. A string is escaped, because a Windows path holds
+    backslashes and a folder name may hold a quote."""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, str):
-        return f'"{value}"'
-    return str(value)
-
-
-def _first_problem(error: ValidationError) -> str:
-    """The offending setting and why, in one line."""
-    first = error.errors()[0]
-    where = ".".join(str(part) for part in first["loc"])
-    return f"{where}: {first['msg']}"
+    if isinstance(value, int | float):
+        return str(value)
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'

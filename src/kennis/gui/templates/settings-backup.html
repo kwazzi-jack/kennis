@@ -1,0 +1,52 @@
+{# The Backup section (13b), redrawn whole by htmx after the folder is
+   saved or the backup tested. Back up now starts a job, so its answer
+   goes to the strip rather than here.
+
+   No password field is drawn with a value, on any path. #}
+{% from "tip.html" import tip %}
+<section data-section="backup" id="backup" class="backup">
+<h2>{{ backup_heading }}</h2>
+<p class="role-muted">{{ backup_contents }}</p>
+<form class="backup-folder" action="/settings/backup" method="post" hx-post="/settings/backup" hx-target="closest section" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">
+<div class="setting">
+<label class="setting-name" for="backup-folder">{{ backup_folder_label }}</label>
+<div class="setting-control">
+<span class="entry-row">
+<input id="backup-folder" type="text" name="backup.folder" value="{{ backup_folder }}">
+<button type="button" class="ghost browse" hx-get="/browse?target=backup.folder&amp;folders=1" hx-target="#chooser-backup-folder" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+</span>
+<div class="chooser" id="chooser-backup-folder"></div>
+<button type="submit">{{ backup_save_folder }}</button>
+{% if backup_about == "folder" %}{% if backup_outcome %}<p class="outcome" role="status">{{ backup_outcome }}</p>{% endif %}{% if backup_problem %}<p class="outcome role-error" role="status">{{ backup_problem }}</p>{% endif %}{% endif %}
+</div>
+<p class="backup-state">{{ backup_folder_state }}</p>
+<p class="backup-state">{{ backup_archive_state }}</p>
+</div>
+</form>
+<form class="backup-now" action="/backup" method="post" hx-post="/backup" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">
+<div class="setting">
+<span class="setting-name">{{ backup_now_label }}</span>
+<div class="setting-control">
+<label class="password">{{ backup_password }} <input type="password" name="password" autocomplete="new-password" required></label>
+<label class="password">{{ backup_confirmation }} <input type="password" name="confirmation" autocomplete="new-password" required></label>
+<button type="submit">{{ backup_now_label }}</button>
+</div>
+<p class="setting-sentence role-muted">{{ backup_now_note }} {{ tip("backup-now", backup_now_label, backup_now_tip) }}</p>
+</div>
+</form>
+<form class="backup-test" action="/settings/backup/test" method="post" hx-post="/settings/backup/test" hx-target="closest section" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">
+<div class="setting">
+<span class="setting-name">{{ backup_test_label }}</span>
+<div class="setting-control">
+<label class="password">{{ backup_password }} <input type="password" name="password" autocomplete="current-password" required></label>
+<button type="submit">{{ backup_test_label }}</button>
+{% if backup_about == "test" %}{% if backup_outcome %}<p class="outcome" role="status">{{ backup_outcome }}</p>{% endif %}{% if backup_problem %}<p class="outcome role-error" role="status">{{ backup_problem }}</p>{% endif %}{% endif %}
+</div>
+<p class="setting-sentence role-muted">{{ backup_test_note }}</p>
+</div>
+</form>
+<div class="setting">
+<span class="setting-name">{{ restore_label }}</span>
+<p class="setting-sentence role-muted">{{ backup_restore_note }} <code class="role-command">{{ restore_command }}</code></p>
+</div>
+</section>

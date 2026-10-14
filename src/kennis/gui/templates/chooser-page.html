@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}kennis - {{ chooser_heading }}{% endblock %}
+{% block main %}
+{# Without a script nothing can write a path into a form, so the page
+   shows each file's whole path to copy. #}
+<section class="action-page">
+  <h2>{{ chooser_heading }}</h2>
+  <div class="chooser">{% include "chooser.html" %}</div>
+</section>
+{% endblock %}

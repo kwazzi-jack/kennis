@@ -1,0 +1,27 @@
+{% from "tip.html" import tip %}
+<p class="role-muted"><span id="remember-preamble">{{ preamble }}</span> {{ tip("remember", title, remember_tip) }}</p>
+{# Not `data-closes-dialog`: the outcome is answered into this form's
+   own `#outcome`, and the text stays in the box until the write is
+   confirmed, so closing would hide both. Every field is named by a
+   label, not a placeholder (#4 of the accessibility review). #}
+<form action="/remember" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/remember" hx-target="#outcome" hx-swap="innerHTML">
+  <textarea id="remember-text" name="text" rows="6" placeholder="{{ placeholder }}" aria-label="{{ note_text_label }}" aria-describedby="remember-preamble" autofocus></textarea>
+  <div class="fields">
+    <label class="labelled"><span class="name">{{ title_label }}</span><input id="remember-title" type="text" name="title" placeholder="{{ title_hint }}"></label>
+    <label class="labelled"><span class="name">{{ group_label }}</span><input type="text" name="group" list="note-groups" placeholder="{{ group_hint }}"></label>
+    <datalist id="note-groups">{% for name in known_groups %}<option value="{{ name }}">{% endfor %}</datalist>
+    <div class="labelled"><span class="name" id="remember-target-name">{{ target_label }}</span>
+    <span class="segmented" role="radiogroup" aria-labelledby="remember-target-name">{% for value, label in remember_targets %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span></div>
+  </div>
+  {# Every dialog's foot, as Add's is: Cancel, then the one action the
+     form exists for, at the right. #}
+  {# Inside the form, above its foot, so what the write answered is
+     beside what was written rather than under the buttons. A status
+     region, so it is announced; it was silent, and focus had fallen to
+     the page behind the dialog. #}
+  <div id="outcome" role="status">{% include "outcome.html" %}</div>
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("pencil") }}{{ action }}</button>
+  </div>
+</form>

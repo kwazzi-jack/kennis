@@ -19,7 +19,11 @@ from kennis.engine.corpus.converters import (
     DatalabConverter,
     default_converter,
 )
-from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from kennis.engine.errors import (
+    ConversionFailed,
+    ConverterRefused,
+    ConverterUnavailable,
+)
 from kennis.engine.settings import credential
 
 CHECK_URL = "https://www.datalab.to/api/v1/convert/abc123"
@@ -355,3 +359,74 @@ def test_a_response_without_a_cost_reports_none_rather_than_zero(tmp_path: Path)
     batch = a_converter(transport).convert([a_pdf(tmp_path / "a.pdf")])
 
     assert batch.cost_cents is None
+
+
+# ---------------------------------------------------------------------------
+# What came back was not an answer (the review of 2026-10-13)
+# ---------------------------------------------------------------------------
+
+
+def answering(
+    submit: httpx.Response, poll: httpx.Response | None = None
+) -> tuple[DatalabConverter, list[httpx.Request]]:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.method == "POST":
+            return submit
+        return poll or httpx.Response(200, json={"status": "processing"})
+
+    converter = DatalabConverter(
+        api_key="dl-notarealkey",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        poll_seconds=0.0,
+        max_polls=50,
+    )
+    return converter, seen
+
+
+def test_a_reply_that_is_not_json_fails_the_document_not_the_batch(tmp_path: Path):
+    """An HTML 502 page from a proxy raised `JSONDecodeError`, which nothing
+    caught, and the whole batch went with it."""
+    converter, _ = answering(httpx.Response(200, text="<html>Bad gateway</html>"))
+
+    with pytest.raises(ConversionFailed, match="not JSON"):
+        converter.convert([a_pdf(tmp_path / "a.pdf")])
+
+
+def test_a_refused_poll_is_final_rather_than_pending(tmp_path: Path):
+    """A 429 whose body had no `status` was polled 300 times."""
+    converter, seen = answering(
+        httpx.Response(200, json={"request_check_url": CHECK_URL}),
+        httpx.Response(429, json={"detail": "slow down"}),
+    )
+
+    with pytest.raises(ConversionFailed, match="429: slow down"):
+        converter.convert([a_pdf(tmp_path / "a.pdf")])
+
+    assert len(seen) == 2
+
+
+def test_a_key_the_service_refuses_is_said_to_be_the_key(tmp_path: Path):
+    """It was "datalab refused the document (401)" and `--help`; the key is
+    what needs changing."""
+    converter, _ = answering(httpx.Response(401, json={"detail": "Invalid API key"}))
+
+    with pytest.raises(ConversionFailed) as raised:
+        converter.convert([a_pdf(tmp_path / "a.pdf")])
+
+    assert "API key" in str(raised.value)
+    assert "Invalid API key" in str(raised.value)
+
+
+def test_a_refused_key_stops_the_batch_and_keeps_its_remedy(tmp_path: Path):
+    """Filed against each document, the refusal was paid for once per file
+    and the command that mends it was dropped on the way to the report."""
+    converter, seen = answering(httpx.Response(403, json={"detail": "Forbidden"}))
+
+    with pytest.raises(ConverterRefused) as raised:
+        converter.convert([a_pdf(tmp_path / "a.pdf"), a_pdf(tmp_path / "b.pdf")])
+
+    assert len(seen) == 1
+    assert raised.value.resolution == "kennis config init"

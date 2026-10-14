@@ -19,7 +19,7 @@ from click.testing import CliRunner
 from kennis.cli.__main__ import main
 from kennis.engine.history.git import git
 from kennis.engine.history.repository import Repository
-from kennis.engine.locking import corpus_lock, lock_path
+from kennis.engine.locking import corpus_lock, index_lock, index_lock_path, lock_path
 
 
 @pytest.fixture(autouse=True)
@@ -470,7 +470,7 @@ def test_index_builds_and_status_then_reads_it(
 
     status = run.invoke(main, ["corpus", "status"])
     assert status.exit_code == 0, status.output
-    assert "in step" in status.output
+    assert "up to date" in status.output
 
 
 def test_status_does_not_claim_an_unindexed_corpus_is_indexed(
@@ -481,7 +481,7 @@ def test_status_does_not_claim_an_unindexed_corpus_is_indexed(
     added(run, a_source(tmp_path, "trees.md"))
     status = run.invoke(main, ["corpus", "status"])
     assert status.exit_code == 0, status.output
-    assert "in step" not in status.output
+    assert "up to date" not in status.output
 
 
 def test_status_reports_a_stale_index_after_an_edit(
@@ -712,9 +712,29 @@ def test_the_vector_cache_is_never_committed(
     assert Repository(corpus).is_clean()
 
 
-def test_the_index_itself_is_committed(corpus: Path, run: CliRunner, tmp_path: Path):
-    """Tracked deliberately, so a clone is searchable immediately with no
-    rebuild and no model download."""
+def test_the_index_lock_is_never_committed(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """A lock is a fact about a process, and a restore from history would
+    check it out again as if it were part of the corpus. Concern #444."""
+    added(run, a_source(tmp_path, "trees.md"))
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    lock = index_lock_path(corpus / "index", "notes")
+    # Held while looking, because on Windows filelock deletes the file on
+    # release; and checked to exist, or the assertions below pass for a
+    # file never created (#390).
+    with index_lock(corpus / "index", "notes"):
+        assert lock.is_file()
+        assert lock.relative_to(corpus).as_posix() not in tracked(corpus)
+        assert Repository(corpus).is_clean()
+
+
+def test_what_names_the_index_is_committed(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """What names the built index is tracked, so the history says which
+    index a commit was searched with; the index itself is rebuilt."""
     added(run, a_source(tmp_path, "trees.md"))
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
     assert any(path.startswith("index/notes/") for path in tracked(corpus))

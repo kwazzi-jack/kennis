@@ -32,7 +32,7 @@ from kennis.engine.errors import PackInvalid, PackNotInstalled
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.resolve import Declaration
-from kennis.engine.pack.schema import ContentSource, LiteratureEntry, Pack, load_pack
+from kennis.engine.pack.schema import ContentSource, Pack, load_pack
 from kennis.engine.pack.store import (
     DECLARATION_FILENAME,
     PackState,
@@ -232,7 +232,7 @@ def _declared_items(one: InstalledPack) -> set[ItemKey]:
     assert declaration is not None
     items: set[ItemKey] = set()
     for entry in declaration.corpus.literature:
-        items.add(("literature", _literature_key(entry)))
+        items.add(("literature", entry.key))
     for docs in declaration.corpus.docs:
         items.add(("docs", docs.project))
     for source in declaration.corpus.notes:
@@ -242,22 +242,6 @@ def _declared_items(one: InstalledPack) -> set[ItemKey]:
         for address, _ in _destinations(one.state, source):
             items.add(("context", address))
     return items
-
-
-def _literature_key(entry: LiteratureEntry) -> str:
-    """`arxiv_id`, else `doi`, else `bibcode`, and never the citekey.
-
-    Section 5 step 3: keying on the citekey would make correcting
-    `paperCubicalFast` to `kenyonCubicalFast2018` come out as a removal
-    and an addition, deleting a fetched document and pulling the identical
-    paper down again. The scheme is part of the key so a DOI and an arXiv
-    id that happen to share a string cannot collide.
-    """
-    if entry.arxiv_id is not None:
-        return f"arxiv:{entry.arxiv_id}"
-    if entry.doi is not None:
-        return f"doi:{entry.doi}"
-    return f"bibcode:{entry.bibcode}"
 
 
 def _destinations(state: PackState, source: ContentSource) -> list[tuple[str, str]]:

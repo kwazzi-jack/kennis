@@ -13,6 +13,7 @@ the file that says what must be true of it.
 
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
 from collections.abc import Callable
@@ -357,8 +358,41 @@ def test_a_staging_directory_is_never_committed(isolated: Path):
     may commit while one is half-written, and `Repository.commit`
     stages with `git add --all .`. The swap stages at
     `index/<collection>/.<index_id>.staging-XXXX`, a dotfile directory
-    git sees like any other."""
-    ignored = (existing_corpus().corpus_root / ".gitignore").read_text()
+    git sees like any other - and its `binding.json` has the name of a
+    file history does keep."""
+    root = existing_corpus().corpus_root
+    for swap in (".lexical.staging-ab12", ".lexical.retiring-ab12"):
+        (root / "index" / "notes" / swap).mkdir(parents=True)
+        (root / "index" / "notes" / swap / "binding.json").write_text("{}")
 
-    assert ".staging-" in ignored
-    assert ".retiring-" in ignored
+    Repository(root).commit("test", scope="notes", summary="staging")
+
+    assert tracked_under_index(root) == []
+
+
+def test_history_keeps_only_which_index_each_collection_reads(isolated: Path):
+    """The index is derived and rebuilt rather than kept (Brian,
+    2026-10-12): a commit after a build holds the pointer and the binding,
+    and none of the chunks, tables, vectors or manifest."""
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
+
+    build_indexes(context, "notes")
+
+    manifest = read_manifest(index_root(context.corpus_root), "notes")
+    assert manifest is not None
+    assert tracked_under_index(context.corpus_root) == [
+        "index/notes/latest.json",
+        f"index/notes/{manifest.index_id}/binding.json",
+    ]
+
+
+def tracked_under_index(root: Path) -> list[str]:
+    listed = subprocess.run(
+        ["git", "ls-files", "index"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return sorted(listed.split(), key=lambda path: path.count("/"))

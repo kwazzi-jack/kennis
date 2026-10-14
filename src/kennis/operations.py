@@ -29,11 +29,14 @@ printing it. Concern #324.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+import contextlib
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Final
 
 from kennis.context import Context
+from kennis.engine.backup import BackupReport, write_backup
 from kennis.engine.context.sync import BundleSync, sync_bundle
 from kennis.engine.corpus.add import (
     AddOptions,
@@ -43,11 +46,13 @@ from kennis.engine.corpus.add import (
     add_notes,
 )
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.document import Document, move_document
 from kennis.engine.corpus.layout import index_root
+from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync, sync_corpus
-from kennis.engine.errors import CorpusBusy, IndexBusy
-from kennis.engine.events import EventSink
+from kennis.engine.errors import CorpusBusy, IndexBusy, KennisError
+from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.history import commit_summary, outcome_summary
 from kennis.engine.history.outofband import (
     OutOfBandChange,
@@ -63,6 +68,37 @@ from kennis.engine.rag.loaders import CollectionLoader
 from kennis.render.packs import describe_sync_summary
 
 _ADDERS = {"notes": add_notes, "literature": add_literature, "docs": add_docs}
+
+# The summary of a commit made for an operation that did not finish. Free
+# text to `history._SUBJECT`, as every summary is.
+INTERRUPTED: Final = "interrupted"
+
+
+@contextlib.contextmanager
+def committed_if_interrupted(
+    context: Context, operation: str, *, scope: str
+) -> Iterator[None]:
+    """Record what an operation wrote before it failed, under its own name.
+
+    Held inside the corpus lock around the work, before the work's own
+    commit. A failure part-way - a full disk, a converter that crashed, an
+    interrupt - leaves the documents already written on disk, and the next
+    command's `git add --all .` would commit them under *its* name: an add's
+    documents in a `remember(notes)` commit. Committed here, as
+    `add(notes): interrupted`, history says which command wrote them.
+
+    A commit that fails here is not reported over the failure that caused
+    it: that is the one the person needs to see, and the documents are still
+    on disk for the next commit.
+    """
+    try:
+        yield
+    except BaseException:
+        with contextlib.suppress(KennisError):
+            Repository(context.corpus_root).commit(
+                operation, scope=scope, summary=INTERRUPTED
+            )
+        raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,11 +192,94 @@ def add_documents(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        report = _ADDERS[destination](target, identifiers, options, events=events)
+        with committed_if_interrupted(context, "add", scope=destination):
+            report = _ADDERS[destination](target, identifiers, options, events=events)
         Repository(context.corpus_root).commit(
             "add", scope=destination, summary=outcome_summary(report.counts)
         )
     return report
+
+
+@dataclass(frozen=True, slots=True)
+class GroupBlock:
+    """One group of the window's Several by group tab: where, under what
+    name, and what to add."""
+
+    collection: str
+    group: str
+    identifiers: tuple[str, ...]
+
+
+def add_in_groups(
+    context: Context,
+    blocks: Sequence[GroupBlock],
+    options: AddOptions,
+    *,
+    events: EventSink | None = None,
+    restored: list[OutOfBandChange] | None = None,
+) -> AddReport:
+    """Several adds as one job, one per group, merged into one report.
+
+    **Each block is its own add** - its own lock, restore and commit -
+    because a block can name a different collection and `add_documents`
+    commits per collection. One report, because the window shows one
+    job; each outcome names its own input, which is what says which
+    block it came from.
+    """
+    reports = [
+        add_documents(
+            context,
+            block.collection,
+            block.identifiers,
+            replace(options, group=block.group),
+            events=events,
+            restored=restored,
+        )
+        for block in blocks
+    ]
+    costs = [report.cost_cents for report in reports if report.cost_cents is not None]
+    return AddReport(
+        outcomes=[outcome for report in reports for outcome in report.outcomes],
+        elapsed_seconds=sum(report.elapsed_seconds for report in reports),
+        cost_cents=sum(costs) if costs else None,
+        repairs=sum(report.repairs for report in reports),
+    )
+
+
+def move_a_document(
+    context: Context,
+    collection: Collection,
+    document: Document,
+    *,
+    group: str | None,
+    title: str | None = None,
+    restored: list[OutOfBandChange] | None = None,
+) -> Document:
+    """Refile or rename one document: lock, restore, move, commit.
+
+    The sequence `corpus move` ran inside the command line, here so the
+    window's tree runs the same one. A docs page is refused a group
+    before the lock is taken (#101). `restored` is filled in place, as
+    `add_documents` fills it, for a caller that says what came back.
+    """
+    refuse_regrouping_docs(collection, group)
+    target = move_target(collection, document, group=group, title=title)
+    with corpus_lock(context.corpus_root):
+        put_back = restore_hand_deletions(context)
+        if restored is not None:
+            restored.extend(put_back)
+        with committed_if_interrupted(context, "move", scope=collection.name):
+            moved = move_document(
+                document,
+                target_md_path=target,
+                updates={"title": title} if title else None,
+            )
+        Repository(context.corpus_root).commit(
+            "move",
+            scope=collection.name,
+            summary=outcome_summary({Outcome.CHANGED: 1}),
+        )
+    return moved
 
 
 def build_indexes(
@@ -264,11 +383,13 @@ def synchronise_corpus(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        result = sync_corpus(
-            context.corpus_root,
-            events=events,
-            request_delay_seconds=context.settings.literature.request_delay,
-        )
+        with committed_if_interrupted(context, "sync", scope="notes"):
+            result = sync_corpus(
+                context.corpus_root,
+                events=events,
+                request_delay_seconds=context.settings.literature.request_delay,
+                unpaywall_email=context.settings.literature.unpaywall_email,
+            )
         Repository(context.corpus_root).commit(
             "sync", scope="notes", summary=describe_sync_summary(result.counts)
         )
@@ -302,12 +423,36 @@ def install_a_pack(
         return install_pack(context.corpus_root, path, events=events)
 
 
+def back_up_corpus(
+    context: Context,
+    folder: Path,
+    password: str,
+    *,
+    events: EventSink | None = None,
+) -> BackupReport:
+    """Write the encrypted backup: lock, write, test, replace.
+
+    The lock is held throughout, as for anything that reads the
+    repository: a commit landing during the write would put half of it
+    in the archive's `.git`. No commit, because nothing in the corpus
+    changes.
+    """
+    with corpus_lock(context.corpus_root):
+        return write_backup(context.corpus_root, folder, password, events=events)
+
+
 __all__ = [
+    "INTERRUPTED",
     "BuiltIndex",
+    "GroupBlock",
     "IndexBuild",
     "add_documents",
+    "add_in_groups",
+    "back_up_corpus",
     "build_indexes",
+    "committed_if_interrupted",
     "install_a_pack",
+    "move_a_document",
     "restore_hand_deletions",
     "synchronise_bundle",
     "synchronise_corpus",

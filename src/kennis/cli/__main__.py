@@ -20,6 +20,7 @@ import click
 from kennis import __version__
 from kennis.cli import display
 from kennis.cli.commands import (
+    backup_group,
     config_group,
     context_group,
     corpus_group,
@@ -57,6 +58,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
 
 main.add_command(corpus_group)
 main.add_command(config_group)
+main.add_command(backup_group)
 main.add_command(context_group)
 main.add_command(pack_group)
 main.add_command(search_command)

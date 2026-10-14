@@ -31,6 +31,7 @@ from kennis.engine.events import (
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -83,8 +84,16 @@ def arxiv_client(body: str = ATOM, html: str = LATEXML) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         if "/html/" in str(request.url):
             return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+        # The entry names the paper asked for, as arXiv's does: kennis
+        # refuses an entry for some other paper (the review of 2026-10-13).
+        asked = request.url.params.get("id_list")
+        answered = (
+            body.replace("2409.19750", asked.split("v")[0])
+            if asked and "/" not in asked
+            else body
+        )
         return httpx.Response(
-            200, text=body, headers={"content-type": "application/atom+xml"}
+            200, text=answered, headers={"content-type": "application/atom+xml"}
         )
 
     return httpx.Client(transport=httpx.MockTransport(handler))
@@ -134,9 +143,7 @@ class FrontPageConverter:
     def install_hint(self) -> str:
         return "install it"
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         self.runs.append(tuple(paths))
         return ConversionBatch(
             markdown={path: f"# {path.stem}\n\nBody.\n" for path in paths},
@@ -307,12 +314,13 @@ def test_the_identifier_is_derived_from_the_paper_rather_than_minted(
 
 
 def test_the_derivation_key_records_the_precedence_that_was_applied(
-    papers: Collection,
+    papers: Collection, tmp_path: Path
 ):
     """A paper with both an arXiv identifier and a DOI derives from the arXiv
     identifier, and says so."""
     bib = "@article{x,\n title={T},\n doi={10.1088/x},\n eprint={2409.19750}\n}\n"
-    path = Path(str(papers.root)) / "library.bib"
+    # Outside the corpus: a file inside it is kennis's own, never a source.
+    path = tmp_path / "sources" / "library.bib"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(bib, encoding="utf-8")
 
@@ -715,7 +723,10 @@ def test_a_doi_refused_for_no_text_names_the_pdf_and_not_notes(papers: Collectio
     # document, because the paper's identity was established perfectly
     # well and notes would be the wrong collection for it.
     assert remedies_for_refusal(refusal) == ()
-    assert "supply" in describe_refusal(refusal).lower()
+    said = describe_refusal(refusal)
+    assert "https://doi.org/10.1093/mnras/stab1234" in said
+    assert "-l and --identifier '10.1093/mnras/stab1234'" in said
+    assert "notes" not in said
 
 
 def test_a_markdown_paper_does_not_need_the_pdf_converter(
@@ -1090,3 +1101,178 @@ def test_metadata_that_arrives_is_not_warned_about(papers: Collection):
         for event in events.events
         if isinstance(event, Diagnostic) and event.severity is Severity.WARNING
     ]
+
+
+def test_an_identifier_that_is_none_is_refused_not_ignored(
+    papers: Collection, tmp_path: Path
+):
+    """A typo in `--identifier` was dropped, and the paper fell back to its
+    front page - stored under an identity nobody gave it."""
+    from kennis.engine.errors import InputError
+
+    pdf = a_pdf(tmp_path / "paper.pdf")
+
+    with pytest.raises(InputError, match="2401-01234"):
+        add_literature(
+            papers,
+            [str(pdf)],
+            AddOptions(identifier="2401-01234"),
+            client=arxiv_client(),
+            arxiv=arxiv_client(),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Unpaywall: the published paper, and nothing else unasked
+# ---------------------------------------------------------------------------
+
+DOI = "10.1093/mnras/stab1234"
+PUBLISHED = "https://journal.example/stab1234.md"
+ACCEPTED = "https://repository.example/stab1234-accepted.md"
+
+
+def unpaywall(*locations: tuple[str, str]) -> tuple[httpx.Client, list[str]]:
+    """Unpaywall listing `(version, address)` locations, and the open copies
+    themselves, recording every address asked for."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if request.url.host == "api.unpaywall.org":
+            return httpx.Response(
+                200,
+                json={
+                    "oa_locations": [
+                        {"version": version, "url_for_pdf": address}
+                        for version, address in locations
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            text="# The Published Paper\n\nIts text.\n",
+            headers={"content-type": "text/markdown"},
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), asked
+
+
+def test_a_doi_is_fetched_from_its_published_open_copy(papers: Collection):
+    """Only with the reader's email set: Unpaywall requires one."""
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    report = add_literature(
+        papers,
+        [DOI],
+        AddOptions(unpaywall_email="reader@example.org"),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    assert report.outcomes[0].outcome is Outcome.ADDED
+    assert PUBLISHED in asked
+    assert "email=reader%40example.org" in asked[0]
+
+
+def test_an_accepted_manuscript_is_offered_and_never_fetched(papers: Collection):
+    """It may differ from the published paper the DOI names, so whether it
+    will do is the reader's to say, not kennis's to assume."""
+    client, asked = unpaywall(("acceptedVersion", ACCEPTED))
+
+    report = add_literature(
+        papers,
+        [DOI],
+        AddOptions(unpaywall_email="reader@example.org"),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    refusal = report.outcomes[0].refusal
+    assert refusal == NoPublisherText(
+        kind="doi", value=DOI, asked_unpaywall=True, accepted_manuscript=ACCEPTED
+    )
+    assert ACCEPTED not in asked
+    assert ACCEPTED in describe_refusal(refusal)
+
+
+def test_a_preprint_is_neither_fetched_nor_offered(papers: Collection):
+    client, asked = unpaywall(("submittedVersion", ACCEPTED))
+
+    report = add_literature(
+        papers,
+        [DOI],
+        AddOptions(unpaywall_email="reader@example.org"),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    assert report.outcomes[0].refusal == NoPublisherText(
+        kind="doi", value=DOI, asked_unpaywall=True
+    )
+    assert ACCEPTED not in asked
+
+
+def test_without_an_email_unpaywall_is_not_asked(papers: Collection):
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    report = add_literature(papers, [DOI], arxiv=no_preprint_client(), client=client)
+
+    assert asked == []
+    assert report.outcomes[0].refusal == NoPublisherText(kind="doi", value=DOI)
+    assert "unpaywall_email" in describe_refusal(report.outcomes[0].refusal)
+
+
+# ---------------------------------------------------------------------------
+# A fetched document is the paper the reader named
+# ---------------------------------------------------------------------------
+
+PAPER_URL = "https://journal.example/paper.md"
+
+
+def serving_text(text: str) -> httpx.Client:
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, text=text, headers={"content-type": "text/markdown"}
+            )
+        )
+    )
+
+
+def test_a_url_whose_page_names_another_paper_is_asked_about_not_filed(
+    papers: Collection,
+):
+    """The reader's identifier was taken outright, so a link to the wrong
+    PDF was filed as the paper it was said to be."""
+    client = serving_text("# Another Paper\n\ndoi:10.1093/mnras/stab9999\n")
+
+    report = add_literature(
+        papers,
+        [PAPER_URL],
+        AddOptions(identifier=DOI),
+        arxiv=no_preprint_client(),
+        client=client,
+    )
+
+    assert report.outcomes[0].refusal == IdentityMismatch(
+        named=PAPER_URL, kind="doi", stated=DOI, found=("10.1093/mnras/stab9999",)
+    )
+    assert list(papers.contents().documents) == []
+
+
+@pytest.mark.parametrize(
+    "front", [f"# The Paper\n\nhttps://doi.org/{DOI}\n", "# The Paper\n\nNo ids.\n"]
+)
+def test_a_url_naming_the_paper_or_nothing_is_taken_as_stated(
+    papers: Collection, front: str
+):
+    """A page naming no identifier is taken to be what the reader said."""
+    report = add_literature(
+        papers,
+        [PAPER_URL],
+        AddOptions(identifier=DOI),
+        arxiv=no_preprint_client(),
+        client=serving_text(front),
+    )
+
+    assert report.outcomes[0].outcome is Outcome.ADDED

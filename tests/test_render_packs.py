@@ -47,6 +47,7 @@ from kennis.render.packs import (
     describe_installed,
     describe_lost_source,
     describe_moved,
+    describe_outcome_of,
     describe_overlap,
     describe_problem,
     describe_recorded,
@@ -62,6 +63,7 @@ from kennis.render.packs import (
     describe_what_remove_cannot_reach,
     describe_when,
     remedy_for,
+    verdict_word,
 )
 
 DIGEST = "a" * 64
@@ -497,22 +499,36 @@ def test_a_sync_that_did_nothing_and_had_nothing_to_do_says_so():
     assert describe_sync(a_sync()) == "nothing declared by any installed pack"
 
 
-def test_a_sync_that_changed_nothing_says_the_bundle_is_in_step():
-    assert describe_sync(a_sync(keep=3)) == "3 files already in step"
+def test_a_sync_that_changed_nothing_says_each_file_is_unchanged():
+    """The headline counts in the words its lines use (Brian, 2026-10-12:
+    "better more systematic wording" than "already in step")."""
+    assert describe_sync(a_sync(keep=3)) == "3 files unchanged"
 
 
-def test_a_sync_counts_only_what_it_actually_changed():
-    described = describe_sync(a_sync(write=1, rewrite=1, keep=4))
+def test_a_sync_counts_each_kind_of_outcome_in_a_fixed_order():
+    described = describe_sync(a_sync(keep=4, delete=1, rewrite=1, write=2))
 
-    assert described == "2 files changed, of 6"
+    assert described == "2 files added, 1 updated, 1 removed, 4 unchanged"
 
 
-def test_a_file_kennis_declined_to_write_is_not_reported_as_in_step():
-    """It is precisely a file that is not in step. Saying otherwise would
-    report the protection as if it were agreement."""
+def test_every_count_word_is_a_line_word():
+    """Written by hand: the headline's words, in order. Each is the word a
+    line of that verdict says, so the two cannot disagree."""
+    described = describe_sync(
+        a_sync(write=1, rewrite=1, adopt=1, delete=1, keep=1, edited=1, yours=1)
+    )
+
+    assert described == (
+        "1 file added, 1 updated, 1 taken over, 1 removed, 1 unchanged, 2 left as yours"
+    )
+
+
+def test_a_file_kennis_declined_to_write_is_not_reported_as_unchanged():
+    """It is precisely a file kennis would have changed. Saying otherwise
+    would report the protection as if it were agreement."""
     described = describe_sync(a_sync(keep=2, edited=1))
 
-    assert described == "2 files in step, 1 left as yours"
+    assert described == "2 files unchanged, 1 left as yours"
 
 
 def test_a_bundle_where_everything_is_the_users_does_not_say_zero():
@@ -524,7 +540,7 @@ def test_the_corpus_counts_documents_rather_than_files():
     the difference: a bundle holds files and a corpus holds documents."""
     described = describe_sync(a_sync(write=2, keep=1), noun="document")
 
-    assert described == "2 documents changed, of 3"
+    assert described == "2 documents added, 1 unchanged"
 
 
 def test_the_commit_summary_names_only_what_changed():
@@ -598,6 +614,16 @@ def test_each_verdict_reads_as_what_happened(verdict: Verdict, expected: str):
     described = describe_action(action)
     assert described.startswith("one.md: ")
     assert expected in described
+    # The window puts the name first already, so its line is the rest.
+    assert described == f"one.md: {describe_outcome_of(action)}"
+    assert "one.md" not in describe_outcome_of(action)
+
+
+def test_a_verdict_name_quoted_by_the_stream_is_worded():
+    """A sync's events carry the verdict's name; the reader sees its word."""
+    assert verdict_word("keep") == "unchanged"
+    assert verdict_word("write") == "added"
+    assert verdict_word("no-such-verdict") == "no-such-verdict"
 
 
 def test_a_file_taken_over_names_both_owners():
@@ -671,6 +697,7 @@ def test_several_moved_files_are_counted_and_listed():
     )
 
     assert said.startswith("2 files")
+    assert "kept up to date where they are" in said
     assert "a.md is at .a.md" in said
     assert "b.md is at kept/b.md" in said
 

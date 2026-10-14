@@ -27,12 +27,9 @@ disagree with the corpus.
 from __future__ import annotations
 
 import logging
-import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Final
-
-from platformdirs import user_log_dir
 
 from kennis.engine.events import (
     Diagnostic,
@@ -43,12 +40,12 @@ from kennis.engine.events import (
     Progress,
     Severity,
 )
+from kennis.engine.settings import log_dir
 from kennis.render.diagnostics import describe_diagnostic
 from kennis.render.refusals import describe_refusal
 
 _LOGGER_NAME: Final = "kennis"
 _LOG_FILE: Final = "kennis.log"
-_LOG_DIR_VARIABLE: Final = "KENNIS_LOG_DIR"
 
 _DEFAULT_MAX_BYTES: Final = 1_048_576
 _DEFAULT_BACKUP_COUNT: Final = 3
@@ -65,18 +62,6 @@ _SEVERITY_LEVELS: Final[dict[Severity, int]] = {
 }
 
 _installed: RotatingFileHandler | None = None
-
-
-def log_dir() -> Path:
-    """Where kennis keeps its log.
-
-    `KENNIS_LOG_DIR` overrides the platform default, through the same
-    mechanism a user gets rather than a back door only tests know about.
-    """
-    override = os.environ.get(_LOG_DIR_VARIABLE)
-    if override:
-        return Path(override).expanduser()
-    return Path(user_log_dir("kennis"))
 
 
 def log_path() -> Path:

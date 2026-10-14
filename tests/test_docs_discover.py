@@ -8,15 +8,22 @@ does not. The bounds matter because this walks an arbitrary third-party site.
 
 from __future__ import annotations
 
+import gzip
+import json
+from collections.abc import Iterator
+
 import httpx
+import pytest
 
 from kennis.engine.docs.discover import (
+    _in_scope,
     crawl_site,
     discover_pages,
     discovery_mode,
     page_key,
     robots_for,
 )
+from kennis.engine.docs.http import USER_AGENT, TooLarge, get_within
 from kennis.engine.docs.sites import DocsSite
 
 BASE = "https://example.org/en/latest/"
@@ -257,7 +264,10 @@ def test_sitemap_pages_outside_the_prefix_are_dropped():
     found = discover_pages(client, a_site())
 
     assert found.mode == "sitemap"
-    assert [item.key for item in found.pages] == ["index", "guide/start"]
+    assert [item.key for item in found.pages] == [
+        "en/latest/index",
+        "en/latest/guide/start",
+    ]
 
 
 def test_a_sitemap_index_is_followed_to_the_sitemaps_it_names():
@@ -270,8 +280,8 @@ def test_a_sitemap_index_is_followed_to_the_sitemaps_it_names():
         }
     )
     assert [item.key for item in discover_pages(client, a_site()).pages] == [
-        "index",
-        "guide/start",
+        "en/latest/index",
+        "en/latest/guide/start",
     ]
 
 
@@ -287,8 +297,8 @@ def test_a_sitemap_declared_in_robots_is_preferred_to_the_conventional_one():
         }
     )
     assert [item.key for item in discover_pages(client, a_site()).pages] == [
-        "index",
-        "guide/start",
+        "en/latest/index",
+        "en/latest/guide/start",
     ]
 
 
@@ -451,3 +461,307 @@ def test_a_sphinx_site_under_the_limit_is_returned_whole():
     found = discover_pages(a_sphinx_site_of(3), a_site(), max_pages=300, delay=0)
 
     assert [page.key for page in found.pages] == ["page0", "page1", "page2"]
+
+
+# ---------------------------------------------------------------------------
+# Staying on the site (the review of 2026-10-13)
+# ---------------------------------------------------------------------------
+
+HTML = "text/html"
+
+
+def routed(
+    routes: dict[str, tuple[str, str] | str], asked: list[str] | None = None
+) -> httpx.Client:
+    """A site: a URL answers with (type, body), or with a string, which is
+    where it redirects. Every URL asked for is recorded in `asked`."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if asked is not None:
+            asked.append(url)
+        answer = routes.get(url)
+        if answer is None:
+            return httpx.Response(404)
+        if isinstance(answer, str):
+            return httpx.Response(302, headers={"location": answer})
+        kind, body = answer
+        return httpx.Response(200, headers={"content-type": kind}, text=body)
+
+    return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+
+def test_links_are_resolved_where_a_redirect_landed():
+    """A root redirecting to `/en/latest/` resolved `install.html` one level
+    too high, and only the index was added."""
+    client = routed(
+        {
+            "https://proj.example.io/": "https://proj.example.io/en/latest/",
+            "https://proj.example.io/en/latest/": (HTML, page("install.html")),
+            "https://proj.example.io/en/latest/install.html": (HTML, page()),
+        }
+    )
+
+    found = discover_pages(
+        client,
+        DocsSite(project="p", base_url="https://proj.example.io/", discovery="crawl"),
+        delay=0,
+    )
+
+    assert "en/latest/install" in [found_page.key for found_page in found.pages]
+
+
+def test_a_redirect_off_the_site_is_never_followed():
+    """An in-scope page redirecting to `127.0.0.1` was fetched, filed under
+    the documentation's address, and its links walked."""
+    asked: list[str] = []
+    client = routed(
+        {
+            "https://docs.example.org/guide/": (HTML, page("a.html")),
+            "https://docs.example.org/guide/a.html": "http://127.0.0.1:8080/admin",
+            "http://127.0.0.1:8080/admin": (HTML, page("secret.html")),
+        },
+        asked,
+    )
+
+    found = discover_pages(
+        client,
+        DocsSite(
+            project="d", base_url="https://docs.example.org/guide/", discovery="crawl"
+        ),
+        delay=0,
+    )
+
+    assert not [url for url in asked if "127.0.0.1" in url]
+    assert [found_page.key for found_page in found.pages] == ["guide"]
+
+
+def test_a_sitemap_on_another_host_is_never_read():
+    asked: list[str] = []
+    client = routed(
+        {
+            "https://h.org/robots.txt": (
+                "text/plain",
+                "Sitemap: http://10.0.0.5/x.xml\n",
+            )
+        },
+        asked,
+    )
+
+    discover_pages(
+        client,
+        DocsSite(project="h", base_url="https://h.org/docs/", discovery="sitemap"),
+        delay=0,
+    )
+
+    assert not [url for url in asked if "10.0.0.5" in url]
+
+
+def test_a_sphinx_docname_cannot_name_a_page_off_the_site_or_the_prefix():
+    index = (
+        "Search.setIndex("
+        + json.dumps({"docnames": ["index", "//127.0.0.1:9000/x", "../../outside"]})
+        + ")"
+    )
+    client = routed({"https://h.org/docs/searchindex.js": ("text/javascript", index)})
+
+    found = discover_pages(
+        client,
+        DocsSite(project="h", base_url="https://h.org/docs/", discovery="sphinx"),
+        delay=0,
+    )
+
+    assert [found_page.key for found_page in found.pages] == ["index"]
+
+
+def test_a_sibling_directory_and_the_root_are_out_of_scope():
+    """`startswith("/en/latest")` admitted `/en/latest-old/`, and the root
+    was always admitted, taking the key `index` from the real index."""
+    assert not _in_scope("https://h/en/latest-old/x", "https://h", "/en/latest/")
+    assert not _in_scope("https://h/", "https://h", "/en/latest/")
+    assert _in_scope("https://h/en/latest", "https://h", "/en/latest/")
+    assert _in_scope("https://h/en/latest/x", "https://h", "/en/latest/")
+
+
+def test_a_seed_without_its_slash_is_still_its_directory():
+    """`https://h.org/docs` probed `https://h.org/searchindex.js` and took
+    the whole origin as its scope."""
+    index = "Search.setIndex(" + json.dumps({"docnames": ["index", "intro"]}) + ")"
+    client = routed({"https://h.org/docs/searchindex.js": ("text/javascript", index)})
+
+    found = discover_pages(
+        client, DocsSite(project="h", base_url="https://h.org/docs"), delay=0
+    )
+
+    assert found.mode == "sphinx"
+    assert found.path_prefix == "/docs/"
+    assert [found_page.url for found_page in found.pages] == [
+        "https://h.org/docs/index.html",
+        "https://h.org/docs/intro.html",
+    ]
+
+
+def test_a_robots_file_that_errors_forbids_rather_than_allows():
+    """A 500's error page parsed as rules allowed everything; RFC 9309 reads
+    a server error as "may not crawl now"."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="<html>Service Unavailable</html>")
+
+    robots = robots_for(
+        httpx.Client(transport=httpx.MockTransport(handler)), "https://h.org"
+    )
+
+    assert not robots.can_fetch("kennis-docs-fetch", "https://h.org/docs/")
+
+
+# ---------------------------------------------------------------------------
+# What one request may cost
+# ---------------------------------------------------------------------------
+
+
+def test_a_response_longer_than_the_limit_is_abandoned_part_way():
+    """A release archive linked from the docs was read whole into memory
+    before its content type was looked at."""
+    sent: list[int] = []
+
+    def endless() -> Iterator[bytes]:
+        for _ in range(1000):
+            sent.append(1)
+            yield b"x" * 1024
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=endless())
+        )
+    )
+
+    with pytest.raises(TooLarge):
+        get_within(client, BASE, origin="https://example.org", limit=10 * 1024)
+    assert len(sent) < 20
+
+
+def test_a_declared_length_over_the_limit_is_refused_before_reading():
+    client = serving(
+        {BASE: httpx.Response(200, headers={"content-length": "999999"}, text="x")}
+    )
+
+    with pytest.raises(TooLarge):
+        get_within(client, BASE, origin="https://example.org", limit=1000)
+
+
+def test_a_compressed_response_is_measured_as_it_inflates():
+    """A small gzip body can inflate to any size; the bytes counted are the
+    ones that would be held."""
+    packed = gzip.compress(b"x" * 100_000)
+    client = serving(
+        {
+            BASE: httpx.Response(
+                200, headers={"content-encoding": "gzip"}, content=packed
+            )
+        }
+    )
+
+    with pytest.raises(TooLarge):
+        get_within(client, BASE, origin="https://example.org", limit=10_000)
+
+
+def test_a_response_within_the_limit_reads_as_it_was_sent():
+    client = serving(
+        {
+            BASE: httpx.Response(
+                200,
+                headers={
+                    "content-encoding": "gzip",
+                    "content-type": "text/html; charset=utf-8",
+                },
+                content=gzip.compress("caf\u00e9".encode()),
+            )
+        }
+    )
+
+    response = get_within(client, BASE, origin="https://example.org")
+
+    assert response.text == "caf\u00e9"
+    assert str(response.url) == BASE
+
+
+def test_a_page_too_large_to_read_is_skipped_by_the_crawl():
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        html = page("big.html", "small.html") if url == BASE else page()
+        headers = {"content-type": "text/html"}
+        if url.endswith("big.html"):
+            headers["content-length"] = str(10**12)
+        return httpx.Response(200, text=html, headers=headers)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    robots = robots_for(serving({}), "https://example.org")
+
+    urls = crawl_site(client, BASE, robots=robots, delay=0).urls
+
+    assert BASE + "big.html" not in urls
+    assert BASE + "small.html" in urls
+
+
+def test_the_user_agent_says_what_it_is_and_where_to_ask():
+    assert USER_AGENT.startswith("kennis-docs-fetch/")
+    assert "https://" in USER_AGENT
+
+
+def test_a_page_has_one_key_whichever_address_the_add_started_from():
+    """Keyed below the seed, a site added from `/en/latest/` and again from
+    `/en/latest/guide/` filed its guide twice: `guide/start` and `start`."""
+    client = serving(
+        {
+            "searchindex.js": httpx.Response(404),
+            "robots.txt": httpx.Response(200, text="User-agent: *\nAllow: /\n"),
+            "sitemap.xml": httpx.Response(200, text=SITEMAP),
+        }
+    )
+
+    from_root = discover_pages(client, a_site())
+    from_section = discover_pages(client, a_site(base_url=BASE + "guide/"))
+
+    assert [page.key for page in from_section.pages] == ["en/latest/guide/start"]
+    assert set(page.key for page in from_section.pages) <= set(
+        page.key for page in from_root.pages
+    )
+
+
+def test_a_seed_inside_a_sphinx_site_finds_its_root():
+    """Its pages are named below the root by the site itself, so a seed in a
+    section keys them as the root would, and only that section is added."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        if str(request.url) == BASE + "searchindex.js":
+            return httpx.Response(200, text=SEARCHINDEX)
+        if request.url.path.endswith("robots.txt"):
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    found = discover_pages(client, a_site(base_url=BASE + "install/"))
+
+    assert found.mode == "sphinx"
+    assert [page.key for page in found.pages] == ["install/index"]
+    assert found.pages[0].url == BASE + "install/index.html"
+
+
+def test_a_sitemap_is_held_to_the_page_limit():
+    """The Sphinx index and the crawl stop at the limit; a sitemap did not,
+    and listed every page of the site to be fetched."""
+    client = serving(
+        {
+            "searchindex.js": httpx.Response(404),
+            "robots.txt": httpx.Response(200, text="User-agent: *\nAllow: /\n"),
+            "sitemap.xml": httpx.Response(200, text=SITEMAP),
+        }
+    )
+
+    found = discover_pages(client, a_site(), max_pages=1)
+
+    assert len(found.pages) == 1

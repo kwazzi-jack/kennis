@@ -45,7 +45,7 @@ def a_page(title: str) -> str:
     )
 
 
-def sphinx_site() -> httpx.Client:
+def sphinx_site(robots: str = "User-agent: *\nAllow: /\n") -> httpx.Client:
     """A two-page Sphinx site, answering on whatever host it is asked about.
 
     Keyed by path rather than by full URL, so a test that varies the host to
@@ -63,7 +63,7 @@ def sphinx_site() -> httpx.Client:
         if path.endswith("documentation_options.js"):
             return httpx.Response(200, text=OPTIONS_JS)
         if path.endswith("robots.txt"):
-            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            return httpx.Response(200, text=robots)
         html = pages.get(path)
         if html is None:
             return httpx.Response(404)
@@ -335,6 +335,57 @@ def test_a_local_page_needs_a_project(docs: Collection, tmp_path: Path):
         add_docs(docs, [str(tutorial)])
 
 
+def test_a_local_page_without_a_project_is_refused_before_any_site_is_read(
+    docs: Collection, tmp_path: Path
+):
+    """Checked in turn, a site listed first was crawled whole before the
+    local page after it was refused, and the crawl thrown away."""
+    tutorial = tmp_path / "tutorial.md"
+    tutorial.write_text("# A tutorial\n", encoding="utf-8")
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(404)
+
+    with pytest.raises(InputError, match=r"tutorial\.md"):
+        add_docs(
+            docs,
+            [BASE, str(tutorial)],
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+    assert requested == []
+
+
+def test_an_address_of_a_file_is_one_document_not_a_site(docs: Collection):
+    """Every URL was a site to crawl, so a link to one markdown file or PDF
+    walked the whole site it sat on and never added the file itself."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(
+            200,
+            text="# Calibration guide\n\nSteps.\n",
+            headers={"content-type": "text/markdown"},
+        )
+
+    address = "https://example.org/guides/calibration.md"
+    report = add_docs(
+        docs,
+        [address],
+        AddOptions(project="example"),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert asked == [address]
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
+    [page] = docs.contents().documents
+    assert page.frontmatter.docs.project == "example"
+    assert page.frontmatter.title == "Calibration guide"
+
+
 # ---------------------------------------------------------------------------
 # Pacing
 # ---------------------------------------------------------------------------
@@ -390,9 +441,66 @@ def test_a_page_the_crawl_already_holds_costs_no_wait(
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    # Every wait recorded belongs to the crawl itself, not to the write loop.
+    # Every wait recorded belongs to the crawl itself, not to the write
+    # loop - and the crawl waits between its requests, not after the last.
     assert docs.contents().documents
-    assert len(slept) == len(docs.contents().documents)
+    assert len(slept) == len(docs.contents().documents) - 1
+
+
+def test_a_site_asking_for_a_longer_crawl_delay_is_paced_by_it(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """robots.txt was read for what it allows but not for how fast: a site
+    asking for two seconds between requests got one every fifth of one."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0.5),
+        client=sphinx_site("User-agent: *\nCrawl-delay: 2\nAllow: /\n"),
+    )
+
+    assert slept == [2.0]
+
+
+def test_a_crawl_delay_is_honoured_only_up_to_a_bound(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """An hour between pages would be an add that never visibly ends."""
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0.5),
+        client=sphinx_site("User-agent: *\nCrawl-delay: 3600\nAllow: /\n"),
+    )
+
+    assert slept == [30.0]
+
+
+def test_a_site_already_held_is_not_paced_again(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """Every page is held, so none is asked for - and a re-crawl still slept
+    before each one, which a pack sync of a large sitemap paid in full."""
+    options = AddOptions(project="example", request_delay_seconds=0.5)
+    add_docs(docs, [BASE], options, client=sphinx_site())
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+
+    add_docs(docs, [BASE], options, client=sphinx_site())
+
+    assert slept == []
 
 
 def test_an_offline_add_is_not_paced(docs: Collection, monkeypatch: pytest.MonkeyPatch):

@@ -31,12 +31,22 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.gui import history
 from kennis.gui.app import build_app
 
 TOKEN = "a-test-token"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
 
 
 @pytest.fixture
@@ -250,7 +260,7 @@ def test_clearing_the_history_is_a_post(corpus: Path, client: TestClient):
     assert refused.status_code in (404, 405)
     assert history.recent() != []
 
-    cleared = client.post("/history/clear")
+    cleared = posted(client, "/history/clear")
     assert cleared.status_code == 200
     assert history.recent() == []
 
@@ -303,7 +313,7 @@ def test_a_saturated_search_reports_its_count_as_a_floor(
     entry = history.recent()[0]
     assert entry.hits == 3, "the fixture must saturate for this to test anything"
     assert entry.capped is True
-    assert "3+ hits" in client.get("/").text
+    assert "3+ results" in client.get("/").text
 
 
 def test_the_same_query_on_another_day_moves_to_the_top(
@@ -344,3 +354,27 @@ def test_moving_to_the_top_keeps_the_newest_count(corpus: Path, client: TestClie
     moved = history.recent()[0]
     assert moved.query == "gains"
     assert moved.hits > before, "the old entry was relocated rather than replaced"
+
+
+# Written by hand: what each engine sends with a fetch it made on its own.
+PREFETCHES = [
+    {"Sec-Purpose": "prefetch"},
+    {"Sec-Purpose": "prefetch;prerender"},
+    {"X-Moz": "prefetch"},
+    {"Purpose": "prefetch"},
+]
+
+
+@pytest.mark.parametrize("headers", PREFETCHES)
+@pytest.mark.parametrize("path", ["/", "/hits"])
+def test_a_search_the_browser_fetched_ahead_is_not_recorded(
+    corpus: Path, client: TestClient, path: str, headers: dict[str, str]
+):
+    """A GET may be fetched before it is asked for - a recent search's link,
+    hovered - and that is not a search the reader made."""
+    admitted(client)
+
+    answer = client.get(path, params={"q": "gains"}, headers=headers)
+
+    assert answer.status_code == 200
+    assert history.recent() == []

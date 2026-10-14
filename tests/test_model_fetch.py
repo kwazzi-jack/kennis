@@ -23,7 +23,7 @@ from kennis.engine.rag.embedding import (
 
 
 def a_binding(kind: str = "fastembed", model: str = "BAAI/bge-small-en-v1.5"):
-    return ModelBinding(kind=kind, model=model, dim=384)
+    return ModelBinding(kind=kind, model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ def test_ollama_pulls_a_model_it_does_not_have(monkeypatch: pytest.MonkeyPatch):
     recorder = Recorder()
 
     ensure_model_available(
-        ModelBinding(kind="ollama", model="nomic-embed-text", dim=768, host="http://x"),
+        ModelBinding(kind="ollama", model="nomic-embed-text", host="http://x"),
         events=recorder,
     )
 
@@ -158,7 +158,7 @@ def test_ollama_does_not_re_pull_a_model_it_already_has(
     recorder = Recorder()
 
     ensure_model_available(
-        ModelBinding(kind="ollama", model="nomic-embed-text", dim=768, host="http://x"),
+        ModelBinding(kind="ollama", model="nomic-embed-text", host="http://x"),
         events=recorder,
     )
 
@@ -172,9 +172,7 @@ def test_an_explicit_tag_is_matched_exactly(monkeypatch: pytest.MonkeyPatch):
     _fake_ollama(monkeypatch, held=["nomic-embed-text:latest"], pulled=pulled)
 
     ensure_model_available(
-        ModelBinding(
-            kind="ollama", model="nomic-embed-text:v1.5", dim=768, host="http://x"
-        ),
+        ModelBinding(kind="ollama", model="nomic-embed-text:v1.5", host="http://x"),
         events=Recorder(),
     )
 
@@ -200,14 +198,14 @@ def test_an_unreachable_ollama_does_not_stop_the_attempt(
     monkeypatch.setitem(sys.modules, "ollama", fake)
 
     ensure_model_available(
-        ModelBinding(kind="ollama", model="nomic-embed-text", dim=768, host="http://x"),
+        ModelBinding(kind="ollama", model="nomic-embed-text", host="http://x"),
         events=Recorder(),
     )
 
 
 def test_openai_has_nothing_to_fetch(monkeypatch: pytest.MonkeyPatch):
     ensure_model_available(
-        ModelBinding(kind="openai", model="text-embedding-3-small", dim=1536),
+        ModelBinding(kind="openai", model="text-embedding-3-small"),
         events=Recorder(),
     )
 
@@ -238,9 +236,7 @@ def test_building_an_embedder_is_what_fetches_the_model(
         lambda binding, *, events=None: ensured.append(binding.model),
     )
 
-    module.embedder_for(
-        ModelBinding(kind="fastembed", model="BAAI/bge-small-en-v1.5", dim=384)
-    )
+    module.embedder_for(ModelBinding(kind="fastembed", model="BAAI/bge-small-en-v1.5"))
 
     assert ensured == ["BAAI/bge-small-en-v1.5"]
 
@@ -263,8 +259,6 @@ def test_an_unusable_binding_is_refused_before_anything_is_fetched(
     with pytest.raises(SettingsError):
         # fastembed runs in this process; a host means the wrong setting was
         # changed, and `validate_binding` refuses it.
-        module.embedder_for(
-            ModelBinding(kind="fastembed", model="m", dim=8, host="http://x")
-        )
+        module.embedder_for(ModelBinding(kind="fastembed", model="m", host="http://x"))
 
     assert ensured == []

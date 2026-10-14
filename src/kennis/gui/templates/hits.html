@@ -6,37 +6,103 @@
    because it carries no styling, and every class a template uses
    has to be styled - a test says so. #}
 <span id="answered" data-query="{{ question }}" data-scope="{{ scope }}"
-      data-mode="{{ mode }}" hidden></span>
+      data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
 {% if problem %}
-<p class="role-warning">{{ problem }}</p>
-{% if resolution %}<p class="role-command">{{ resolution }}</p>{% endif %}
+<div class="notice"><p>{{ problem }}</p>
+{% if resolution is for_the_window %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>
 {% elif question and not groups %}
-<p class="role-muted">{{ nothing }}</p>
+<p class="nothing">{{ nothing }}</p>
 {% endif %}
-{# The sweep ran but not the way it was asked to. A warning rather
-   than a problem: there are results, and they are lexical ones.
-   Concern #381. #}
-{% for fallback in fallbacks %}
-<p class="role-warning">{{ fallback }}</p>
-{% endfor %}
+{# The sweep ran but not the way it was asked to: there are results,
+   and they are lexical ones (#381). One notice for every collection it
+   applies to, and the step that would change it. #}
+{% if keywords_only %}
+<p class="notice quiet">{{ icon("info") }}<span>{{ keywords_only.sentence }}
+  <a href="{{ keywords_only.href }}">{{ keywords_only.label }}</a></span></p>
+{% endif %}
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
 {% endfor %}
+{# The scale, once, ahead of every group (#408). A `<details>`, so it
+   opens without a script. The ramp is the five strength colours, one
+   cell each, and the same cells the bars below are drawn from. #}
+{# How many and for what, with the order beside it: the mockup's head.
+   The order is links, so it works without a script. #}
+{% if summary %}
+<div class="results-head">
+  <p class="summary">{{ summary }}</p>
+  {% if orders %}
+  <nav class="order" aria-label="{{ order_label }}">
+    <span class="label">{{ order_label }}</span>
+    <span class="segmented">{% for choice in orders %}<a href="{{ choice.href }}"{% if choice.current %} aria-current="true"{% endif %}>{{ choice.label }}</a>{% endfor %}</span>
+  </nav>
+  {% endif %}
+</div>
+{% endif %}
+{% if key %}
+<details class="key">
+  <summary>{{ icon("info") }}<span class="label">{{ key_summary }}</span>
+    <span class="ramp"><span class="end">{{ key_low }}</span><span class="cells">{% for step in range(1, 6) %}<i class="cell on" data-step="{{ step }}"></i>{% endfor %}</span><span class="end">{{ key_high }}</span></span>
+  </summary>
+  <ul class="key-lines">
+    {% for line in key.lines %}
+    <li>{{ icon(line.icon) }}<span>{{ line.scale }}</span></li>
+    {% endfor %}
+  </ul>
+  {% if key.models %}<p>{{ key_models(key.models) }}</p>{% endif %}
+  <p>{{ key_order }}</p>
+</details>
+{% endif %}
+{# The limit, when it describes the page: a reorder acts on the hits
+   the search returned (#406). #}
+{% if orders and order %}<p class="limit role-muted">{{ order_limit }}</p>{% endif %}
 {% for group in groups %}
-{% if group.basis %}<p class="basis">{{ group.basis }}</p>{% endif %}
-<ol class="hits">
+<h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.collection }}</span><span class="count">{{ group.count }}</span></h2>
+<ol class="results">
 {% for hit in group.hits %}
-  <li>
-    <a class="role-operation" href="{{ hit.href }}">{{ hit.headline }}</a>
-    {# One element per field. A single string with `white-space:
-       pre-wrap` wrapped wherever the gutter ran out, which split a
-       band from its level as soon as there were two. Concern #380. #}
-    <p class="role-muted detail">{% for part in hit.detail_parts %}<span>{{ part }}</span>{% endfor %}</p>
-    {# `safe` because `marked_snippet` escaped every character of the
-       corpus's text itself and emitted only the tags it chose. Jinja
-       escaping again would show `&lt;em&gt;` on the page. #}
-    {% if hit.body %}<p class="body">{{ hit.body | safe }}</p>{% endif %}
+  <li class="hit" data-collection="{{ group.collection }}">
+    {# The card's head (Brian, 2026-10-12): the document and the section,
+       then how well it matched and its handle, in a band over the
+       passage it quotes. Title first, so a card says what it is before
+       how well it matched (the visual review, F4). #}
+    <div class="hit-head">
+      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
+        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+      {# Which section the passage is from; the title is the document's
+         alone. Marked, so `safe`. #}
+      {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
+      {# The handle ends the row, where the mockup puts the citekey. #}
+      <p class="measures">
+        {% for measure in hit.measures %}
+        {# The colour is the level's, on every filled cell; the count of
+           filled cells and the word say the same without colour (#421). #}
+        <span class="measure" title="{{ measure.label }}" data-step="{{ measure.step }}">{{ icon(measure.icon) }}<span class="measure-name">{{ measure.label }}</span><span class="cells">{% for cell in range(1, 6) %}<i class="cell{% if cell <= measure.step %} on{% endif %}"></i>{% endfor %}</span><span class="level">{{ measure.level }}</span></span>
+        {% endfor %}
+        <span class="handle">{{ hit.handle }}</span>
+      </p>
+    </div>
+    {# One rendering of the chunk, parted where the reader's words first
+       occur (#454). Closed, the part from the match, faded where it is
+       cut; opened, the part before it grows in above and the fade goes.
+       `<details>` holds only the control, so its `open` is what the
+       stylesheet reads, `name` closes the others, and no script is
+       involved. `safe`: `passage_html` escaped the corpus's text and
+       emitted only the tags it chose. #}
+    <div class="passage{% if hit.opens %} clamped{% endif %}">
+      <div class="full">
+        {% if hit.passage.lead %}<div class="lead">{{ hit.passage.lead | safe }}</div>{% endif %}
+        <div class="body">{{ hit.passage.body | safe }}</div>
+      </div>
+      {% if hit.opens %}
+      {# A chevron alone on the card's edge; its words are for a screen
+         reader. The title's arrow is the one way to the document. #}
+      <div class="passage-foot">
+        <details name="passages"><summary><span class="visually-hidden when-closed">{{ show_passage }}</span><span class="visually-hidden when-open">{{ hide_passage }}</span>{{ icon("chevron-down") }}</summary></details>
+      </div>
+      {% endif %}
+    </div>
   </li>
 {% endfor %}
 </ol>
+{% if more[group.collection] is defined %}<p class="more"><a href="{{ more[group.collection] }}">{{ more_from(group.collection) }}</a></p>{% endif %}
 {% endfor %}

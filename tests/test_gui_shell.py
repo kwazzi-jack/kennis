@@ -11,31 +11,41 @@ same host, can reach 127.0.0.1. Brian works on cluster login nodes.
 Retrofitting authentication onto a working interface is the change
 that gets deferred, so it is tested before there is anything to
 protect. Concern #309.
-
-The window itself is not tested. `pywebview` resolves its backend
-inside `start()`, which blocks until the window closes, and there is
-no honest way to exercise that from a test process. Saying so is
-better than a test that passes without touching it.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.history.repository import Repository
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.responses import REVISION_HEADER
 from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
 from kennis.render.theme import ANSI_COLOURS, ROLES
 
 TOKEN = "a-test-token"
+STATIC_SCRIPTS = Path(__file__).parents[1] / "src" / "kennis" / "gui" / "static"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
 
 
 @pytest.fixture
@@ -59,6 +69,50 @@ def test_a_request_without_the_token_is_refused(client: TestClient):
 
 def test_a_request_with_the_wrong_token_is_refused(client: TestClient):
     assert client.get("/", params={"token": "not-it"}).status_code == 401
+
+
+def test_a_browser_without_the_token_is_told_what_to_do(client: TestClient):
+    """It was `{"detail": ...}` as raw JSON in a tab. A browser asking for
+    a page is given one, with its stylesheet inline because the
+    stylesheet is refused too - and still not a byte of the corpus."""
+    answer = client.get("/", headers={"accept": "text/html"})
+
+    assert answer.status_code == 401
+    assert words.LOCKED_HEADING in answer.text
+    assert "<style>" in answer.text
+    assert 'href="/static/kennis.css"' not in answer.text
+
+
+def test_anything_else_without_the_token_gets_the_short_answer(client: TestClient):
+    answer = client.get("/", headers={"accept": "text/html", "hx-request": "true"})
+
+    assert answer.status_code == 401
+    assert answer.headers["content-type"].startswith("application/json")
+
+
+def test_an_address_with_no_page_is_a_page_with_a_way_back(
+    corpus: Path, client: TestClient
+):
+    """FastAPI's own `{"detail": "Not Found"}` was what `/nowhere` showed."""
+    assert client.get("/", params={"token": TOKEN}).status_code == 200
+
+    answer = client.get("/nowhere")
+
+    assert answer.status_code == 404
+    assert f"<h1>{words.NOT_FOUND_HEADING}</h1>" in answer.text
+    assert words.no_page_at("/nowhere") in answer.text
+    assert 'href="/corpus"' in answer.text
+
+
+def test_a_fragment_that_is_not_there_is_not_given_a_whole_page(
+    corpus: Path, client: TestClient
+):
+    assert client.get("/", params={"token": TOKEN}).status_code == 200
+
+    answer = client.get("/nowhere", headers={"hx-request": "true"})
+
+    assert answer.status_code == 404
+    assert "<html" not in answer.text
 
 
 def test_the_token_admits_and_is_remembered(corpus: Path, client: TestClient):
@@ -92,6 +146,82 @@ def test_the_guard_does_not_redirect_to_somewhere_unguarded(client: TestClient):
 
     assert refused.status_code == 401
     assert "location" not in {key.lower() for key in refused.headers}
+
+
+def test_a_second_interface_does_not_sign_out_the_first(corpus: Path):
+    """A browser sends a cookie to every port on a host, so two windows
+    holding their tokens under one name overwrote each other (#407)."""
+    first = TestClient(build_app("first-token"), base_url="http://127.0.0.1:41001")
+    second = TestClient(build_app("second-token"), base_url="http://127.0.0.1:41002")
+
+    def one_browser() -> None:
+        """Every cookie either tab holds, in both: a browser's one jar,
+        which matches a host whatever its port."""
+        held = {**dict(first.cookies), **dict(second.cookies)}
+        for tab in (first, second):
+            tab.cookies.clear()
+            for name, value in held.items():
+                tab.cookies.set(name, value)
+
+    assert first.get("/", params={"token": "first-token"}).status_code == 200
+    one_browser()
+    assert second.get("/", params={"token": "second-token"}).status_code == 200
+    one_browser()
+
+    assert first.get("/").status_code == 200
+    assert second.get("/").status_code == 200
+
+
+# Written by hand: what a browser sends with a POST from another page on
+# this host - another port is the same *site*, so `samesite=strict` lets
+# the cookie through - and from kennis's own page.
+ELSEWHERE = [
+    {"Origin": "http://127.0.0.1:8888"},
+    {"Origin": "http://localhost:41001"},
+    {"Origin": "null"},
+    {"Sec-Fetch-Site": "same-site"},
+    {"Sec-Fetch-Site": "cross-site"},
+    {"Origin": "null", "Sec-Fetch-Site": "cross-site"},
+]
+OWN_PAGE = [
+    {"Origin": "http://127.0.0.1:41001"},
+    {"Sec-Fetch-Site": "same-origin"},
+    # A plain form on kennis's own page: `no-referrer` withholds its origin.
+    {"Origin": "null", "Sec-Fetch-Site": "same-origin"},
+    {},
+]
+
+
+@pytest.fixture
+def signed_in(corpus: Path) -> TestClient:
+    opened = TestClient(
+        build_app(TOKEN), base_url="http://127.0.0.1:41001", follow_redirects=False
+    )
+    assert opened.get("/", params={"token": TOKEN}).status_code == 200
+    return opened
+
+
+@pytest.mark.parametrize("headers", ELSEWHERE)
+def test_a_write_from_another_page_on_this_host_is_refused(
+    signed_in: TestClient, headers: dict[str, str]
+):
+    refused = signed_in.post("/history/clear", headers=headers)
+
+    assert refused.status_code == 403
+
+
+@pytest.mark.parametrize("headers", OWN_PAGE)
+def test_a_write_from_kennis_own_page_is_accepted(
+    signed_in: TestClient, headers: dict[str, str]
+):
+    assert signed_in.post("/history/clear", headers=headers).status_code == 303
+
+
+def test_a_read_from_another_page_is_still_a_read(signed_in: TestClient):
+    """Nothing is changed by a GET, and the token still guards it."""
+    answer = signed_in.get("/", headers={"Sec-Fetch-Site": "same-site"})
+
+    assert answer.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +400,7 @@ def test_a_mistyped_scope_is_named_rather_than_answered_emptily(
     # The quotes around the name are escaped by the template, so the
     # assertion is on the parts escaping does not touch. Asserting the
     # exact sentence would fail on correct output.
-    assert "no scope called" in found.text
+    assert "is not a place to search" in found.text
     assert "notez" in found.text
     assert "No passages matched." not in found.text
 
@@ -313,7 +443,7 @@ def test_a_remote_figure_is_withheld_until_it_is_asked_for(
 
     assert "<img" not in withheld.text
     assert "arxiv.org" in withheld.text
-    assert "Load them" in withheld.text
+    assert "Load figures" in withheld.text
     assert "<img" in loaded.text
 
 
@@ -338,7 +468,8 @@ def test_a_hit_carries_the_same_text_as_the_command_line(
     them are `render/hits.py`'s and not its own. Compared as **whole
     lines**, for #297's reason: asserting that the page merely mentions
     the query passes for a page that composed its own headline, and an
-    injection proved exactly that.
+    injection proved exactly that. The window shows the headline
+    without its rank (#406), as the whole content of the title link.
     """
     a_note(corpus, "calibration", "Calibration solves for antenna gains.")
     a_note(corpus, "baking", "A recipe for sourdough bread at home.")
@@ -357,17 +488,19 @@ def test_a_hit_carries_the_same_text_as_the_command_line(
     ]
     assert headlines, printed.output
     for headline in headlines:
-        assert headline in served.text, headline
+        title = re.sub(r"^\[\d+\] ", "", headline)
+        assert re.search(
+            rf'<a class="title" [^>]*>{re.escape(title)}</a>', served.text
+        ), title
 
 
-def test_the_margin_carries_every_field_the_command_line_prints(
+def test_the_hit_carries_every_field_the_command_line_prints(
     corpus: Path, client: TestClient
 ):
-    """The margin lays the fields out itself since #380, so the joined
-    line no longer appears on the page and the test above cannot see
-    them. Each field still has to be the same bytes, and each has to
-    be in an element of its own - a gutter twenty characters wide
-    wrapped `meaning:` away from `medium` when they shared one."""
+    """The window lays the fields out itself, so the joined line never
+    appears on the page and the test above cannot see them. Each band
+    `label: level` is a measure titled with the label and carrying the
+    level in its own element; the handle is an element of its own."""
     a_note(corpus, "calibration", "Calibration solves for antenna gains.")
     admitted(client)
 
@@ -388,10 +521,17 @@ def test_the_margin_carries_every_field_the_command_line_prints(
     ]
     assert lines, printed.output
     for line in lines:
-        fields = line.split("  ")
-        assert len(fields) >= 2, line
-        for field in fields:
-            assert f"<span>{field}</span>" in served.text, field
+        *bands, handle = line.split("  ")
+        assert bands, line
+        assert f'<span class="handle">{handle}</span>' in served.text, handle
+        for band in bands:
+            label, level = band.split(": ")
+            assert re.search(
+                rf'<span class="measure" title="{label}"[^>]*>.*?'
+                rf'<span class="level">{level}</span>',
+                served.text,
+                re.S,
+            ), band
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +543,7 @@ def test_the_holdings_page_lists_every_collection(corpus: Path, client: TestClie
     a_note(corpus, "calibration", "Antenna gains.")
     admitted(client)
 
-    page = client.get("/held")
+    page = client.get("/corpus")
 
     assert page.status_code == 200
     for name in ("notes", "literature", "docs"):
@@ -418,9 +558,9 @@ def test_a_collection_never_indexed_is_not_called_stale(
     sends someone to rebuild an index that does not exist."""
     admitted(client)
 
-    page = client.get("/held")
+    page = client.get("/corpus")
 
-    assert "never indexed" in page.text
+    assert "Not indexed yet" in page.text
     assert "stale" not in page.text
 
 
@@ -471,7 +611,7 @@ def test_a_page_carries_the_revision_it_was_drawn_at(corpus: Path, client: TestC
     a_note(corpus, "calibration", "Antenna gains.")
     admitted(client)
 
-    page = client.get("/held")
+    page = client.get("/corpus")
     current = client.get("/revision").json()["revision"]
 
     assert current
@@ -487,6 +627,100 @@ def test_the_revision_changes_when_a_terminal_writes(corpus: Path, client: TestC
     a_note(corpus, "imaging", "Deconvolution.")
 
     assert client.get("/revision").json()["revision"] != before
+
+
+def test_this_window_s_own_note_answers_with_the_revision_it_left(
+    corpus: Path, client: TestClient
+):
+    """The banner compares against the page's revision, which a note
+    written here - no reload - left behind, so on the next focus it said
+    something else had changed the corpus."""
+    admitted(client)
+    before = client.get("/revision").json()["revision"]
+
+    answer = posted(client, "/remember", data={"text": "Antenna gains drift."})
+
+    after = client.get("/revision").json()["revision"]
+    assert after != before
+    assert answer.headers[REVISION_HEADER] == after
+
+
+def test_a_finished_index_job_answers_with_the_revision_it_left(
+    corpus: Path, client: TestClient
+):
+    """A job's write lands after its POST has answered, so the outcome,
+    fetched once it has ended, is what carries the revision."""
+    admitted(client)
+    root = existing_corpus().corpus_root
+
+    def writes_and_commits(events: object) -> None:
+        (root / "notes" / "written.md").write_text("Written.\n", encoding="utf-8")
+        Repository(root).commit("index", scope="notes", summary="1 document")
+
+    job = client.app.state.jobs.start("index", writes_and_commits)
+    assert job.done.wait(10)
+
+    answer = client.get(f"/job/{job.id}/outcome", headers={"HX-Request": "true"})
+
+    assert answer.headers[REVISION_HEADER] == client.get("/revision").json()["revision"]
+
+
+def test_a_search_does_not_answer_with_the_revision(corpus: Path, client: TestClient):
+    """Only a write of this window's moves the page's revision: a search
+    that did would hide a terminal's write behind a keystroke."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    answer = client.get(
+        "/hits", params={"q": "antenna"}, headers={"HX-Request": "true"}
+    )
+
+    assert REVISION_HEADER not in answer.headers
+
+
+def test_the_script_takes_the_revision_from_a_write_and_reads_it_on_each_check():
+    script = "\n".join(
+        line
+        for line in (STATIC_SCRIPTS / "revision.js")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if not line.strip().startswith("//")
+    )
+
+    assert f'getResponseHeader("{REVISION_HEADER}")' in script
+    assert "banner.dataset.revision = " in script
+    assert "body.revision === banner.dataset.revision" in script
+
+
+def a_hand_deletion(corpus: Path) -> str:
+    """One note deleted outside kennis, as the corpus names it."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    deleted = next((corpus / "corpus" / "notes").rglob("*.md"))
+    deleted.unlink()
+    return deleted.relative_to(corpus / "corpus").as_posix()
+
+
+def test_a_note_written_here_says_what_it_put_back(corpus: Path, client: TestClient):
+    """The command line says it; the window put the document back in
+    silence (#381's defect class: a field one front end drops)."""
+    deleted = a_hand_deletion(corpus)
+    admitted(client)
+
+    answer = posted(client, "/remember", data={"text": "Antenna gains drift."})
+
+    assert f"{deleted} was deleted outside kennis and has been restored" in answer.text
+
+
+def test_a_job_started_here_says_what_it_put_back(corpus: Path, client: TestClient):
+    deleted = a_hand_deletion(corpus)
+    admitted(client)
+
+    posted(client, "/index", data={"collection": "notes"})
+    job = client.app.state.jobs.recent()[0]
+    assert job.done.wait(20)
+    outcome = client.get(f"/job/{job.id}/outcome", headers={"HX-Request": "true"})
+
+    assert f"{deleted} was deleted outside kennis and has been restored" in outcome.text
 
 
 def test_the_revision_is_not_readable_without_the_token(
@@ -519,7 +753,7 @@ def test_a_listing_says_when_it_left_documents_out(corpus: Path, client: TestCli
     admitted(client)
 
     listing = client.get("/collection/notes")
-    summary = client.get("/held")
+    summary = client.get("/corpus")
 
     assert "could not be read" in listing.text
     assert "kennis corpus status" in listing.text
@@ -536,10 +770,10 @@ def test_a_note_written_from_the_page_reaches_the_corpus(
 ):
     admitted(client)
 
-    answer = client.post("/remember", data={"text": "Use NNLS for the solver."})
+    answer = posted(client, "/remember", data={"text": "Use NNLS for the solver."})
 
     assert answer.status_code == 200
-    assert "Remembered" in answer.text
+    assert "Saved:" in answer.text
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     assert any("NNLS" in d.body for d in held.documents)
 
@@ -563,7 +797,7 @@ def test_the_write_is_committed(corpus: Path, client: TestClient):
     admitted(client)
     before = commits()
 
-    client.post("/remember", data={"text": "Phase-only first, then amplitude."})
+    posted(client, "/remember", data={"text": "Phase-only first, then amplitude."})
 
     assert commits() == before + 1
 
@@ -572,7 +806,7 @@ def test_writing_is_refused_without_the_token(corpus: Path, client: TestClient):
     """A write is exactly the request the guard exists for, and a POST
     route added after the middleware was written is what middleware
     exists to cover."""
-    answer = client.post("/remember", data={"text": "Should not be written."})
+    answer = posted(client, "/remember", data={"text": "Should not be written."})
 
     assert answer.status_code == 401
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
@@ -608,9 +842,9 @@ def test_writing_nothing_is_refused_by_the_page_not_by_the_engine(
     """
     admitted(client)
 
-    answer = client.post("/remember", data={"text": "   \n  "})
+    answer = posted(client, "/remember", data={"text": "   \n  "})
 
-    assert "nothing to remember" in answer.text.lower()
+    assert "write something first" in answer.text.lower()
     assert "role-warning" in answer.text
     assert "kennis remember" not in answer.text
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
@@ -634,13 +868,13 @@ def test_saying_the_same_thing_twice_is_reported_as_already_known(
     corpus: Path, client: TestClient
 ):
     admitted(client)
-    client.post("/remember", data={"text": "Weighting is Briggs with robust zero."})
+    posted(client, "/remember", data={"text": "Weighting is Briggs with robust zero."})
 
-    again = client.post(
-        "/remember", data={"text": "Weighting is Briggs with robust zero."}
+    again = posted(
+        client, "/remember", data={"text": "Weighting is Briggs with robust zero."}
     )
 
-    assert "already remembered" in again.text.lower()
+    assert "already saved" in again.text.lower()
     held = Collection(root=existing_corpus().corpus_root, name="notes").contents()
     assert len(held.documents) == 1
 
@@ -655,7 +889,7 @@ def test_a_busy_corpus_is_a_state_to_retry_from(corpus: Path, client: TestClient
     admitted(client)
 
     with corpus_lock(corpus / "corpus"):
-        answer = client.post("/remember", data={"text": "Written while busy."})
+        answer = posted(client, "/remember", data={"text": "Written while busy."})
 
     assert answer.status_code == 200
     assert "busy" in answer.text.lower()
@@ -668,7 +902,8 @@ def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(
     reporting success is worse than not recording it."""
     admitted(client)
 
-    answer = client.post(
+    answer = posted(
+        client,
         "/remember",
         data={"text": "This project images in 2 GHz sub-bands.", "target": "context"},
     )
@@ -679,69 +914,73 @@ def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(
 
 
 # ---------------------------------------------------------------------------
-# What a missing window backend looks like
+# What a page may load
 # ---------------------------------------------------------------------------
 
 
-def test_the_backend_probe_tracebacks_are_dropped_and_nothing_else_is():
-    """On Linux with neither GTK nor Qt bindings, pywebview logs a
-    full traceback per backend it tried before raising. kennis handles
-    that and opens a browser, so the tracebacks make a handled
-    fallback read as a crash - which is what it did when Brian first
-    ran it.
-
-    A filter on the message, not a silenced logger: silencing
-    `pywebview` for the duration would also hide anything going wrong
-    in a window that *did* open, which is the case someone would
-    actually need to see. So the test asserts both halves.
-    """
-    import logging
-
-    from kennis.gui.serve import _DropsBackendProbes
-
-    dropping = _DropsBackendProbes()
-
-    def record(message: str) -> logging.LogRecord:
-        return logging.LogRecord(
-            "pywebview", logging.ERROR, __file__, 1, message, None, None
-        )
-
-    assert not dropping.filter(record("GTK cannot be loaded"))
-    assert not dropping.filter(record("QT cannot be loaded"))
-    # Everything else still reaches the person running it.
-    assert dropping.filter(record("the window crashed"))
-    assert dropping.filter(record("failed to render the page"))
+def directives_of(answer: Response) -> dict[str, str]:
+    policy = answer.headers["Content-Security-Policy"]
+    return {
+        part.split(" ", 1)[0]: part.split(" ", 1)[1]
+        for part in (piece.strip() for piece in policy.split(";"))
+    }
 
 
-def test_the_browser_fallback_is_announced(
-    corpus: Path, monkeypatch: pytest.MonkeyPatch
+def test_every_page_says_what_it_may_load(corpus: Path, client: TestClient):
+    """A second wall behind the renderer: a converted page's markup is
+    escaped and its images blocked, and the browser is told the same."""
+    admitted(client)
+
+    policy = directives_of(client.get("/"))
+
+    assert policy["script-src"] == "'self'"
+    assert policy["img-src"] == "'self' data:"
+    assert policy["frame-ancestors"] == "'none'"
+    assert policy["object-src"] == "'none'"
+
+
+def test_remote_images_are_allowed_only_where_the_reader_asked(
+    corpus: Path, client: TestClient
 ):
-    """A browser tab appearing where a window was asked for needs
-    saying, or it reads as the wrong thing happening silently."""
-    import kennis.gui.serve as serving
+    identifier = a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
 
-    said: list[str] = []
-    monkeypatch.setattr(serving, "_shown_in_a_window", lambda url: False)
-    monkeypatch.setattr(serving.webbrowser, "open", lambda url: True)
-    monkeypatch.setattr(serving, "_wait_until_interrupted", lambda: None)
+    asked = client.get(f"/document/notes/{identifier}", params={"images": "on"})
+    not_asked = client.get(f"/document/notes/{identifier}")
 
-    serving.run(lambda url: None, on_no_window=lambda: said.append("no window"))
-
-    assert said == ["no window"]
+    assert "https:" in directives_of(asked)["img-src"]
+    assert "https:" not in directives_of(not_asked)["img-src"]
 
 
-def test_a_window_that_opens_is_not_announced_as_a_fallback(
-    corpus: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_collection_that_is_none_is_called_a_collection(
+    corpus: Path, client: TestClient
 ):
-    """The other side, so the test above cannot pass by announcing
-    always."""
-    import kennis.gui.serve as serving
+    """`/collection/papers` said "There is no scope called 'papers'":
+    scope is the search box's word, and this is not the search."""
+    assert client.get("/", params={"token": TOKEN}).status_code == 200
 
-    said: list[str] = []
-    monkeypatch.setattr(serving, "_shown_in_a_window", lambda url: True)
-    monkeypatch.setattr(serving.webbrowser, "open", lambda url: True)
-    monkeypatch.setattr(serving, "_wait_until_interrupted", lambda: None)
+    answer = client.get("/collection/papers")
 
-    serving.run(lambda url: None, on_no_window=lambda: said.append("no window"))
+    assert answer.status_code == 404
+    assert "is not a collection" in answer.text
+    assert "scope" not in answer.text.split("<main", 1)[1].split("</main>")[0]
 
-    assert said == []
+
+def test_the_holdings_table_says_in_a_word_whether_each_collection_is_searchable(
+    corpus: Path, client: TestClient
+):
+    """Its headers were typed lower case into the page, and a cell carried
+    the command line's sentence: "the notes index is stale: ..."."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    page = BeautifulSoup(client.get("/corpus").text, "html.parser")
+
+    headers = [cell.get_text() for cell in page.select("table.holdings th")]
+    assert headers == list(words.HOLDINGS_COLUMNS)
+    cells = {
+        row.select("td")[0].get_text(strip=True): row.select("td")[2].get_text()
+        for row in page.select("table.holdings tbody tr")
+    }
+    assert cells["notes"] == words.SEARCHABLE
+    assert all("stale" not in cell for cell in cells.values())

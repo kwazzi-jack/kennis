@@ -88,6 +88,19 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "pypdfium2>=5.10.1",
     "packaging>=26.3",
+    # The window. In the base install since pywebview went (#420): what is
+    # left is small and pure Python, and everyone who installs kennis gets
+    # `kennis gui` (#423).
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "uvicorn>=0.30",
+    # PDF conversion, in the base install because nobody installs kennis
+    # without wanting it (Brian, #423) - although it is the heaviest thing
+    # here by far, with torch and on Linux the CUDA libraries behind it.
+    # Pinned below 4: version 4 is a client to a daemon and its convenient
+    # path uploads documents. The pin is a decision, not staleness (#130).
+    "mineru[pipeline]>=3.4,<4",
+    "py7zr>=1.1.3",
 ]
 
 [project.optional-dependencies]
@@ -103,26 +116,24 @@ dependencies = [
 mcp = [
     "fastmcp>=4.0.10,<5",
 ]
-mineru = [
-    "mineru[pipeline]>=3.4,<4",
-]
-gui = [
-    "fastapi>=0.115",
-    "jinja2>=3.1",
-    "markdown-it-py>=3",
-    "pywebview>=6.2,<7",
-    "uvicorn>=0.30",
-]
 
 [project.scripts]
 kennis = "kennis.cli.__main__:main"
 
 [dependency-groups]
+browser = [
+    "playwright>=1.55",
+]
 # commitizen's floor is the one that matters: `cz bump` reads the commit log
 # to decide the version, so an older release deciding differently is a silent
 # wrong answer rather than an error.
 dev = [
     "commitizen>=4.18",
+    # starlette's test client, which every GUI test drives, warns on plain
+    # httpx and the suite makes a warning an error. It arrived only through
+    # the `mcp` extra, so a job without that extra - the browser job - could
+    # not import a single GUI test module.
+    "httpx2>=2.13",
     "mypy>=1.11",
     "pre-commit>=3.7",
     "pytest>=8.2",
@@ -183,13 +194,17 @@ testpaths = ["tests"]
 # opt-in live tests are run with `uv run pytest -m network`, and exist to
 # settle what a fixture cannot: a fixture agrees with its parser by
 # construction, a real host does not.
-addopts = "-ra --strict-markers --strict-config -m 'not network and not slow'"
+addopts = "-ra --strict-markers --strict-config -m 'not network and not slow and not browser'"
 markers = [
     "network: touches the real network; deselected unless asked for by name",
     # Separate from `network` because the two ask different questions and
     # cost differently: a live test needs a host to be up, a slow one needs
     # only patience. Run with `uv run pytest -m slow`.
     "slow: builds a corpus large enough to measure; deselected by default",
+    # Needs a browser, which an ordinary install and most CI jobs do not
+    # have: `uv sync --group browser && uv run playwright install chromium`,
+    # then `uv run pytest -m browser`.
+    "browser: drives the window in a real Chromium; deselected by default",
 ]
 xfail_strict = true
 # An upstream deprecation becomes a failing test at the moment it appears,

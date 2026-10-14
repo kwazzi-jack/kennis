@@ -30,12 +30,14 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.icons import icon
 from kennis.retrieval import EVERY_SCOPE, SCOPE_NAMES
 
 TOKEN = "a-test-token"
@@ -91,8 +93,8 @@ def a_note(tmp_path: Path, name: str, body: str) -> None:
 
 
 def test_the_hint_names_the_scope_it_will_search():
-    assert words.search_hint_for("literature") == "Search literature kennis holds"
-    assert words.search_hint_for("notes") == "Search notes kennis holds"
+    assert words.search_hint_for("literature") == "Search literature"
+    assert words.search_hint_for("notes") == "Search notes"
 
 
 def test_the_hint_for_a_sweep_says_where_a_sweep_goes():
@@ -186,19 +188,26 @@ def test_the_form_has_what_a_browser_needs_to_submit_on_enter(
     assert "submit" in [part.strip().split()[0] for part in trigger.group(1).split(",")]
 
 
-def test_the_form_names_no_action_so_it_falls_back_to_the_address(
+def test_a_native_submission_goes_to_the_address_the_page_rebuilds_from(
     corpus: Path, client: TestClient
 ):
-    """With no `action`, a native submission goes to the current path
-    with the fields as a query string - which is the address the page
-    reconstructs from. An `action="/hits"` would send a reader without
-    JavaScript to a bare fragment instead. Concern #340."""
+    """A native submission must reach `/` with the fields as a query
+    string - the address the page reconstructs from. An
+    `action="/hits"` would send a reader without JavaScript to a bare
+    fragment instead. Concern #340.
+
+    Until 11a this was done by naming no action, because the form was
+    only on the search page. It is in the bar now, on every page, so
+    the action is named: `/`, by `GET`."""
     admitted(client)
 
     page = client.get("/").text
-    form = page[page.index("<form") : page.index("</form>")]
+    form = re.search(r'<form class="searchbox"[^>]*>', page)
 
-    assert "action=" not in form
+    assert form is not None
+    assert 'action="/"' in form.group(0)
+    assert 'method="get"' in form.group(0)
+    assert "/hits" not in re.findall(r'action="([^"]*)"', form.group(0))
 
 
 def test_a_search_in_the_address_answers_without_any_script(
@@ -306,3 +315,35 @@ def test_the_indicator_is_hidden_when_the_hits_match_the_box(
     indicator = indicator[: indicator.index(">") + 1]
 
     assert "hidden" in indicator
+
+
+def test_the_search_box_is_one_control_with_its_button_out_of_sight(
+    corpus: Path, client: TestClient
+):
+    """The mockup's box: an icon, the field, the key that reaches it and
+    the two selects, inside one border. The button stays, because the
+    Enter key and the scriptless path need it, but is not drawn (#447)."""
+    admitted(client)
+
+    page = client.get("/").text
+    raw = page[page.index('<form class="searchbox"') : page.index("</form>")]
+    form = BeautifulSoup(raw, "html.parser")
+    button = form.find("button", attrs={"type": "submit"})
+    key = form.find("kbd")
+
+    assert str(icon("search")) in raw
+    assert raw.index(str(icon("search"))) < raw.index("<input")
+    assert isinstance(key, Tag) and key.get_text(strip=True) == "/"
+    assert isinstance(button, Tag)
+    assert "visually-hidden" in (button.get("class") or [])
+
+
+def test_the_slash_key_reaches_the_search_box():
+    """Asserted against the code with its comments removed (#373)."""
+    script = (STATIC / "hint.js").read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("//")
+    )
+
+    assert 'event.key !== "/"' in code
+    assert "box.focus()" in code

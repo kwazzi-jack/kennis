@@ -28,11 +28,16 @@ from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.rag.search import DocumentSpan
 from kennis.engine.remember import IndexOutcome
 
-# What a bar says while an operation runs. Two entries, because the engine
-# emits two operation verbs; a third would have to be added here and that is
+# What a bar says while an operation runs. One entry per verb the engine
+# emits with a `Progress`; a new verb has to be added here, and that is
 # the point - the words are not derived from the verb by a rule that would
 # produce "Statusing" the day a third verb appears.
-_PARTICIPLES: Final[dict[str, str]] = {"add": "Adding", "index": "Indexing"}
+_PARTICIPLES: Final[dict[str, str]] = {
+    "add": "Adding",
+    "index": "Indexing",
+    "backup": "Backing up",
+    "corpus-sync": "Synchronising",
+}
 
 # How much of a hit to show by default. Long enough to recognise the passage,
 # short enough that ten hits fit on a screen.
@@ -165,7 +170,9 @@ def describe_freshness(freshness: Freshness, collection: str) -> str:
             + count_of(freshness.added, "document")
             + "; nothing in it is out of date"
         )
-    return f"the {collection} index is in step"
+    # "Up to date", the words a reader is told wherever an index is
+    # current; "in step" is the engine's state and nobody reads it.
+    return f"the {collection} index is up to date"
 
 
 def describe_document(collection: str, document: Document, corpus_root: Path) -> str:
@@ -318,7 +325,9 @@ def describe_lexical_fallback(collection: str) -> str:
     quality needs to know they are not comparing against the dense
     index they think they configured.
     """
-    return f"the {collection} index has no dense leg, so this ran as a lexical search"
+    # In the words the mode control uses, "Keywords only", so the
+    # warning names the choice it made for the reader (#417).
+    return f"the {collection} index has no meaning leg, so this matched keywords only"
 
 
 def describe_busy_indexes(collections: Sequence[str]) -> str:
@@ -372,6 +381,23 @@ def fetching_model(model: str) -> str:
     return f"the embedding model {model}"
 
 
+def running_for(seconds: float) -> str:
+    """How long a job has been running, for a clock that ticks once a second.
+
+    Whole seconds, because it changes every second and a tenth that
+    flickers is noise; hours and minutes past an hour, because by then the
+    seconds no longer matter to anyone watching.
+    """
+    whole = int(seconds)
+    if whole < 60:
+        return f"{whole}s"
+    minutes, remainder = divmod(whole, 60)
+    if minutes < 60:
+        return f"{minutes}m{remainder:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
 def progress_label(operation: str) -> str:
     """The name on a progress bar, for an engine operation verb.
 
@@ -382,3 +408,11 @@ def progress_label(operation: str) -> str:
     participle reads worse than a plain word.
     """
     return _PARTICIPLES.get(operation, operation.capitalize())
+
+
+def still_running_on_interrupt(kind: str) -> str:
+    """What `kennis gui` says to a Ctrl-C that arrives during a job (#422)."""
+    return (
+        f"A {kind} job is still running, and stopping now would end it "
+        "wherever it is. Wait for it, or press Ctrl-C again to stop anyway."
+    )

@@ -479,13 +479,13 @@ def test_context_status_names_the_command_that_indexes_an_unindexed_bundle(
     assert "kennis context index" in result.output
 
 
-def test_context_status_says_an_index_is_in_step(bundle: Path, run: CliRunner):
+def test_context_status_says_an_index_is_up_to_date(bundle: Path, run: CliRunner):
     assert run.invoke(main, ["remember", "--context", "Four minutes."]).exit_code == 0
     assert run.invoke(main, ["context", "index"]).exit_code == 0
 
     result = run.invoke(main, ["context", "status"])
 
-    assert "in step" in result.output
+    assert "up to date" in result.output
     # Nothing left to do, so no command: a next step that changes nothing is
     # what concern #242 was about.
     assert "kennis context index" not in result.output
@@ -720,7 +720,7 @@ def test_a_default_context_search_reports_no_downgrade(bundle: Path, run: CliRun
     result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
 
     assert result.exit_code == 0, result.output
-    assert "no dense leg" not in result.output
+    assert "no meaning leg" not in result.output
 
 
 def test_asking_for_a_dense_context_search_reports_the_downgrade(
@@ -735,7 +735,7 @@ def test_asking_for_a_dense_context_search_reports_the_downgrade(
     result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
 
     assert result.exit_code == 0, result.output
-    assert "no dense leg" in result.output
+    assert "no meaning leg" in result.output
 
 
 def test_a_corpus_method_of_hybrid_does_not_reach_the_bundle(
@@ -751,7 +751,7 @@ def test_a_corpus_method_of_hybrid_does_not_reach_the_bundle(
     result = run.invoke(main, ["search", "four minutes", "--collection", "context"])
 
     assert result.exit_code == 0, result.output
-    assert "no dense leg" not in result.output
+    assert "no meaning leg" not in result.output
 
 
 # ---------------------------------------------------------------------------

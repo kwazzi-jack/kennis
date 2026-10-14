@@ -146,8 +146,8 @@ class TestRowsAreNotDetails:
         assert capture(lambda: display.row("", "just text")) == "  just text\n"
 
     def test_a_setting_row_reads_as_the_toml_it_is(self):
-        assert capture(lambda: display.setting_row("embedding.dimensions = 384")) == (
-            "  embedding.dimensions = 384\n"
+        assert capture(lambda: display.setting_row("embedding.batch_size = 64")) == (
+            "  embedding.batch_size = 64\n"
         )
 
     def test_a_row_is_silent_when_quiet(self):

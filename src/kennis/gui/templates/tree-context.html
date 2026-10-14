@@ -1,0 +1,21 @@
+{# This project's bundle by directory, fetched when it is opened. #}
+<ul class="tree">
+{% for folder in folders %}
+  {% if folder.name %}
+  <li>
+    <details open>
+      <summary class="node">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name file">{{ folder.name }}</span><span class="count">{{ folder.documents | length }}</span></summary>
+      <ul class="tree">
+        {% for path in folder.documents %}
+        <li><a class="node leaf" href="/bundle/{{ path }}">{{ icon("file-text") }}<span class="name file">{{ path.rsplit("/", 1)[-1] }}</span></a></li>
+        {% endfor %}
+      </ul>
+    </details>
+  </li>
+  {% else %}
+  {% for path in folder.documents %}
+  <li><a class="node leaf" href="/bundle/{{ path }}">{{ icon("file-text") }}<span class="name file">{{ path }}</span></a></li>
+  {% endfor %}
+  {% endif %}
+{% endfor %}
+</ul>

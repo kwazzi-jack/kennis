@@ -223,3 +223,15 @@ def test_an_unchanged_note_does_not_sweep_up_unrelated_changes(
 
     assert Repository(corpus).head() == before
     assert not Repository(corpus).is_clean()
+
+
+def test_a_note_says_what_it_put_back(corpus: Path, run: CliRunner):
+    """The restore `remember` now performs is said, as `corpus add` says
+    it: a document reappearing in silence is a surprise of its own."""
+    run.invoke(main, ["remember", "The first thought."])
+    only_note(corpus).unlink()
+
+    result = run.invoke(main, ["remember", "The second thought."])
+
+    assert result.exit_code == 0, result.output
+    assert "Restored" in result.output

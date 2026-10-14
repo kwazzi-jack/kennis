@@ -99,11 +99,7 @@ Or set `corpus.keep_original = true` to make it the default.
 Anything that is not already markdown or plain text goes through a converter.
 
 **mineru** is the default. It runs locally, costs nothing, and is installed
-with the `mineru` extra:
-
-```
-uv tool install "kennis[mineru] @ ."
-```
+with kennis.
 
 **datalab** is hosted. It is chosen only by setting `conversion.backend` **and**
 supplying an API key, because sending a document to a third party is never

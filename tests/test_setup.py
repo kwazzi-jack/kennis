@@ -10,14 +10,18 @@ from __future__ import annotations
 
 import inspect
 import os
+import tomllib
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from kennis.engine import setup
+from kennis.engine.settings import Settings, credential
 from kennis.engine.setup import (
     Question,
     apply_answers,
+    credential_status,
     questions_for,
     setup_questions,
     validate_answer,
@@ -159,6 +163,89 @@ def test_turning_embedding_off_asks_nothing_more_about_it():
     assert not any(question.startswith("embedding.") for question in asked[1:])
 
 
+def asked_under(backend: str) -> dict[str, Question]:
+    return {
+        question.key: question
+        for question in questions_for({"embedding.backend": backend})
+    }
+
+
+@pytest.mark.parametrize(
+    ("backend", "model"),
+    [
+        # Written by hand rather than read from the table, so a wrong entry
+        # there is not agreed with by its own test (#373).
+        ("ollama", "nomic-embed-text"),
+        ("openai", "text-embedding-3-small"),
+    ],
+)
+def test_another_backend_offers_its_own_model(backend: str, model: str):
+    """A model name means something only to its backend, so the one in force
+    belongs to fastembed and offering it under another failed at the next
+    index. The value in force stays `current`, because that is what a front
+    end compares an answer with to say what changed. Concern #441."""
+    asked = asked_under(backend)
+
+    assert asked["embedding.model"].suggested == model
+    assert asked["embedding.model"].current == "BAAI/bge-small-en-v1.5"
+
+
+def test_the_width_of_a_vector_is_never_asked():
+    """The model fixes it and no backend is sent it (Brian, 2026-10-12)."""
+    assert not any(
+        question.key == "embedding.dimensions" for question in setup_questions()
+    )
+
+
+def test_the_backend_in_force_offers_the_model_in_force(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Including one that is not the default: it was chosen for this backend."""
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text(
+        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-large"\n',
+        encoding="utf-8",
+    )
+
+    assert asked_under("openai")["embedding.model"].suggested == (
+        "text-embedding-3-large"
+    )
+
+
+def test_going_back_to_the_local_backend_offers_its_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text(
+        '[embedding]\nbackend = "openai"\nmodel = "text-embedding-3-small"\n',
+        encoding="utf-8",
+    )
+
+    assert asked_under("fastembed")["embedding.model"].suggested == (
+        "BAAI/bge-small-en-v1.5"
+    )
+
+
+def test_a_width_left_in_an_old_file_is_dropped_by_the_next_write(isolated: Path):
+    """A section model ignores a key it no longer has, so the file still
+    loads; every write renders the model's own keys, so it then goes."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "config.toml").write_text(
+        "[embedding]\ndimensions = 384\n", encoding="utf-8"
+    )
+
+    apply_answers({"chunking.size": "900"})
+
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert "dimensions" not in written["embedding"]
+
+
+def test_a_question_with_no_backend_offers_what_is_in_force():
+    for question in setup_questions():
+        if question.kind != "secret" and not question.when:
+            assert question.suggested == question.current, question.key
+
+
 def test_a_condition_is_a_value_a_form_can_evaluate():
     """Not a callback. A GUI binds field visibility to this predicate and
     shows every question at once; a terminal walks the list and skips."""
@@ -219,12 +306,49 @@ def test_applying_writes_a_config_file_that_loads_back(isolated: Path):
     assert settings.chunking.size == 800
 
 
-def test_an_empty_answer_writes_nothing_for_that_key(isolated: Path):
+def test_an_empty_answer_keeps_the_value_in_the_file(isolated: Path):
+    apply_answers({"embedding.backend": "ollama"})
+
     apply_answers({"embedding.backend": "", "chunking.size": "800"})
 
-    written = (isolated / "config.toml").read_text(encoding="utf-8")
-    assert "backend" not in written.replace("# backend", "")
-    assert "size = 800" in written
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["embedding"]["backend"] == "ollama"
+    assert written["chunking"]["size"] == 800
+
+
+def every_default() -> dict[str, dict[str, object]]:
+    """Each section's defaults, from its own model, which reads no
+    environment."""
+    defaults: dict[str, dict[str, object]] = {}
+    for section, field in Settings.model_fields.items():
+        model = field.annotation
+        assert isinstance(model, type) and issubclass(model, BaseModel)
+        defaults[section] = model().model_dump()
+    return defaults
+
+
+def test_every_write_leaves_every_setting_in_the_file(isolated: Path):
+    """The value a person accepted is the value saved, default or not, and
+    a complete file is one that can be synced (Brian, 2026-10-12)."""
+    apply_answers({"chunking.size": "800"})
+
+    expected = every_default()
+    expected["chunking"]["size"] = 800
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written == expected
+
+
+def test_an_environment_override_is_not_written_into_the_file(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An exported variable is a one-off. Written into the file it would
+    outlive the shell that set it, and travel wherever the file is synced."""
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "ollama")
+
+    apply_answers({"chunking.size": "800"})
+
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["embedding"]["backend"] == "fastembed"
 
 
 def test_a_secret_never_reaches_the_config_file(isolated: Path):
@@ -331,6 +455,62 @@ def test_the_datalab_key_is_written_under_its_own_variable(tmp_path: Path):
     assert "dl-notarealkey" in written
 
 
+@pytest.fixture
+def no_key_in_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The environment wins in `credential`, so a key exported in the shell
+    running the suite would answer for the file being tested."""
+    for variable in ("OPENAI_API_KEY", "MY_OWN_KEY", "ANOTHER_KEY"):
+        monkeypatch.delenv(variable, raising=False)
+
+
+@pytest.mark.usefixtures("no_key_in_the_environment")
+def test_the_embedding_key_is_written_under_the_variable_it_is_read_from():
+    """`embedding.api_key_env` names the variable embedding reads. Filing
+    the key under `OPENAI_API_KEY` regardless left it where nothing looked,
+    and the setup reported success. Concern #440."""
+    apply_answers({"embedding.api_key_env": "MY_OWN_KEY"})
+
+    apply_answers({"embedding.backend": "openai", "embedding.api_key": "sk-mine"})
+
+    assert credential("MY_OWN_KEY") == "sk-mine"
+    assert credential("OPENAI_API_KEY") == ""
+    assert credential_status("embedding.api_key").is_set is True
+
+
+@pytest.mark.usefixtures("no_key_in_the_environment")
+def test_a_variable_named_in_the_same_answers_is_the_one_written():
+    """The answers are validated as a whole before anything is written, so
+    the key belongs under the variable those answers produce, not the one
+    in force before them."""
+    apply_answers({"embedding.api_key_env": "MY_OWN_KEY"})
+
+    apply_answers(
+        {
+            "embedding.backend": "openai",
+            "embedding.api_key_env": "ANOTHER_KEY",
+            "embedding.api_key": "sk-mine",
+        }
+    )
+
+    assert credential("ANOTHER_KEY") == "sk-mine"
+    assert credential("MY_OWN_KEY") == ""
+
+
+@pytest.mark.usefixtures("no_key_in_the_environment")
+def test_a_new_key_replaces_one_already_in_the_file(isolated: Path):
+    """`credential` takes the first section holding the name, so a key filed
+    under any other section than the one it was in before would sit behind
+    the old value rather than replace it."""
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "credentials.toml").write_text(
+        '[embedding]\nOPENAI_API_KEY = "sk-old"\n', encoding="utf-8"
+    )
+
+    apply_answers({"embedding.backend": "openai", "embedding.api_key": "sk-new"})
+
+    assert credential("OPENAI_API_KEY") == "sk-new"
+
+
 def test_the_conversion_key_never_reaches_the_config_file(tmp_path: Path):
 
     os.environ["KENNIS_CONFIG_DIR"] = str(tmp_path)
@@ -375,30 +555,24 @@ def test_the_mode_question_is_asked_before_the_key_is_typed():
     assert keys.index("conversion.mode") < keys.index("conversion.api_key")
 
 
-def test_a_setup_that_changes_nothing_writes_no_file(
+def test_a_setup_that_changes_nothing_writes_every_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Found by running `config init` and then `config show`, which printed
-    nothing at all.
-
-    Every answer left unchanged is filtered out before the write, which is
-    the design - but the write then happened anyway and produced a 0-byte
-    `config.toml`. A file that exists and holds no settings is worse than no
-    file: `config show` finds it, prints it verbatim, and says nothing, where
-    with no file it would have printed the defaults.
-    """
+    """Accepting every value is a choice of every value. This reverses the
+    rule that wrote nothing for it (Brian, 2026-10-12), and with it the
+    0-byte `config.toml` that rule once produced."""
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
 
     apply_answers({})
 
-    assert not (tmp_path / "config.toml").exists()
+    written = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
+    assert written == every_default()
 
 
 def test_an_answer_left_empty_does_not_rewrite_an_existing_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """The same guard, from the other side: a re-run that changes nothing
-    must leave what is there untouched rather than rewriting it."""
+    """A re-run that changes nothing writes the same file again."""
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path))
     apply_answers({"chunking.size": "900"})
     before = (tmp_path / "config.toml").read_bytes()
@@ -406,3 +580,31 @@ def test_an_answer_left_empty_does_not_rewrite_an_existing_file(
     apply_answers({"chunking.size": ""})
 
     assert (tmp_path / "config.toml").read_bytes() == before
+
+
+def test_a_word_that_is_not_true_or_false_is_refused(isolated: Path):
+    """`ture` was stored as `false`, said "Set", and quietly turned ligature
+    repair off."""
+    from kennis.engine.errors import SettingsError
+
+    with pytest.raises(SettingsError, match="ture"):
+        apply_answers({"conversion.repair_ligatures": "ture"})
+
+
+def test_a_truncated_credentials_file_is_named_and_nothing_is_half_written(
+    isolated: Path,
+):
+    """A truncated `credentials.toml` raised a bare `TOMLDecodeError` after
+    `config.toml` already named the backend whose key was never saved."""
+    from kennis.engine.errors import SettingsError
+
+    isolated.mkdir(parents=True, exist_ok=True)
+    (isolated / "credentials.toml").write_text("[conversion\nDATALAB", encoding="utf-8")
+
+    with pytest.raises(SettingsError, match=r"credentials\.toml"):
+        apply_answers(
+            {"conversion.backend": "datalab", "conversion.api_key": "dl-notarealkey"}
+        )
+
+    config = isolated / "config.toml"
+    assert not config.is_file() or "datalab" not in config.read_text(encoding="utf-8")

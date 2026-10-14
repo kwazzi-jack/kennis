@@ -16,9 +16,9 @@ from urllib.parse import urljoin
 
 import httpx
 
+from kennis.engine.docs.http import get_within, origin_of
 from kennis.engine.errors import SourceUnreadable
 
-_USER_AGENT: Final = "kennis-docs-fetch"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
 
 # The rendered main-content container, in preference order. Sphinx themes
@@ -42,7 +42,7 @@ _CHROME_SELECTORS: Final = (
 def fetch_page(client: httpx.Client, page_url: str) -> str:
     """The markdown of one page, or a refusal saying why there is none."""
     try:
-        response = client.get(page_url, timeout=_REQUEST_TIMEOUT_SECONDS)
+        response = get_within(client, page_url, origin=origin_of(page_url))
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise SourceUnreadable(f"could not fetch '{page_url}': {error}") from error

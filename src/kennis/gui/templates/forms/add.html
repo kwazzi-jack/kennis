@@ -1,0 +1,42 @@
+{# The Add dialog: one tab per kind of thing to add (#413). A tab is a
+   link: htmx swaps only this tab's content inside the open dialog, and
+   without a script it is followed and the form arrives as a page. #}
+{% from "tip.html" import tip %}
+<div class="add-tab">
+<nav class="tabs" aria-label="{{ add_tabs_label }}">
+  {% for tab in tabs %}<a class="tab" href="{{ tab.href }}" hx-get="{{ tab.href }}" hx-target="closest .add-tab" hx-select=".add-tab" hx-swap="outerHTML"{% if tab.current %} aria-current="page"{% endif %}>{{ icon(tab.icon) }}{{ tab.label }}</a>{% endfor %}
+</nav>
+<p class="role-muted">{{ preamble }} {{ tip("add-" ~ kind, add_tab_label, add_tip) }}</p>
+<form action="/add" method="post" enctype="multipart/form-data" hx-encoding="multipart/form-data" hx-disabled-elt="find button[type=submit]" hx-post="/add" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
+<datalist id="add-groups">{% for name in known_groups %}<option value="{{ name }}">{% endfor %}</datalist>
+  {# Where a refusal the form can be corrected for is answered: in the
+     dialog, above the fields still holding what was typed. It closed and
+     answered in the strip, and everything typed was lost. #}
+  <div id="add-problem" role="alert"></div>
+  <input type="hidden" name="kind" value="{{ kind }}">
+  {% if fixed_collection %}<input type="hidden" name="collection" value="{{ fixed_collection }}">{% endif %}
+  {% if kind == "group" %}
+  {% for index in first_blocks %}{% include "forms/add-block.html" %}{% endfor %}
+  {% with index = first_blocks | length + 1 %}{% include "forms/add-another.html" %}{% endwith %}
+  {% else %}
+  <div class="add-fields">
+  {% for field in fields %}{% include "forms/add-field.html" %}{% endfor %}
+  </div>
+  <div id="add-preview" class="preview" aria-live="polite"></div>
+  {% if kind == "site" %}
+  <button type="button" class="ghost probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview">{{ check_site }}</button>
+  {% endif %}
+  {% endif %}
+  {# Where it goes, Cancel, and the add. Each part of the destination
+     names the field it shows, and `dialog.js` keeps it in step as the
+     reader types; drawn here, it is right before any script runs. A
+     link for Cancel, so a page without a script still has a way out. #}
+  <div class="form-foot">
+    {% if destination %}
+    <p class="destination role-muted">{{ adds_to }} {% for name, value in destination %}{% if not loop.first %}<span class="part"><span class="sep">/</span>{% endif %}<span data-mirror="{{ name }}">{{ value }}</span>{% if not loop.first %}</span>{% endif %}{% endfor %}</p>
+    {% endif %}
+    <a class="button" href="/" data-close>{{ cancel }}</a>
+    <button type="submit" class="primary">{{ icon("file-plus") }}{{ add_action }}</button>
+  </div>
+</form>
+</div>

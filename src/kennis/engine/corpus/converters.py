@@ -29,9 +29,11 @@ would lack.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -49,7 +51,11 @@ from kennis.engine.corpus.ligatures import (
 )
 from kennis.engine.corpus.markdown import normalise_markdown
 from kennis.engine.corpus.schema import SourceFormat
-from kennis.engine.errors import ConversionFailed, ConverterUnavailable
+from kennis.engine.errors import (
+    ConversionFailed,
+    ConverterRefused,
+    ConverterUnavailable,
+)
 from kennis.engine.settings import credential, load_settings
 
 
@@ -96,9 +102,7 @@ class Converter(Protocol):
         """The command that would make it available."""
         ...
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         """Convert a whole batch in one run."""
         ...
 
@@ -122,13 +126,16 @@ _MINERU_FORMATS: Final[dict[str, SourceFormat]] = {
 
 MINERU_FORMATS: Final[frozenset[SourceFormat]] = frozenset(_MINERU_FORMATS.values())
 
-# Which command installs the extra depends on how kennis itself was
-# installed, and the two are not interchangeable: there is no project to sync
-# for somebody who installed the tool, and `uv tool install` is not what a
-# contributor with a checkout wants. Rule: an error names the command that
-# resolves it, so it has to name the right one.
-_SOURCE_INSTALL_HINT: Final = "uv sync --extra mineru"
-_TOOL_INSTALL_HINT: Final = 'uv tool install "kennis[mineru]"'
+# mineru is a base dependency (#423), so a missing one is an install that
+# did not finish - a sync that dropped it, or a platform where it failed to
+# resolve - and the remedy is to install kennis again. Which command does
+# that depends on how kennis itself was installed, and the two are not
+# interchangeable: there is no project to sync for somebody who installed
+# the tool, and `uv tool install` is not what a contributor with a checkout
+# wants. Rule: an error names the command that resolves it, so it has to
+# name the right one.
+_SOURCE_INSTALL_HINT: Final = "uv sync"
+_TOOL_INSTALL_HINT: Final = "uv tool install --reinstall kennis"
 
 
 def _is_source_checkout(root: Path) -> bool:
@@ -156,7 +163,7 @@ def _from_source_checkout() -> bool:
 def _executable(name: str) -> str | None:
     """`name` on PATH, or failing that beside the interpreter kennis runs on.
 
-    **`uv tool install "kennis[mineru]"` never puts mineru on PATH.** It
+    **`uv tool install kennis` never puts mineru on PATH.** It
     installs it into the tool's own virtual environment and links only
     kennis's entry point, saying so as it goes: `Installed 1 executable:
     kennis`. So a PATH-only check reports mineru missing on a machine that
@@ -212,9 +219,14 @@ _SECONDS_PER_DOCUMENT: Final = 300
 
 # How much of the original filename a staged copy keeps. The index prefix is
 # what makes the name unique; the rest is there only so MinerU's own error
-# output names something the user recognises, and truncating is easier than
-# discovering each filesystem's own limit.
-_STAGED_STEM_LIMIT: Final = 100
+# output names something the user recognises.
+#
+# Short because MinerU writes the stem into its output path twice - as the
+# directory and again in each file's name - under the temporary directory.
+# On Windows that directory is some 60 characters before the stem, and a
+# path past 260 fails to open: at 100 a long filename came to about 300.
+# At 40 the whole path stays under 200.
+_STAGED_STEM_LIMIT: Final = 40
 
 # Block kinds MinerU classifies as page furniture rather than body text. These
 # are exactly what the rendered markdown throws away, and exactly where a
@@ -260,33 +272,30 @@ class MineruConverter:
     def install_hint(self) -> str:
         return _SOURCE_INSTALL_HINT if _from_source_checkout() else _TOOL_INSTALL_HINT
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         """Convert every path in one MinerU process.
 
         The caller decides how large a run is, because MinerU writes nothing
         until the whole run finishes: a run is the unit of progress and the
         unit lost to an interruption.
-
-        `page_limit` stops MinerU after that many pages. Used to survey a
-        batch before committing to converting it - a paper states its own
-        identity on page one, so two pages are enough to learn what every
-        document in a folder *is*. The markdown that comes back is a fragment
-        and is meant to be discarded; the front page is the point.
         """
         if not paths:
             return ConversionBatch(markdown={})
         require_converter(self, paths)
 
-        with tempfile.TemporaryDirectory(prefix="kennis-mineru-") as temporary:
+        # A file a just-killed process still had open cannot be removed on
+        # Windows until it lets go: the conversion's own error is the one to
+        # report, not a cleanup's `PermissionError` raised over it.
+        with tempfile.TemporaryDirectory(
+            prefix="kennis-mineru-", ignore_cleanup_errors=True
+        ) as temporary:
             staged_dir = Path(temporary) / "input"
             output_dir = Path(temporary) / "output"
             staged_dir.mkdir()
             output_dir.mkdir()
             staged = _stage(paths, staged_dir)
 
-            completed = self._run(staged_dir, output_dir, len(paths), page_limit)
+            completed = self._run(staged_dir, output_dir, len(paths))
             markdown, front_page = _collect(staged, output_dir)
 
         reason = _failure_reason(completed) if completed.returncode != 0 else None
@@ -341,7 +350,6 @@ class MineruConverter:
         staged_dir: Path,
         output_dir: Path,
         document_count: int,
-        page_limit: int | None,
     ) -> subprocess.CompletedProcess[str]:
         # The resolved path, not the bare name: a subprocess given the name
         # resolves it against PATH again, which is exactly where it is not.
@@ -354,27 +362,30 @@ class MineruConverter:
             "-b",
             self.options.backend,
         ]
-        if page_limit is not None:
-            command += ["-s", "0", "-e", str(page_limit - 1)]
         timeout_seconds = _STARTUP_GRACE_SECONDS + (
             _SECONDS_PER_DOCUMENT * document_count
         )
         try:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                env=self._environment(),
-                check=False,
-                timeout=timeout_seconds,
-                stdin=subprocess.DEVNULL,
+            return _run_as_group(
+                command, env=self._environment(), timeout=timeout_seconds
             )
         except subprocess.TimeoutExpired as expired:
-            plural = "document" if document_count == 1 else "documents"
+            # The remedy is the setting that sizes a run: "convert them in
+            # smaller batches" named an option no command has. A single
+            # document has no smaller run to suggest.
+            if document_count == 1:
+                raise ConversionFailed(
+                    f"mineru did not finish converting 1 document within "
+                    f"{timeout_seconds}s and was cancelled. Nothing was written.",
+                    resolution=None,
+                ) from expired
             raise ConversionFailed(
-                f"mineru did not finish converting {document_count} {plural} "
+                f"mineru did not finish converting {document_count} documents "
                 f"within {timeout_seconds}s and was cancelled. Nothing was "
-                f"written. Convert the documents in smaller batches."
+                f"written.",
+                resolution=(
+                    f"kennis config set conversion.batch_size {document_count // 2}"
+                ),
             ) from expired
         except OSError as error:
             raise ConversionFailed(f"could not run mineru: {error}") from error
@@ -406,7 +417,7 @@ class MineruConverter:
 # would want batching because "one request beats several" was wrong.
 
 _DATALAB_URL: Final = "https://www.datalab.to/api/v1/convert"
-_DATALAB_KEY_VARIABLE: Final = "DATALAB_API_KEY"
+DATALAB_KEY_VARIABLE: Final = "DATALAB_API_KEY"
 
 # What the API accepts. Narrower than its marketing copy, which says "PDFs,
 # Word documents, spreadsheets and images" without naming extensions, so this
@@ -454,7 +465,7 @@ class DatalabConverter:
         max_polls: int = _MAX_POLLS,
         mode: ConversionMode = _DEFAULT_MODE,
     ) -> None:
-        self.api_key = credential(_DATALAB_KEY_VARIABLE) if api_key is None else api_key
+        self.api_key = credential(DATALAB_KEY_VARIABLE) if api_key is None else api_key
         self._client = client
         self._poll_seconds = poll_seconds
         self._max_polls = max_polls
@@ -467,15 +478,8 @@ class DatalabConverter:
     def install_hint(self) -> str:
         return "kennis config init"
 
-    def convert(
-        self, paths: Sequence[Path], *, page_limit: int | None = None
-    ) -> ConversionBatch:
-        """Convert each path, one request each, and report per document.
-
-        `page_limit` is accepted and ignored: the API takes no page range, so
-        a survey costs a whole conversion. The caller's survey is a smaller
-        saving than the round trip either way.
-        """
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+        """Convert each path, one request each, and report per document."""
         if not paths:
             return ConversionBatch(markdown={})
         require_converter(self, paths)
@@ -490,6 +494,9 @@ class DatalabConverter:
             for path in paths:
                 try:
                     converted, cost = self._convert_one(client, path)
+                except ConverterRefused:
+                    # Every other document would be refused the same way.
+                    raise
                 except ConversionFailed as failed:
                     reasons.append(f"{path.name}: {failed}")
                     continue
@@ -531,11 +538,19 @@ class DatalabConverter:
             )
         except httpx.HTTPError as error:
             raise ConversionFailed(f"could not reach datalab: {error}") from error
+        if response.status_code in (401, 403):
+            # The key, not the document: said so, with the service's own
+            # words, rather than as a refused document and `--help`.
+            raise ConverterRefused(
+                f"datalab did not accept the API key ({response.status_code}"
+                f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
+            )
         if response.status_code >= 400:
             raise ConversionFailed(
-                f"datalab refused the document ({response.status_code})"
+                f"datalab refused the document ({response.status_code}"
+                f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
             )
-        check_url = _as_text(response.json().get("request_check_url"))
+        check_url = _as_text(_json_of(response).get("request_check_url"))
         if not check_url:
             raise ConversionFailed("datalab returned no url to poll")
         return check_url
@@ -552,11 +567,24 @@ class DatalabConverter:
         """
         for _ in range(self._max_polls):
             try:
-                result = client.get(
+                response = client.get(
                     url, headers=self._headers(), timeout=_REQUEST_TIMEOUT
-                ).json()
+                )
             except httpx.HTTPError as error:
                 raise ConversionFailed(f"could not reach datalab: {error}") from error
+            # A refusal on the poll is final, not "still pending": a 401 or a
+            # 429 whose body had no `status` was polled 300 times, ten
+            # minutes a document. A server error is waited out like a
+            # pending answer, within the same bound.
+            if 400 <= response.status_code < 500:
+                raise ConversionFailed(
+                    f"datalab refused the poll ({response.status_code}"
+                    f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
+                )
+            if response.status_code >= 500:
+                time.sleep(self._poll_seconds)
+                continue
+            result = _json_of(response)
             if result.get("success") is False or result.get("status") == "failed":
                 raise ConversionFailed(
                     _as_text(result.get("error")) or "datalab could not convert it"
@@ -571,6 +599,35 @@ class DatalabConverter:
             f"datalab did not finish converting {path.name} within "
             f"{int(self._max_polls * self._poll_seconds)}s and was given up on"
         )
+
+
+def _json_of(response: httpx.Response) -> dict[str, object]:
+    """A response's JSON object, or a refusal saying it was not one.
+
+    An HTML error page from a proxy is not JSON, and its `JSONDecodeError`
+    is neither an `HTTPError` nor a `ConversionFailed`: it crashed the whole
+    batch, the other documents with it.
+    """
+    try:
+        body = response.json()
+    except ValueError as error:
+        raise ConversionFailed(
+            f"datalab answered with something that is not JSON ({response.status_code})"
+        ) from error
+    if not isinstance(body, dict):
+        raise ConversionFailed("datalab answered with something that is not an object")
+    return body
+
+
+def _detail_of(response: httpx.Response) -> str:
+    """The service's own `detail` or `error`, when it gave one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    return _as_text(body.get("detail")) or _as_text(body.get("error"))
 
 
 def _as_text(value: object) -> str:
@@ -671,6 +728,64 @@ def _collect(
         markdown[original] = largest.read_text(encoding="utf-8", errors="replace")
         front_page[original] = _front_page_text(largest)
     return markdown, front_page
+
+
+def _run_as_group(
+    command: list[str], *, env: dict[str, str], timeout: float
+) -> subprocess.CompletedProcess[str]:
+    """Run `command` in a process group of its own, and end the whole group
+    if it overruns `timeout`.
+
+    `subprocess.run` kills only the process it started. MinerU starts helpers
+    of its own - a model server among them - so a cancelled run left those
+    running, holding the GPU and the output directory, after kennis had
+    said the run was cancelled. `TimeoutExpired` is raised as `run` raises it.
+    """
+    group: dict[str, Any]
+    if sys.platform == "win32":
+        group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        group = {"start_new_session": True}
+    with subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Not the locale's encoding: on Windows that is cp1252, and MinerU's
+        # own UTF-8 log lines raised `UnicodeDecodeError`, which nothing here
+        # catches.
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        **group,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _end_group(process)
+            raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _end_group(process: subprocess.Popen[str]) -> None:
+    """Kill `process` and everything it started, then reap it."""
+    if sys.platform == "win32":
+        # The tree, by parent: a Windows process group cannot be killed as
+        # one, only sent Ctrl-Break, which a model server may ignore.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    else:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+    process.kill()
+    # Bounded: a helper outside the group that inherited the pipes would
+    # otherwise hold this open as long as it lives.
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.communicate(timeout=5)
 
 
 def _failure_reason(completed: subprocess.CompletedProcess[str]) -> str:

@@ -17,12 +17,15 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kennis import operations
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
-from kennis.engine.corpus.add import AddOptions
+from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.errors import CorpusBusy
+from kennis.engine.events import Outcome
 from kennis.engine.history.git import git
+from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
 from kennis.operations import (
@@ -31,6 +34,7 @@ from kennis.operations import (
     restore_hand_deletions,
     synchronise_bundle,
 )
+from kennis.writing import write_note
 
 
 @pytest.fixture
@@ -113,6 +117,100 @@ def test_a_hand_deletion_is_restored_before_the_commit_is_made(isolated: Path):
         ["show", "--name-status", "--format=", "HEAD"], cwd=context.corpus_root
     ).lines()
     assert not [line for line in touched if line.startswith("D\t")], touched
+
+
+def test_writing_a_note_restores_a_hand_deletion_first(isolated: Path):
+    """`remember` from any front end - an agent's included - commits with
+    `git add --all .` as `add` does, so it restores as `add` does."""
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "first.md"))], AddOptions())
+    deleted = only_note(context.corpus_root)
+    deleted.unlink()
+    restored: list[OutOfBandChange] = []
+
+    write_note("A second thought about trees.", restored=restored)
+
+    assert deleted.is_file()
+    assert [change.path for change in restored] == [
+        deleted.relative_to(context.corpus_root).as_posix()
+    ]
+    touched = git(
+        ["show", "--name-status", "--format=", "HEAD"], cwd=context.corpus_root
+    ).lines()
+    assert not [line for line in touched if line.startswith("D\t")], touched
+
+
+def test_an_add_that_fails_part_way_commits_what_it_wrote_as_its_own(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Without this the next command's `git add --all .` commits the add's
+    documents under the next command's name."""
+    context = existing_corpus()
+
+    def writes_then_fails(*arguments: object, **options: object) -> object:
+        add_notes(
+            Collection(root=context.corpus_root, name="notes"),
+            [str(a_source(isolated, "trees.md"))],
+        )
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setitem(operations._ADDERS, "notes", writes_then_fails)
+
+    with pytest.raises(OSError):
+        add_documents(context, "notes", ["anything"], AddOptions())
+
+    assert Repository(context.corpus_root).is_clean()
+    subject = git(["log", "-1", "--format=%s"], cwd=context.corpus_root).stdout
+    assert subject.strip() == f"add(notes): {operations.INTERRUPTED}"
+
+
+def test_running_an_interrupted_add_again_carries_on_from_where_it_stopped(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """What the window and the terminal tell the reader to do after a
+    failure part-way. The document written before it is found again by
+    its content, so the second run adds only what the first did not."""
+    context = existing_corpus()
+    first, second = a_source(isolated, "first.md"), a_source(isolated, "second.md")
+    real = operations._ADDERS["notes"]
+
+    def stops_after_the_first(
+        target: Collection, identifiers: list[str], options: AddOptions, **rest: object
+    ) -> object:
+        real(target, identifiers[:1], options)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setitem(operations._ADDERS, "notes", stops_after_the_first)
+    with pytest.raises(OSError):
+        add_documents(context, "notes", [str(first), str(second)], AddOptions())
+    monkeypatch.setitem(operations._ADDERS, "notes", real)
+
+    again = add_documents(context, "notes", [str(first), str(second)], AddOptions())
+
+    assert [outcome.outcome for outcome in again.outcomes] == [
+        Outcome.UNCHANGED,
+        Outcome.ADDED,
+    ]
+
+
+def test_adding_the_folder_that_holds_the_corpus_does_not_copy_it(isolated: Path):
+    """The window's chooser walks up from home, and "Choose this folder"
+    on the folder holding the corpus copied the corpus into itself, with
+    the search history and the configuration beside it as notes."""
+    context = existing_corpus()
+    (isolated / "config" / "credentials.toml").parent.mkdir(exist_ok=True)
+    (isolated / "config" / "credentials.toml").write_text("key = 'secret'\n")
+    a_source(isolated, "trees.md")
+
+    report = add_documents(context, "notes", [str(isolated)], AddOptions())
+
+    added = [outcome.identifier for outcome in report.outcomes if outcome.path]
+    assert [Path(name).name for name in added] == ["trees.md"]
+    copied = sorted(
+        path.relative_to(context.corpus_root).as_posix()
+        for path in (context.corpus_root / "notes").rglob("*.md")
+    )
+    assert copied == ["notes/sources/trees.md"]
 
 
 def test_the_restore_reports_what_it_put_back(isolated: Path):

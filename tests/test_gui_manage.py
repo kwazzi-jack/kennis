@@ -13,14 +13,17 @@ this unit rather than at the start of the milestone.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.cli.display import sync_marker
@@ -30,12 +33,25 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.events import Outcome
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
+from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.pages import shown_install
+from kennis.gui.pane import Pane
+from kennis.gui.responses import TEMPLATES
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.logs import log_path, start_logging, stop_logging
 
 TOKEN = "a-test-token"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
 
 
 @pytest.fixture
@@ -104,8 +120,9 @@ def messages(client: TestClient, job_id: str) -> list[dict[str, object]]:
 
 
 def test_an_add_writes_the_document_and_reports_it(client: TestClient, tmp_path: Path):
-    started = client.post(
-        "/manage/add",
+    started = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -130,8 +147,9 @@ def test_an_add_commits_what_it_wrote(client: TestClient, tmp_path: Path):
     corpus_root = existing_corpus().corpus_root
     before = Repository(corpus_root).head()
 
-    started = client.post(
-        "/manage/add",
+    started = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -146,11 +164,11 @@ def test_an_add_commits_what_it_wrote(client: TestClient, tmp_path: Path):
 def test_an_add_with_nothing_named_is_refused_before_a_job_starts(client: TestClient):
     """A job that had nothing to do would still occupy the one slot and
     would still have to be watched to find that out."""
-    answer = client.post(
-        "/manage/add", data={"identifiers": "  \n\n", "collection": "notes"}
+    answer = posted(
+        client, "/add", data={"identifiers": "  \n\n", "collection": "notes"}
     )
 
-    assert "at least one" in answer.text
+    assert "Nothing to add" in answer.text
     assert "data-job" not in answer.text
 
 
@@ -163,8 +181,8 @@ def test_a_refused_add_offers_a_repair_that_can_be_submitted(
     reader to type a command elsewhere."""
     source = a_source(tmp_path, "paper.md")
 
-    started = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "literature"}
+    started = posted(
+        client, "/add", data={"identifiers": str(source), "collection": "literature"}
     )
     shown = finished(client, job_of(started.text))
 
@@ -176,16 +194,29 @@ def test_a_refused_add_offers_a_repair_that_can_be_submitted(
 
 def test_the_offered_repair_actually_repairs(client: TestClient, tmp_path: Path):
     """Submitting the form the refusal produced must add the document.
-    A repair that does not repair is worse than no repair."""
-    source = a_source(tmp_path, "paper.md")
-    refused = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "literature"}
-    )
-    finished(client, job_of(refused.text))
+    A repair that does not repair is worse than no repair.
 
-    repaired = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "notes"}
+    **The form's own route and fields, read from the page.** This test
+    used to post its own fields to `/add`, and passed for three units
+    while the form itself posted to `/manage/add`, which 11a removed
+    (11e)."""
+    source = a_source(tmp_path, "paper.md")
+    refused = posted(
+        client, "/add", data={"identifiers": str(source), "collection": "literature"}
     )
+    page = finished(client, job_of(refused.text))
+    form = re.search(
+        r'<form class="repair"[^>]*hx-post="([^"]+)"[^>]*>(.*?)</form>', page, re.S
+    )
+    assert form, page
+    sent = dict(
+        re.findall(
+            r'<input type="hidden" name="([^"]+)" value="([^"]*)">', form.group(2)
+        )
+    )
+    assert sent["collection"] == "notes"
+
+    repaired = posted(client, form.group(1), data=sent)
     shown = finished(client, job_of(repaired.text))
 
     assert "Added 1 document" in shown
@@ -203,8 +234,8 @@ def test_a_repair_replaces_the_command_rather_than_joining_it(
     the reader to leave the interface to do what the interface does."""
     source = a_source(tmp_path, "paper.md")
 
-    started = client.post(
-        "/manage/add", data={"identifiers": str(source), "collection": "literature"}
+    started = posted(
+        client, "/add", data={"identifiers": str(source), "collection": "literature"}
     )
     shown = finished(client, job_of(started.text))
 
@@ -217,8 +248,9 @@ def test_an_added_document_is_told_it_is_not_searchable_yet(
 ):
     """Said as a sentence pointing at the control above, rather than as
     `kennis corpus index`, for the same reason."""
-    started = client.post(
-        "/manage/add",
+    started = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -251,8 +283,9 @@ def test_an_ambiguous_refusal_offers_every_candidate_and_chooses_none(
 
 
 def test_an_unknown_collection_is_named_back(client: TestClient, tmp_path: Path):
-    answer = client.post(
-        "/manage/add",
+    answer = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "a.md")),
             "collection": "elsewhere",
@@ -271,8 +304,9 @@ def test_an_unknown_collection_is_named_back(client: TestClient, tmp_path: Path)
 def test_the_stream_carries_each_item_and_then_closes(
     client: TestClient, tmp_path: Path
 ):
-    started = client.post(
-        "/manage/add",
+    started = posted(
+        client,
+        "/add",
         data={
             "identifiers": "\n".join(
                 str(a_source(tmp_path, name)) for name in ("one.md", "two.md")
@@ -296,8 +330,9 @@ def test_the_stream_ends_even_when_the_operation_fails(
     connection."""
     corpus_root = existing_corpus().corpus_root
     with corpus_lock(corpus_root):
-        started = client.post(
-            "/manage/add",
+        started = posted(
+            client,
+            "/add",
             data={
                 "identifiers": str(a_source(tmp_path, "trees.md")),
                 "collection": "notes",
@@ -314,8 +349,9 @@ def test_a_busy_corpus_is_a_state_to_retry_from(client: TestClient, tmp_path: Pa
     try again rather than reporting a failure."""
     corpus_root = existing_corpus().corpus_root
     with corpus_lock(corpus_root):
-        started = client.post(
-            "/manage/add",
+        started = posted(
+            client,
+            "/add",
             data={
                 "identifiers": str(a_source(tmp_path, "trees.md")),
                 "collection": "notes",
@@ -324,7 +360,7 @@ def test_a_busy_corpus_is_a_state_to_retry_from(client: TestClient, tmp_path: Pa
         shown = finished(client, job_of(started.text))
 
     assert "busy" in shown
-    assert "tried again" in shown
+    assert "try again" in shown
 
 
 def test_an_operation_started_from_the_window_reaches_the_log(
@@ -335,8 +371,9 @@ def test_an_operation_started_from_the_window_reaches_the_log(
     is not less than the report - it is none of it. Concern #326."""
     start_logging()
     try:
-        started = client.post(
-            "/manage/add",
+        started = posted(
+            client,
+            "/add",
             data={
                 "identifiers": str(a_source(tmp_path, "trees.md")),
                 "collection": "notes",
@@ -382,8 +419,9 @@ def test_a_second_operation_is_refused_and_says_which_is_running(
     holding = threading.Event()
     running = app.state.jobs.start("add", lambda events: holding.wait(10))
 
-    second = client.post(
-        "/manage/add",
+    second = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "two.md")),
             "collection": "notes",
@@ -404,8 +442,9 @@ def test_a_job_that_has_finished_is_no_longer_in_the_way(
     holding.set()
     assert earlier.done.wait(10)
 
-    started = client.post(
-        "/manage/add",
+    started = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "one.md")),
             "collection": "notes",
@@ -422,8 +461,9 @@ def test_a_job_that_has_finished_is_no_longer_in_the_way(
 
 
 def test_indexing_reports_what_it_built(client: TestClient, tmp_path: Path):
-    added = client.post(
-        "/manage/add",
+    added = posted(
+        client,
+        "/add",
         data={
             "identifiers": str(a_source(tmp_path, "trees.md")),
             "collection": "notes",
@@ -431,7 +471,7 @@ def test_indexing_reports_what_it_built(client: TestClient, tmp_path: Path):
     )
     finished(client, job_of(added.text))
 
-    started = client.post("/manage/index", data={"collection": ""})
+    started = posted(client, "/index", data={"collection": ""})
     shown = finished(client, job_of(started.text))
 
     assert "Indexed 1 document" in shown
@@ -439,10 +479,10 @@ def test_indexing_reports_what_it_built(client: TestClient, tmp_path: Path):
 
 
 def test_indexing_an_empty_corpus_says_there_is_nothing_to_do(client: TestClient):
-    started = client.post("/manage/index", data={"collection": ""})
+    started = posted(client, "/index", data={"collection": ""})
     shown = finished(client, job_of(started.text))
 
-    assert "nothing to index" in shown
+    assert "Nothing to index" in shown
 
 
 def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
@@ -450,7 +490,7 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
 ):
     """And says so quietly. Nothing happened, so the line must not be
     the colour of something having happened."""
-    started = client.post("/manage/sync", data={})
+    started = posted(client, "/sync", data={})
     shown = finished(client, job_of(started.text))
 
     assert "data-job" not in shown
@@ -461,7 +501,7 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
 def test_a_project_sync_outside_a_bundle_names_the_command_that_makes_one(
     client: TestClient,
 ):
-    answer = client.post("/manage/context-sync", data={})
+    answer = posted(client, "/context-sync", data={})
 
     assert "data-job" not in answer.text
     assert "kennis context init" in answer.text
@@ -470,18 +510,31 @@ def test_a_project_sync_outside_a_bundle_names_the_command_that_makes_one(
 def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     client: TestClient,
 ):
-    answer = client.post("/manage/pack", data={"path": "/nowhere/at/all.ken.yml"})
+    answer = posted(client, "/pack", data={"path": "/nowhere/at/all.ken.yml"})
 
     assert "data-job" not in answer.text
     assert "/nowhere/at/all.ken.yml" in answer.text
 
 
-def test_the_management_page_offers_every_operation(client: TestClient):
-    page = client.get("/manage")
+def test_the_sync_dialog_offers_the_project_context_only_where_there_is_one(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """The one dialog with two operations in it. Every other action's
+    dialog posts to its own path, which `test_gui_workbench` asserts; this
+    one also posts to `/context-sync` - offered only where there is a
+    project context, since with none it would refuse."""
+    alone = client.get("/sync", headers={"HX-Request": "true"}).text
+    monkeypatch.setattr("kennis.gui.pane.project_name", lambda: "kennis")
+    with_context = client.get("/sync", headers={"HX-Request": "true"}).text
 
-    assert page.status_code == 200
-    for action in ("/manage/add", "/manage/index", "/manage/sync", "/manage/pack"):
-        assert action in page.text
+    assert 'hx-post="/sync"' in alone
+    assert 'hx-post="/context-sync"' not in alone
+    assert 'hx-post="/context-sync"' in with_context
+    assert 'hx-disabled-elt="this"' in with_context
+    foot = BeautifulSoup(with_context, "html.parser").select_one(".form-foot")
+    assert foot is not None
+    submits = foot.select("button[type=submit]")
+    assert "primary" in (submits[0].get("class") or [])
 
 
 def test_the_management_routes_need_the_token(tmp_path: Path):
@@ -490,6 +543,67 @@ def test_the_management_routes_need_the_token(tmp_path: Path):
     in this one."""
     stranger = TestClient(build_app(TOKEN), follow_redirects=False)
 
-    assert stranger.post("/manage/add", data={"identifiers": "x"}).status_code == 401
-    assert stranger.get("/manage").status_code == 401
+    assert posted(stranger, "/add", data={"identifiers": "x"}).status_code == 401
+    assert stranger.get("/add").status_code == 401
+    assert stranger.get("/tree/notes").status_code == 401
     assert stranger.get("/job/whatever/events").status_code == 401
+
+
+def test_the_index_dialog_marks_and_chooses_what_needs_indexing(
+    client: TestClient, tmp_path: Path
+):
+    """It offered every collection alike, so the reader had to find out
+    elsewhere which one their new documents were in."""
+    for name in ("one.md", "two.md"):
+        result = CliRunner().invoke(
+            main, ["corpus", "add", "-n", str(a_source(tmp_path, name))]
+        )
+        assert result.exit_code == 0
+
+    dialog = BeautifulSoup(
+        client.get("/index", headers={"HX-Request": "true"}).text, "html.parser"
+    )
+
+    checked = dialog.select_one('input[name="collection"]:checked')
+    assert checked is not None and checked["value"] == "notes"
+    marked = {
+        str(label.select_one("input")["value"]): label.select_one(".waiting")
+        for label in dialog.select(".segmented label")
+    }
+    assert marked["notes"] is not None
+    assert marked["notes"].get_text() == words.index_waiting(2)
+    assert marked["literature"] is None and marked[""] is None
+
+
+def test_an_installed_pack_offers_the_sync_as_a_button_not_a_command(
+    client: TestClient,
+):
+    """The outcome printed `kennis corpus sync` while the bar has a Sync
+    button that does exactly that."""
+    shown = shown_install(
+        PackInstall(
+            pack_id="boepie", outcome="Installed", files=2, literature=1, docs=0
+        )
+    )
+    drawn = TEMPLATES.get_template("job-outcome.html").render(
+        shown=shown, pane_now=lambda: Pane(collections=(), project=None)
+    )
+
+    assert shown.next_steps == ()
+    page = BeautifulSoup(drawn, "html.parser")
+    assert page.select_one('form[hx-post="/sync"] button') is not None
+    assert "kennis corpus sync" not in drawn
+
+
+def test_a_saved_note_waiting_for_its_index_offers_index_now(client: TestClient):
+    """It said to go and type `kennis corpus index` elsewhere."""
+    answer = client.post(
+        "/remember",
+        data={"text": "Antenna gains drift.", "title": "Drift", "target": "notes"},
+        headers={"HX-Request": "true"},
+    )
+
+    page = BeautifulSoup(answer.text, "html.parser")
+    button = page.select_one('button[formaction="/index"]')
+    assert button is not None and button["value"] == "notes"
+    assert "kennis corpus index" not in answer.text

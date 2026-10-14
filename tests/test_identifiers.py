@@ -15,6 +15,7 @@ from kennis.engine.literature.identifiers import (
     PaperIdentifier,
     arxiv_id_if_reference,
     find_paper_identifiers,
+    identifier_if_reference,
     looks_like_bibtex,
     normalize_arxiv_id,
     normalize_bibcode,
@@ -286,3 +287,184 @@ def test_a_bib_file_is_recognised_by_its_suffix():
     assert looks_like_bibtex("library.bib") is True
     assert looks_like_bibtex("library.BIB") is True
     assert looks_like_bibtex("paper.pdf") is False
+
+
+# ---------------------------------------------------------------------------
+# How many digits follow the dot depends on the month (11d)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "valid", ["0704.0001", "1101.2268", "1412.8765", "1501.00001", "2409.19750"]
+)
+def test_an_identifier_of_its_months_shape_is_recognised(valid: str):
+    assert parse_identifier(valid) == PaperIdentifier(kind="arxiv", value=valid)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        # Five digits began in January 2015 and four ended with 2014, so
+        # each of these is a prefix of a real identifier, or nothing at all.
+        "2409.1975",
+        "1501.0001",
+        "1412.12345",
+        # There is no thirteenth month.
+        "2413.12345",
+    ],
+)
+def test_a_number_arxiv_could_not_have_issued_is_not_an_identifier(invalid: str):
+    """Found by the Add dialog's preview: `2409.1975` was recognised, so a
+    reader pausing while typing `2409.19750` sent arXiv a lookup for a
+    different paper - and an add of it would have asked arXiv for an
+    identifier that cannot exist."""
+    assert parse_identifier(invalid) is None
+    assert identifier_if_reference(invalid) is None
+
+
+# ---------------------------------------------------------------------------
+# The review of 2026-10-13
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ("https://arxiv.org/abs/astro-ph/0601234", "astro-ph/0601234"),
+        ("https://arxiv.org/pdf/hep-th/9901001v2", "hep-th/9901001"),
+        ("https://arxiv.org/abs/cond-mat/0102536", "cond-mat/0102536"),
+        ("https://arxiv.org/abs/math.GT/0309136", "math.GT/0309136"),
+    ],
+)
+def test_a_legacy_arxiv_url_gives_the_whole_identifier(given: str, expected: str):
+    """The `/` before the archive was refused, so `astro-ph/0601234` in a
+    URL matched from the hyphen as `ph/0601234` - a paper that does not
+    exist, whose lookup returns arXiv's error entry."""
+    assert normalize_arxiv_id(given) == expected
+
+
+def test_a_word_before_seven_digits_is_not_a_legacy_archive():
+    """`data-set/1234567` on a front page was read as arXiv `set/1234567`
+    and outranked the paper's real DOI."""
+    found = find_paper_identifiers("see zenodo.org/data-set/1234567, doi 10.1000/abc")
+
+    assert [identifier.kind for identifier in found] == ["doi"]
+
+
+def test_a_host_that_only_ends_like_arxiv_is_not_arxiv():
+    assert normalize_arxiv_id("https://evilarxiv.org/abs/2401.01234") is None
+    assert normalize_arxiv_id("https://export.arxiv.org/abs/2401.01234") == "2401.01234"
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        "http://dx.doi.org/10.1000/abc",
+        "https://doi.org/10.1000/abc?via=feed",
+        "https://doi.org/10.1000%2Fabc",
+    ],
+)
+def test_any_doi_resolver_address_is_the_same_doi(given: str):
+    found = identifier_if_reference(given)
+
+    assert found is not None and found.value == "10.1000/abc"
+
+
+def test_a_parenthesised_doi_loses_its_bracket():
+    assert normalize_doi("(doi:10.1000/abc).") == "10.1000/abc"
+    assert normalize_doi("10.1002/(SICI)1097-0258") == "10.1002/(SICI)1097-0258"
+
+
+BIB_WITH_ABBREVIATIONS = r"""@string{apj = "Astrophysical Journal"}
+@article{smith2020,
+  author = {M{\"{u}}ller, Hans and Doe, Jane},
+  title = {Gains {and} phases},
+  journal = apj,
+  year = 2020
+}
+@Comment{jabref-meta: databaseType:bibtex;}
+"""
+
+
+def test_an_abbreviation_or_comment_is_not_a_record_and_takes_no_key():
+    """`[^,]+` ran across lines, so the `@string` before an article became
+    the article's citekey, and JabRef's `@Comment` did the same."""
+    entries = parse_bibtex(BIB_WITH_ABBREVIATIONS)
+
+    assert [entry.citekey for entry in entries] == ["smith2020"]
+
+
+def test_a_value_nested_three_braces_deep_is_read_whole():
+    """A pattern allowing two levels read `M\\"uller` and lost every
+    co-author after him."""
+    (entry,) = parse_bibtex(BIB_WITH_ABBREVIATIONS)
+
+    assert entry.authors.endswith("Hans and Doe, Jane")
+    assert entry.title == "Gains and phases"
+    assert entry.year == "2020"
+
+
+@pytest.mark.parametrize(
+    ("written", "read"),
+    [
+        ('M{\\"u}ller', "M\u00fcller"),
+        ('M\\"{u}ller', "M\u00fcller"),
+        ("Garc{\\'\\i}a", "Garc\u00eda"),
+        ("Fran\\c{c}ois", "Fran\u00e7ois"),
+        ("Erd\\H{o}s", "Erd\u0151s"),
+        ("\\v{S}afa\\v{r}\\'{\\i}k", "\u0160afa\u0159\u00edk"),
+        ("{\\o}stergaard", "\u00f8stergaard"),
+        ("Stra\\ss e", "Stra\u00dfe"),
+    ],
+)
+def test_latex_accents_in_an_author_are_read_as_letters(written: str, read: str):
+    """Kept as `M\\"uller`, in the author list and so in every citekey and
+    every search over it."""
+    text = f"@article{{k,\n  title = {{T}},\n  author = {{{written}}},\n}}\n"
+
+    assert parse_bibtex(text)[0].authors == read
+
+
+def test_latex_in_a_title_is_decoded_but_not_in_a_file_path():
+    """A Zotero `file` field is a path, and its backslashes are not
+    accents."""
+    text = (
+        "@article{k,\n"
+        '  title = {Na{\\"\\i}ve R\\&D},\n'
+        "  file = {Full Text:/papers/\\o\\aa/paper.pdf:application/pdf},\n"
+        "}\n"
+    )
+
+    entry = parse_bibtex(text)[0]
+
+    assert entry.title == "Na\u00efve R&D"
+    assert entry.file_path == "/papers/\\o\\aa/paper.pdf"
+
+
+def test_a_bibcode_with_its_scheme_is_a_reference():
+    """How a pack sync names a paper declared by its bibcode alone."""
+    assert identifier_if_reference("bibcode:2018MNRAS.478.2399K") == PaperIdentifier(
+        kind="bibcode", value="2018MNRAS.478.2399K"
+    )
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "10.48550/arXiv.2409.19750",
+        "doi:10.48550/arxiv.2409.19750",
+        "https://doi.org/10.48550/arXiv.2409.19750",
+    ],
+)
+def test_arxivs_own_doi_is_read_as_the_arxiv_paper(written: str):
+    """It names the arXiv paper itself, so its text is arXiv's; read as a
+    DOI it had no source and was refused."""
+    assert identifier_if_reference(written) == PaperIdentifier(
+        kind="arxiv", value="2409.19750"
+    )
+
+
+def test_a_journal_doi_is_not_read_as_arxiv():
+    assert identifier_if_reference("10.1093/mnras/stab123") == PaperIdentifier(
+        kind="doi", value="10.1093/mnras/stab123"
+    )

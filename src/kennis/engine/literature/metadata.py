@@ -22,6 +22,7 @@ from typing import Final
 
 import httpx
 
+from kennis.engine.bounded import get_bounded
 from kennis.engine.literature.identifiers import normalize_arxiv_id
 
 _ATOM_API: Final = "https://export.arxiv.org/api/query"
@@ -49,6 +50,14 @@ def lookup_arxiv_metadata(
     """
     entry = _entry({"id_list": arxiv_id, "max_results": "1"}, client=client)
     if entry is None:
+        return None
+    # The entry must be the paper asked for. arXiv answers a malformed id
+    # with HTTP 200 and an entry titled "Error" by "arXiv api core", and that
+    # was written as the paper's metadata, with the citekey `coreError`.
+    answered = entry.find("atom:id", _ATOM_NAMESPACE)
+    if answered is None or normalize_arxiv_id(answered.text or "") != (
+        normalize_arxiv_id(arxiv_id) or arxiv_id
+    ):
         return None
 
     title_element = entry.find("atom:title", _ATOM_NAMESPACE)
@@ -86,8 +95,8 @@ def _entry(
     owned = client is None
     active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
     try:
-        response = active.get(
-            _ATOM_API, params=params, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_bounded(
+            active, _ATOM_API, params=params, timeout=_REQUEST_TIMEOUT_SECONDS
         )
         response.raise_for_status()
     except httpx.HTTPError:
@@ -100,7 +109,14 @@ def _entry(
         root = ElementTree.fromstring(response.text)
     except ElementTree.ParseError:
         return None
-    return root.find("atom:entry", _ATOM_NAMESPACE)
+    entry = root.find("atom:entry", _ATOM_NAMESPACE)
+    if entry is None:
+        return None
+    # An error is reported as an entry: `<id>http://arxiv.org/api/errors#...`.
+    identifier = entry.find("atom:id", _ATOM_NAMESPACE)
+    if identifier is not None and "/api/errors" in (identifier.text or ""):
+        return None
+    return entry
 
 
 def _author_names(entry: ElementTree.Element) -> list[str]:

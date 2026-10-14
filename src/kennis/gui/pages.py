@@ -12,50 +12,82 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from urllib.parse import quote
+from typing import Final
+from urllib.parse import quote, urlencode
 
 import yaml
 
+from kennis.context import Context
+from kennis.engine.backup import BackupReport
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document
+from kennis.engine.corpus.document import Document, DocumentFacts
 from kennis.engine.corpus.layout import relative_to_corpus
+from kennis.engine.corpus.schema import (
+    COLLECTION_NAMES,
+    DocsFrontmatter,
+    DocumentFrontmatter,
+    LiteratureFrontmatter,
+)
 from kennis.engine.corpus.sync import CorpusSync
-from kennis.engine.errors import DocumentNotFound
+from kennis.engine.errors import DocumentNotFound, KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.pack.store import PackInstall
+from kennis.engine.rag.models import Chunk
 from kennis.gui import words
 from kennis.gui.history import Search
 from kennis.gui.repairs import Repair, repairs_for
-from kennis.gui.snippet import marked_snippet, terms_of
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
-from kennis.holdings import Holding
+from kennis.holdings import (
+    DocumentMarks,
+    DocumentState,
+    Holding,
+    contents_of,
+    document_marks,
+)
 from kennis.operations import IndexBuild
+from kennis.render.backup import describe_written
 from kennis.render.hits import (
+    LEG_LABELS,
+    LEGS,
     Hit,
+    Leg,
+    Relevance,
     ScoreStyle,
-    basis_phrase,
     best_lexical,
+    relevance_phrase,
+    relevances,
     rendered_hit,
     score_style_for,
 )
-from kennis.render.html import MarkedRange, to_html
+from kennis.render.html import (
+    Heading,
+    MarkedRange,
+    PassageHtml,
+    headings_of,
+    passage_html,
+    query_pattern,
+    terms_of,
+    to_html,
+)
 from kennis.render.packs import (
-    describe_action,
     describe_corpus_claim_needed,
     describe_declarations,
     describe_deferred,
     describe_install,
+    describe_outcome_of,
     describe_sync,
     describe_unfetched,
+    describe_why_unfetched,
 )
 from kennis.render.refusals import describe_refusal, remedies_for_refusal
 from kennis.render.words import describe_busy_indexes, describe_uncommitted_build
@@ -67,30 +99,56 @@ from kennis.retrieval import Sweep
 _STYLE: ScoreStyle = "human"
 
 
+# The five levels from the strongest down, as the bar counts them: a
+# hit at "very high" fills all five cells and one at "very low" fills
+# one. A cell count is how the level reads without colour, which is
+# what lets the colour be a third cue rather than the only one (#421).
+_STEPS: dict[Relevance, int] = {
+    "very high": 5,
+    "high": 4,
+    "medium": 3,
+    "low": 2,
+    "very low": 1,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ShownMeasure:
+    """One leg's band on one hit, in the pieces a bar is drawn from.
+
+    `label` is `render/hits.py::LEG_LABELS`'s word, so the tooltip on
+    the icon is the word the command line prints. `step` is the number
+    of filled cells and the strength colour they wear.
+    """
+
+    leg: Leg
+    label: str
+    icon: str
+    level: Relevance
+    step: int
+
+
 @dataclass(frozen=True, slots=True)
 class ShownHit:
     """One hit, in the pieces a page arranges.
 
-    The three text fields come from `render/hits.py::rendered_hit`, so
-    what is read here is what `kennis search` prints and what an agent
-    is handed. The two extra fields are coordinates, not words: a page
-    needs them to build a link, and a link is not something `render/`
-    should be composing.
+    `title` (the document's; the section heads the passage) and `handle`
+    come from `render/hits.py::rendered_hit`, and
+    each measure is a band that function also printed into `detail`,
+    so what is read here is what `kennis search` prints and what an
+    agent is handed - arranged, not reworded. There is no rank: in a
+    fused list it is a position and not a measurement, and the list's
+    own order already shows position (#342, #406).
     """
 
-    headline: str
-    # The margin's fields, one per line, because the gutter is about
-    # twenty characters wide and a CSS wrap broke `meaning:` from
-    # `medium`. Joined by two spaces they are `rendered.detail`, which
-    # is what the command line prints. Concern #380.
-    detail_parts: tuple[str, ...]
-    # **HTML, unlike the other two.** `headline` and `detail` are the
-    # fields `rendered_hit` hands every front end and they stay
-    # byte-identical; the snippet is the same source text rendered
-    # for this medium, because leaving `##` and `[[35](https://...)]`
-    # on the page is what the terminal's rule yields in a browser.
-    # Concerns #336 and #297.
-    body: str | None
+    title: str
+    measures: tuple[ShownMeasure, ...]
+    handle: str
+    # **HTML, unlike the words.** The chunk rendered once, by the
+    # document's renderer, parted where the reader's words first occur:
+    # a closed passage shows the second part faded, an opened one both
+    # (#454). Concerns #336 and #297.
+    passage: PassageHtml
     collection: str
     document_id: str
     # The whole link, not its parts. A corpus hit and a bundle hit are
@@ -98,6 +156,32 @@ class ShownHit:
     # that chose between them with an `{% if %}` would be a template
     # deciding where a document lives.
     href: str
+
+    @property
+    def opens(self) -> bool:
+        """Whether the passage is too long or too tall to show whole. A
+        passage that fits is drawn whole, its lead included."""
+        return not self.passage.fits
+
+
+def shown_measures(
+    measures: Sequence[tuple[Leg, Relevance]],
+) -> tuple[ShownMeasure, ...]:
+    return tuple(
+        ShownMeasure(
+            leg=leg,
+            label=LEG_LABELS[leg],
+            icon=words.MEASURE_ICONS[leg],
+            level=level,
+            step=_STEPS[level],
+        )
+        for leg, level in measures
+    )
+
+
+# About the characters of prose a closed passage shows before its fade:
+# six lines at the reading measure. More, and the passage opens.
+_PASSAGE_FITS: Final = 360
 
 
 def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
@@ -109,19 +193,26 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
     best = best_lexical(hits)
     shown: list[ShownHit] = []
     for rank, hit in enumerate(hits, start=1):
-        rendered = rendered_hit(hit, rank=rank, style=style, best=best, snippet="short")
+        rendered = rendered_hit(hit, rank=rank, style=style, best=best, snippet="none")
         shown.append(
             ShownHit(
-                headline=rendered.headline,
-                detail_parts=rendered.detail_parts,
+                title=rendered.document_title,
+                measures=shown_measures(rendered.measures),
+                # The handle is the last field of `detail` in every
+                # style, which is the line `kennis read` takes.
+                handle=rendered.detail_parts[-1],
                 # From the chunk rather than from `rendered.body`:
                 # `snippet_of` collapses the whitespace before
                 # truncating, so by then the heading and the
                 # paragraph after it are one line and a markdown
                 # parse would make a heading of both.
-                body=marked_snippet(hit.result.chunk.text, terms=terms)
-                if rendered.body is not None
-                else None,
+                passage=passage_html(
+                    hit.result.chunk.text,
+                    terms=terms,
+                    fits=_PASSAGE_FITS,
+                    section=rendered.section,
+                    title=rendered.document_title,
+                ),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
                 href=_href(
@@ -137,17 +228,25 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
 
 @dataclass(frozen=True, slots=True)
 class ShownGroup:
-    """One collection's answer, with the scale its bands are on.
+    """One collection's answer.
 
     A group per collection and never one merged list, which is the
     same rule the command line follows for the same reason: there is
     no common quality scale between collections indexed differently,
     so any single ordering is a policy presented as a measurement.
+
+    No scale line of its own any more: the key at the head of the
+    results says what each measure is measured against, once (#408).
     """
 
     collection: str
-    basis: str
+    icon: str
     hits: list[ShownHit]
+
+    @property
+    def count(self) -> int:
+        """How many hits this collection gave, which is all of them shown."""
+        return len(self.hits)
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,16 +257,70 @@ class ShownSkip:
     resolution: str
 
 
-def shown_groups_of(found: Sweep, question: str) -> list[ShownGroup]:
+def shown_groups_of(found: Sweep, question: str, order: str = "") -> list[ShownGroup]:
     """A sweep, in the pieces a page arranges."""
     return [
         ShownGroup(
             collection=name,
-            basis=shown_basis(hits, name),
-            hits=shown_hits(hits, question=question),
+            # The bundle is drawn as a folder in the pane, so here too.
+            icon=words.COLLECTION_ICONS.get(name, "folder"),
+            hits=shown_hits(ordered_by(hits, order), question=question),
         )
         for name, hits in found.groups.items()
     ]
+
+
+def ordered_by(hits: Sequence[Hit], order: str) -> list[Hit]:
+    """One collection's hits by one leg's own rank, or as returned.
+
+    **Within the hits returned, which is the limit.** The fused rank
+    chose them, so ordering by meaning reorders the three a combined
+    search found; the best meaning-only hit may not be among them, and
+    the mode control is what searches by one leg (#406). A hit the leg
+    did not find goes last, keeping the fused order among those. Never
+    across collections, which have no common scale (#342).
+    """
+    if order not in ("lexical", "meaning"):
+        return list(hits)
+
+    def leg_rank(hit: Hit) -> int | None:
+        result = hit.result
+        return result.bm25_rank if order == "lexical" else result.dense_rank
+
+    def by_rank(placed: tuple[int, Hit]) -> tuple[bool, int, int]:
+        position, hit = placed
+        rank = leg_rank(hit)
+        return (rank is None, 0 if rank is None else rank, position)
+
+    return [hit for _, hit in sorted(enumerate(hits), key=by_rank)]
+
+
+@dataclass(frozen=True, slots=True)
+class ShownOrder:
+    """One way to order the results, as a link to the same search."""
+
+    label: str
+    href: str
+    current: bool
+
+
+def shown_orders(
+    *, question: str, scope: str, mode: str, order: str
+) -> list[ShownOrder]:
+    """The orders on offer, each a link carrying the search it reorders.
+
+    Links rather than a select, so it works without a script: each is
+    the search's own address with `order` added.
+    """
+    shown: list[ShownOrder] = []
+    for value, label in words.ORDER_CHOICES:
+        query = f"/?q={quote(question)}&scope={quote(scope)}"
+        if mode:
+            query += f"&mode={quote(mode)}"
+        if value:
+            query += f"&order={value}"
+        shown.append(ShownOrder(label=label, href=query, current=value == order))
+    return shown
 
 
 def shown_skips(found: Sweep) -> list[ShownSkip]:
@@ -184,29 +337,60 @@ def shown_skips(found: Sweep) -> list[ShownSkip]:
     ]
 
 
-def shown_basis(hits: list[Hit], collection: str) -> str:
-    """What this group's relevance levels are a band of.
+@dataclass(frozen=True, slots=True)
+class ShownKeyLine:
+    """One measure as the key explains it: its icon and its scale."""
 
-    `kennis search` prints this above each group and the window
-    printed nothing, so a reader saw "low" five times with nothing
-    saying what low was relative to. **Relevance is never shown
-    without its scale**: the two bands mean genuinely different
-    things - an absolute cosine against measured cuts, or a position
-    relative to this query's own best lexical hit - and a level
-    without its scale is a number with no units.
+    icon: str
+    label: str
+    scale: str
 
-    `render/hits.py::basis_phrase` composes the phrase and returns
-    nothing when no level is printed at all. It no longer refuses a
-    group carrying both scales: each leg is labelled now, so two
-    clauses describe two scales. Concern #379. Only the subject is
-    added here, because the command line's report has a margin to
-    carry it and a page does not.
+
+@dataclass(frozen=True, slots=True)
+class ShownKey:
+    """What the bars on this page are measured against, said once.
+
+    **Relevance is never shown without its scale**, and it was said per
+    group, which repeated one sentence above every collection (#408,
+    agreed 2026-10-09: the scale is shown once and systematically). One
+    line per measure that some hit on the page carries, because a key
+    explaining a measure the page does not show is a sentence to skip.
     """
-    if not hits:
-        return ""
-    style, _ = score_style_for(hits, _STYLE)
-    phrase = basis_phrase(hits, style)
-    return f"{collection.capitalize()} {phrase}" if phrase else ""
+
+    lines: tuple[ShownKeyLine, ...]
+    # The embedding models the meaning bands were measured for, since a
+    # cosine's cuts belong to one model (`render/hits.py::_COSINE_CUTS`).
+    models: tuple[str, ...]
+
+
+def shown_key(found: Sweep) -> ShownKey | None:
+    """The key for every band on the page, or nothing when none is shown."""
+    present: set[Leg] = set()
+    models: set[str] = set()
+    for hits in found.groups.values():
+        style, _ = score_style_for(hits, _STYLE)
+        if style != "human":
+            continue
+        best = best_lexical(hits)
+        for hit in hits:
+            for leg, _ in relevances(hit.result, model=hit.model, best=best):
+                present.add(leg)
+                if leg == "meaning" and hit.model is not None:
+                    models.add(hit.model)
+    if not present:
+        return None
+    return ShownKey(
+        lines=tuple(
+            ShownKeyLine(
+                icon=words.MEASURE_ICONS[leg],
+                label=LEG_LABELS[leg],
+                scale=relevance_phrase({leg}),
+            )
+            for leg in LEGS
+            if leg in present
+        ),
+        models=tuple(sorted(models)),
+    )
 
 
 def _href(
@@ -277,6 +461,24 @@ def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
 
 
 @dataclass(frozen=True, slots=True)
+class ShownDetail:
+    """One row of the inspector's details.
+
+    `verbatim` is for a value that must be read or typed exactly - an
+    identifier, a path - and is drawn in the monospace face.
+    """
+
+    label: str
+    value: str
+    verbatim: bool = False
+    # Where the value leads, when it is an address anyone can follow: an
+    # arXiv id, a DOI, a bibcode, the page a document was fetched from.
+    href: str = ""
+    # Offered to the clipboard: the citekey, which is typed into a paper.
+    copyable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ShownDocument:
     """One document, ready to place."""
 
@@ -290,6 +492,145 @@ class ShownDocument:
     # something to load, because a control that does nothing is worse
     # than no control.
     has_blocked_images: bool
+    # The directory below the collection, for the breadcrumbs; empty at
+    # the top, and always empty in the bundle, whose folders are paths.
+    group: str = ""
+    # What the last breadcrumb calls the document: its citekey when it
+    # has one, because that is what a paper is cited by.
+    handle: str = ""
+    byline: str | None = None
+    details: tuple[ShownDetail, ...] = ()
+    outline: tuple[Heading, ...] = ()
+
+
+def byline_of(frontmatter: DocumentFrontmatter) -> str | None:
+    """Who wrote it and when, or what it documents, under the title."""
+    if isinstance(frontmatter, LiteratureFrontmatter):
+        parts = [
+            part for part in (frontmatter.bib.authors, frontmatter.bib.year) if part
+        ]
+        return ", ".join(parts) or None
+    if isinstance(frontmatter, DocsFrontmatter):
+        docs = frontmatter.docs
+        return f"{docs.project} {docs.version}" if docs.version else docs.project
+    return None
+
+
+def document_details(
+    frontmatter: DocumentFrontmatter,
+    *,
+    collection: str,
+    group: str,
+    state: DocumentState | None,
+) -> tuple[ShownDetail, ...]:
+    """What the frontmatter says, as the inspector's rows.
+
+    Only what this document has. `state` is None when the index cannot
+    be checked, and then the row is left out, as the tree draws no mark:
+    "kennis cannot check" is not "searchable".
+    """
+    label = words.DETAIL_LABELS
+    rows = [ShownDetail(label["collection"], collection)]
+    if group:
+        rows.append(ShownDetail(label["group"], group))
+    rows.append(ShownDetail(label["id"], frontmatter.id, verbatim=True))
+    if isinstance(frontmatter, LiteratureFrontmatter):
+        bib = frontmatter.bib
+        rows.append(
+            ShownDetail(label["citekey"], bib.citekey, verbatim=True, copyable=True)
+        )
+        for key, value in (
+            ("arxiv", bib.arxiv_id),
+            ("doi", bib.doi),
+            ("bibcode", bib.bibcode),
+        ):
+            if value:
+                rows.append(
+                    ShownDetail(
+                        label[key],
+                        value,
+                        verbatim=True,
+                        href=_RESOLVERS[key].format(quote(value, safe="/:.()")),
+                    )
+                )
+    if isinstance(frontmatter, DocsFrontmatter):
+        rows.append(ShownDetail(label["project"], frontmatter.docs.project))
+        rows.append(ShownDetail(label["page"], frontmatter.docs.page, verbatim=True))
+        if frontmatter.docs.version:
+            rows.append(ShownDetail(label["version"], frontmatter.docs.version))
+    source = frontmatter.source
+    fetched = source.origin.removeprefix("url:")
+    rows.append(
+        ShownDetail(
+            label["source"],
+            source.origin,
+            verbatim=True,
+            href=fetched if fetched.startswith(("https://", "http://")) else "",
+        )
+    )
+    rows.append(ShownDetail(label["converted"], source.via))
+    rows.append(ShownDetail(label["added"], source.at.date().isoformat()))
+    if state is not None:
+        rows.append(ShownDetail(label["index"], words.INDEX_STATES[state]))
+    return tuple(rows)
+
+
+# Where an identifier is looked up by anyone, not by kennis.
+_RESOLVERS: Final[dict[str, str]] = {
+    "arxiv": "https://arxiv.org/abs/{}",
+    "doi": "https://doi.org/{}",
+    "bibcode": "https://ui.adsabs.harvard.edu/abs/{}",
+}
+
+
+def state_in(
+    marks: DocumentMarks, corpus_root: Path, anchor: Path
+) -> DocumentState | None:
+    """One document's index state, or None when it cannot be checked."""
+    if marks.states is None and not marks.never_indexed:
+        return None
+    return marks.state_of(corpus_root, anchor)
+
+
+@dataclass(frozen=True, slots=True)
+class ShownMatch:
+    """A passage of this document the reader's words occur in."""
+
+    label: str
+    href: str
+
+
+def shown_matches(
+    chunks: Sequence[Chunk], *, question: str, collection: str, document_id: str
+) -> tuple[ShownMatch, ...]:
+    """The chunks the reader's words occur in, named by their section.
+
+    The words are matched by the rule that marks them on the page, so a
+    passage is listed exactly when it would show a mark.
+    """
+    pattern = query_pattern(terms_of(question))
+    if pattern is None:
+        return ()
+    matching = [chunk for chunk in chunks if pattern.search(chunk.text)]
+    in_section = Counter(chunk.section for chunk in matching if chunk.section)
+    seen: Counter[str] = Counter()
+    shown: list[ShownMatch] = []
+    for chunk in matching:
+        section = chunk.section
+        if not section:
+            label = words.passage_label(chunk.chunk_index)
+        elif in_section[section] == 1:
+            label = section
+        else:
+            seen[section] += 1
+            label = words.match_in_section(section, seen[section], in_section[section])
+        shown.append(
+            ShownMatch(
+                label=label,
+                href=_href(collection, document_id, chunk.chunk_index, question),
+            )
+        )
+    return tuple(shown)
 
 
 def shown_document(
@@ -299,6 +640,8 @@ def shown_document(
     *,
     load_remote_images: bool,
     marked: MarkedRange | None = None,
+    marks: DocumentMarks | None = None,
+    question: str = "",
 ) -> ShownDocument:
     """Read one document and render it.
 
@@ -313,8 +656,11 @@ def shown_document(
     """
     held = Collection(root=corpus_root, name=collection)
     document = held.resolve(document_id)
+    frontmatter = document.frontmatter
+    anchor = _anchor(document)
+    group = _group_of(corpus_root, collection, anchor)
     return ShownDocument(
-        title=document.frontmatter.title,
+        title=frontmatter.title,
         document_id=document.id,
         collection=collection,
         path=relative_to_corpus(document.md_path, corpus_root),
@@ -326,9 +672,25 @@ def shown_document(
             # 44 of 45 crawled pages then repeated it as their first
             # heading, so the reader saw it twice with the metadata
             # wedged between. Concern #353.
-            without_title=document.frontmatter.title,
+            without_title=frontmatter.title,
+            heading_anchors=True,
+            terms=terms_of(question),
         ),
         has_blocked_images=_refers_remotely(document.body),
+        group=group,
+        handle=(
+            frontmatter.bib.citekey
+            if isinstance(frontmatter, LiteratureFrontmatter)
+            else document.id
+        ),
+        byline=byline_of(frontmatter),
+        details=document_details(
+            frontmatter,
+            collection=collection,
+            group=group,
+            state=None if marks is None else state_in(marks, corpus_root, anchor),
+        ),
+        outline=tuple(headings_of(document.body, without_title=frontmatter.title)),
     )
 
 
@@ -338,6 +700,7 @@ def shown_bundle_document(
     *,
     load_remote_images: bool,
     marked: MarkedRange | None = None,
+    question: str = "",
 ) -> ShownDocument:
     """One note out of this project's bundle, rendered.
 
@@ -381,8 +744,22 @@ def shown_bundle_document(
             load_remote_images=load_remote_images,
             marked=marked,
             without_title=str(title),
+            heading_anchors=True,
+            terms=terms_of(question),
         ),
         has_blocked_images=_refers_remotely(body),
+        handle=relative_path,
+        # A bundle note's frontmatter is the user's own and has no
+        # model, so its details are where it is and nothing more.
+        details=(
+            ShownDetail(words.DETAIL_LABELS["collection"], CONTEXT_COLLECTION),
+            ShownDetail(
+                words.DETAIL_LABELS["path"],
+                f"{bundle.name}/{relative_path}",
+                verbatim=True,
+            ),
+        ),
+        outline=tuple(headings_of(body, without_title=str(title))),
     )
 
 
@@ -397,22 +774,49 @@ def _refers_remotely(markdown: str) -> bool:
 
 
 __all__ = [
+    "PALETTE_ROLES",
+    "STATE_ORDER",
+    "STATE_ROLES",
+    "ShownBranch",
+    "ShownDetail",
     "ShownDocument",
     "ShownEntry",
     "ShownGroup",
     "ShownHit",
+    "ShownKey",
+    "ShownKeyLine",
+    "ShownMark",
+    "ShownMatch",
+    "ShownMeasure",
+    "ShownOrder",
     "ShownOutcome",
+    "ShownPaletteEntry",
     "ShownRecent",
     "ShownRow",
     "ShownSkip",
-    "shown_basis",
+    "ShownTree",
+    "ShownTreeEntry",
+    "add_here_address",
+    "byline_of",
+    "document_details",
+    "known_groups",
+    "ordered_by",
+    "palette_entries",
+    "palette_typed",
+    "shown_backup",
     "shown_bundle_document",
     "shown_document",
     "shown_groups",
     "shown_groups_of",
     "shown_hits",
+    "shown_key",
+    "shown_matches",
+    "shown_measures",
+    "shown_orders",
     "shown_rows",
     "shown_skips",
+    "shown_tree",
+    "state_in",
 ]
 
 
@@ -448,7 +852,7 @@ def shown_rows(held: Sequence[Holding]) -> list[ShownRow]:
 
 
 def shown_groups(
-    corpus_root: Path, collection: str
+    context: Context, collection: str
 ) -> tuple[list[tuple[str, list[ShownEntry]]], int]:
     """A collection's documents by group, and how many could not be read.
 
@@ -457,12 +861,13 @@ def shown_groups(
     shape. The ungrouped ones come first under an empty name, because
     a collection with no groups should not lead with a heading.
     """
-    contents = Collection(root=corpus_root, name=collection).contents()
+    corpus_root = context.corpus_root
+    contents = contents_of(context, collection)
     grouped: dict[str, list[ShownEntry]] = {}
     for document in sorted(contents.documents, key=_sort_key):
-        grouped.setdefault(_group_of(corpus_root, collection, document), []).append(
-            ShownEntry(title=document.frontmatter.title, document_id=document.id)
-        )
+        grouped.setdefault(
+            _group_of(corpus_root, collection, _anchor(document)), []
+        ).append(ShownEntry(title=document.frontmatter.title, document_id=document.id))
     ordered = sorted(grouped.items(), key=lambda pair: (pair[0] != "", pair[0]))
     return ordered, len(contents.unreadable)
 
@@ -471,16 +876,328 @@ def _sort_key(document: Document) -> str:
     return document.frontmatter.title.casefold()
 
 
-def _group_of(corpus_root: Path, collection: str, document: Document) -> str:
-    """The directory below the collection that this document sits in.
+def _anchor(document: Document | DocumentFacts) -> Path:
+    """What names a document on disk: its wrapper, or its file.
 
-    The wrapper is the anchor for a wrapped document, because its own
-    directory *is* the document rather than a group - the same rule
-    the index loader follows.
+    The wrapper for a wrapped document, because its own directory *is*
+    the document rather than a group - the same rule the index loader
+    follows, and the spelling `document_of` gives a flagged path.
     """
-    anchor = document.wrapper_dir or document.md_path
+    return document.wrapper_dir or document.md_path
+
+
+def known_groups(context: Context, collections: Sequence[str]) -> list[str]:
+    """Every group already held in `collections`, for a typed group field
+    to suggest: typed free, "Radio" beside "radio" quietly made a second
+    group. Read through the same cached contents the pane draws from."""
+    root = context.corpus_root
+    found: set[str] = set()
+    for collection in collections:
+        for document in contents_of(context, collection).documents:
+            group = _group_of(root, collection, _anchor(document))
+            if group:
+                found.add(group)
+    return sorted(found)
+
+
+def _group_of(corpus_root: Path, collection: str, anchor: Path) -> str:
+    """The directory below the collection that this document sits in."""
     relative = anchor.relative_to(corpus_root / collection)
     return relative.parent.as_posix() if relative.parent.name else ""
+
+
+# Which tab adds to a place in each collection, and the field that names
+# the place there: a docs page's directory is its project (#101).
+_ADD_HERE: Final[dict[str, tuple[str, str]]] = {
+    "literature": ("paper", "group"),
+    "docs": ("site", "project"),
+    "notes": ("file", "group"),
+}
+
+
+def add_here_address(collection: str, group: str) -> str:
+    """The Add dialog opened on the tab that adds to `group` in `collection`.
+
+    The File tab offers three collections, so it is told which one; the
+    other two tabs each fix theirs.
+    """
+    kind, field = _ADD_HERE[collection]
+    asked = {"kind": kind}
+    if kind == "file":
+        asked["collection"] = collection
+    if group:
+        asked[field] = group
+    return "/add?" + urlencode(asked)
+
+
+# A palette entry's kind wears an existing role on its icon and its kind
+# word, so the list is not grey; the label stays ink.
+PALETTE_ROLES: Final[dict[str, str]] = {
+    "action": "command",
+    "collection": "operation",
+    "page": "value",
+    "search": "query",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ShownPaletteEntry:
+    """One line of the palette: an existing route under another name.
+
+    An action opens its dialog, as the bar's do; a place is navigated to.
+    `match` is what the script compares typing against, lower-cased here
+    so the script composes nothing.
+    """
+
+    label: str
+    href: str
+    kind: str
+    icon: str
+    role: str
+    match: str
+    # Drawn hidden and shown only once something typed matches it: a
+    # document or a past search. Every action shows on an empty palette;
+    # a thousand titles would bury them.
+    typed_only: bool = False
+    # A document's collection, whose colour it wears in place of a role,
+    # as it does on a card and in the pane.
+    collection: str = ""
+
+    @property
+    def opens_a_dialog(self) -> bool:
+        return self.kind == "action"
+
+
+def palette_entries() -> list[ShownPaletteEntry]:
+    """Every action and place, actions first."""
+    listed: list[tuple[str, str, str, str]] = [
+        *(
+            (href, label, "action", icon)
+            for href, label, icon in words.PALETTE_ACTIONS_BEFORE_INDEX
+        ),
+        *(
+            (
+                f"/index?collection={name}",
+                words.index_collection(name),
+                "action",
+                "database",
+            )
+            for name in COLLECTION_NAMES
+        ),
+        *(
+            (href, label, "action", icon)
+            for href, label, icon in words.PALETTE_ACTIONS_AFTER_INDEX
+        ),
+        *(
+            (f"/collection/{name}", name, "collection", words.COLLECTION_ICONS[name])
+            for name in COLLECTION_NAMES
+        ),
+        *((href, label, "page", icon) for href, label, icon in words.PALETTE_PAGES),
+    ]
+    return [
+        ShownPaletteEntry(
+            label=label,
+            href=href,
+            kind=words.PALETTE_KINDS[kind],
+            icon=icon,
+            role=PALETTE_ROLES[kind],
+            match=f"{label} {words.PALETTE_KINDS[kind]}".casefold(),
+        )
+        for href, label, kind, icon in listed
+    ]
+
+
+def palette_typed(
+    context: Context, searches: Sequence[Search]
+) -> list[ShownPaletteEntry]:
+    """Documents by title and past searches, for the palette to find.
+
+    It found only actions and places, so "bandpass" answered "Nothing
+    matches" with a document of that name in the corpus (the flows
+    review, F7). Read through `contents_of`, which is cached against the
+    corpus state, so opening the palette walks nothing that has not
+    changed. A collection that cannot be read is left out, not raised:
+    the palette is a convenience, and the pane says what is wrong.
+    """
+    entries: list[ShownPaletteEntry] = []
+    for search in searches:
+        entries.append(
+            ShownPaletteEntry(
+                label=search.query,
+                href=f"/?q={quote(search.query)}&scope={quote(search.scope)}"
+                + (f"&mode={quote(search.mode)}" if search.mode else ""),
+                kind=words.PALETTE_KINDS["search"],
+                icon="history",
+                role=PALETTE_ROLES["search"],
+                match=f"{search.query} {words.PALETTE_KINDS['search']}".casefold(),
+                typed_only=True,
+            )
+        )
+    for collection in COLLECTION_NAMES:
+        try:
+            contents = contents_of(context, collection)
+        except KennisError:
+            continue
+        for document in sorted(contents.documents, key=_sort_key):
+            title = document.frontmatter.title
+            entries.append(
+                ShownPaletteEntry(
+                    label=title,
+                    href=f"/document/{collection}/{document.id}",
+                    kind=collection,
+                    icon=words.COLLECTION_ICONS[collection],
+                    role="",
+                    match=f"{title} {collection}".casefold(),
+                    typed_only=True,
+                    collection=collection,
+                )
+            )
+    return entries
+
+
+# A mark wears an existing role, never a new colour. Not yet indexed is
+# `added` because that is what it is to the index; unreadable is an error.
+STATE_ROLES: Final[dict[str, str]] = {
+    "unindexed": "added",
+    "changed": "changed",
+    "unreadable": "error",
+}
+
+# Worst first. Search cannot see an unreadable document at all; it finds
+# a changed one by text the document no longer has, which is a false
+# answer; a new one it merely does not find yet, which is an incomplete
+# one - the distinction `Freshness` draws between stale and behind.
+STATE_ORDER: Final[tuple[str, ...]] = ("unreadable", "changed", "unindexed")
+
+
+@dataclass(frozen=True, slots=True)
+class ShownMark:
+    """A state as the tree draws it: a letter, its role, its sentence."""
+
+    state: str
+    letter: str
+    role: str
+    sentence: str
+
+
+def _mark(state: str, sentence: str | None = None) -> ShownMark | None:
+    if not state:
+        return None
+    return ShownMark(
+        state=state,
+        letter=words.STATE_LETTERS[state],
+        role=STATE_ROLES[state],
+        sentence=sentence or words.STATE_WORDS[state],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ShownTreeEntry:
+    """One document in the pane's tree.
+
+    `document_id` is empty for an unreadable document: there is no
+    identifier kennis can vouch for, so nothing to open or move, but it
+    is listed so it can be found - a count beneath the tree could not be.
+    """
+
+    title: str
+    document_id: str
+    mark: ShownMark | None
+
+    @property
+    def state(self) -> str:
+        return self.mark.state if self.mark else ""
+
+
+@dataclass(frozen=True, slots=True)
+class ShownBranch:
+    """One group's entries, and the worst state beneath it.
+
+    `group` is empty for the collection's own top level, which is drawn
+    without a heading.
+    """
+
+    group: str
+    entries: list[ShownTreeEntry]
+    mark: ShownMark | None
+    add_here: str
+
+    @property
+    def state(self) -> str:
+        return self.mark.state if self.mark else ""
+
+
+@dataclass(frozen=True, slots=True)
+class ShownTree:
+    """A collection's branch of the pane: its groups, and what may be done.
+
+    `movable` is False for docs, whose directory is its project (#101).
+    `groups` is what the Move field offers, named as they are held.
+    """
+
+    collection: str
+    top: ShownBranch
+    branches: list[ShownBranch]
+    groups: list[str]
+    attention: int
+    movable: bool
+
+
+def shown_tree(context: Context, collection: str) -> ShownTree:
+    """One collection as the pane draws it, each document with its state."""
+    root = context.corpus_root
+    contents = contents_of(context, collection)
+    marks = document_marks(context, collection)
+    grouped: dict[str, list[ShownTreeEntry]] = {}
+    for document in sorted(contents.documents, key=_sort_key):
+        anchor = _anchor(document)
+        grouped.setdefault(_group_of(root, collection, anchor), []).append(
+            ShownTreeEntry(
+                title=document.frontmatter.title,
+                document_id=document.id,
+                mark=_mark(marks.state_of(root, anchor)),
+            )
+        )
+    for facts in contents.unreadable:
+        anchor = _anchor(facts)
+        grouped.setdefault(_group_of(root, collection, anchor), []).append(
+            ShownTreeEntry(
+                title=facts.title or facts.md_path.name,
+                document_id="",
+                mark=_mark("unreadable"),
+            )
+        )
+    branches = [
+        _branch(collection, group, entries)
+        for group, entries in sorted(
+            grouped.items(), key=lambda pair: (pair[0] != "", pair[0])
+        )
+    ]
+    top = (
+        branches.pop(0)
+        if branches and branches[0].group == ""
+        else _branch(collection, "", [])
+    )
+    every = [entry for branch in (top, *branches) for entry in branch.entries]
+    return ShownTree(
+        collection=collection,
+        top=top,
+        branches=branches,
+        groups=[branch.group for branch in branches],
+        attention=sum(1 for entry in every if entry.mark),
+        movable=collection != "docs",
+    )
+
+
+def _branch(collection: str, group: str, entries: list[ShownTreeEntry]) -> ShownBranch:
+    attention = [entry.state for entry in entries if entry.mark]
+    worst = next((state for state in STATE_ORDER if state in attention), "")
+    return ShownBranch(
+        group=group,
+        entries=entries,
+        mark=_mark(worst, words.attention_count(len(attention))) if worst else None,
+        add_here=add_here_address(collection, group),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,6 +1219,12 @@ class ShownOutcome:
     # the button again writes it twice; a write that was refused
     # leaves text the reader would otherwise have to type again.
     clears: bool = False
+    # What else the write did that the reader should know of: documents
+    # deleted by hand that it put back.
+    notes: tuple[str, ...] = ()
+    # The collection to offer an Index now button for, when what was
+    # written cannot be found until it is indexed.
+    index_after: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,6 +1243,11 @@ class ShownItem:
     remedies: tuple[str, ...] = ()
     repairs: tuple[Repair, ...] = ()
 
+    @property
+    def needs_attention(self) -> bool:
+        """Whether the reader has something to do about this one."""
+        return self.outcome == "failed" or bool(self.remedies or self.repairs)
+
 
 @dataclass(frozen=True, slots=True)
 class ShownJob:
@@ -535,6 +1263,28 @@ class ShownJob:
     notes: tuple[str, ...] = ()
     next_steps: tuple[str, ...] = ()
     role: str = "role-added"
+    # Parts of the page the outcome changes, as (element id, route that
+    # draws it). The outcome asks for each again on arrival, where the
+    # page has one: a backup's section otherwise kept saying no backup
+    # had been written while the strip beside it said one had. The
+    # strip's status and the pane are added for every job (#457).
+    redraws: tuple[tuple[str, str], ...] = ()
+    # Whether the outcome offers to index what it wrote: "Not searchable
+    # until the index is rebuilt" was a sentence with nothing to press.
+    index_after: bool = False
+    # Whether to offer the syncs, after an install that brought nothing
+    # into the corpus yet.
+    sync_after: bool = False
+
+    @property
+    def attention(self) -> tuple[ShownItem, ...]:
+        """The items the reader has something to do about, always shown."""
+        return tuple(item for item in self.items if item.needs_attention)
+
+    @property
+    def rest(self) -> tuple[ShownItem, ...]:
+        """Everything else, which a long job folds away (`FOLDED_AFTER`)."""
+        return tuple(item for item in self.items if not item.needs_attention)
 
 
 def shown_add(report: AddReport) -> ShownJob:
@@ -550,6 +1300,7 @@ def shown_add(report: AddReport) -> ShownJob:
         # interface to do what the interface does.
         notes=(words.NOT_SEARCHABLE_YET,) if added else (),
         role="role-added" if added else "role-muted",
+        index_after=bool(added),
     )
 
 
@@ -617,6 +1368,9 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
         steps.extend(f"kennis corpus claim {held}" for held in result.edited)
     if result.failed:
         notes.append(describe_unfetched(result.failed))
+        notes.extend(
+            describe_why_unfetched(address, refusal) for address, refusal in result.why
+        )
     if result.deferred:
         notes.append(describe_deferred(result.deferred))
     acted = any(action.verdict in ACTING for action in result.actions)
@@ -630,12 +1384,13 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
                 marker=SYNC_MARKERS.get(action.verdict, ">"),
                 name=action.address,
                 outcome=action.verdict,
-                detail=describe_action(action),
+                detail=describe_outcome_of(action),
             )
             for action in result.actions
         ),
         notes=tuple(notes),
         next_steps=tuple(steps),
+        index_after=acted,
     )
 
 
@@ -653,7 +1408,7 @@ def shown_bundle_sync(result: BundleSync) -> ShownJob:
                 marker=SYNC_MARKERS.get(action.verdict, ">"),
                 name=action.address,
                 outcome=action.verdict,
-                detail=describe_action(action),
+                detail=describe_outcome_of(action),
             )
             for action in result.actions
         ),
@@ -662,6 +1417,14 @@ def shown_bundle_sync(result: BundleSync) -> ShownJob:
         # one: this interface has no control that indexes a bundle, so
         # the terminal really is where that is done.
         next_steps=("kennis context index",) if acted else (),
+    )
+
+
+def shown_backup(report: BackupReport) -> ShownJob:
+    """A backup: where it was written, how large, and how many entries."""
+    return ShownJob(
+        headline=f"Backed up to {describe_written(report)}",
+        redraws=(("backup", "/settings/backup"),),
     )
 
 
@@ -684,5 +1447,6 @@ def shown_install(install: PackInstall) -> ShownJob:
             ),
         ),
         notes=((declared,) if declared else ()) + (words.NOTHING_MATERIALISED,),
-        next_steps=("kennis corpus sync", "kennis context sync"),
+        # Buttons, not the two commands: this window has both syncs.
+        sync_after=True,
     )

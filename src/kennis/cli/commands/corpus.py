@@ -33,8 +33,7 @@ from kennis.engine.corpus.add import (
     add_notes,
 )
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document, move_document
-from kennis.engine.corpus.layout import index_root, title_filename, unique_filename
+from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import (
     CorpusSync,
@@ -58,6 +57,7 @@ from kennis.engine.rag.index import read_manifest
 from kennis.operations import (
     add_documents,
     build_indexes,
+    move_a_document,
     restore_hand_deletions,
     synchronise_corpus,
 )
@@ -68,8 +68,13 @@ from kennis.render.packs import (
     describe_owner,
     describe_sync,
     describe_unfetched,
+    describe_why_unfetched,
 )
-from kennis.render.refusals import describe_refusal, remedies_for_refusal
+from kennis.render.refusals import (
+    choices_for_refusal,
+    describe_refusal,
+    remedies_for_refusal,
+)
 from kennis.render.words import (
     conversion_cost,
     conversion_repairs,
@@ -187,10 +192,10 @@ def _undo_hand_deletions(context: Context) -> None:
     the command's own commit carries a tree the deletion never touched.
     Concern #128.
     """
-    _report_restored(restore_hand_deletions(context))
+    report_restored(restore_hand_deletions(context))
 
 
-def _report_restored(restored: Sequence[OutOfBandChange]) -> None:
+def report_restored(restored: Sequence[OutOfBandChange]) -> None:
     """What a restore put back, or nothing at all when it put back nothing."""
     if not restored:
         return
@@ -381,11 +386,19 @@ def add_command(
         ),
         identifier=identifier,
         citekey=citekey,
+        unpaywall_email=context.settings.literature.unpaywall_email,
         project=project,
         max_pages=max_pages,
         max_depth=max_depth,
         batch_size=context.settings.conversion.batch_size,
-        request_delay_seconds=context.settings.literature.request_delay,
+        # arXiv's pacing, for arXiv: a docs host gets its own default. Every
+        # caller passed this to every collection, and a 300-page site took
+        # a quarter of an hour at three seconds a page.
+        request_delay_seconds=(
+            context.settings.literature.request_delay
+            if destination == "literature"
+            else None
+        ),
         extra_file_types=(),
     )
 
@@ -400,7 +413,7 @@ def add_command(
             restored=restored,
         )
 
-    _report_restored(restored)
+    report_restored(restored)
     _report_add(report)
 
 
@@ -524,7 +537,10 @@ def _report_remedies(report: AddReport) -> None:
     commands: dict[str, None] = {}
     for item in report.outcomes:
         if item.outcome is Outcome.FAILED and item.refusal is not None:
-            for command in remedies_for_refusal(item.refusal):
+            for command in (
+                *choices_for_refusal(item.refusal),
+                *remedies_for_refusal(item.refusal),
+            ):
                 commands.setdefault(command, None)
     for command in commands:
         display.hint(command)
@@ -549,7 +565,7 @@ def sync_command() -> None:
     restored: list[OutOfBandChange] = []
     with reporting() as events:
         result = synchronise_corpus(context, events=events, restored=restored)
-    _report_restored(restored)
+    report_restored(restored)
     display.operation("Synchronised", describe_sync(result.counts, noun="document"))
     for action in result.actions:
         display.detail(display.sync_marker(action.verdict), describe_action(action))
@@ -577,6 +593,8 @@ def _report_what_a_sync_left(result: CorpusSync) -> None:
         # Named rather than counted, because which paper did not arrive
         # is the whole of what a reader needs.
         display.note(describe_unfetched(result.failed))
+        for address, refusal in result.why:
+            display.hint(describe_why_unfetched(address, refusal))
 
 
 @corpus_group.command(name="claim")
@@ -687,93 +705,13 @@ def move_command(
         raise display.CliError("nothing to change: pass --group, --title, or both.")
 
     found, document = resolve_document(context, handle, collection)
-    _refuse_regrouping_docs(found, group)
-    target = _target_path(found, document, group=group, title=title)
-
-    with corpus_lock(context.corpus_root):
-        _undo_hand_deletions(context)
-        moved = move_document(
-            document,
-            target_md_path=target,
-            updates={"title": title} if title else None,
-        )
-        _commit(
-            context,
-            "move",
-            scope=found.name,
-            summary=outcome_summary({Outcome.CHANGED: 1}),
-        )
+    restored: list[OutOfBandChange] = []
+    moved = move_a_document(
+        context, found, document, group=group, title=title, restored=restored
+    )
+    report_restored(restored)
 
     display.operation("Moved", f"{moved.id}  {moved.md_path.relative_to(found.path)}")
-
-
-def _refuse_regrouping_docs(found: Collection, group: str | None) -> None:
-    """A docs page's directory is its project, so `--group` cannot set it.
-
-    Notes and literature are filed into whatever group the user names, and
-    their identifiers are minted independently of it. A docs page is not:
-    `add_docs` writes it to `docs/<project>/` and derives its identifier from
-    `(project, page)`, so moving the file alone would leave the directory,
-    the `docs.project` field and the identifier disagreeing about which
-    project the page belongs to.
-
-    Changing the project properly would change the derived identifier, which
-    is the one thing `move_document` refuses - every handle pointing at the
-    document addresses it by that identifier. Concern #101.
-    """
-    if found.name == "docs" and group is not None:
-        raise display.CliError(
-            "a docs page's directory is its project, which is part of its "
-            "identity; --group cannot change it."
-        )
-
-
-def _target_path(
-    found: Collection, document: Document, *, group: str | None, title: str | None
-) -> Path:
-    """Where the moved document lands, as a bare-file path.
-
-    Always the bare form, even for a wrapped document: `move_document` turns
-    `<dir>/<name>.md` into `<dir>/<name>/content.md` itself, because the unit
-    that moves is the wrapper directory and its assets travel with it.
-
-    Each half defaults to what the document already has, so `--group` alone
-    keeps the title and `--title` alone keeps the directory. Recomputing the
-    filename uses the two functions `add` uses - `title_filename` and
-    `unique_filename` - so a moved document lands where an added one would,
-    rather than the corpus having a second naming rule reachable only by
-    moving.
-    """
-    directory = found.path / group if group is not None else _holding(document)
-    if title is None:
-        return directory / f"{_stem(document)}.md"
-
-    taken = {
-        _stem(other) + ".md"
-        for other in found.contents().documents
-        if other.id != document.id
-    }
-    return directory / unique_filename(title_filename(title), taken)
-
-
-def _holding(document: Document) -> Path:
-    """The directory the document sits in, as a move would name it.
-
-    A wrapped document's own `md_path.parent` is its wrapper, which is part
-    of the document rather than where it is filed.
-    """
-    return (document.wrapper_dir or document.md_path).parent
-
-
-def _stem(document: Document) -> str:
-    """The document's name without the suffix, in bare-file terms.
-
-    A wrapped document's markdown is always `content.md`, so its own filename
-    says nothing about which document it is; the wrapper's name does.
-    """
-    if document.wrapper_dir is not None:
-        return document.wrapper_dir.name
-    return document.md_path.stem
 
 
 # ---------------------------------------------------------------------------
@@ -805,7 +743,7 @@ def index_command(collection: str | None) -> None:
     with reporting() as events:
         result = build_indexes(context, collection, events=events, restored=restored)
 
-    _report_restored(restored)
+    report_restored(restored)
     for index in result.built:
         display.operation(
             "Indexed",

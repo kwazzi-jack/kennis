@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}kennis - {{ activity_heading }}{% endblock %}
+{% block main %}
+<h1>{{ activity_heading }}</h1>
+{% if rows %}
+<table class="activity">
+  <tbody>
+  {% for row in rows %}
+    <tr class="state-{{ row.state }}">
+      <td class="started">{{ row.started }}</td>
+      <td><a href="/job/{{ row.job_id }}">{{ row.kind }}</a></td>
+      <td class="role-muted">{{ row.state }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="role-muted">{{ nothing_run }}</p>
+{% endif %}
+<h2>{{ changes_heading }}</h2>
+{% if changes %}
+<table class="activity changes">
+  <tbody>
+  {% for change in changes %}
+    <tr>
+      <td class="started">{{ change.when }}</td>
+      <td>{{ change.what }}</td>
+      <td class="role-muted"><code>{{ change.commit }}</code></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="role-muted">{{ no_changes }}</p>
+{% endif %}
+{% endblock %}

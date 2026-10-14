@@ -57,13 +57,11 @@ def a_binding(**overrides: object) -> ModelBinding:
     fields: dict[str, object] = {
         "kind": "fastembed",
         "model": "bge-small",
-        "dim": 4,
     }
     fields.update(overrides)
     return ModelBinding(
         kind=str(fields["kind"]),
         model=str(fields["model"]),
-        dim=int(str(fields["dim"])),
         host=fields.get("host") if isinstance(fields.get("host"), str) else None,
         normalise=bool(fields.get("normalise", True)),
         max_async=int(str(fields["max_async"])) if "max_async" in fields else None,
@@ -96,12 +94,16 @@ def test_row_order_matches_input_order_whatever_order_batches_finish_in():
     assert [float(row[0]) for row in matrix] == [float(len(text)) for text in texts]
 
 
-def test_no_texts_produces_an_empty_matrix_of_the_right_width():
-    """Shaped rather than empty, so a caller can stack it without a special
-    case for the collection that had nothing in it."""
-    matrix = embed_texts(a_binding(), [], embedder=CountingEmbedder())
+def test_no_texts_produces_an_empty_matrix_and_asks_the_model_nothing():
+    """No rows and no columns: the width is the model's and is not known
+    until it has embedded something, and asking it to embed nothing to find
+    out would be a request to a hosted service for no text."""
+    embedder = CountingEmbedder()
 
-    assert matrix.shape == (0, 4)
+    matrix = embed_texts(a_binding(), [], embedder=embedder)
+
+    assert matrix.shape == (0, 0)
+    assert embedder.batches == []
 
 
 def test_texts_are_sent_in_batches():
@@ -301,7 +303,7 @@ def test_the_openai_backend_uses_a_key_from_the_setup(
 
     monkeypatch.setattr(openai, "OpenAI", FakeClient)
 
-    binding = ModelBinding(kind="openai", model="text-embedding-3-small", dim=1536)
+    binding = ModelBinding(kind="openai", model="text-embedding-3-small")
     with pytest.raises(AssertionError):
         embedder_for(binding).embed(["a"])
 
@@ -350,7 +352,7 @@ def test_the_fastembed_model_is_loaded_from_that_cache(monkeypatch: pytest.Monke
     monkeypatch.setattr(embedding_module._FastembedEmbedder, "_loaded", {})
 
     embedder = embedding_module._FastembedEmbedder(
-        ModelBinding(kind="fastembed", model="BAAI/bge-small-en-v1.5", dim=384)
+        ModelBinding(kind="fastembed", model="BAAI/bge-small-en-v1.5")
     )
     embedder.embed(["anything"])
 

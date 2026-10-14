@@ -27,8 +27,10 @@ import re
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
@@ -37,12 +39,23 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import DocumentNotFound
 from kennis.engine.rag.index import load_index
+from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_bundle_document
 from kennis.gui.words import MARK_WITHHELD
 from kennis.retrieval import EVERY_SCOPE
 
 TOKEN = "a-test-token"
+
+
+def posted(client: TestClient, path: str, **kwargs: object) -> Response:
+    """A POST as the window's htmx form sends it.
+
+    Without the header a POST is a plain form's, and since #412 that
+    answers a page or a redirect - not the fragment these tests read.
+    """
+    return client.post(path, headers={"HX-Request": "true"}, **kwargs)
+
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src/kennis/gui/templates"
 
@@ -159,14 +172,13 @@ def test_the_link_names_the_chunk_the_hit_reported(corpus: Path, client: TestCli
 
     found = client.get("/hits", params={"q": "flagging", "scope": "notes"})
 
-    # The margin states the chunk, in the same words `kennis search`
+    # The handle states the chunk, in the same words `kennis search`
     # prints; the link must agree with it. Anchored on the closing
-    # tag of the margin's own field rather than by splitting on
+    # tag of the handle's own element rather than by splitting on
     # "chunk=", which the href also contains - the first version of
     # this test read its own answer out of the thing it was checking.
-    # The field is a `<span>` since #380 put each on its own line.
-    reported = re.search(r"chunk=(\d+)</span>", found.text)
-    assert reported is not None, "the margin must state the chunk"
+    reported = re.search(r'<span class="handle">[^<]*chunk=(\d+)</span>', found.text)
+    assert reported is not None, "the handle must state the chunk"
     number = reported.group(1)
     assert int(number) > 0, "the match must not be in the first chunk"
     assert f"?chunk={number}&amp;q=" in found.text
@@ -454,7 +466,10 @@ def test_the_bundle_mark_is_the_chunk_and_not_the_header(
     page = client.get(link)
     marked = page.text[page.text.index(f'id="chunk-{number}"') :]
     marked = marked.partition(">")[2].partition("</div>")[0]
-    inside = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", marked)).split())
+    # Tags removed without a space: the reader's words are marked inline
+    # now, and a space for `</mark>` put one before the full stop after
+    # a marked word. Blocks are already apart by their newlines.
+    inside = " ".join(html.unescape(re.sub(r"<[^>]+>", "", marked)).split())
 
     # Where the mark *begins*, not what it contains. Rendering the
     # whole file puts the frontmatter inside the mark and leaves the
@@ -560,10 +575,18 @@ def test_the_page_re_runs_the_search_when_the_scope_changes(
 ):
     """`hx-trigger` listened to the text input only, so picking a new
     scope left the previous scope's results on screen under the new
-    label - which is worse than showing nothing."""
-    search = (TEMPLATES_DIR / "search.html").read_text(encoding="utf-8")
+    label - which is worse than showing nothing.
 
-    assert "select[name=scope]" in search
+    Read from the rendered form rather than a template: the form moved
+    from `search.html` into the bar in 11a, and a test reading the old
+    file would have gone on passing against a template that no longer
+    held it."""
+    admitted(client)
+
+    form = re.search(r'<form class="searchbox"[^>]*>', client.get("/").text)
+
+    assert form is not None
+    assert "change from:select[name=scope]" in form.group(0)
 
 
 def test_the_search_box_is_focused_on_arrival(corpus: Path, client: TestClient):
@@ -616,7 +639,7 @@ def test_a_sweep_reports_every_collection_that_answered(
 
     page = client.get("/", params={"q": "bandpass", "scope": EVERY_SCOPE})
 
-    assert "Notes" in page.text
+    assert '<span class="name">notes</span>' in page.text
     assert "Paragraph" in page.text
 
 
@@ -689,8 +712,10 @@ def test_writing_a_note_clears_the_form(corpus: Path, client: TestClient):
     again."""
     admitted(client)
 
-    written = client.post(
-        "/remember", data={"text": "Something worth keeping.", "target": "notes"}
+    written = posted(
+        client,
+        "/remember",
+        data={"text": "Something worth keeping.", "target": "notes"},
     )
 
     assert written.status_code == 200
@@ -700,10 +725,36 @@ def test_writing_a_note_clears_the_form(corpus: Path, client: TestClient):
     assert 'hx-swap-oob="true"' in written.text
 
 
+def test_a_written_note_empties_its_title_but_keeps_its_group(
+    corpus: Path, client: TestClient
+):
+    """A title left in the box named the next note too ("Sidelobe at 1.2
+    GHz (2)"); the group is where notes are filed, so it stays. Each field
+    the outcome redraws keeps its hint."""
+    admitted(client)
+
+    written = posted(
+        client,
+        "/remember",
+        data={"text": "A sidelobe.", "title": "Sidelobe", "group": "rfi"},
+    )
+    redrawn = {
+        element["id"]: element
+        for element in BeautifulSoup(written.text, "html.parser").select(
+            "[hx-swap-oob]"
+        )
+    }
+
+    assert redrawn["remember-title"].get("value", "") == ""
+    assert redrawn["remember-title"]["placeholder"] == words.TITLE_HINT
+    assert redrawn["remember-text"]["placeholder"] == words.REMEMBER_PLACEHOLDER
+    assert "remember-group" not in redrawn
+
+
 def test_a_refused_write_keeps_the_text(corpus: Path, client: TestClient):
     admitted(client)
 
-    refused = client.post("/remember", data={"text": "   ", "target": "notes"})
+    refused = posted(client, "/remember", data={"text": "   ", "target": "notes"})
 
     assert refused.status_code == 200
     assert "hx-swap-oob" not in refused.text

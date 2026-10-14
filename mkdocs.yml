@@ -95,6 +95,7 @@ nav:
       - Choose an embedding backend: how-to/embedding-backends.md
       - Keep credentials out of the config: how-to/credentials.md
       - Inspect and recover: how-to/history.md
+      - Back up the corpus: how-to/back-up.md
       - Serve an agent: how-to/serve-an-agent.md
       - The graphical interface: how-to/the-interface.md
   - Explanation:

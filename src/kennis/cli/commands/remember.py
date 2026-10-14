@@ -18,11 +18,13 @@ import click
 
 from kennis.cli import display
 from kennis.cli.commands.context import require_bundle
+from kennis.cli.commands.corpus import report_restored
 from kennis.cli.sink import reporting
 from kennis.context import existing_corpus
 from kennis.engine.context import remember_in_bundle
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import Outcome
+from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.remember import INLINE_ORIGIN, RememberReport
 from kennis.render.words import index_state, needs_an_index
 from kennis.writing import write_note
@@ -68,6 +70,7 @@ def remember_command(
     if to_context:
         _remember_in_context(body, title=title, group=group, no_index=no_index)
         return
+    restored: list[OutOfBandChange] = []
     with reporting() as events:
         report = write_note(
             body,
@@ -76,8 +79,10 @@ def remember_command(
             origin=origin,
             index=not no_index,
             events=events,
+            restored=restored,
         )
 
+    report_restored(restored)
     _report(report)
 
 

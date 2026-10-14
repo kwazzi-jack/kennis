@@ -25,6 +25,9 @@ from kennis.render.html import (
     IMAGE_BLOCKED,
     IMAGE_MISSING,
     MarkedRange,
+    headings_of,
+    passage_html,
+    terms_of,
     to_html,
 )
 
@@ -446,6 +449,14 @@ def test_a_leading_heading_that_repeats_the_title_is_dropped():
     assert "<p>The body.</p>" in shown
 
 
+def test_the_title_is_dropped_whatever_its_case():
+    """A crawled page titled "gain solutions" opened with "# Gain
+    solutions", and the reader saw both, one under the other."""
+    shown = to_html("# Gain  solutions\n\nThe body.", without_title="gain solutions")
+
+    assert "<h1>" not in shown
+
+
 def test_a_heading_saying_something_else_is_kept():
     """Removing it would lose text the corpus holds."""
     shown = to_html("# Another heading\n\nThe body.", without_title="The title")
@@ -476,3 +487,184 @@ def test_dropping_the_title_does_not_move_a_chunk_mark():
     before, _, after = shown.partition('<div class="chunk" id="c">')
     assert "First paragraph." in before
     assert "Second paragraph." in after
+
+
+# ---------------------------------------------------------------------------
+# Headings, for the outline (#447)
+# ---------------------------------------------------------------------------
+
+OUTLINED = "# The title\n\nOpening words.\n\n## Method\n\nHow.\n\n### Detail\n\nMore.\n"
+
+
+def test_the_outline_leaves_out_the_title_the_page_already_shows():
+    headings = headings_of(OUTLINED, without_title="The title")
+
+    assert [(heading.level, heading.text) for heading in headings] == [
+        (2, "Method"),
+        (3, "Detail"),
+    ]
+
+
+def test_every_heading_carries_the_anchor_the_outline_names():
+    shown = to_html(OUTLINED, without_title="The title", heading_anchors=True)
+
+    for heading in headings_of(OUTLINED, without_title="The title"):
+        assert f'id="{heading.anchor}"' in shown
+
+
+def test_headings_carry_no_id_unless_asked():
+    """A results page draws several passages, and one id twice is not
+    HTML."""
+    assert "id=" not in to_html(OUTLINED, without_title="The title")
+
+
+# ---------------------------------------------------------------------------
+# A passage: one rendering, in two parts (#454)
+# ---------------------------------------------------------------------------
+
+THREE_BLOCKS = (
+    "An opening paragraph.\n\nThe antenna paragraph.\n\nA closing paragraph.\n"
+)
+
+
+def test_a_passage_parts_at_the_first_block_the_words_occur_in():
+    parts = passage_html(THREE_BLOCKS, terms=["antenna"], fits=1000)
+
+    assert "opening" in parts.lead and "antenna" not in parts.lead
+    assert parts.body.lstrip().startswith("<p>The <mark>antenna</mark>")
+    assert "closing" in parts.body
+
+
+def test_the_two_parts_are_the_whole_rendering():
+    """Nothing is lost or repeated at the seam."""
+    parts = passage_html(THREE_BLOCKS, terms=["antenna"], fits=1000)
+
+    assert parts.lead + parts.body == to_html(THREE_BLOCKS, terms=["antenna"])
+
+
+def test_a_passage_the_words_do_not_occur_in_has_no_lead():
+    """A meaning-only hit: shown from its start."""
+    parts = passage_html(THREE_BLOCKS, terms=["calibration"], fits=1000)
+
+    assert parts.lead == ""
+    assert "opening" in parts.body
+
+
+def test_a_word_only_in_a_link_address_does_not_part_the_passage():
+    """The part is decided by where a mark was drawn, not by the source,
+    whose link addresses the reader never sees."""
+    body = "See [the page](https://example.org/antenna).\n\nThe antenna is here.\n"
+
+    parts = passage_html(body, terms=["antenna"], fits=1000)
+
+    assert "example.org" in parts.lead
+
+
+def test_a_short_plain_passage_fits_and_a_long_one_does_not():
+    assert passage_html(THREE_BLOCKS, terms=[], fits=1000).fits
+    assert not passage_html(THREE_BLOCKS, terms=[], fits=20).fits
+
+
+def test_the_lead_counts_towards_fitting():
+    """A passage that fits is drawn whole, lead included, so a long lead
+    has to be something the reader opens."""
+    body = "Weather " * 40 + "\n\nThe antenna.\n"
+    parts = passage_html(body, terms=["antenna"], fits=100)
+
+    assert parts.lead and not parts.fits
+
+
+def test_a_table_before_the_match_is_tall_too():
+    body = "| a | b |\n| --- | --- |\n| 1 | 2 |\n\nThe antenna.\n"
+
+    assert not passage_html(body, terms=["antenna"], fits=1000).fits
+
+
+def test_a_table_never_fits_a_closed_passage():
+    """Its height is not its character count."""
+    body = "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+
+    assert not passage_html(body, terms=[], fits=1000).fits
+
+
+def test_the_readers_words_are_their_own_words():
+    assert terms_of("  antenna   gains ") == ("antenna", "gains")
+
+
+# ---------------------------------------------------------------------------
+# A passage's section, as the card's header
+# ---------------------------------------------------------------------------
+
+
+def test_a_leading_heading_that_is_the_section_moves_to_the_header():
+    """The card's header says the section; the passage need not say it
+    again under it."""
+    body = "## Deposition\n\nRivers carry antenna sediment.\n"
+
+    parts = passage_html(body, terms=["antenna"], fits=1000, section="Deposition")
+
+    assert parts.heading == "Deposition"
+    assert "<h2" not in parts.lead + parts.body
+    assert "<mark>antenna</mark>" in parts.body
+
+
+def test_a_heading_that_is_not_the_section_stays_in_the_passage():
+    body = "## Erosion\n\nRivers carry sediment.\n"
+
+    parts = passage_html(body, terms=[], fits=1000, section="Deposition")
+
+    assert parts.heading == "Deposition"
+    assert "<h2>Erosion</h2>" in parts.lead + parts.body
+
+
+def test_only_a_leading_heading_is_moved():
+    body = "Rivers carry sediment.\n\n## Deposition\n\nMore.\n"
+
+    parts = passage_html(body, terms=[], fits=1000, section="Deposition")
+
+    assert "<h2>Deposition</h2>" in parts.lead + parts.body
+
+
+def test_the_header_is_escaped_and_marked():
+    parts = passage_html(
+        "Text.\n", terms=["antenna"], fits=1000, section="Antenna <gains>"
+    )
+
+    assert parts.heading == "<mark>Antenna</mark> &lt;gains&gt;"
+
+
+def test_a_passage_without_a_section_has_no_header():
+    assert passage_html(THREE_BLOCKS, terms=[], fits=1000).heading == ""
+
+
+def test_a_chunk_that_is_only_its_section_heading_is_an_empty_passage():
+    """The corpus holds such chunks; with the heading moved to the header
+    nothing is left, and that has to be an empty passage, not an error."""
+    parts = passage_html(
+        "## Deposition\n", terms=["deposition"], fits=1000, section="Deposition"
+    )
+
+    assert (parts.lead, parts.body) == ("", "")
+    assert parts.heading == "<mark>Deposition</mark>"
+    assert parts.fits
+
+
+def test_a_leading_heading_that_repeats_the_title_is_dropped_too():
+    """#426: a document's first chunk opens with its own title, which the
+    card's head already says; that chunk has no section, because the
+    section would only repeat the title."""
+    body = "# Rivers\n\nRivers carry antenna sediment.\n"
+
+    parts = passage_html(body, terms=["antenna"], fits=1000, title="Rivers")
+
+    assert "<h1" not in parts.lead + parts.body
+    assert parts.heading == ""
+    assert "<mark>antenna</mark>" in parts.body
+
+
+def test_a_title_heading_is_matched_regardless_of_case_as_the_head_is():
+    """`hit_title_parts` drops a section equal to the title in any case;
+    the passage drops the heading by the same rule."""
+    parts = passage_html("# rivers\n\nText.\n", terms=[], fits=1000, title="Rivers")
+
+    assert "<h1" not in parts.body

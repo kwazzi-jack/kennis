@@ -101,6 +101,22 @@ class AmbiguousIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class IdentityMismatch:
+    """A fetched document whose first page names a different paper.
+
+    The identifier the reader gave is taken as fact, so kennis does not
+    swap it for the one the page shows; it asks. Every value found is
+    carried, so the reader can choose one of them instead.
+    """
+
+    code: ClassVar[str] = "identity-mismatch"
+    named: str
+    kind: str
+    stated: str
+    found: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class NoPublisherText:
     """An identified paper whose text sits behind a publisher.
 
@@ -112,6 +128,13 @@ class NoPublisherText:
     code: ClassVar[str] = "no-publisher-text"
     kind: str
     value: str
+    # Whether Unpaywall was asked for an open copy and knew of none. When it
+    # was not, setting the reader's email for it is one more remedy.
+    asked_unpaywall: bool = False
+    # The authors' accepted manuscript, when that is the only open copy.
+    # Offered rather than fetched: it may differ from the published paper
+    # the identifier names, so whether it will do is the reader's call.
+    accepted_manuscript: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +194,18 @@ class SymlinkSkipped:
 
 
 @dataclass(frozen=True, slots=True)
+class KennisOwn:
+    """A directory kennis writes its own files into, met while walking.
+
+    The corpus, the configuration, the state or the log: adding one would
+    copy the corpus into itself, or make API keys and the reader's search
+    history documents an agent can read.
+    """
+
+    code: ClassVar[str] = "kennis-own"
+
+
+@dataclass(frozen=True, slots=True)
 class UnsupportedFormat:
     """A file whose extension names no format kennis can convert."""
 
@@ -190,12 +225,14 @@ type Refusal = (
     | SamePage
     | NoIdentity
     | AmbiguousIdentity
+    | IdentityMismatch
     | NoPublisherText
     | NoArxivText
     | NotAnInput
     | BibliographyIncomplete
     | NothingConverted
     | SymlinkSkipped
+    | KennisOwn
     | UnsupportedFormat
 )
 
@@ -203,6 +240,8 @@ type Refusal = (
 __all__ = [
     "AmbiguousIdentity",
     "BibliographyIncomplete",
+    "IdentityMismatch",
+    "KennisOwn",
     "NoArxivText",
     "NoIdentity",
     "NoPublisherText",

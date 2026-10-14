@@ -30,10 +30,12 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 import httpx
 
 from kennis.engine.corpus.add import (
+    ARXIV_DELAY_SECONDS,
     AddOptions,
     Uniqueness,
     add_docs,
@@ -51,7 +53,14 @@ from kennis.engine.corpus.schema import (
     Source,
 )
 from kennis.engine.errors import DocumentInvalid
-from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
+from kennis.engine.events import (
+    Event,
+    EventSink,
+    ItemFinished,
+    OperationFinished,
+    Outcome,
+    Progress,
+)
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.installed import (
@@ -62,7 +71,7 @@ from kennis.engine.pack.installed import (
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
 from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, Pack
-from kennis.engine.refusals import Quoted
+from kennis.engine.refusals import Quoted, Refusal
 from kennis.engine.remember import title_for
 
 OPERATION = "corpus-sync"
@@ -104,6 +113,11 @@ class CorpusSync:
     # next run tries again. One unreachable host must not stop the other
     # nine papers from arriving.
     failed: tuple[str, ...] = ()
+    # Why each paper in `failed` was not fetched, where the add said: a
+    # paper with no copy kennis can reach names where to get one, and a
+    # sync that kept that to itself left the reader nothing to do but wait
+    # for a next run that would fail the same way.
+    why: tuple[tuple[str, Refusal], ...] = ()
 
 
 def sync_corpus(
@@ -113,6 +127,7 @@ def sync_corpus(
     arxiv: httpx.Client | None = None,
     client: httpx.Client | None = None,
     request_delay_seconds: float | None = None,
+    unpaywall_email: str = "",
 ) -> CorpusSync:
     """Converge the corpus with every installed pack.
 
@@ -138,6 +153,7 @@ def sync_corpus(
     projects = _docs_plan(corpus_root, packs)
     _refuse_what_cannot_be_classified(notes, papers, projects)
 
+    why: dict[str, Refusal] = {}
     failed = _carried_out(
         corpus_root,
         notes,
@@ -146,7 +162,9 @@ def sync_corpus(
         arxiv=arxiv,
         client=client,
         request_delay_seconds=request_delay_seconds,
+        unpaywall_email=unpaywall_email,
         events=events,
+        why=why,
     )
 
     actions = notes.actions + papers.actions + projects.actions
@@ -162,6 +180,7 @@ def sync_corpus(
             if action.verdict == "edited"
         ),
         failed=failed,
+        why=tuple(why.items()),
     )
 
 
@@ -256,7 +275,9 @@ def _carried_out(
     arxiv: httpx.Client | None,
     client: httpx.Client | None,
     request_delay_seconds: float | None,
+    unpaywall_email: str,
     events: EventSink | None,
+    why: dict[str, Refusal],
 ) -> tuple[str, ...]:
     """Do what the three plans decided, and report what would not happen.
 
@@ -271,13 +292,22 @@ def _carried_out(
     for action in notes.actions:
         _applied(collection, record, action, notes.held)
 
+    progress = _Progress(
+        events,
+        total=sum(1 for action in papers.actions if action.verdict == "write")
+        + sum(1 for action in projects.actions if action.verdict in _CRAWLED),
+    )
     failed = list(
         _fetched_literature(
             corpus_root,
             papers,
             arxiv=arxiv,
+            client=client,
             request_delay_seconds=request_delay_seconds,
+            unpaywall_email=unpaywall_email,
             events=events,
+            progress=progress,
+            why=why,
         )
     )
     failed.extend(
@@ -285,11 +315,65 @@ def _carried_out(
             corpus_root,
             projects,
             client=client,
-            request_delay_seconds=request_delay_seconds,
+            # The figure is arXiv's pacing; a docs host gets its own
+            # default. Zero still passes: it is a caller that contacts
+            # nothing.
+            request_delay_seconds=0.0 if request_delay_seconds == 0 else None,
             events=events,
+            progress=progress,
         )
     )
     return tuple(failed)
+
+
+# The docs verdicts that crawl.
+_CRAWLED: Final = frozenset({"write", "rewrite", "adopt"})
+
+
+class _Progress:
+    """One bar for the whole sync, a step per paper and per project.
+
+    The papers and the crawls are the part that takes minutes, and they drew
+    nothing: an add of one paper emits no progress of its own, a crawl's
+    first comes only once its discovery is done, and each add's
+    `OperationFinished` closed whatever bar was open. A sync that had
+    written its notes then sat silent until it was interrupted.
+    """
+
+    def __init__(self, events: EventSink | None, *, total: int) -> None:
+        self._events = events
+        self._total = total
+        self._completed = 0
+        if total:
+            self._emit()
+
+    @property
+    def inner(self) -> EventSink | None:
+        """The sink an add inside the sync reports through: everything but
+        its own bar and its own finish, which are the sync's to draw."""
+        return None if self._events is None else _WithoutBars(self._events)
+
+    def step(self) -> None:
+        self._completed += 1
+        self._emit()
+
+    def _emit(self) -> None:
+        if self._events is not None and self._total:
+            self._events.emit(
+                Progress(
+                    operation=OPERATION, completed=self._completed, total=self._total
+                )
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _WithoutBars:
+    events: EventSink
+
+    def emit(self, event: Event) -> None:
+        if isinstance(event, Progress | OperationFinished):
+            return
+        self.events.emit(event)
 
 
 def _fetched_literature(
@@ -297,8 +381,12 @@ def _fetched_literature(
     plan: _Plan,
     *,
     arxiv: httpx.Client | None,
+    client: httpx.Client | None,
     request_delay_seconds: float | None,
+    unpaywall_email: str,
     events: EventSink | None,
+    progress: _Progress,
+    why: dict[str, Refusal],
 ) -> list[str]:
     """Fetch the papers that are missing, rewrite the ones that moved.
 
@@ -309,6 +397,13 @@ def _fetched_literature(
     """
     collection = Collection(root=corpus_root, name="literature")
     failed: list[str] = []
+    # Paced here, between papers: each is its own add of one, so the add's
+    # own pacing - between the papers it is given - never came into play,
+    # and a sync asked arXiv for every paper back to back.
+    delay = (
+        ARXIV_DELAY_SECONDS if request_delay_seconds is None else request_delay_seconds
+    )
+    fetched = 0
     for action in plan.actions:
         declaration = action.declaration
         if action.verdict == "delete":
@@ -323,10 +418,16 @@ def _fetched_literature(
             continue
         entry = plan.entries[action.address]
         assert isinstance(entry, LiteratureEntry)
+        if fetched and delay:
+            time.sleep(delay)
+        fetched += 1
         report = add_literature(
             collection,
-            [action.address],
+            # The address, when the pack gives one, read as the paper the
+            # identifier names; otherwise the identifier, fetched as it is.
+            [entry.url] if entry.url is not None else [action.address],
             AddOptions(
+                identifier=entry.identifier if entry.url is not None else None,
                 # The pack's citekey, not a derived one. It is the handle
                 # the provider's own prose cites, so a document that
                 # arrived under a citekey kennis invented would answer to
@@ -335,12 +436,21 @@ def _fetched_literature(
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
                 request_delay_seconds=request_delay_seconds,
+                unpaywall_email=unpaywall_email,
             ),
             arxiv=arxiv,
-            events=events,
+            client=client,
+            events=progress.inner,
         )
+        progress.step()
         if not any(one.outcome is Outcome.ADDED for one in report.outcomes):
             failed.append(action.address)
+            refusal = next(
+                (one.refusal for one in report.outcomes if one.refusal is not None),
+                None,
+            )
+            if refusal is not None:
+                why[action.address] = refusal
     return failed
 
 
@@ -351,6 +461,7 @@ def _crawled_docs(
     client: httpx.Client | None,
     request_delay_seconds: float | None,
     events: EventSink | None,
+    progress: _Progress,
 ) -> list[str]:
     """Crawl the projects that are missing, drop the ones that went.
 
@@ -369,7 +480,7 @@ def _crawled_docs(
         if action.verdict == "delete":
             _removed_project(collection, action.address)
             continue
-        if action.verdict not in {"write", "rewrite", "adopt"}:
+        if action.verdict not in _CRAWLED:
             continue
         if declaration is None:
             continue
@@ -386,11 +497,46 @@ def _crawled_docs(
                 request_delay_seconds=request_delay_seconds,
             ),
             client=client,
-            events=events,
+            events=progress.inner,
         )
-        if not any(one.outcome is Outcome.ADDED for one in report.outcomes):
+        progress.step()
+        # Every page, including those the crawl found already held: they
+        # kept the old owner and digest, so the next sync judged the
+        # project changed again and crawled it again, every time.
+        _stamped_project(collection, entry.project, declaration)
+        if not any(
+            one.outcome in (Outcome.ADDED, Outcome.UNCHANGED) for one in report.outcomes
+        ):
             failed.append(action.address)
     return failed
+
+
+def _stamped_project(
+    collection: Collection, project: str, declaration: Declaration
+) -> None:
+    """Mark every page of `project` as the declaring pack's, at its digest."""
+    owner = f"pack:{declaration.pack_id}"
+    for document in collection.contents().documents:
+        frontmatter = document.frontmatter
+        if not (
+            isinstance(frontmatter, DocsFrontmatter)
+            and frontmatter.docs.project == project
+        ):
+            continue
+        if (
+            frontmatter.owner == owner
+            and frontmatter.source.pack_sha256 == declaration.digest
+        ):
+            continue
+        updated = frontmatter.model_copy(
+            update={
+                "owner": owner,
+                "source": frontmatter.source.model_copy(
+                    update={"pack_sha256": declaration.digest}
+                ),
+            }
+        )
+        write_document(document.md_path, frontmatter=updated, body=document.body)
 
 
 def _removed_project(collection: Collection, project: str) -> None:
@@ -425,6 +571,7 @@ def _rewrote_bibliography(
     assert isinstance(entry, LiteratureEntry)
     frontmatter = document.frontmatter
     assert isinstance(frontmatter, LiteratureFrontmatter)
+    declared = {entry.paper.kind: entry.paper.value}
     updated = frontmatter.model_copy(
         update={
             "owner": f"pack:{declaration.pack_id}",
@@ -432,9 +579,9 @@ def _rewrote_bibliography(
                 citekey=entry.citekey,
                 authors=frontmatter.bib.authors or entry.authors,
                 year=frontmatter.bib.year or (str(entry.year) if entry.year else None),
-                doi=frontmatter.bib.doi or entry.doi,
-                arxiv_id=frontmatter.bib.arxiv_id or entry.arxiv_id,
-                bibcode=frontmatter.bib.bibcode or entry.bibcode,
+                doi=frontmatter.bib.doi or declared.get("doi"),
+                arxiv_id=frontmatter.bib.arxiv_id or declared.get("arxiv"),
+                bibcode=frontmatter.bib.bibcode or declared.get("bibcode"),
             ),
             "source": frontmatter.source.model_copy(
                 update={"pack_sha256": declaration.digest}
@@ -565,16 +712,8 @@ def _declared_existing(key: str, document: Document) -> Existing:
 
 
 def literature_key(entry: LiteratureEntry) -> str:
-    """`arxiv:`, else `doi:`, else `bibcode:`, with the scheme in the key.
-
-    The scheme is part of it so a DOI and an arXiv id that happen to
-    share a string cannot collide.
-    """
-    if entry.arxiv_id is not None:
-        return f"arxiv:{entry.arxiv_id}"
-    if entry.doi is not None:
-        return f"doi:{entry.doi}"
-    return f"bibcode:{entry.bibcode}"
+    """`<kind>:<identifier>`, the key a declaration is diffed on."""
+    return entry.key
 
 
 def bibliography_key(bib: Bibliography) -> str | None:
@@ -608,8 +747,9 @@ def _literature_digest(entry: LiteratureEntry) -> str:
                 entry.title,
                 entry.authors or "",
                 str(entry.year or ""),
-                entry.doi or "",
-                entry.bibcode or "",
+                # Where the text is fetched from is part of what was
+                # declared: a corrected address is a declaration that moved.
+                entry.url or "",
             ]
         ).encode("utf-8")
     )

@@ -12,12 +12,13 @@ half-made corpus on a machine without git is worse than a clear refusal.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import CorpusBusy, CorpusNotFound
+from kennis.engine.errors import CorpusExists, CorpusNotFound, HistoryUnwritable
 from kennis.engine.history.git import git, git_binary
 
 _GITATTRIBUTES: Final = """\
@@ -47,22 +48,31 @@ _GITIGNORE: Final = """\
 # corpus because that is what it guards, and it is not part of it.
 .kennis.lock
 
-# The per-document vector cache. A sibling of the index it accelerates, and
-# deliberately not tracked with it: the published index already holds every
-# vector once, so committing the cache would store them twice for a saving
-# that only helps the machine that built them.
+# The index is derived, and is rebuilt rather than kept (Brian, 2026-10-12).
+# History records only which index each collection is reading - its
+# pointer - and how that index was built - its binding - which are a few
+# hundred bytes. Everything else under `index/` is ignored: the chunks, the
+# BM25 tables, the vectors, the manifest, the vector cache, the build lock
+# and the directories a swap stages or retires. Tracked, a rebuild of one
+# collection added its whole index to history, and `remember` rebuilds on
+# every call: 300 notes grew `.git` by about 320 KB per note remembered.
+#
+# Git cannot re-include a file inside a directory it has excluded, so the
+# two levels of directories are re-included first, then the two files, and
+# the hidden staging and retiring directories are excluded last, because a
+# staged `binding.json` must never be committed by another process's
+# `git add --all .`.
+index/**
+!index/*/
+!index/*/latest.json
+!index/*/*/
+!index/*/*/binding.json
+index/*/.*/
 index/*/vectors/
 
 # The pack store: a cache of what each provider last handed kennis. Derived,
 # re-pushed by the provider's next run, and deliberately not history.
 packs/
-
-# The directories an atomic index swap is staging or retiring. They exist
-# for the length of one build and are never part of a commit - and a commit
-# made by another process during a build would otherwise stage a
-# half-written index, because `commit` stages with `git add --all .`.
-index/*/.*.staging-*/
-index/*/.*.retiring-*/
 """
 
 _README: Final = """\
@@ -70,7 +80,8 @@ _README: Final = """\
 
 This directory is a kennis corpus: documents, their metadata, and the search
 index built from them. It is a git repository so that every change kennis
-makes is recorded and reversible.
+makes is recorded and reversible. The index is derived, so history records
+only which index each collection reads; `kennis corpus index` rebuilds it.
 
 ## What is in here
 
@@ -128,9 +139,10 @@ class Repository:
         self._require_repository()
         staged = git(["add", "--all", "."], cwd=self.root)
         if not staged.ok:
-            raise CorpusBusy(
-                f"the corpus at {self.root} could not be staged: "
-                f"{staged.stderr.strip()}"
+            raise HistoryUnwritable(
+                f"the corpus at {self.root} was written but could not be "
+                f"staged: {staged.stderr.strip()}",
+                resolution=self._status_command(),
             )
         if not git(["diff", "--cached", "--name-only"], cwd=self.root).lines():
             return None
@@ -138,11 +150,18 @@ class Repository:
         message = f"{operation}({scope}): {summary}"
         recorded = git(["commit", "-m", message], cwd=self.root)
         if not recorded.ok:
-            raise CorpusBusy(
-                f"the corpus at {self.root} could not be committed: "
-                f"{recorded.stderr.strip() or recorded.stdout.strip()}"
+            raise HistoryUnwritable(
+                f"the corpus at {self.root} was written but could not be "
+                "committed: "
+                f"{recorded.stderr.strip() or recorded.stdout.strip()}",
+                resolution=self._status_command(),
             )
         return self.head()
+
+    def _status_command(self) -> str:
+        """What shows the uncommitted state a failed commit left, as a
+        command that runs as printed wherever the corpus is."""
+        return f"git -C {shlex.quote(str(self.root))} status"
 
     def has_commit(self, commit: str) -> bool:
         """Whether this repository holds `commit`.
@@ -282,10 +301,7 @@ def initialise_corpus(root: Path) -> Repository:
     """
     git_binary()
     if (root / ".git").exists():
-        raise CorpusBusy(
-            f"{root} is already a kennis corpus",
-            resolution="kennis corpus status",
-        )
+        raise CorpusExists(f"{root} is already a kennis corpus")
 
     root.mkdir(parents=True, exist_ok=True)
     for name in COLLECTION_NAMES:
@@ -293,7 +309,7 @@ def initialise_corpus(root: Path) -> Repository:
 
     started = git(["init"], cwd=root)
     if not started.ok:
-        raise CorpusBusy(
+        raise HistoryUnwritable(
             f"git could not initialise a repository at {root}: {started.stderr.strip()}"
         )
 

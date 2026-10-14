@@ -33,10 +33,12 @@ those mean the command as typed cannot be carried out at all.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Literal
 
 import httpx
 
@@ -57,6 +59,7 @@ from kennis.engine.corpus.intake import (
     convert_url,
     detect_format,
     looks_like_url,
+    names_a_file,
     sha256_of,
     title_from_markdown,
 )
@@ -75,14 +78,20 @@ from kennis.engine.corpus.schema import (
     Owner,
     Source,
 )
-from kennis.engine.docs.discover import discover_pages
+from kennis.engine.docs.discover import discover_pages, page_key
 from kennis.engine.docs.fetch import convert_page, fetch_page
+from kennis.engine.docs.http import USER_AGENT as DOCS_USER_AGENT
 from kennis.engine.docs.sites import (
     DocsSite,
     project_name_from_url,
     validate_project_name,
 )
-from kennis.engine.errors import InputError, KennisError
+from kennis.engine.errors import (
+    ConversionFailed,
+    ConverterRefused,
+    InputError,
+    KennisError,
+)
 from kennis.engine.events import (
     Diagnostic,
     DocumentSkipped,
@@ -98,6 +107,7 @@ from kennis.engine.events import (
     Severity,
     TitleDotStripped,
 )
+from kennis.engine.groups import checked_group, group_directory
 from kennis.engine.literature.citekeys import (
     derive_citekey,
     literature_stem,
@@ -113,9 +123,11 @@ from kennis.engine.literature.identifiers import (
     parse_bibtex_file,
 )
 from kennis.engine.literature.metadata import lookup_arxiv_metadata
+from kennis.engine.literature.unpaywall import open_copy_of
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentityMismatch,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -127,10 +139,10 @@ from kennis.engine.refusals import (
     SamePage,
     SamePaper,
 )
+from kennis.engine.settings import own_directories
 
 # Identifies kennis to a documentation host, so the traffic can be
 # attributed and, if a site wishes, blocked.
-_DOCS_USER_AGENT = "kennis-docs-fetch"
 
 # How long kennis waits between requests to one host. The two differ because
 # the hosts do: arXiv states a three-second interval for its API and answers a
@@ -138,7 +150,7 @@ _DOCS_USER_AGENT = "kennis-docs-fetch"
 # serves statically. Both are defaults a caller may override through
 # `AddOptions.request_delay_seconds`, because how patient to be with someone
 # else's server is a judgement kennis should not make on the user's behalf.
-_ARXIV_DELAY_SECONDS = 3.0
+ARXIV_DELAY_SECONDS = 3.0
 _DOCS_DELAY_SECONDS = 0.2
 
 
@@ -153,6 +165,10 @@ class AddOptions:
     # does not state one on its own first page. Literature only.
     identifier: str | None = None
     citekey: str | None = None
+    # The reader's email for Unpaywall, which looks up a free, legal copy
+    # of a paper known only by its DOI. Empty: it is not asked. Literature
+    # only.
+    unpaywall_email: str = ""
     # The docs project a page belongs to: a frontmatter field and a directory
     # name both. Derived from the site's host when it is not given, which a
     # local file has none of. Docs only.
@@ -182,6 +198,12 @@ class AddOptions:
     # recorded so the next sync can tell a changed declaration from an
     # unchanged one without refetching. Set only by `corpus sync`.
     pack_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        # Both name a directory beneath the collection. Here as well as at
+        # the join, so a refusal comes before a download or a conversion.
+        checked_group(self.group)
+        checked_group(self.project)
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,7 +365,11 @@ def add_notes(
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 
-    resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
+    resolved = resolve_inputs(
+        identifiers,
+        extra_file_types=options.extra_file_types,
+        kept_out=own_directories(collection.root),
+    )
     record = Uniqueness.of(collection)
     _report_problems(record, sink)
     outcomes: list[AddOutcome] = _skipped(resolved, sink)
@@ -502,7 +528,7 @@ def write_note(
     if converted.original_bytes is not None and converted.original_name is not None:
         assets = {converted.original_name: converted.original_bytes}
 
-    target_dir = collection.path / group if group else collection.path
+    target_dir = group_directory(collection.path, group)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
@@ -640,7 +666,23 @@ def _plan_binaries(
     # takes, which reads as a hang rather than as progress. Concern #191.
     sink.emit(Progress(operation="add", completed=0, total=len(runs)))
     for number, run in enumerate(runs, start=1):
-        batch = converter.convert(run)
+        # A run that fails as a whole - a timeout, a crash with no output -
+        # fails its own documents and no others. Raised on, it took every
+        # run already converted with it, and a 50-PDF add with one bad file
+        # in its last run landed nothing after minutes of conversion.
+        try:
+            batch = converter.convert(run)
+        except ConverterRefused:
+            raise
+        except ConversionFailed as error:
+            for path in run:
+                plan.settled[path] = AddOutcome(
+                    identifier=str(path),
+                    outcome=Outcome.FAILED,
+                    refusal=NothingConverted(name=path.name, problem=str(error)),
+                )
+            sink.emit(Progress(operation="add", completed=number, total=len(runs)))
+            continue
         for path in run:
             markdown = batch.markdown.get(path)
             if markdown is None:
@@ -745,11 +787,24 @@ def add_literature(
     a host it never contacts.
     """
     options = options or AddOptions()
-    delay = _delay_for(options, _ARXIV_DELAY_SECONDS)
+    # An identifier the reader gave that is none is refused, not ignored:
+    # ignored, the paper fell back to whatever its front page offered and
+    # was stored under an identity nobody gave it.
+    if options.identifier and identifier_if_reference(options.identifier) is None:
+        raise InputError(
+            f"'{options.identifier}' is not an arXiv identifier, a DOI or an "
+            "ADS bibcode, so it cannot say which paper this is",
+            resolution="kennis corpus add --help",
+        )
+    delay = _delay_for(options, ARXIV_DELAY_SECONDS)
     sink: EventSink = events or _DiscardingSink()
     started_at = time.monotonic()
 
-    resolved = resolve_inputs(identifiers, extra_file_types=options.extra_file_types)
+    resolved = resolve_inputs(
+        identifiers,
+        extra_file_types=options.extra_file_types,
+        kept_out=own_directories(collection.root),
+    )
     record = Uniqueness.of(collection)
     _report_problems(record, sink)
     outcomes: list[AddOutcome] = _skipped(resolved, sink)
@@ -1181,8 +1236,12 @@ def _converted_for(
         # rule for both collections.
         try:
             return (
-                convert_url(
-                    paper.url, keep_original=options.keep_original, client=client
+                _as_stated(
+                    paper.url,
+                    identity,
+                    convert_url(
+                        paper.url, keep_original=options.keep_original, client=client
+                    ),
                 ),
                 None,
             )
@@ -1196,6 +1255,15 @@ def _converted_for(
                 None,
             )
 
+    if (
+        paper.path is None
+        and identity.arxiv_id is None
+        and identity.doi
+        and options.unpaywall_email
+    ):
+        # No arXiv paper to read, so the published copy Unpaywall knows of,
+        # when the reader has asked for it to be looked up.
+        return _open_copy(paper, identity, options, client), None
     if paper.path is None:
         fetched = (
             fetch_paper(identity.arxiv_id, client=arxiv) if identity.arxiv_id else None
@@ -1223,7 +1291,7 @@ def _converted_for(
             AddOutcome(
                 identifier=paper.identifier,
                 outcome=Outcome.FAILED,
-                refusal=_textless(paper, identity, fetched),
+                refusal=_textless(paper, identity, fetched, options),
             ),
             None,
         )
@@ -1248,8 +1316,104 @@ def _converted_for(
         )
 
 
+# How much of a fetched document is its first page, near enough: its own
+# identifiers are printed there, and the ones it cites come later.
+_FRONT_PAGE_CHARACTERS = 5000
+
+
+def _as_stated(
+    address: str, identity: _Identity, converted: Converted
+) -> Converted | AddOutcome:
+    """`converted`, unless its first page names a different paper.
+
+    The reader's identifier is taken as fact, and a page that names none
+    is taken to be what they said. Only a page naming identifiers of the
+    same kind, none of them theirs, is in doubt - and then kennis asks,
+    with what it found, rather than filing the document under either.
+    """
+    kind, stated = _stated_of(identity)
+    if stated is None:
+        return converted
+    found: list[str] = []
+    for candidate in find_paper_identifiers(
+        converted.markdown[:_FRONT_PAGE_CHARACTERS]
+    ):
+        if candidate.kind == kind and candidate.value not in found:
+            found.append(candidate.value)
+    if not found or any(_same(kind, value, stated) for value in found):
+        return converted
+    return AddOutcome(
+        identifier=address,
+        outcome=Outcome.FAILED,
+        refusal=IdentityMismatch(
+            named=address, kind=kind, stated=stated, found=tuple(found)
+        ),
+    )
+
+
+def _stated_of(identity: _Identity) -> tuple[str, str | None]:
+    if identity.arxiv_id:
+        return "arxiv", identity.arxiv_id
+    if identity.doi:
+        return "doi", identity.doi
+    return "bibcode", identity.bibcode
+
+
+def _same(kind: str, found: str, stated: str) -> bool:
+    """One paper, allowing for case and an arXiv version suffix."""
+    if kind == "arxiv":
+        return _unversioned(found) == _unversioned(stated)
+    return found.lower() == stated.lower()
+
+
+def _unversioned(arxiv_id: str) -> str:
+    """`2409.19750v2` as `2409.19750`; `solv-int/9901001` is left whole."""
+    return re.sub(r"v\d+$", "", arxiv_id.lower())
+
+
+def _open_copy(
+    paper: _Paper,
+    identity: _Identity,
+    options: AddOptions,
+    client: httpx.Client | None,
+) -> Converted | AddOutcome:
+    """The published paper from the open copy Unpaywall knows of, or the
+    refusal saying there is none - offering an accepted manuscript where
+    one exists, for the reader to choose, rather than taking it."""
+    assert identity.doi is not None
+    copies = open_copy_of(identity.doi, email=options.unpaywall_email, client=client)
+    if copies.published is None:
+        return AddOutcome(
+            identifier=paper.identifier,
+            outcome=Outcome.FAILED,
+            refusal=NoPublisherText(
+                kind="doi",
+                value=identity.doi,
+                asked_unpaywall=True,
+                accepted_manuscript=copies.accepted,
+            ),
+        )
+    try:
+        return _as_stated(
+            copies.published,
+            identity,
+            convert_url(
+                copies.published, keep_original=options.keep_original, client=client
+            ),
+        )
+    except KennisError as error:
+        return AddOutcome(
+            identifier=paper.identifier,
+            outcome=Outcome.FAILED,
+            refusal=Quoted(str(error)),
+        )
+
+
 def _textless(
-    paper: _Paper, identity: _Identity, fetched: PaperText | None
+    paper: _Paper,
+    identity: _Identity,
+    fetched: PaperText | None,
+    options: AddOptions,
 ) -> NoPublisherText | NoArxivText:
     """Why this paper has no body, as one of two distinct refusals.
 
@@ -1369,7 +1533,7 @@ def _write_paper(
     if converted.original_bytes is not None and converted.original_name is not None:
         assets = {converted.original_name: converted.original_bytes}
 
-    target_dir = collection.path / group if group else collection.path
+    target_dir = group_directory(collection.path, group)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
@@ -1402,6 +1566,12 @@ class _Page:
     base_url: str | None = None
     version: str | None = None
     crawl: CrawlScope | None = None
+    # A file at an address - a PDF, a markdown or a source file - fetched and
+    # converted whole, rather than a page of a site.
+    whole_file: bool = False
+    # Seconds to wait before fetching it, when its site asked for longer
+    # than the batch's own delay.
+    pace: float | None = None
 
     @property
     def identifier(self) -> str:
@@ -1442,19 +1612,25 @@ def add_docs(
 
     owned = client is None
     active = client or httpx.Client(
-        headers={"User-Agent": _DOCS_USER_AGENT}, follow_redirects=True
+        headers={"User-Agent": DOCS_USER_AGENT}, follow_redirects=True
     )
     delay = _delay_for(options, _DOCS_DELAY_SECONDS)
     try:
         pages, outcomes = _pages_of(identifiers, options, active, delay, sink)
+        requested = 0
         for position, page in enumerate(pages):
             # Pacing belongs here rather than in the crawl alone: the Sphinx
             # and sitemap paths know every page up front and would otherwise
             # request all of them back to back, which is the traffic pattern
-            # the delay exists to avoid. A page the crawl already downloaded
-            # costs no request, so it costs no wait either.
-            if position and delay and page.html is None:
-                time.sleep(delay)
+            # the delay exists to avoid. A page that costs no request - one
+            # the crawl already downloaded, a local file, or one already
+            # held - costs no wait either: a re-crawl of a held site slept
+            # before every page it then skipped.
+            wait = page.pace if page.pace is not None else delay
+            if _requests(page, record):
+                if requested and wait:
+                    time.sleep(wait)
+                requested += 1
             sink.emit(ItemStarted(operation="add", item=page.identifier))
             outcome = _add_page(collection, page, record, active, options)
             outcomes.append(outcome)
@@ -1507,21 +1683,36 @@ def _pages_of(
     pages: list[_Page] = []
     outcomes: list[AddOutcome] = []
 
+    # Checked whole before any site is crawled: a local page with no project
+    # name, after a minute of crawling the site beside it, threw the crawl
+    # away.
+    unusable = unusable_docs_input(identifiers, project=options.project)
+    if unusable is not None:
+        raise _docs_input_refused(*unusable)
+
     for identifier in identifiers:
+        if looks_like_url(identifier) and names_a_file(identifier):
+            # One document, not a site: crawling from a PDF's address walked
+            # the site it was on, and a file was never what that found.
+            pages.append(
+                _Page(
+                    key=page_key(identifier, "/"),
+                    project=validate_project_name(options.project)
+                    if options.project is not None
+                    else project_name_from_url(identifier),
+                    url=identifier,
+                    base_url=identifier,
+                    whole_file=True,
+                )
+            )
+            continue
         if looks_like_url(identifier):
             pages.extend(_pages_of_site(identifier, options, client, delay, sink))
             continue
 
         path = Path(identifier).expanduser()
-        if not path.is_file():
-            raise InputError(
-                f"'{identifier}' is neither a documentation site nor a file that exists"
-            )
         if options.project is None:
-            raise InputError(
-                f"'{identifier}' is a local file, so there is no site to take a "
-                "project name from: name one with --project"
-            )
+            raise _docs_input_refused(identifier, "unnamed")
         pages.append(
             _Page(
                 key=path.stem,
@@ -1530,6 +1721,38 @@ def _pages_of(
             )
         )
     return pages, outcomes
+
+
+def unusable_docs_input(
+    identifiers: Sequence[str], *, project: str | None
+) -> tuple[str, Literal["missing", "unnamed"]] | None:
+    """The first argument a docs add cannot use, and why: a file that does
+    not exist, or a local page with no project to file it under.
+
+    Its own function so a front end can ask before the add starts, while
+    what was typed is still in front of the person who typed it.
+    """
+    for identifier in identifiers:
+        if looks_like_url(identifier):
+            continue
+        if not Path(identifier).expanduser().is_file():
+            return identifier, "missing"
+        if project is None:
+            return identifier, "unnamed"
+    return None
+
+
+def _docs_input_refused(
+    identifier: str, reason: Literal["missing", "unnamed"]
+) -> InputError:
+    if reason == "missing":
+        return InputError(
+            f"'{identifier}' is neither a documentation site nor a file that exists"
+        )
+    return InputError(
+        f"'{identifier}' is a local file, so there is no site to take a "
+        "project name from: name one with --project"
+    )
 
 
 def _pages_of_site(
@@ -1593,9 +1816,18 @@ def _pages_of_site(
             base_url=base_url,
             version=found.version,
             crawl=crawl,
+            pace=found.delay,
         )
         for page in found.pages
     ]
+
+
+def _requests(page: _Page, record: Uniqueness) -> bool:
+    """Whether adding `page` will ask its site for it."""
+    if page.html is not None or page.url is None:
+        return False
+    natural_key = natural_key_for_docs(project=page.project, page=page.key)
+    return natural_key not in record.identities
 
 
 def _add_page(
@@ -1652,6 +1884,13 @@ def _converted_page(page: _Page, client: httpx.Client) -> Converted:
         return convert_local_file(page.path)
     if page.url is None:
         raise InputError(f"'{page.key}' names neither a file nor a page")
+    if page.whole_file:
+        converted = convert_url(page.url, client=client)
+        return replace(
+            converted,
+            suggested_title=converted.suggested_title
+            or title_from_markdown(converted.markdown, page.key),
+        )
 
     markdown = (
         convert_page(page.html, page.url)
@@ -1714,7 +1953,7 @@ def _write_page(
         ),
     )
 
-    target_dir = collection.path / page.project
+    target_dir = group_directory(collection.path, page.project)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,

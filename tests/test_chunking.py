@@ -175,6 +175,27 @@ def test_oversized_prose_is_the_one_thing_that_is_split():
     assert len(chunks_of(text, size=200, overlap=20)) > 1
 
 
+def test_a_heading_opens_the_window_of_the_long_paragraph_beneath_it():
+    """Flushed alone, the heading was a chunk of one line that ranked well
+    for its own words and showed nothing under them."""
+    text = "# Calibration\n\n" + ("word " * 400) + "\n"
+
+    chunks = chunks_of(text, size=1500, overlap=200)
+
+    assert chunks[0].startswith("# Calibration\n\nword word")
+    assert all(chunk.strip() != "# Calibration" for chunk in chunks)
+
+
+def test_a_heading_opens_an_oversized_table_beneath_it():
+    rows = "\n".join(f"| row {index} | value {index} |" for index in range(120))
+    text = f"# Data\n\n| a | b |\n| --- | --- |\n{rows}\n"
+
+    chunks = chunks_of(text, size=200, overlap=20)
+
+    assert len(chunks) == 1
+    assert chunks[0].startswith("# Data")
+
+
 # ---------------------------------------------------------------------------
 # The sliding window
 # ---------------------------------------------------------------------------

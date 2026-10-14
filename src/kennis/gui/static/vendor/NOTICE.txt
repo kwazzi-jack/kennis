@@ -35,6 +35,37 @@ Source Serif 4 (v14 as served by Google Fonts)
   SIL Open Font License 1.1. Full text in LICENSE-SourceSerif4.txt,
   as distributed with these binaries by Google Fonts.
 
+Atkinson Hyperlegible (v12 as served by Google Fonts)
+  A reading face a reader may choose in Settings, designed by the
+  Braille Institute to keep similar letters apart. Regular and bold,
+  roman and italic, latin subset.
+  fonts/AtkinsonHyperlegible-Regular.woff2,
+  fonts/AtkinsonHyperlegible-Bold.woff2,
+  fonts/AtkinsonHyperlegible-Italic.woff2,
+  fonts/AtkinsonHyperlegible-BoldItalic.woff2
+  https://www.brailleinstitute.org/freefont
+  Retrieved from https://fonts.gstatic.com/s/atkinsonhyperlegible/v12/
+  SIL Open Font License 1.1. Full text in
+  LICENSE-AtkinsonHyperlegible.txt, from github.com/google/fonts.
+
+Lucide 0.460.0 (lucide-static)
+  Icons for the bar, the pane, the dialogs and the search results.
+  Only the icons the interface uses are carried, as the SVG files
+  Lucide publishes, inlined by the server so they take the text colour.
+  icons/activity.svg, icons/arrow-up-right.svg, icons/book-open.svg,
+  icons/brain.svg, icons/chevron-down.svg, icons/chevron-right.svg,
+  icons/command.svg,
+  icons/database.svg, icons/ellipsis.svg, icons/file-plus.svg, icons/file-text.svg, icons/folder.svg,
+  icons/globe.svg, icons/hash.svg, icons/history.svg, icons/info.svg,
+  icons/package.svg, icons/panel-left.svg, icons/panel-right.svg, icons/pencil.svg,
+  icons/power.svg, icons/refresh-cw.svg, icons/search.svg, icons/settings.svg,
+  icons/sticky-note.svg,
+  icons/wand-sparkles.svg, icons/whole-word.svg, icons/x.svg
+  https://github.com/lucide-icons/lucide
+  Retrieved from https://unpkg.com/lucide-static@0.460.0/icons/
+  ISC, which requires its notice in all copies. Full text in
+  LICENSE-Lucide.txt; portions derive from Feather (MIT).
+
 ----------------------------------------------------------------------
 
 Everything here is checked by scripts/check_ascii.sh like the rest of

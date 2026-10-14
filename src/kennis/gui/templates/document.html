@@ -1,28 +1,81 @@
 {% extends "base.html" %}
 {% block title %}{{ document.title }}{% endblock %}
-{% block main %}
-<nav class="back">
-  {% if question %}
-  <a href="/?q={{ question | urlencode }}">{{ back_to_search }}</a>
-  {% endif %}
-  <a href="/collection/{{ document.collection }}">{{ document.collection }}</a>
+{% block main_class %} class="document" data-collection="{{ document.collection }}"{% endblock %}
+{# The centre laid out as the mockup draws a document: a bar of
+   breadcrumbs, then the text and the inspector side by side, each
+   scrolling on its own, so the bar and the inspector stay put while
+   the text moves (#447). #}
+{% block centre %}
+<nav class="doc-bar" aria-label="{{ crumbs_label }}">
+  <span class="crumbs">
+    {% if search_crumb %}<a href="/?q={{ question | urlencode }}">{{ search_crumb }}</a><span class="sep">/</span>{% endif %}
+    <a class="crumb-collection" href="/collection/{{ document.collection }}">{{ document.collection }}</a><span class="sep">/</span>
+    {% if document.group %}<span>{{ document.group }}</span><span class="sep">/</span>{% endif %}
+    {# The title, which is what the reader recognises; the handle in its
+       tooltip. It ended in the id. #}
+    <span class="here" title="{{ document.handle or document.document_id }}">{{ document.title }}</span>
+  </span>
+  {# Both labels from the server; `inspector.js` picks one. #}
+  {% set inspector_open = inspector_state(request) != "closed" %}
+  <button type="button" class="ghost" id="inspector-toggle" aria-controls="inspector"
+          data-show="{{ inspector_show }}" data-hide="{{ inspector_hide }}"
+          aria-expanded="{{ 'true' if inspector_open else 'false' }}"
+          aria-label="{{ inspector_hide if inspector_open else inspector_show }}"
+          title="{{ inspector_hide if inspector_open else inspector_show }}">{{ icon("panel-right") }}</button>
 </nav>
+<div class="document-body">
+{# Focusable and named, so the text scrolls from the keyboard: with
+   focus on the page, PageDown moved nothing, and a document without a
+   link had no stop inside it at all. #}
+<div class="reading" tabindex="0" role="region" aria-label="{{ document.title }}">
+<div class="column">
 <article>
   <h1>{{ document.title }}</h1>
-  <p class="provenance">
-    <span>{{ document.collection }}</span>
-    <span>{{ document.document_id }}</span>
-    <span>{{ document.path }}</span>
-  </p>
+  {% if document.byline %}<p class="byline">{{ document.byline }}</p>{% endif %}
   {% if document.has_blocked_images and not load_remote_images %}
-  <p class="role-warning">
-    {{ blocked_note }}
-    <a class="role-command" href="?images=on">{{ blocked_action }}</a>
-  </p>
+  {% from "tip.html" import tip %}
+  <div class="notice"><p>{{ blocked_note }} {{ tip("images", blocked_action, blocked_tip) }}
+    <a href="?images=on">{{ blocked_action }}</a></p></div>
   {% endif %}
   {% if mark_withheld %}
-  <p class="role-warning">{{ mark_withheld }}</p>
+  <p class="notice quiet">{{ icon("info") }}<span>{{ mark_withheld }}</span></p>
   {% endif %}
   {{ document.body_html | safe }}
 </article>
+</div>
+</div>
+{% from "resize.html" import handle %}
+{{ handle("inspector-width", "inspector", ".inspector", "left") }}
+{# `<details>` throughout, so each section opens without a script. #}
+<aside class="inspector" id="inspector" aria-label="{{ inspector_label }}">
+  <details class="details" open>
+    <summary>{{ icon("chevron-right") }}{{ details_heading }}</summary>
+    <dl>
+      {% for detail in document.details %}
+      <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{% if detail.href %}<a href="{{ detail.href }}" target="_blank" rel="noopener noreferrer">{{ detail.value }}</a>{% else %}{{ detail.value }}{% endif %}{% if detail.copyable %} <button type="button" class="ghost copy" data-copy="{{ detail.value }}" data-copied="{{ copied_label }}" hidden>{{ copy_label }}</button>{% endif %}</dd>
+      {% endfor %}
+    </dl>
+  </details>
+  {% if question %}
+  <details class="matches" open>
+    <summary>{{ icon("chevron-right") }}{{ matches_heading }}</summary>
+    {% if matches %}
+    <ol>{% for match in matches %}<li><a href="{{ match.href }}">{{ match.label }}</a></li>{% endfor %}</ol>
+    {% elif matches_withheld %}
+    <p class="role-warning">{{ matches_withheld_note }}</p>
+    {% else %}
+    <p class="role-muted">{{ no_matches }}</p>
+    {% endif %}
+  </details>
+  {% endif %}
+  <details class="outline"{% if not question %} open{% endif %}>
+    <summary>{{ icon("chevron-right") }}{{ outline_heading }}</summary>
+    {% if document.outline %}
+    <ul>{% for heading in document.outline %}<li data-level="{{ heading.level }}"><a href="#{{ heading.anchor }}">{{ heading.text }}</a></li>{% endfor %}</ul>
+    {% else %}
+    <p class="role-muted">{{ no_headings }}</p>
+    {% endif %}
+  </details>
+</aside>
+</div>
 {% endblock %}

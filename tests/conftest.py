@@ -87,6 +87,27 @@ def nowhere_real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_real_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reads the developer's configuration or writes their log.
+
+    `config_dir` and `log_dir` fall back to platformdirs' real paths.
+    On this machine the configuration directory holds `.env.keys`,
+    which `credential` reads, so a test that did not set the variable
+    was offered Brian's own API key; and a test that ran `config set`
+    would have written his `config.toml`. The log had 311 lines from
+    test runs in it, the latest from a subprocess that inherited an
+    environment with no override.
+
+    The fourth of the kind, with the same remedy as `nowhere_real`,
+    `no_real_corpus` and `somewhere_else`: redirect for every test,
+    and have `test_architecture.py` fail if this is removed. A test
+    that sets its own value runs after this and wins. Concern #442.
+    """
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config-dir"))
+    monkeypatch.setenv("KENNIS_LOG_DIR", str(tmp_path / "log-dir"))
+
+
+@pytest.fixture(autouse=True)
 def no_real_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No test reads the developer's own corpus.
 
@@ -162,7 +183,7 @@ def no_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An environment with no `mineru` anywhere kennis looks.
 
     Both places, not just PATH. kennis falls back to the directory of the
-    interpreter it is running on, because `uv tool install "kennis[mineru]"`
+    interpreter it is running on, because `uv tool install kennis`
     puts mineru there and never on PATH - and this checkout's own `.venv/bin`
     holds a real mineru, so emptying PATH alone left four tests asserting
     absence while the real converter ran.

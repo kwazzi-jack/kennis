@@ -36,6 +36,7 @@ from kennis.gui.theme import (
     DARK_GROUND,
     LIGHT_GROUND,
     css_variables,
+    layout_css,
     stylesheet,
 )
 from kennis.render.html import to_html
@@ -118,6 +119,48 @@ def test_every_colour_is_legible_on_its_ground(
         if contrast(value, ground) < MINIMUM_CONTRAST
     }
     assert not failed, f"{mode}: below {MINIMUM_CONTRAST}:1 - {failed}"
+
+
+def composited(colour: str, ground: str, alpha: float) -> str:
+    """What `colour` at `alpha` looks like laid over `ground`."""
+    over = [int(colour.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
+    under = [int(ground.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(
+        f"{round(a * alpha + b * (1 - alpha)):02x}"
+        for a, b in zip(over, under, strict=True)
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "colours", "ground"),
+    [("light", CSS_COLOURS, LIGHT_GROUND), ("dark", CSS_COLOURS_DARK, DARK_GROUND)],
+)
+def test_every_colour_is_legible_on_the_raised_surface(
+    mode: str, colours: dict[str, str], ground: str
+):
+    """The pane and the strip are not the ground: they are the muted grey
+    laid over it at `--raised`'s alpha, and muted text is commonest
+    there. `#6A7078` passed on the page at 4.82:1 and was 4.37:1 here."""
+    alpha = int(re.search(r"--raised: #\w{6}(\w{2});", css_variables())[1], 16)
+    raised = composited(colours["bright_black"], ground, alpha / 255)
+    failed = {
+        name: round(contrast(value, raised), 2)
+        for name, value in colours.items()
+        if contrast(value, raised) < MINIMUM_CONTRAST
+    }
+    assert not failed, f"{mode}: below {MINIMUM_CONTRAST}:1 on {raised} - {failed}"
+
+
+def test_no_role_fades_its_text():
+    """Dim was an opacity of 0.75 on top of the muted grey, which took
+    every dim role to about 3:1, and faded whatever sat inside it."""
+    faded = [
+        line
+        for line in stylesheet().splitlines()
+        if line.startswith(".role-") and "opacity" in line
+    ]
+
+    assert faded == []
 
 
 @pytest.mark.parametrize(
@@ -273,6 +316,21 @@ def test_every_class_the_templates_use_is_styled():
     assert not unstyled, f"no rule for: {unstyled}"
 
 
+def test_no_class_is_given_a_second_meaning_in_the_layout():
+    """A bare class declared twice in the layout is two components
+    sharing a name, and the later one wins over the earlier on every
+    page. `.bar` was the header when the results' cell group took the
+    name too, and its `display: inline-flex` reached the header; a
+    screenshot showed it and no test could. A component that extends
+    another's rule does it with a compound selector, never by
+    redeclaring the bare class."""
+    heads = re.findall(r"^(\.[A-Za-z0-9_-]+)\s*\{", layout_css(), re.MULTILINE)
+
+    assert len(heads) == len(set(heads)), sorted(
+        head for head in set(heads) if heads.count(head) > 1
+    )
+
+
 def test_the_reading_column_has_a_measure():
     """Body prose ran to about 110 characters at 1280px. Under 70 is
     the range long-form reading wants, and a serif tolerates the
@@ -309,7 +367,7 @@ def test_every_vendored_asset_is_accounted_for():
     notice = (vendor / "NOTICE.txt").read_text(encoding="utf-8")
     # What the notice declares: bare filenames, and globs for a family
     # carried in many weights.
-    declared = set(re.findall(r"[\w*.-]+\.(?:woff2|js|css)", notice))
+    declared = set(re.findall(r"[\w*.-]+\.(?:woff2|js|css|svg)", notice))
 
     for path in sorted(vendor.rglob("*")):
         if path.is_dir() or path.name == "NOTICE.txt" or "LICENSE" in path.name:
@@ -424,7 +482,7 @@ def test_the_notice_declares_nothing_that_is_not_there():
     notice = (vendor / "NOTICE.txt").read_text(encoding="utf-8")
     present = [path.name for path in vendor.rglob("*") if path.is_file()]
 
-    for pattern in set(re.findall(r"[\w*.-]+\.(?:woff2|js|css)", notice)):
+    for pattern in set(re.findall(r"[\w*.-]+\.(?:woff2|js|css|svg)", notice)):
         assert any(fnmatch(name, pattern) for name in present), (
             f"NOTICE.txt declares {pattern}, which is not vendored"
         )
@@ -455,3 +513,64 @@ def test_each_margin_field_is_its_own_line():
     assert not any("white-space" in rule for rule in margin), (
         "the margin is laid out by its fields now, not by preserved whitespace"
     )
+
+
+def test_the_stylesheet_holds_no_control_character():
+    """The layout is a Python string, so a CSS escape written with one
+    backslash is read by Python first: `"\\00b7"` arrived in the browser
+    as a NUL and a stray `b7`. The ASCII check cannot see it, because NUL
+    is ASCII."""
+    assert not re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", stylesheet())
+
+
+def test_the_centre_pane_is_the_containing_block_of_what_it_positions():
+    """Without it a visually hidden label deep in a long document was
+    placed against the page, the page grew to 37,000px, and following a
+    link to a passage scrolled the bar out of the window. Measured in
+    the headless shell; this keeps the declaration from going unnoticed."""
+    main = re.search(r"(?m)^main \{([^}]*)\}", stylesheet())
+
+    assert main is not None
+    assert "position: relative" in main.group(1)
+
+
+def _rule(selector: str) -> str:
+    code = re.sub(r"/\*.*?\*/", "", layout_css(), flags=re.S)
+    found = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", code)
+    assert found, selector
+    return found.group(1)
+
+
+def test_a_collection_s_state_is_told_by_shape_as_well_as_colour():
+    """Searchable green against needs-indexing amber was 1.08:1, and the
+    same pair to a deuteranope: one is filled, the other a ring."""
+    assert "background: var(--role-added)" in _rule(".state-current")
+    assert "background: none" in _rule(".state-behind, .state-none")
+
+
+def test_the_palette_s_selection_is_more_than_a_wash():
+    """The wash alone was 1.19:1 on the ground."""
+    assert "box-shadow: inset" in _rule('.palette-list [aria-selected="true"] > a')
+
+
+def test_where_the_reader_is_survives_forced_colours():
+    forced = layout_css()[layout_css().index("@media (forced-colors: active)") :]
+
+    assert '[aria-selected="true"]' in forced
+    assert "Highlight" in forced
+
+
+def test_no_box_is_striped_down_one_side():
+    """A card, a notice or a panel is framed all round: a thick rule down
+    one side is the commonest card in every markdown preview (Brian,
+    2026-10-13). A quotation keeps its rule, which is typography, and a
+    hairline between two panes is a divider, not a stripe."""
+    code = re.sub(r"/\*.*?\*/", "", layout_css(), flags=re.S)
+    striped = [
+        selector.strip()
+        for selector, body in re.findall(r"([^{}]+)\{([^}]*)\}", code)
+        if re.search(r"border-left(-width)?:\s*(?!0)(?!1px)\d", body)
+        and selector.strip() != "blockquote"
+    ]
+
+    assert striped == []

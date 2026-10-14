@@ -1,54 +1,189 @@
-{% set sidebar = sidebar_state(request) %}{% set theme = theme_choice(request) %}<!doctype html>
-<html lang="en" data-sidebar="{{ sidebar }}" data-theme="{{ theme }}">
+{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% set strip_open = strip_state(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
+<html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}" data-strip="{{ strip_open }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{# No icon, said: without it the browser asks for /favicon.ico on every
+   page, which answers 404 and is logged as an error in the console. #}
+<link rel="icon" href="data:,">
 <title>{% block title %}kennis{% endblock %}</title>
 <link rel="stylesheet" href="/static/kennis.css">
 <link rel="stylesheet" href="/static/vendor/katex.min.css">
 <script defer src="/static/vendor/htmx.min.js"></script>
 <script defer src="/static/vendor/katex.min.js"></script>
 <script defer src="/static/typeset.js"></script>
+<script defer src="/static/passage.js"></script>
 <script defer src="/static/revision.js"></script>
-<script defer src="/static/sidebar.js"></script>
-<script defer src="/static/theme.js"></script>
+<script defer src="/static/pane.js"></script>
+<script defer src="/static/resize.js"></script>
+<script defer src="/static/strip.js"></script>
+<script defer src="/static/inspector.js"></script>
+<script defer src="/static/dialog.js"></script>
+<script defer src="/static/prefs.js"></script>
+<script defer src="/static/hint.js"></script>
+<script defer src="/static/chooser.js"></script>
+<script defer src="/static/uploads.js"></script>
+<script defer src="/static/tips.js"></script>
+<script defer src="/static/menu.js"></script>
+<script defer src="/static/palette.js"></script>
 </head>
-{# **No client-side history snapshot.** htmx caches the page as it
-   was and restores that on Back, but its snapshot does not carry the
-   search form, which sits outside the swapped `#hits`. Going back and
-   then forward left the scope control reading `all` while the address
-   and the results both said `notes` - a control disagreeing with what
-   is on the page under it. Without the cache, Back and Forward are
-   navigations the server answers, and the server renders the form
-   from the address, which is what concern #340's decision was for.
-   Concern #383. #}
-<body hx-history="false">
-<header class="sidebar">
-  {# Present in both states, because "always present for the user to
-     open" is the requirement: a collapsed sidebar that hid its own
-     toggle could not be reopened. Both labels come from the server
-     and `sidebar.js` picks one. #}
-  <button type="button" class="sidebar-toggle" id="sidebar-toggle"
-          data-show="{{ sidebar_show }}" data-hide="{{ sidebar_hide }}"
-          aria-expanded="{{ 'false' if sidebar == 'closed' else 'true' }}"
-          aria-label="{{ sidebar_show if sidebar == 'closed' else sidebar_hide }}"
-          ><span class="bars"></span></button>
+{# **No client-side history snapshot.** htmx's snapshot does not carry
+   the search form, so Back-then-Forward left a control disagreeing
+   with the results under it. Back and Forward are navigations the
+   server answers. Concern #383. #}
+<body class="shell" hx-history="false">
+{# The first tab stop, so a keyboard reaches the page's content without
+   passing the bar's two dozen controls first. #}
+<a class="skip-link" href="#main">{{ skip_to_content }}</a>
+<header class="bar">
+  {# In the bar, not in the pane it hides: a collapsed pane that took
+     its own toggle with it could not be reopened. Both labels come
+     from the server and `pane.js` picks one. #}
+  <button type="button" class="ghost" id="pane-toggle"
+          data-show="{{ pane_show }}" data-hide="{{ pane_hide }}"
+          aria-expanded="{{ 'false' if pane_open == 'closed' else 'true' }}"
+          aria-label="{{ pane_show if pane_open == 'closed' else pane_hide }}"
+          >{{ icon("panel-left") }}</button>
   <a class="wordmark" href="/">kennis</a>
-  <nav>
-    {% for href, label in sidebar_links %}
-    <a class="sidebar-link" href="{{ href }}">{{ label }}</a>
+  {# **`action="/"`, and the live search only where `#hits` is.** The
+     form is on every page now, so with no action a scriptless search
+     from `/corpus` would go to `/corpus?q=`; and never `/hits`, which
+     answers a bare fragment (#366). Elsewhere Enter is a plain
+     navigation to the search page. #}
+  {% set asked_scope = scope | default(everywhere) %}
+  <form class="searchbox" role="search" action="/" method="get"
+        {% if searching_here %}hx-get="/hits" hx-target="#hits"
+        hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope], change from:select[name=mode]"{% endif %}>
+    {{ icon("search") }}
+    <input type="search" name="q" value="{{ question | default('') }}"
+           placeholder="{{ scope_hints[asked_scope] }}" aria-label="{{ search_action }}"
+           {% if searching_here %}autofocus{% endif %}>
+    <kbd class="kbd" title="{{ search_key_title }}">/</kbd>
+    <select name="scope" aria-label="{{ scope_label }}" title="{{ scope_label }}">
+      <option value="{{ everywhere }}" data-hint="{{ scope_hints[everywhere] }}"{% if asked_scope == everywhere %} selected{% endif %}>{{ everywhere_label }}</option>
+      {% for name in scopes %}
+      <option value="{{ name }}" data-hint="{{ scope_hints[name] }}"{% if name == asked_scope %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    {# Named rather than `from:select` in the trigger: htmx resolves
+       that against the document, and the theme control is a select
+       too - a colour change would run a search. #}
+    <select name="mode" aria-label="{{ mode_label }}" title="{{ mode_label }}">
+      {% for value, label in mode_choices %}
+      <option value="{{ value }}"{% if value == mode | default(mode_default) %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    {# Not drawn, as the mockup has none, but kept: a browser submits on
+       Enter through it, and a reader without a script needs it. #}
+    <button type="submit" class="visually-hidden" tabindex="-1">{{ search_action }}</button>
+    {% if searching_here %}<p class="searching role-muted" id="searching" aria-live="polite" hidden>{{ searching }}</p>{% endif %}
+  </form>
+  <div class="actions">
+    {# An action is a link to its own route. htmx fetches it into the
+       dialog; without htmx it is followed and the form arrives as a
+       page. One route per action, however many entrances. #}
+    {% for href, label, icon_name in actions %}
+    <a class="action" href="{{ href }}" title="{{ label }}" hx-get="{{ href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon(icon_name) }}<span class="label">{{ label }}</span></a>
     {% endfor %}
-  </nav>
-  <select class="theme" id="theme" aria-label="{{ theme_label }}">
-    {% for value, label in theme_choices %}
-    <option value="{{ value }}"{% if value == theme %} selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
+    {# The palette is reached from the bar but is not one of its actions:
+       it is every action and place again, under one key. #}
+    <a class="ghost palette-open" href="/palette" hx-get="/palette" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ palette_title }}" title="{{ palette_title }}">{{ icon("command") }}<span class="kbd">{{ palette_shortcut }}</span></a>
+    <a class="ghost settings-open" href="/settings" aria-label="{{ settings_heading }}" title="{{ settings_heading }}">{{ icon("settings") }}</a>
+    {# A plain form, not htmx: it works without a script, and what it
+       answers with is a whole page, because nothing will be left to
+       swap a fragment into. #}
+    <form class="quit" action="/quit" method="post">
+      <button type="submit" class="ghost action" title="{{ quit_title }}">{{ icon("power") }}<span class="label">{{ quit_label }}</span></button>
+    </form>
+  </div>
 </header>
-<p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision }}"
+
+<nav class="pane" aria-label="{{ corpus_heading }}">
+  <section>
+    <h2 class="pane-head"><a href="/corpus">{{ corpus_heading }}</a>{% if pane.readable %} {% include "pane-documents.html" %}{% endif %}</h2>
+    {% if not pane.readable %}
+    <p class="role-error">{{ corpus_unreadable }}</p>
+    {% endif %}
+    <ul class="tree">
+      {% for row in pane.collections %}
+      <li data-collection="{{ row.collection }}" data-state="{{ row.state }}">
+        {# The documents are fetched when the collection is first
+           opened. `toggle` does not bubble, so the trigger sits on
+           the `<details>` itself. The name is also a link: the way
+           in for a reader without a script. #}
+        {# `hx-disinherit`: the branch holds forms of its own, and each
+           would otherwise inherit this target and swap into itself (#430). #}
+        <details hx-get="/tree/{{ row.collection }}" hx-trigger="toggle once" hx-target="find .branch" hx-disinherit="*">
+          {% include "pane-row.html" %}
+          <div class="branch"></div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section>
+    <h2 class="pane-head">{{ context_heading }}{% if pane.project %} <span class="project">{{ pane.project }}</span>{% endif %}</h2>
+    {% if pane.project %}
+    <details hx-get="/tree/context" hx-trigger="toggle once" hx-target="find .branch">
+      <summary class="node top">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">.context</span></summary>
+      <div class="branch"></div>
+    </details>
+    {% else %}
+    <p class="pane-note role-muted">{{ no_context }} {{ tip("no-context", context_heading, no_context_tip) }}</p>
+    {% endif %}
+  </section>
+  <section>
+    <h2 class="pane-head">{{ kennis_heading }}</h2>
+    <ul class="tree">
+      <li><a class="node" href="/">{{ icon("history") }}<span class="name">{{ recents_heading }}</span></a></li>
+      <li><a class="node" href="/activity">{{ icon("activity") }}<span class="name">{{ activity_heading }}</span></a></li>
+      <li><a class="node" href="/corpus#packs">{{ icon("package") }}<span class="name">{{ packs_heading }}</span><span class="count">{{ pane.packs }}</span></a></li>
+      <li><a class="node" href="/settings">{{ icon("settings") }}<span class="name">{{ settings_heading }}</span></a></li>
+    </ul>
+  </section>
+  {# What the two coloured dots mean; the other two states draw no
+     colour, and each dot's own title names its state. #}
+  <p class="legend role-muted">
+    <span><span class="state state-current"></span>{{ pane_states["current"] }}</span>
+    <span><span class="state state-behind"></span>{{ pane_states["behind"] }}</span>
+  </p>
+</nav>
+{# Over the pane's right edge, in the grid rather than in the pane, so
+   it does not scroll away with the pane's contents. #}
+{{ handle("pane-width", "pane", ".pane", "right") }}
+
+<main id="main" tabindex="-1"{% block main_class %}{% endblock %}>
+<p id="corpus-changed" class="role-warning" hidden data-revision="{{ revision | default('') }}"
    data-message="{{ corpus_changed }}"></p>
-<main>
+{# A page that lays the centre out itself - the document, with its bar
+   and inspector - replaces this block rather than the column. #}
+{% block centre %}
+<div class="column">
 {% block main %}{% endblock %}
+</div>
+{% endblock %}
 </main>
+
+<footer class="strip">
+  {{ handle("strip-height", "strip", ".strip", "up") }}
+  {# Collapses the strip to its first line; drawn only when there is a
+     job to collapse. Both labels from the server; `strip.js` picks. #}
+  <button type="button" class="ghost" id="strip-toggle"
+          data-show="{{ strip_show }}" data-hide="{{ strip_hide }}"
+          aria-expanded="{{ 'false' if strip_open == 'closed' else 'true' }}"
+          aria-label="{{ strip_show if strip_open == 'closed' else strip_hide }}"
+          title="{{ strip_show if strip_open == 'closed' else strip_hide }}">{{ icon("chevron-down") }}</button>
+  {# Where every operation reports. Every page has it, so a dialog
+     opened anywhere has somewhere to put its job (#405). #}
+  {% set running = job_now(request) %}
+  {# Not a live region: it holds a clock that ticks every second.
+     `progress.js` tells `#job-status` what is worth hearing. #}
+  <p id="job-status" class="visually-hidden" role="status"></p>
+  <div id="job">{% if running %}{% with job_id = running.id, kind = running.kind %}{% include "job.html" %}{% endwith %}{% endif %}</div>
+  {# Drawn while a job runs too, so a job that finishes on this page has
+     a status line to redraw (#457). #}
+  {% include "strip-status.html" %}
+</footer>
+<div id="dialog"></div>
 </body>
 </html>

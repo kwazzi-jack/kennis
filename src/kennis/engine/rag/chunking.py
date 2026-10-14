@@ -67,7 +67,9 @@ class ChunkParameters:
 
     size: int = 1500
     overlap: int = 200
-    version: int = 1
+    # 2: a heading opens the window of an oversized block after it, rather
+    # than being a chunk of its own.
+    version: int = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +253,8 @@ def _pack(
     windows: list[tuple[int, int]] = []
     run_start: int | None = None
     run_end = 0
+    # Whether the run so far is a heading and nothing else.
+    heading_only = False
 
     def flush() -> None:
         if run_start is not None:
@@ -258,18 +262,31 @@ def _pack(
 
     for block in blocks:
         if block.end - block.start > parameters.size:
-            flush()
-            run_start = None
-            if block.is_atomic:
-                windows.append((block.start, block.end))
+            # **A heading opens the window of the block it heads.** Flushed
+            # on its own it became a chunk of one line - `# Calibration` -
+            # which BM25's length normalisation ranks highly for its own
+            # words and which shows the reader nothing under it.
+            start = block.start
+            if heading_only and run_start is not None:
+                start = run_start
             else:
-                windows.extend(_windows(block.start, block.end, text, parameters))
+                flush()
+            run_start = None
+            heading_only = False
+            if block.is_atomic:
+                windows.append((start, block.end))
+            else:
+                windows.extend(_windows(start, block.end, text, parameters))
             continue
         if run_start is None:
             run_start = block.start
+            heading_only = block.is_heading
         elif block.end - run_start > parameters.size:
             flush()
             run_start = block.start
+            heading_only = block.is_heading
+        else:
+            heading_only = False
         run_end = block.end
 
     flush()
