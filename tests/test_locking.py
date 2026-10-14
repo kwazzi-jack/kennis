@@ -146,7 +146,10 @@ def test_a_real_command_is_refused_while_the_corpus_is_held(tmp_path: Path):
 def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
     """A genuine race: eight processes start together and fight for it.
 
-    Each writes `in` on acquiring and `out` on releasing. Mutual exclusion is
+    Each writes `in` on acquiring and `out` on releasing, into one journal
+    that only the holder writes; a refused one writes a file of its own,
+    because seven refusals appending to one file at once lose lines on
+    Windows, where an append is a seek and a write. Mutual exclusion is
     the property that no `in` follows another `in` without an `out` between
     them - which is what a lock is *for*, and which the ordered tests above
     cannot observe because they never contend.
@@ -154,12 +157,15 @@ def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     journal = tmp_path / "journal.txt"
+    refusals = tmp_path / "refusals"
+    refusals.mkdir()
     program = (
         "import os, sys, time\n"
         "from kennis.engine.locking import corpus_lock\n"
         "from kennis.engine.errors import CorpusBusy\n"
         f"journal = {str(journal)!r}\n"
         f"root = {str(corpus)!r}\n"
+        f"refusals = {str(refusals)!r}\n"
         "def note(what):\n"
         "    with open(journal, 'a') as handle:\n"
         "        handle.write(what + '\\n')\n"
@@ -169,7 +175,7 @@ def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
         "        time.sleep(0.2)\n"
         "        note('out')\n"
         "except CorpusBusy:\n"
-        "    note('busy')\n"
+        "    open(os.path.join(refusals, str(os.getpid())), 'w').close()\n"
     )
 
     running = [
@@ -193,17 +199,18 @@ def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
     assert not failures, failures
 
     entries = journal.read_text(encoding="utf-8").split()
+    refused = len(list(refusals.iterdir()))
     assert entries, "no process recorded anything"
-    assert entries.count("in") + entries.count("busy") == 8
+    assert entries.count("in") + refused == 8
     assert entries.count("in") >= 1, f"nobody got the lock: {entries}"
     # The assertion that discriminates. Measured over ten runs, the journal is
-    # always one `in` and seven `busy`: the holder sleeps 200ms and the eight
+    # always one `in` and seven refusals: the holder sleeps 200ms and the eight
     # starts are spread over a few, so every other process arrives while it is
     # held. A refusal is therefore proof the processes really did overlap -
     # and it is what a broken lock loses, because then all eight acquire and
     # none is refused. Without it the interleaving loop below passes for free,
     # having only one `in` to look at.
-    assert entries.count("busy") >= 1, f"no process ever contended: {entries}"
+    assert refused >= 1, f"no process ever contended: {entries}"
 
     held = False
     for entry in entries:

@@ -951,7 +951,9 @@ def test_an_uploaded_name_cannot_place_a_file_outside_its_folder(sent: str):
 
     [path] = result.names
     assert path.name == "escape.md"
-    assert tempfile.gettempdir() in str(path.resolve())
+    # Both resolved: Windows may name the temporary directory by its short
+    # 8.3 name, RUNNER~1, and the resolved path by its long one.
+    assert path.resolve().is_relative_to(Path(tempfile.gettempdir()).resolve())
     assert ".." not in path.parts
 
 
