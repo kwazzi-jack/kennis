@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{# No icon, said: without it the browser asks for /favicon.ico on every
-   page, which answers 404 and is logged as an error in the console. #}
-<link rel="icon" href="data:,">
+{# Without an icon the browser asks for /favicon.ico on every page,
+   which answers 404 and is logged as an error in the console. #}
+<link rel="icon" type="image/svg+xml" href="{{ favicon }}">
 <title>{% block title %}kennis{% endblock %}</title>
 <link rel="stylesheet" href="/static/kennis.css">
 <link rel="stylesheet" href="/static/vendor/katex.min.css">

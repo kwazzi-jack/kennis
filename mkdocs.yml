@@ -25,6 +25,10 @@ exclude_docs: |
 
 theme:
   name: material
+  # The open book: the plainer pages at the header's size, the favicon
+  # for the tab.
+  logo: assets/brand/icon-small.svg
+  favicon: assets/brand/favicon.svg
   features:
     - navigation.sections
     - navigation.top

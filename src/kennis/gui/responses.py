@@ -8,6 +8,7 @@ and nothing from one another but `jobs.started`.
 
 from __future__ import annotations
 
+import base64
 import time
 from pathlib import Path
 from typing import Annotated, Final
@@ -86,6 +87,17 @@ def _inspector_state(request: Request) -> str:
 # Every preference of this window, rendered onto `<html>` from its
 # cookie (`gui/preferences.py`), for the reason the pane's is.
 TEMPLATES.env.globals["preferences"] = preferences_of
+
+
+# The open book, carried whole as a `data:` address rather than served:
+# the locked page is answered without the token every static file needs,
+# and the stopped page is drawn as the server exits, so neither could
+# fetch it. `img-src data:` already admits it. The light version only,
+# because `media` on an icon link is not honoured everywhere and the
+# white pages read on a dark tab strip too.
+TEMPLATES.env.globals["favicon"] = "data:image/svg+xml;base64," + base64.b64encode(
+    (_HERE / "static" / "brand" / "favicon.svg").read_bytes()
+).decode("ascii")
 
 
 # The scopes a person may search, in the order they are offered. The

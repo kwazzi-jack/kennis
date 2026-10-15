@@ -94,7 +94,14 @@ def test_the_stopped_page_needs_nothing_more_from_the_server(client: TestClient)
     the page would render bare. Everything it needs is inline."""
     page = admitted(client).post("/quit").text
 
-    assert not re.search(r"<link\b", page)
+    # A `data:` address is carried in the page, so the icon is allowed.
+    fetched = [
+        href
+        for href in re.findall(r"<link\b[^>]*\bhref=\"([^\"]*)\"", page)
+        if not href.startswith("data:")
+    ]
+    assert fetched == []
+    assert not re.search(r"<link\b(?![^>]*\bhref=)", page)
     assert not re.search(r"<script\b[^>]*\bsrc=", page)
     assert "<style>" in page
 

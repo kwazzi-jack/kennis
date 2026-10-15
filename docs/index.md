@@ -1,4 +1,4 @@
-# kennis
+# ![kennis](assets/brand/wordmark-light.svg#only-light){ width="320" } ![kennis](assets/brand/wordmark-dark.svg#only-dark){ width="320" }
 
 A knowledge and memory system for people and AI agents: a document corpus you
 own, and retrieval over it that searches by meaning as well as by words.

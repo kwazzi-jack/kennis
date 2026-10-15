@@ -1,3 +1,10 @@
+<!-- Absolute addresses: PyPI renders this file from the sdist, where a
+relative image is broken. PyPI drops <picture> and keeps the <img>. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kwazzi-jack/kennis/main/docs/assets/brand/wordmark-dark.svg">
+  <img alt="kennis" width="320" src="https://raw.githubusercontent.com/kwazzi-jack/kennis/main/docs/assets/brand/wordmark-light.svg">
+</picture>
+
 # kennis
 
 A local knowledge and memory management system for people and AI agents.
