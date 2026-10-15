@@ -27,7 +27,8 @@ typed, and dense embeddings for what you meant. See
 **Your documents stay yours.** Conversion runs locally by default and
 embedding runs locally by default. Sending a document to a third party
 requires setting a backend *and* supplying a key - never one without the
-other, and never as a default.
+other, and never as a default. [Where your data goes](privacy.md) lists
+every way anything leaves the machine.
 
 **The relevance level is measured, not invented.** When kennis says a hit is
 `high`, that is a cosine similarity against cuts measured on a real corpus

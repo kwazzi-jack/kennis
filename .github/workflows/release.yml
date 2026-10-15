@@ -1,0 +1,69 @@
+# Publish to PyPI when a GitHub Release is published.
+#
+# Trusted Publishing: PyPI holds no password and the repository holds no
+# token. GitHub mints a short-lived OIDC token for the publish job, and PyPI
+# accepts it only from this repository, this file name and the `pypi`
+# environment, which is what the publisher on pypi.org was registered with.
+# Renaming this file or the environment breaks the upload until the
+# registration is changed to match; `tests/test_release.py` holds both.
+#
+# Rehearse first with `rehearse.yml`, which uploads the same build to
+# TestPyPI under a development version.
+
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # A full version, not `@v10`: astral-sh/setup-uv publishes no moving
+      # major tag, so `@v10` resolves to nothing and the job fails at setup.
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      # A tag on a commit whose pyproject.toml says another version would
+      # upload a release the tag does not name - the shape of #175.
+      - name: The tag is the project's version
+        run: |
+          project="$(uv version --short)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$project" != "$tag" ]; then
+            echo "tag $GITHUB_REF_NAME names $tag, pyproject.toml says $project" >&2
+            exit 1
+          fi
+
+      - run: uv build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # Separate from the build so that only this job, which runs no project
+  # code, can mint the upload token.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/kennis/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - run: uv publish --trusted-publishing always

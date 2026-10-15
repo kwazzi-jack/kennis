@@ -1,0 +1,112 @@
+# Rehearse a release on TestPyPI, by hand: build, upload, install, run.
+#
+# The build is uploaded as `<version>.dev<run number>` rather than the
+# version in pyproject.toml, because an index accepts a version once and
+# never again, even after deletion; a rehearsal that kept the real number
+# could run only once. Everything else is what `release.yml` uploads.
+#
+# Trusted Publishing, as in `release.yml`: the publisher on test.pypi.org was
+# registered with this file name and the `testpypi` environment.
+
+name: rehearse
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to build
+        default: main
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      # A full version, not `@v10`: astral-sh/setup-uv publishes no moving
+      # major tag, so `@v10` resolves to nothing and the job fails at setup.
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      # `--no-sync`: only pyproject.toml changes, and only on the runner.
+      - id: version
+        run: |
+          version="$(uv version --short).dev${GITHUB_RUN_NUMBER}"
+          uv version --no-sync "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: uv build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/kennis/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - run: >-
+          uv publish --trusted-publishing always
+          --publish-url https://test.pypi.org/legacy/
+
+  # What a person typing `pip install kennis` would get, from the index
+  # rather than from the build directory.
+  install:
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - run: uv venv --python 3.12
+
+      # kennis from TestPyPI and every dependency from PyPI. uv stops at
+      # the first index naming a package unless told otherwise, and
+      # TestPyPI holds unrelated uploads under many common names, so the
+      # best match across all three is asked for. PyTorch's CPU index
+      # keeps MinerU's torch to a few hundred megabytes rather than the
+      # CUDA build's several gigabytes. A just-uploaded version can take a
+      # minute or two to be served, hence the retries.
+      - name: Install from TestPyPI
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if uv pip install "kennis==$VERSION" \
+                --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple/ \
+                --extra-index-url https://download.pytorch.org/whl/cpu \
+                --index-strategy unsafe-best-match; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; waiting for the index" >&2
+            sleep 30
+          done
+          exit 1
+
+      - run: .venv/bin/kennis --version
+
+      - name: The installed version is the one uploaded
+        run: |
+          installed="$(.venv/bin/python -c 'import importlib.metadata as m; print(m.version("kennis"))')"
+          test "$installed" = "$VERSION"

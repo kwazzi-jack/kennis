@@ -20,7 +20,7 @@ uv run --group docs mkdocs build      # into site/
 
 ## Status
 
-Pre-release, and nothing has been published. Built and tested:
+Pre-release, published on PyPI as `kennis`. Built and tested:
 
 - **the corpus**, machine-global, with git-backed history, BM25 and dense
   retrieval over it, and the command line;
@@ -44,7 +44,25 @@ prepared to rebuild.
 
 ## Install
 
-Not published yet, so from source:
+```
+uv tool install kennis                # or "kennis[mcp]" for the MCP server
+```
+
+PDF conversion is part of the install and is its large part - MinerU brings
+PyTorch, and on Linux the CUDA libraries, several gigabytes. The
+[install guide](https://kwazzi-jack.github.io/kennis/getting-started/install/)
+says how to take PyTorch's CPU build instead.
+
+## Your data
+
+kennis keeps everything on your machine, has no telemetry, and sends a
+document to a third party only when you set a hosted backend and supply its
+key. Adding a paper or a site fetches from the host you name, and an agent
+connected through `kennis serve` passes what it reads to whatever its model
+runs on. The full list, with every host, is
+[Your data: where it is kept and where it goes](https://kwazzi-jack.github.io/kennis/privacy/).
+
+## From source
 
 ```
 git clone git@github.com:kwazzi-jack/kennis.git

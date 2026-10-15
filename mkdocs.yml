@@ -84,6 +84,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Your data: privacy.md
   - Getting started:
       - Install: getting-started/install.md
       - Tutorial - your first corpus: getting-started/tutorial.md

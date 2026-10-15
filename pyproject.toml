@@ -19,13 +19,26 @@ license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Environment :: Console",
+    "Environment :: Web Environment",
     "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Text Processing :: Indexing",
     "Typing :: Typed",
+]
+keywords = [
+    "knowledge-base",
+    "retrieval",
+    "rag",
+    "bm25",
+    "embeddings",
+    "mcp",
+    "research",
+    "literature",
 ]
 # Carried over from boepie's own list, less the radio-astronomy stack
 # (stimela, cult-cargo, scabha, python-casacore), which kennis is domain-
@@ -116,6 +129,13 @@ dependencies = [
 mcp = [
     "fastmcp>=4.0.10,<5",
 ]
+
+[project.urls]
+Homepage = "https://kwazzi-jack.github.io/kennis/"
+Documentation = "https://kwazzi-jack.github.io/kennis/"
+Repository = "https://github.com/kwazzi-jack/kennis"
+Issues = "https://github.com/kwazzi-jack/kennis/issues"
+Changelog = "https://github.com/kwazzi-jack/kennis/blob/main/CHANGELOG.md"
 
 [project.scripts]
 kennis = "kennis.cli.__main__:main"
