@@ -16,6 +16,10 @@ wheels/
 # Internal design notes.
 /design/
 
+# Working notes, one per unit of work. Kept local and backed up with
+# design/ by design/backup.sh; this repository is public.
+/sketches/
+
 # Local scratch, sorted by hand.
 /archive/
 

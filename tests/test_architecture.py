@@ -84,7 +84,6 @@ BLOCKED_AT_RUNTIME = (*FORBIDDEN_BY_THE_ENGINE[2:], "fastmcp")
 ASCII_SEARCH_ROOTS = (
     SOURCE_ROOT,
     PROJECT_ROOT / "tests",
-    PROJECT_ROOT / "sketches",
 )
 ASCII_SUFFIXES = frozenset({".py", ".toml", ".md", ".yaml", ".yml", ".cfg"})
 
