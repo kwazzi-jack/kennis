@@ -1,3 +1,13 @@
+## v0.8.0 (2026-10-15)
+
+### Feat
+
+- **gui**: show the open book as the window's icon, and as the logo of the docs and readme
+
+### Fix
+
+- **pack**: point the scaffold's editor header at the schema where it is committed, under src/kennis/schema
+
 ## v0.7.0 (2026-10-14)
 
 ### Feat
