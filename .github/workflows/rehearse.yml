@@ -82,27 +82,40 @@ jobs:
 
       - run: uv venv --python 3.12
 
-      # kennis from TestPyPI and every dependency from PyPI. uv stops at
-      # the first index naming a package unless told otherwise, and
-      # TestPyPI holds unrelated uploads under many common names, so the
-      # best match across all three is asked for. PyTorch's CPU index
-      # keeps MinerU's torch to a few hundred megabytes rather than the
-      # CUDA build's several gigabytes. A just-uploaded version can take a
-      # minute or two to be served, hence the retries.
-      - name: Install from TestPyPI
+      # Only kennis comes from TestPyPI. Anyone may upload anything there,
+      # and it holds unrelated packages under common names - a `fastapi
+      # 1.0` that does not build broke the first rehearsal when uv was
+      # allowed to choose across TestPyPI and PyPI together. So the wheel
+      # TestPyPI serves for this version is fetched by its own JSON
+      # description, checked against the digest TestPyPI states, and
+      # installed as a file. A just-uploaded version can take a minute or
+      # two to appear, hence the retries.
+      - name: Fetch the wheel from TestPyPI
         run: |
           for attempt in 1 2 3 4 5 6; do
-            if uv pip install "kennis==$VERSION" \
-                --index-url https://test.pypi.org/simple/ \
-                --extra-index-url https://pypi.org/simple/ \
-                --extra-index-url https://download.pytorch.org/whl/cpu \
-                --index-strategy unsafe-best-match; then
-              exit 0
+            if curl -fsS "https://test.pypi.org/pypi/kennis/$VERSION/json" -o release.json; then
+              break
             fi
-            echo "attempt $attempt failed; waiting for the index" >&2
+            echo "attempt $attempt: not served yet" >&2
             sleep 30
           done
-          exit 1
+          url="$(jq -r '.urls[] | select(.packagetype == "bdist_wheel") | .url' release.json)"
+          digest="$(jq -r '.urls[] | select(.packagetype == "bdist_wheel") | .digests.sha256' release.json)"
+          mkdir -p wheel
+          curl -fsS "$url" -o "wheel/$(basename "$url")"
+          echo "$digest  wheel/$(basename "$url")" | sha256sum --check
+
+      # Every dependency from PyPI, and torch from PyTorch's CPU index so
+      # MinerU's torch is a few hundred megabytes rather than the CUDA
+      # build's several gigabytes. The best match across those two is
+      # asked for because PyTorch's index also carries old copies of
+      # ordinary packages (#461); both are trusted with the install.
+      - name: Install it with its dependencies from PyPI
+        run: >-
+          uv pip install wheel/*.whl
+          --index-url https://pypi.org/simple/
+          --extra-index-url https://download.pytorch.org/whl/cpu
+          --index-strategy unsafe-best-match
 
       - run: .venv/bin/kennis --version
 
