@@ -333,10 +333,10 @@ def test_a_finished_backup_redraws_the_section_it_was_started_from(
     assert hook["data-redraw-id"] == "backup"
     assert hook["data-redraw-route"] == "/settings/backup"
     # The script is what asks, and only where the page has the element.
-    code = code_of("progress.js")
+    code = code_of("redraws.js")
     assert "document.getElementById(hook.dataset.redrawId)" in code
     assert "hook.dataset.redrawRoute" in code
-    assert "redraw(outcome);" in code
+    assert "window.kennisRedraw(outcome);" in code_of("progress.js")
     # Without this, `htmx.ajax` with no target would swap the section into
     # a page that has none. The behaviour needs a browser; the walk saw it.
     assert "if (!target || !window.htmx) { return; }" in code

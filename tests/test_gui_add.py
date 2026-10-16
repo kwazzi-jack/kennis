@@ -1491,3 +1491,33 @@ def test_the_looking_line_shows_only_while_a_request_is_out():
     css = layout_css()
     assert re.search(r"\.looking\s*\{[^}]*display:\s*none", css)
     assert re.search(r"\.looking\.htmx-request\s*\{[^}]*display:\s*(?!none)", css)
+
+
+@pytest.mark.parametrize("kind", ["paper", "site"])
+def test_the_looking_line_is_a_ring_with_its_words_for_a_screen_reader(
+    client: TestClient, kind: str
+):
+    looking = BeautifulSoup(dialog_of(client, kind), "html.parser").find(
+        id="add-looking"
+    )
+    assert isinstance(looking, Tag)
+    ring = looking.find(class_="ring")
+    said = looking.find(class_="visually-hidden")
+
+    assert isinstance(ring, Tag) and ring.get("aria-hidden") == "true"
+    assert isinstance(said, Tag) and said.get_text(strip=True) == words.LOOKING_UP[kind]
+
+
+def test_the_lookup_ring_is_the_submit_buttons_ring():
+    """One turning ring in the layout, so the two cannot drift apart."""
+    from kennis.gui.theme import layout_css
+
+    css = re.sub(r"/\*.*?\*/", "", layout_css(), flags=re.S)
+    turning = [
+        selector
+        for selector, body in re.findall(r"([^{}]+)\{([^}]*)\}", css)
+        if "animation: turning" in body
+    ]
+    assert len(turning) == 1
+    assert ".looking .ring" in turning[0]
+    assert 'button[type="submit"]::after' in turning[0]

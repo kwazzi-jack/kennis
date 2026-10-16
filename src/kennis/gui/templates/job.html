@@ -1,10 +1,41 @@
 {% if problem %}<p class="role-warning">{{ problem }}</p>{% endif %}
-<div class="job" data-job="{{ job_id }}" data-kind="{{ kind }}">
-  {# The step is what is in hand now and the clock how long the job has
-     run; both arrive as words from the server (#405). #}
-  <p class="job-now"><span class="job-step"></span> <span class="job-clock role-muted" aria-hidden="true"></span></p>
-  <p class="job-progress"><progress class="job-bar" hidden aria-label="{{ progress_label }}"></progress> <span class="job-count role-muted"></span></p>
-  <ul class="job-lines"></ul>
-  <div class="job-outcome"></div>
+{# One job. On the bar it is one segment - its state as an icon, what it
+   is doing or what it ended as, and a thin bar while it runs - which opens
+   its panel above it (Brian, 2026-10-16, option A). The panel is the
+   browser's own popover, so it opens, closes on Escape or a click
+   elsewhere, and gives focus back, with no script. On the job's own page
+   the panel is drawn in place.
+
+   A running job is watched by `progress.js`, which writes the server's
+   words into every place that shows them; a finished one arrives drawn,
+   its outcome rendered by the server. #}
+{% set state = state | default("running") %}
+{% set panel_id = "job-panel-" ~ job_id %}
+{% set said = headline | default("", true) or job_doing.get(kind, kind) %}
+{% macro state_icon() %}<span class="job-state" aria-hidden="true"><span class="ring"></span>{{ icon("circle-check") }}{{ icon("circle-x") }}{{ icon("triangle-alert") }}</span>{% endmacro %}
+<div class="job" data-job="{{ job_id }}" data-kind="{{ kind }}" data-state="{{ state }}">
+  {% if not inline %}
+  <button type="button" class="segment job-segment" popovertarget="{{ panel_id }}" title="{{ job_details }}">
+    {{ state_icon() }}<span class="job-step">{{ said }}</span>
+    <progress class="job-bar" hidden aria-label="{{ progress_label }}"></progress>
+  </button>
+  {% endif %}
+  <div class="job-panel"{% if not inline %} id="{{ panel_id }}" popover{% endif %}>
+    <div class="panel-head">
+      {{ state_icon() }}
+      <div class="panel-title">
+        <span class="job-step">{{ said }}</span>
+        <span class="panel-sub role-muted">{{ job_kinds.get(kind, kind) }} <span class="job-clock" aria-hidden="true"></span></span>
+      </div>
+      {% if not inline %}<button type="button" class="ghost panel-close" popovertarget="{{ panel_id }}" popovertargetaction="hide" aria-label="{{ close_label }}" title="{{ close_label }}">{{ icon("x") }}</button>{% endif %}
+    </div>
+    <p class="job-progress"><progress class="job-bar" hidden aria-label="{{ progress_label }}"></progress> <span class="job-count role-muted"></span></p>
+    <ul class="job-lines"></ul>
+    <div class="job-outcome">{{ outcome | default("") }}</div>
+    <div class="panel-foot">
+      {% if not inline %}<a class="ghost" href="/job/{{ job_id }}">{{ icon("arrow-up-right") }}{{ open_as_page }}</a>{% endif %}
+      <a class="ghost" href="/activity">{{ icon("activity") }}{{ activity_heading }}</a>
+    </div>
+  </div>
 </div>
-<script defer src="/static/progress.js"></script>
+{% if state == "running" %}<script defer src="/static/progress.js"></script>{% endif %}

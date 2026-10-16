@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final, assert_never
 
@@ -18,6 +18,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
+from markupsafe import Markup
 
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
@@ -284,13 +285,20 @@ def serve_job(request: Request, job_id: str) -> HTMLResponse:
     job = request.app.state.jobs.get(job_id)
     if job is None:
         return refused_a_post(request, words.NO_SUCH_JOB)
-    shown = {"job_id": job.id, "kind": job.kind}
+    shown: dict[str, object] = {"job_id": job.id, "kind": job.kind}
+    if job.done.is_set():
+        outcome = _outcome(request, job)
+        shown |= {
+            "state": outcome.state,
+            "headline": outcome.headline,
+            "outcome": Markup(bytes(outcome.answer.body).decode("utf-8")),
+        }
     if from_htmx(request):
         return TEMPLATES.TemplateResponse(request, "job.html", shown)
     return TEMPLATES.TemplateResponse(
         request,
         "job-page.html",
-        {**shown, "title": words.JOB_KINDS.get(job.kind, job.kind)},
+        {**shown, "inline": True, "title": words.JOB_KINDS.get(job.kind, job.kind)},
     )
 
 
@@ -368,6 +376,90 @@ def serve_job_events(request: Request, job_id: str) -> StreamingResponse:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _Outcome:
+    """A finished job's outcome, and what the bar says of it."""
+
+    answer: HTMLResponse
+    state: str
+    headline: str
+
+
+def _outcome(request: Request, job: Job) -> _Outcome:
+    """What a finished job amounted to, and its state on the bar.
+
+    The state is decided here once and written onto the headline as
+    `data-state`, which `progress.js` reads: `failed`, `attention` when the
+    reader has something to do or to see - a busy corpus to try again, a
+    choice, a command, an item that failed - or `done`.
+    """
+    if job.crash is not None:
+        said = words.job_crashed(job.crash)
+        return _Outcome(
+            refused(request, said, role="role-error", state="failed"), "failed", said
+        )
+    if job.error is not None:
+        busy = isinstance(job.error, CorpusBusy)
+        said = words.CORPUS_BUSY_RETRY if busy else str(job.error)
+        # Busy is something to try again, not a failure of the job.
+        state = "attention" if busy else "failed"
+        answer = refused(
+            request,
+            said,
+            resolution=job.error.resolution,
+            role="role-warning" if busy else "role-error",
+            state=state,
+        )
+        return _Outcome(answer, state, said)
+    shown = _shown_result(job)
+    # What the operation put back before it ran, said where it says what
+    # it did: the command line has always said it, and a document
+    # reappearing in silence is a surprise of its own.
+    put_back = tuple(describe_change(change) for change in job.restored)
+    asks = shown.single or any(item.outcome == "failed" for item in shown.items)
+    state = "attention" if asks or shown.role == "role-warning" else "done"
+    answer = TEMPLATES.TemplateResponse(
+        request,
+        "job-outcome.html",
+        {"shown": replace(shown, notes=(*put_back, *shown.notes)), "state": state},
+    )
+    return _Outcome(answer, state, shown.headline)
+
+
+@dataclass(frozen=True, slots=True)
+class ShownBarJob:
+    """The job the bar shows: running, or the newest that ended, with its
+    outcome drawn by the server so a page loaded later need not ask."""
+
+    job_id: str
+    kind: str
+    state: str
+    headline: str = ""
+    outcome: Markup = field(default_factory=Markup)
+
+
+def shown_bar_job(request: Request) -> ShownBarJob | None:
+    """The running job, else the newest that ended, for the bar."""
+    jobs: Jobs = request.app.state.jobs
+    running = jobs.running()
+    if running is not None:
+        return ShownBarJob(running.id, running.kind, "running")
+    for job in jobs.recent():
+        if job.done.is_set():
+            outcome = _outcome(request, job)
+            return ShownBarJob(
+                job.id,
+                job.kind,
+                outcome.state,
+                outcome.headline,
+                Markup(bytes(outcome.answer.body).decode("utf-8")),
+            )
+    return None
+
+
+TEMPLATES.env.globals["bar_job"] = shown_bar_job
+
+
 @router.get("/job/{job_id}/outcome")
 def serve_job_outcome(request: Request, job_id: str) -> HTMLResponse:
     """What the job amounted to, fetched once its stream has closed.
@@ -381,27 +473,7 @@ def serve_job_outcome(request: Request, job_id: str) -> HTMLResponse:
         return refused(request, words.NO_SUCH_JOB)
     if not job.done.is_set():
         return refused(request, words.STILL_RUNNING)
-    if job.crash is not None:
-        answer = refused(request, words.job_crashed(job.crash))
-    elif job.error is not None:
-        answer = refused(
-            request,
-            words.CORPUS_BUSY_RETRY
-            if isinstance(job.error, CorpusBusy)
-            else str(job.error),
-            resolution=job.error.resolution,
-        )
-    else:
-        shown = _shown_result(job)
-        # What the operation put back before it ran, said where it
-        # says what it did: the command line has always said it, and
-        # a document reappearing in silence is a surprise of its own.
-        put_back = tuple(describe_change(change) for change in job.restored)
-        answer = TEMPLATES.TemplateResponse(
-            request,
-            "job-outcome.html",
-            {"shown": replace(shown, notes=(*put_back, *shown.notes))},
-        )
+    answer = _outcome(request, job).answer
     # Only a job that commits moves the page's revision: a bundle sync,
     # a pack install and a backup write no corpus history, so a terminal
     # that wrote meanwhile is still news. One that does commit takes the

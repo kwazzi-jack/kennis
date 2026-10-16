@@ -52,6 +52,9 @@
 {% else %}<span class="node leaf" title="{{ shown.title }}">{{ icon("file-text") }}<span class="name">{{ shown.title }}</span>{{ mark(shown.mark) }}</span>{% endif %}
 </li>
 {% endmacro %}
+{# The id is what a finished job's redraw looks for, so a branch is
+   redrawn only once it has been opened. #}
+<div id="pane-branch-{{ tree.collection }}">
 {% if problem %}<p class="pane-note role-error">{{ problem }}</p>{% endif %}
 {% for note in notes %}<p class="pane-note role-muted">{{ note }}</p>{% endfor %}
 {% if tree.attention %}<label class="attention-filter"><input type="checkbox" class="attention-only"> {{ attention_only }}</label>{% endif %}
@@ -60,5 +63,6 @@
 {% for shown in tree.top.entries %}{{ entry(shown, tree.top.add_here) }}{% endfor %}
 {% for branch in tree.branches %}{{ folder(branch) }}{% endfor %}
 </ul>
+</div>
 {# A move changed what the pane counts and what is behind its index. #}
 {% if moved %}{% include "shell-redraws.html" %}{% endif %}

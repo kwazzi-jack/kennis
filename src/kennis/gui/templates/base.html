@@ -1,5 +1,5 @@
-{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% set strip_open = strip_state(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
-<html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}" data-strip="{{ strip_open }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
+{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
+<html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,9 +14,9 @@
 <script defer src="/static/typeset.js"></script>
 <script defer src="/static/passage.js"></script>
 <script defer src="/static/revision.js"></script>
+<script defer src="/static/redraws.js"></script>
 <script defer src="/static/pane.js"></script>
 <script defer src="/static/resize.js"></script>
-<script defer src="/static/strip.js"></script>
 <script defer src="/static/inspector.js"></script>
 <script defer src="/static/dialog.js"></script>
 <script defer src="/static/prefs.js"></script>
@@ -166,24 +166,19 @@
 </main>
 
 <footer class="strip">
-  {{ handle("strip-height", "strip", ".strip", "up") }}
-  {# Collapses the strip to its first line; drawn only when there is a
-     job to collapse. Both labels from the server; `strip.js` picks. #}
-  <button type="button" class="ghost" id="strip-toggle"
-          data-show="{{ strip_show }}" data-hide="{{ strip_hide }}"
-          aria-expanded="{{ 'false' if strip_open == 'closed' else 'true' }}"
-          aria-label="{{ strip_show if strip_open == 'closed' else strip_hide }}"
-          title="{{ strip_show if strip_open == 'closed' else strip_hide }}">{{ icon("chevron-down") }}</button>
-  {# Where every operation reports. Every page has it, so a dialog
-     opened anywhere has somewhere to put its job (#405). #}
-  {% set running = job_now(request) %}
-  {# Not a live region: it holds a clock that ticks every second.
-     `progress.js` tells `#job-status` what is worth hearing. #}
+  {# The status bar (Brian, 2026-10-16, option A): the job as one segment
+     that opens its panel, the corpus's facts, and Activity. Every page has
+     `#job`, so a dialog opened anywhere has somewhere to put its job
+     (#405); it holds the running job, or the newest that ended. #}
+  {% set on_bar = bar_job(request) %}
+  {# Not a live region: it would hear a clock. `progress.js` tells
+     `#job-status` what is worth hearing. #}
   <p id="job-status" class="visually-hidden" role="status"></p>
-  <div id="job">{% if running %}{% with job_id = running.id, kind = running.kind %}{% include "job.html" %}{% endwith %}{% endif %}</div>
-  {# Drawn while a job runs too, so a job that finishes on this page has
-     a status line to redraw (#457). #}
+  <div id="job">{% if on_bar %}{% with job_id = on_bar.job_id, kind = on_bar.kind, state = on_bar.state, headline = on_bar.headline, outcome = on_bar.outcome %}{% include "job.html" %}{% endwith %}{% endif %}</div>
   {% include "strip-status.html" %}
+  <div class="strip-tools">
+    <a class="segment" href="/activity" aria-label="{{ activity_heading }}" title="{{ activity_heading }}">{{ icon("activity") }}</a>
+  </div>
 </footer>
 <div id="dialog"></div>
 </body>

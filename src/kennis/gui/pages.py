@@ -12,6 +12,7 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+import os
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
@@ -1276,11 +1277,6 @@ class ShownItem:
     remedies: tuple[str, ...] = ()
     repairs: tuple[Repair, ...] = ()
 
-    @property
-    def needs_attention(self) -> bool:
-        """Whether the reader has something to do about this one."""
-        return self.outcome == "failed" or bool(self.remedies or self.repairs)
-
 
 @dataclass(frozen=True, slots=True)
 class ShownJob:
@@ -1310,14 +1306,61 @@ class ShownJob:
     sync_after: bool = False
 
     @property
-    def attention(self) -> tuple[ShownItem, ...]:
-        """The items the reader has something to do about, always shown."""
-        return tuple(item for item in self.items if item.needs_attention)
+    def single(self) -> tuple[ShownItem, ...]:
+        """The items with a way out of their own - a repair or a command -
+        which are drawn one by one and first, because each asks something."""
+        return tuple(item for item in self.items if item.remedies or item.repairs)
 
     @property
-    def rest(self) -> tuple[ShownItem, ...]:
-        """Everything else, which a long job folds away (`FOLDED_AFTER`)."""
-        return tuple(item for item in self.items if not item.needs_attention)
+    def groups(self) -> tuple[OutcomeGroup, ...]:
+        """Every other item, grouped by what happened and why, failures first.
+
+        A docs add with eight pages refused for one reason drew eight red
+        lines naming each page twice (Brian, 2026-10-16); one reason is one
+        group, and a page of them reads as what it is.
+        """
+        grouped: dict[tuple[str, str], list[ShownItem]] = {}
+        for item in self.items:
+            if item.remedies or item.repairs:
+                continue
+            grouped.setdefault((item.outcome, item.detail or ""), []).append(item)
+        groups = [
+            OutcomeGroup(outcome=outcome, reason=reason, items=tuple(items))
+            for (outcome, reason), items in grouped.items()
+        ]
+        return tuple(sorted(groups, key=lambda group: group.outcome != "failed"))
+
+
+@dataclass(frozen=True, slots=True)
+class OutcomeGroup:
+    """Items an operation treated alike: one outcome, one reason."""
+
+    outcome: str
+    reason: str
+    items: tuple[ShownItem, ...]
+
+    @property
+    def label(self) -> str:
+        """The reason they share, or what happened when there is none."""
+        said = self.reason or words.OUTCOME_WORDS.get(self.outcome, self.outcome)
+        return said[:1].upper() + said[1:]
+
+    @property
+    def marker(self) -> str:
+        return self.items[0].marker
+
+    @property
+    def base(self) -> str:
+        """The folder the names share, said once above them; empty when
+        they share none, or when there is one name."""
+        if len(self.items) < 2:
+            return ""
+        shared = os.path.commonprefix([item.name for item in self.items])
+        return shared[: shared.rfind("/") + 1]
+
+    def short(self, item: ShownItem) -> str:
+        """An item's name beneath its group's base."""
+        return item.name[len(self.base) :]
 
 
 def shown_add(report: AddReport) -> ShownJob:

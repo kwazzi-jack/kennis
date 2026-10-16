@@ -27,7 +27,7 @@ from kennis.engine.events import (
     Recorder,
     TitleDotStripped,
 )
-from kennis.engine.refusals import NothingConverted, SameContent
+from kennis.engine.refusals import NothingConverted, Quoted, SameContent
 
 
 class CountingConverter:
@@ -298,6 +298,24 @@ def test_an_unresolvable_identifier_fails_only_itself(
     assert outcomes[str(good)] is Outcome.ADDED
     assert outcomes["welman2024"] is Outcome.FAILED
     assert len(notes.contents().documents) == 1
+
+
+def test_unresolvable_identifiers_share_one_reason_that_names_neither(
+    notes: Collection,
+):
+    """Each outcome names its identifier already, and a reason that named
+    it again made six missing files six reasons, which the window could
+    not group (Brian, 2026-10-16)."""
+    report = add_notes(notes, ["welman2024", "smith2023"])
+
+    reasons = {
+        outcome.refusal.text
+        for outcome in report.outcomes
+        if isinstance(outcome.refusal, Quoted)
+    }
+    assert len(reasons) == 1, reasons
+    reason = reasons.pop()
+    assert "welman2024" not in reason and "smith2023" not in reason
 
 
 def test_an_argument_naming_nothing_stops_the_command_before_it_starts(

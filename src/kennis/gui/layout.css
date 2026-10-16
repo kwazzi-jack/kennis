@@ -90,11 +90,10 @@
 
   /* The pane's width, which is the whole of what collapsing changes;
      the open width is the reader's to drag (`gui/layout.py`), drawn on
-     `<html>` from a cookie, as are the inspector's and the strip's. */
+     `<html>` from a cookie, as is the inspector's. */
   --pane-width: 16rem;
   --pane: var(--pane-width);
   --inspector-width: 17rem;
-  --strip-height: 40dvh;
   /* Scrollbars in the theme: a thin thumb in the muted grey on no
      track. Inherited, so this one declaration reaches every scroller. */
   --scrollbar: color-mix(in srgb, var(--role-muted) 55%, transparent);
@@ -800,19 +799,54 @@ main {
 
 /* ---- the strip ---- */
 
+/* The status bar: one slim line - the job, where the corpus stands,
+   Activity - each a segment between hairlines (Brian, 2026-10-16, option
+   A). A job's details are a panel above its segment, never a second row,
+   so the bar keeps its height whatever the job says. */
 .strip {
   grid-area: strip;
   view-transition-name: strip;
-  max-height: var(--strip-height);
-  overflow-y: auto;
-  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 1.9rem;
+  min-width: 0;
   background: var(--raised);
   border-top: 1px solid var(--rule);
-  padding: 0 1rem;
   font-family: var(--gutter);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
-.strip #job:not(:empty) { padding: 0.5rem 0; }
+.strip > #job { display: flex; min-width: 0; flex: 0 1 auto; }
+.strip > #job:empty { display: none; }
+.strip .job { display: flex; min-width: 0; margin: 0; }
+.strip-tools { display: flex; margin-left: auto; }
+
+/* One fact or control on the bar: an icon and a short value, divided
+   from the next by a hairline, washed when it is a control. */
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.strip-tools .segment { border-right: 0; border-left: 1px solid var(--rule); }
+button.segment, a.segment { cursor: pointer; }
+button.segment:hover, a.segment:hover { background: var(--ground); color: var(--ink); }
+.segment .icon { width: 0.9rem; height: 0.9rem; flex: none; }
+.segment code { font-family: var(--mono); font-size: 0.72rem; }
+.segment .value { overflow: hidden; text-overflow: ellipsis; }
+.segment.role-warning { color: var(--role-warning); }
+.segment-form { display: flex; margin: 0; }
 
 /* Past searches, offered again. Shaped like the hits list because
    it occupies the same place and answers the same question - the
@@ -1061,44 +1095,11 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
   position: relative;
   cursor: col-resize;
 }
-.resize-strip {
-  position: sticky;
-  top: 0;
-  height: 6px;
-  margin: 0 -1rem -6px;
-  cursor: row-resize;
-}
 :root[data-pane="closed"] .resize-pane { display: none; }
 :root[data-inspector="closed"] .resize-inspector { display: none; }
 /* While dragging: no transition to lag the pointer, no text selected. */
 :root.resizing .shell { transition: none; user-select: none; }
 :root.resizing .inspector { transition: none; }
-
-/* The strip's collapse: offered when there is a job, and collapsed it
-   keeps the first line - the step while running, the headline after. */
-#strip-toggle {
-  float: right;
-  margin: 0.3rem 0 0 0.5rem;
-  padding: 0.15rem;
-}
-#strip-toggle .icon { transition: transform 0.2s ease; }
-:root[data-strip="closed"] #strip-toggle .icon { transform: rotate(180deg); }
-.strip:has(#job:empty) #strip-toggle { display: none; }
-/* A height the reader dragged is the strip's height while it shows a
-   job, not only its limit: a drag that changed nothing would read as a
-   broken handle. Idle, the strip stays one line. The size is on
-   `<html>`'s inline style, from the server or `resize.js`. */
-:root[style*="--strip-height"] .strip:has(#job:not(:empty)) {
-  height: var(--strip-height);
-}
-/* Collapsed wins over a dragged height; same specificity, so it is
-   the later rule. */
-:root[data-strip="closed"] .strip:has(#job:not(:empty)) { height: auto; }
-:root[data-strip="closed"] .strip :is(
-  .job-lines, .job-progress, .job-outcome > :not(:first-child)
-) {
-  display: none;
-}
 
 :root[data-inspector="closed"] .inspector {
   width: 0;
@@ -1993,31 +1994,138 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 /* ---------------------------------------------------------------- */
 
 .job { margin: 1.5rem 0 0; }
-.strip .job { margin: 0; }
-.job-now, .job-progress {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.3rem 0;
+/* A job's state as one icon: the turning ring while it runs, then a
+   check, a cross or a warning. The state is the server's for a job that
+   ended, and `progress.js` copies the outcome's when one ends here. */
+.job-state { display: inline-flex; flex: none; }
+.job-state > * { display: none; }
+.job[data-state="running"] .job-state .ring,
+.job[data-state="done"] .job-state .icon:nth-child(2),
+.job[data-state="failed"] .job-state .icon:nth-child(3),
+.job[data-state="attention"] .job-state .icon:nth-child(4) { display: inline-block; }
+/* The shared ring rule draws it inline, and is the more specific. */
+.job:not([data-state="running"]) .job-state .ring { display: none; }
+.job[data-state="running"] .job-state { color: var(--role-command); }
+.job[data-state="done"] .job-state { color: var(--role-operation); }
+.job[data-state="failed"] .job-state { color: var(--role-error); }
+.job[data-state="attention"] .job-state { color: var(--role-warning); }
+.job-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-clock, .job-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.job-count:empty { display: none; }
+
+/* The job's segment: tinted by its state, so a failure or a choice to
+   make is seen on the bar before the panel is opened. Its step is cut
+   at a width that leaves the facts room; the tooltip of the panel holds
+   the whole. */
+.job-segment { max-width: min(30rem, 50vw); }
+.job-segment .job-bar { flex: none; width: 4rem; height: 0.3rem; }
+.job[data-state="failed"] .job-segment {
+  background: color-mix(in srgb, var(--role-error) 12%, transparent);
+}
+.job[data-state="attention"] .job-segment {
+  background: color-mix(in srgb, var(--role-warning) 12%, transparent);
+}
+.job:not([data-state="running"]) .job-segment { color: var(--ink); }
+
+/* The panel: above the bar's left end, its own size, scrolling inside
+   itself. A popover is in the top layer, so it is placed against the
+   viewport. On a job's own page it is drawn in place. */
+.job-panel {
   font-family: var(--gutter);
   font-size: 0.8125rem;
+  color: var(--ink);
 }
-.job-now:has(.job-step:empty) { display: none; }
-.job-bar { flex: 1 1 12rem; max-width: 24rem; height: 0.35rem; }
-.job-clock, .job-count { font-variant-numeric: tabular-nums; }
+.job-panel[popover] {
+  position: fixed;
+  inset: auto auto 2.3rem 0.5rem;
+  width: min(28rem, calc(100vw - 1rem));
+  max-height: 70dvh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  background: var(--ground);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--rule);
+}
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.6rem 0.5rem 0.9rem;
+}
+.panel-head .job-state { margin-top: 0.1rem; }
+.panel-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.panel-title .job-step { font-weight: 600; white-space: normal; }
+.panel-sub { font-size: 0.75rem; }
+.panel-close { margin-left: auto; padding: 0.2rem; }
+.job-progress { display: flex; align-items: center; gap: 0.6rem; margin: 0 0.9rem; }
+.job-progress:not(:has(.job-bar:not([hidden]), .job-count:not(:empty))) { display: none; }
+.job-progress .job-bar { flex: 1; height: 0.35rem; }
+.job-panel .job-lines, .job-panel .job-outcome { margin: 0; padding: 0 0.9rem; }
+.job-panel .job-lines:empty { display: none; }
+/* The head says the headline, so the outcome does not. */
+.job-panel .job-outcome > p:first-child { display: none; }
+.job-panel .job-outcome:has(> :not(p:first-child, [hidden])) { padding-bottom: 0.4rem; }
+.job-panel .items { margin: 0.3rem 0; }
+/* The panel is the gutter's: an item there is not a line of the column. */
+.job-panel .items li { padding: 0.15rem 0; font-size: inherit; }
+.panel-foot {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.3rem 0.5rem;
+  border-top: 1px solid var(--rule);
+  background: var(--raised);
+}
+.job-page .job-panel { border: 1px solid var(--rule); border-radius: 8px; }
 
-/* Idle, the strip is a status line: where the corpus stands, and the
-   last operation as a link to it. */
+/* A group of items that ended the same way for the same reason: folded
+   under the reason and the count, the folder they share said once. */
+.group { margin: 0.3rem 0; }
+.group > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  list-style: none;
+}
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary .icon { width: 0.85rem; height: 0.85rem; transition: transform 0.2s ease; }
+.group[open] > summary .icon { transform: rotate(90deg); }
+.group .count {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--role-muted);
+  font-variant-numeric: tabular-nums;
+}
+.group-label { color: var(--ink); }
+.group-base { margin: 0.2rem 0 0 1.2rem; color: var(--role-muted); font-family: var(--mono); font-size: 0.75rem; }
+.group-items {
+  margin: 0.1rem 0 0 1.2rem;
+  padding: 0;
+  list-style: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  /* The failure role is bold; a list of names under it need not be. */
+  font-weight: 400;
+}
+
+/* What the bar shows depends on the job: the last change stands where
+   the job would, and gives way to one. */
+.strip:has(.job) [data-status="change"] { display: none; }
+/* A job may be the index itself: what waits is said again when it ends. */
+.strip:has(.job[data-state="running"]) [data-status="waiting"] { display: none; }
 .strip-status {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 1.2rem;
+  min-width: 0;
   margin: 0;
-  padding: 0.3rem 0;
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
 }
 
 /* Under a collection's results, the way to more of them. */
@@ -2043,18 +2151,16 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 .welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
 .welcome-actions .button { display: inline-flex; align-items: center; gap: 0.4rem; }
 
-/* A long outcome's ordinary items, folded under one line. */
-.all-items > summary {
-  cursor: pointer;
-  font-family: var(--gutter);
+/* The outcome's Index and Sync buttons: small, under what they act on. */
+.index-now { margin: 0.4rem 0 0; }
+.index-now button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.55rem;
   font-size: 0.8125rem;
-  color: var(--role-muted);
-  margin: 0.3rem 0;
 }
-
-/* The strip's Index button: small enough to sit in a status line. */
-.index-now { margin: 0; }
-.index-now button { padding: 0.1rem 0.55rem; font-size: 0.8125rem; }
+.index-now button .icon { width: 0.85rem; height: 0.85rem; }
 
 /* A form whose request is out: htmx sets `htmx-request` on it and has
    already disabled the button (`hx-disabled-elt`). The cursor and the
@@ -2062,7 +2168,11 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 .htmx-request button[type="submit"] {
   cursor: progress;
 }
-.htmx-request button[type="submit"]::after {
+/* The one turning ring: beside a waiting submit button, and alone where
+   a preview is being looked up. */
+.htmx-request button[type="submit"]::after,
+.add-tab .looking .ring,
+.job-state .ring {
   content: "";
   display: inline-block;
   width: 0.7em;
@@ -2074,9 +2184,12 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
   vertical-align: -0.1em;
   animation: turning 0.8s linear infinite;
 }
+.add-tab .looking .ring, .job-state .ring { margin-left: 0; width: 1em; height: 1em; }
 @keyframes turning { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .htmx-request button[type="submit"]::after { animation: none; }
+  .htmx-request button[type="submit"]::after,
+  .add-tab .looking .ring,
+  .job-state .ring { animation: none; }
 }
 
 /* The Activity page: one row per operation kept. */
@@ -2161,6 +2274,9 @@ article table, .full table { font-variant-numeric: tabular-nums; }
   .hits li { grid-template-columns: 1fr; row-gap: 0.4rem; }
   .hits li > * { grid-column: 1; }
   .hits .detail { grid-row: auto; text-align: left; }
+  /* The status bar keeps one line: the last change and the commit go
+     first, since the job and what waits are what can be acted on. */
+  .strip [data-status="change"], .strip [data-status="commit"] { display: none; }
   /* The pane leaves the grid: on a phone the window is the column
      and the bar, and the pane would take most of the width. Its
      places are still reachable from the bar's search and actions. */
@@ -2246,9 +2362,21 @@ article table, .full table { font-variant-numeric: tabular-nums; }
   .hit { opacity: 0; translate: 0 0.25rem; }
 }
 
-.strip .job { transition: opacity 0.2s ease; }
+.strip .job-segment { transition: opacity 0.2s ease; }
 @starting-style {
-  .strip .job { opacity: 0; }
+  .strip .job-segment { opacity: 0; }
+}
+
+/* The panel rises from the bar. A popover leaves the top layer when it
+   closes, so `overlay` and `display` are carried discretely to let it
+   fade out too. */
+.job-panel[popover] {
+  transition: opacity 0.15s ease, translate 0.15s ease,
+    overlay 0.15s allow-discrete, display 0.15s allow-discrete;
+}
+.job-panel[popover]:not(:popover-open) { opacity: 0; translate: 0 0.4rem; }
+@starting-style {
+  .job-panel[popover]:popover-open { opacity: 0; translate: 0 0.4rem; }
 }
 
 /* Every disclosure grows open and shrinks shut. Not a row's menu: its

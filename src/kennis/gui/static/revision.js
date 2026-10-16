@@ -12,6 +12,7 @@
 // else changing the corpus. The server answers each of this window's
 // writes with the commit it left, in `X-Kennis-Revision`, and only those:
 // a search answering it would hide a terminal's write behind a keystroke.
+// A job's outcome carries it too, and arrives as `kennis:written`.
 (function () {
   var banner = document.getElementById("corpus-changed");
   if (!banner) { return; }
@@ -35,6 +36,13 @@
   document.body.addEventListener("htmx:afterRequest", function (event) {
     var request = event.detail && event.detail.xhr;
     var written = request && request.getResponseHeader("X-Kennis-Revision");
+    if (written) { banner.dataset.revision = written; }
+  });
+
+  // A job's outcome is fetched outside htmx, by `progress.js`, which
+  // passes the header on.
+  document.body.addEventListener("kennis:written", function (event) {
+    var written = event.detail && event.detail.revision;
     if (written) { banner.dataset.revision = written; }
   });
 

@@ -42,8 +42,13 @@ def test_each_entry_starts_invisible_and_is_transitioned():
         assert "opacity: 0" in starts[selector] or "transparent" in starts[selector]
 
 
-def test_a_new_job_in_the_strip_fades_in():
-    assert ".strip .job" in starting_styles(code())
+def test_a_new_job_in_the_strip_fades_in_and_its_panel_rises():
+    """The segment fades in where the job appears; the panel, a popover,
+    rises from the bar when it opens."""
+    styles = starting_styles(code())
+
+    assert ".strip .job-segment" in styles
+    assert ".job-panel[popover]:popover-open" in styles
 
 
 def test_moving_between_pages_crossfades_and_holds_the_shell_still():

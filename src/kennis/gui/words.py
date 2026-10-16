@@ -472,11 +472,7 @@ def not_a_backup_folder(path: str) -> str:
 RESIZE_LABELS: Final[dict[str, str]] = {
     "pane-width": "Resize corpus panel",
     "inspector-width": "Resize details panel",
-    "strip-height": "Resize status bar",
 }
-# The activity strip's collapse, by its state.
-STRIP_SHOW = "Expand status bar"
-STRIP_HIDE = "Collapse status bar"
 PANE_SHOW = "Show corpus panel"
 
 PANE_HIDE = "Hide corpus panel"
@@ -598,6 +594,17 @@ JOB_KINDS: Final[dict[str, str]] = {
     "backup": "Backup",
 }
 
+# What the status bar says while each kind of job runs, before the job
+# has reported a step of its own.
+JOB_DOING: Final[dict[str, str]] = {
+    "add": "Adding",
+    "index": "Indexing",
+    "sync": "Syncing the corpus",
+    "context-sync": "Syncing the project context",
+    "pack": "Installing a pack",
+    "backup": "Backing up",
+}
+
 JOB_RUNNING = "running"
 
 JOB_FINISHED = "finished"
@@ -605,17 +612,46 @@ JOB_FINISHED = "finished"
 JOB_FAILED = "failed"
 
 
-def searchable_summary(searchable: int, total: int, behind: int) -> str:
-    """Where the corpus stands, for the strip when nothing is running."""
-    summary = f"{searchable} of {total} collections searchable"
-    if behind:
-        summary += f", {behind} {'needs' if behind == 1 else 'need'} indexing"
-    return summary
+def searchable_short(searchable: int, total: int) -> str:
+    """How many collections a search reaches, as the bar shows it."""
+    return f"{searchable}/{total}"
+
+
+def to_index(count: int) -> str:
+    """How many documents wait for an index, on the button that indexes."""
+    return f"{count} to index"
+
+
+# The bar's job segment, which opens what the job did, and the panel's way
+# to the job's own page.
+JOB_DETAILS = "Show what this task is doing or did"
+
+OPEN_AS_PAGE = "Open as a page"
+
+
+def searchable_summary(searchable: int, total: int) -> str:
+    """How many collections a search reaches, for the status bar. What
+    waits is its own item beside this, so it is not said twice."""
+    return f"{searchable} of {total} collections searchable"
+
+
+# The status bar's facts, each drawn as an icon and a short value.
+STATUS_ICONS: Final[dict[str, str]] = {
+    "commit": "git-commit-horizontal",
+    "searchable": "search",
+    "waiting": "triangle-alert",
+    "change": "history",
+}
+
+# The status bar's labels, for a screen reader: the eye has an icon.
+CORPUS_AT_LABEL = "Version"
+
+LAST_CHANGE_LABEL = "Last change:"
 
 
 def corpus_at(commit: str) -> str:
-    """The commit the corpus is at, for the strip."""
-    return f"Version {commit}"
+    """The commit the corpus is at, said whole: the status item's tooltip."""
+    return f"{CORPUS_AT_LABEL} {commit}"
 
 
 def documents_held(count: int) -> str:
@@ -668,13 +704,12 @@ CHANGE_KINDS: Final[dict[str, str]] = {
 def last_change(
     operation: str | None, scope: str | None, summary: str, seconds: float
 ) -> str:
-    """The corpus's newest commit, for the strip.
+    """The corpus's newest commit, for the status bar, after its label.
 
     A subject kennis did not write is quoted whole, because a commit a
     person made by hand is a change too (`read_history` keeps it).
     """
-    ago = time_ago(seconds)
-    return f"Last change: {change_line(operation, scope, summary)}, {ago}"
+    return f"{change_line(operation, scope, summary)}, {time_ago(seconds)}"
 
 
 def change_line(operation: str | None, scope: str | None, summary: str) -> str:
@@ -697,11 +732,6 @@ def _one_is_one(summary: str) -> str:
     singular here rather than written differently there.
     """
     return re.sub(r"\b1 (\w+?)s\b", r"1 \1", summary)
-
-
-def last_job(kind: str, state: str) -> str:
-    """The most recent operation, as the strip's link text."""
-    return f"Last task: {JOB_KINDS.get(kind, kind)}, {state}"
 
 
 CORPUS_OVERVIEW = "Overview"
@@ -1094,12 +1124,15 @@ INDEX_NOW = "Index now"
 # More items than this and an outcome folds the ones needing nothing
 # away: a 4,000-file add listed every one, and the line saying what
 # happened was a screen above them.
-FOLDED_AFTER = 8
-
-
-def every_item(count: int) -> str:
-    """The fold's label over a long outcome's ordinary items."""
-    return f"Show all {count_of(count, 'item')}"
+# What happened to a group of items that share no reason, as its heading.
+OUTCOME_WORDS: Final[dict[str, str]] = {
+    "added": "added",
+    "removed": "removed",
+    "changed": "changed",
+    "unchanged": "unchanged",
+    "skipped": "skipped",
+    "failed": "failed",
+}
 
 
 NO_SUCH_JOB = "That task is no longer listed, or was not started in this window."
@@ -1519,6 +1552,7 @@ __all__ = [
     "CONVERTER_NAMES",
     "COPIED_LABEL",
     "COPY_LABEL",
+    "CORPUS_AT_LABEL",
     "CORPUS_BUSY",
     "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
@@ -1537,7 +1571,6 @@ __all__ = [
     "EVERYWHERE_LABEL",
     "FIELD_LABELS",
     "FIELD_TIPS",
-    "FOLDED_AFTER",
     "GROUP_HINT",
     "GROUP_LABEL",
     "GROUP_NEEDS_A_NAME",
@@ -1555,6 +1588,8 @@ __all__ = [
     "INSPECTOR_HIDE",
     "INSPECTOR_LABEL",
     "INSPECTOR_SHOW",
+    "JOB_DETAILS",
+    "JOB_DOING",
     "JOB_FAILED",
     "JOB_FINISHED",
     "JOB_KINDS",
@@ -1573,6 +1608,7 @@ __all__ = [
     "KEY_LOW",
     "KEY_ORDER",
     "KEY_SUMMARY",
+    "LAST_CHANGE_LABEL",
     "LEXICAL_ONLY_INDEX",
     "LINE_HELD",
     "LINE_KINDS",
@@ -1615,11 +1651,13 @@ __all__ = [
     "NO_PACKS",
     "NO_PDF",
     "NO_SUCH_JOB",
+    "OPEN_AS_PAGE",
     "OPEN_AT_PASSAGE",
     "OPTIONAL",
     "ORDER_CHOICES",
     "ORDER_LABEL",
     "ORDER_LIMIT",
+    "OUTCOME_WORDS",
     "OUTLINE_HEADING",
     "PACKS_HEADING",
     "PACK_ACTION",
@@ -1687,10 +1725,9 @@ __all__ = [
     "SOURCE_CHOICES",
     "STATE_LETTERS",
     "STATE_WORDS",
+    "STATUS_ICONS",
     "STILL_RUNNING",
     "STOPPED",
-    "STRIP_HIDE",
-    "STRIP_SHOW",
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",
@@ -1729,7 +1766,6 @@ __all__ = [
     "docs_input_refused",
     "documents_held",
     "documents_waiting",
-    "every_item",
     "found_on_arxiv",
     "group_empty_means",
     "index_collection",
@@ -1739,7 +1775,6 @@ __all__ = [
     "key_models",
     "keywords_only",
     "last_change",
-    "last_job",
     "match_in_section",
     "matches_heading",
     "menu_for",
@@ -1756,11 +1791,13 @@ __all__ = [
     "results_for",
     "search_crumb",
     "search_hint_for",
+    "searchable_short",
     "searchable_summary",
     "setting_tip",
     "shortened_authors",
     "time_ago",
     "tip_about",
+    "to_index",
     "unknown_collection",
     "unknown_mode",
     "unknown_order",

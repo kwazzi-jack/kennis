@@ -571,6 +571,7 @@ def icons_named() -> set[str]:
     named |= set(words.COLLECTION_ICONS.values())
     named |= set(words.MEASURE_ICONS.values())
     named |= {icon_name for _, _, icon_name in words.SOURCE_CHOICES}
+    named |= set(words.STATUS_ICONS.values())
     return named
 
 

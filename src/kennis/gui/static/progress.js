@@ -18,24 +18,33 @@
 //
 // **Every panel, not the first.** A job's own page and the strip both
 // draw one for the same job, and a page drawn while a job runs carries
-// it in the strip. Each panel holds its own connection.
+// it in the strip. Each panel holds its own connection. Only a running
+// job is watched: one that has ended arrives drawn by the server.
+//
+// **A value is shown in more than one place.** On the bar the job is a
+// segment with its step and a thin bar; its panel has them again with
+// the count, the clock and the lines. Each is written to every element
+// of its class within the job.
 (function () {
-  document.querySelectorAll(".job[data-job]").forEach(watch);
+  document.querySelectorAll('.job[data-job][data-state="running"]').forEach(watch);
 
   function watch(panel) {
     if (panel.dataset.watching) { return; }
     panel.dataset.watching = "yes";
 
     var id = panel.dataset.job;
-    var bar = panel.querySelector(".job-bar");
-    var count = panel.querySelector(".job-count");
-    var step = panel.querySelector(".job-step");
-    var clock = panel.querySelector(".job-clock");
+    var bars = panel.querySelectorAll(".job-bar");
     var lines = panel.querySelector(".job-lines");
     var outcome = panel.querySelector(".job-outcome");
     var source = new EventSource("/job/" + id + "/events");
     var status = document.getElementById("job-status");
     var said = 0;
+
+    function setText(selector, text) {
+      Array.prototype.forEach.call(panel.querySelectorAll(selector), function (node) {
+        node.textContent = text;
+      });
+    }
 
     function announce(text, now) {
       if (!status || !text) { return; }
@@ -67,48 +76,61 @@
       lines.appendChild(item);
     }
 
-    // A part of the page the outcome changed - a backup's section - is
-    // asked for again, where this page has one. In code rather than as
-    // an `hx-trigger` filter, because htmx 2.0.4 never fires `load`
-    // with a filter (measured: `load[...]` sent nothing, `load` did).
-    function redraw(within) {
-      var hooks = within.querySelectorAll("[data-redraw-id]");
-      Array.prototype.forEach.call(hooks, function (hook) {
-        var target = document.getElementById(hook.dataset.redrawId);
-        if (!target || !window.htmx) { return; }
-        window.htmx.ajax("GET", hook.dataset.redrawRoute, {
-          target: target,
-          swap: "outerHTML",
-        });
-      });
-    }
-
     function finish() {
       source.close();
-      bar.hidden = true;
-      step.textContent = "";
-      clock.textContent = "";
+      Array.prototype.forEach.call(bars, function (bar) { bar.hidden = true; });
+      // "2093 of 2093" stayed on the line after the job had ended.
+      setText(".job-count", "");
       // Fetched rather than streamed: the outcome is a page of markup
       // with forms in it, and building that in a script would put the
       // repair buttons somewhere other than where every other word on
       // this interface is decided.
       fetch("/job/" + id + "/outcome", { credentials: "same-origin" })
-        .then(function (answer) { return answer.text(); })
+        .then(function (answer) {
+          // A job that committed says which commit it left. htmx never
+          // sees this request, so `revision.js` is told directly; without
+          // it this window's own add was announced on the next focus as
+          // a change from elsewhere.
+          var written = answer.headers.get("X-Kennis-Revision");
+          if (written) {
+            document.body.dispatchEvent(new CustomEvent("kennis:written", {
+              detail: { revision: written },
+            }));
+          }
+          return answer.text();
+        })
         .then(function (html) {
           outcome.innerHTML = html;
+          // The headline goes on the line, in the state the server wrote
+          // on it (`data-state`): failed, something for the reader to do
+          // or see, or done. Copied, not composed.
           var first = outcome.querySelector("p");
-          if (first) { announce(first.textContent, true); }
+          var state = (first && first.dataset.state) || "done";
+          if (first) {
+            setText(".job-step", first.textContent);
+            announce(first.textContent, true);
+          }
+          panel.dataset.state = state;
+          // What asks something of the reader is shown, not left behind a
+          // click: the panel opens itself once.
+          var popover = panel.querySelector("[popover]");
+          if (popover && popover.showPopover && state !== "done" &&
+              !popover.matches(":popover-open")) {
+            popover.showPopover();
+          }
           // The outcome is the record and the live lines were progress:
           // an outcome that lists its items replaces theirs, or a finished
           // sync lists every document twice. A warning stays: the
           // outcome does not repeat it.
-          if (outcome.querySelector(".items")) {
+          if (outcome.querySelector(".items, .group")) {
             lines.querySelectorAll("li[data-item]").forEach(function (line) {
               line.remove();
             });
           }
           if (window.htmx) { window.htmx.process(outcome); }
-          redraw(outcome);
+          // What else the outcome changed - the strip, the pane, a
+          // backup's section - asked for again where this page has it.
+          if (window.kennisRedraw) { window.kennisRedraw(outcome); }
         })
         .catch(function () {
           // The operation still happened; only this page's account of
@@ -121,20 +143,22 @@
       var message = JSON.parse(event.data);
       if (message.kind === "closed") { finish(); return; }
       if (message.kind === "current") {
-        step.textContent = message.text;
+        setText(".job-step", message.text);
         announce(message.text, false);
         return;
       }
-      if (message.kind === "elapsed") { clock.textContent = message.text; return; }
+      if (message.kind === "elapsed") { setText(".job-clock", message.text); return; }
       if (message.kind === "progress") {
-        bar.hidden = false;
-        if (message.total) {
-          bar.max = message.total;
-          bar.value = message.completed;
-        } else {
-          bar.removeAttribute("value");
-        }
-        count.textContent = message.text;
+        Array.prototype.forEach.call(bars, function (bar) {
+          bar.hidden = false;
+          if (message.total) {
+            bar.max = message.total;
+            bar.value = message.completed;
+          } else {
+            bar.removeAttribute("value");
+          }
+        });
+        setText(".job-count", message.text);
         return;
       }
       if (message.kind === "finished") { return; }

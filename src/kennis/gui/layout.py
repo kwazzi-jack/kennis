@@ -1,4 +1,4 @@
-"""The window's layout as the reader left it: three sizes and the strip.
+"""The window's layout as the reader left it: two sizes.
 
 **Each is a cookie the server draws onto `<html>`**, for the reason the
 pane's open state is: read after paint, every page would draw at the
@@ -30,21 +30,14 @@ class Size:
         return value.isdigit() and self.least <= int(value) <= self.most
 
 
-# The pane's least keeps a collection's name and count on one line; the
-# strip's least is one line of the strip, so a dragged strip is never
-# mistaken for a collapsed one.
+# The pane's least keeps a collection's name and count on one line.
 SIZES: Final[dict[str, Size]] = {
     size.name: size
     for size in (
         Size("pane-width", 160, 480),
         Size("inspector-width", 200, 560),
-        Size("strip-height", 40, 800),
     )
 }
-
-_STRIP_COOKIE: Final = "strip"
-_CLOSED: Final = "closed"
-_OPEN: Final = "open"
 
 
 def sizes_of(request: Request) -> str:
@@ -57,9 +50,4 @@ def sizes_of(request: Request) -> str:
     )
 
 
-def strip_state(request: Request) -> str:
-    """`closed` only for exactly that value, as the pane's rule is."""
-    return _CLOSED if request.cookies.get(_STRIP_COOKIE) == _CLOSED else _OPEN
-
-
-__all__ = ["SIZES", "Size", "sizes_of", "strip_state"]
+__all__ = ["SIZES", "Size", "sizes_of"]

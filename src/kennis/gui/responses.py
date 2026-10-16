@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -28,8 +29,8 @@ from kennis.engine.errors import (
 )
 from kennis.gui import words
 from kennis.gui.icons import icon
-from kennis.gui.jobs import Job, Jobs
-from kennis.gui.layout import SIZES, sizes_of, strip_state
+from kennis.gui.jobs import Job
+from kennis.gui.layout import SIZES, sizes_of
 from kennis.gui.pages import (
     ShownOutcome,
 )
@@ -123,10 +124,11 @@ TEMPLATES.env.globals.update(
         "inspector_state": _inspector_state,
         "sizes": sizes_of,
         "size_bounds": SIZES,
-        "strip_state": strip_state,
         "resize_labels": words.RESIZE_LABELS,
-        "strip_show": words.STRIP_SHOW,
-        "strip_hide": words.STRIP_HIDE,
+        "job_doing": words.JOB_DOING,
+        "job_kinds": words.JOB_KINDS,
+        "job_details": words.JOB_DETAILS,
+        "open_as_page": words.OPEN_AS_PAGE,
         "pane_now": pane_now,
         "pane_show": words.PANE_SHOW,
         "pane_hide": words.PANE_HIDE,
@@ -148,8 +150,6 @@ TEMPLATES.env.globals.update(
         "welcome": words.WELCOME,
         "welcome_tip": words.WELCOME_TIP,
         "welcome_actions": words.WELCOME_ACTIONS,
-        "folded_after": words.FOLDED_AFTER,
-        "every_item": words.every_item,
         "progress_label": words.PROGRESS_LABEL,
         "note_text_label": words.NOTE_TEXT_LABEL,
         "title_label": words.TITLE_LABEL,
@@ -170,6 +170,13 @@ TEMPLATES.env.globals.update(
             ("strip-status", "/strip/status"),
             ("pane-documents", "/pane/documents"),
             *((f"pane-row-{name}", f"/pane/row/{name}") for name in COLLECTION_NAMES),
+        ),
+        # And each collection's branch, which exists only once it has been
+        # opened, so one never opened is never fetched. A note's answer
+        # carries these as well: its other redraws are out of band, but a
+        # branch is too costly to draw for a pane that may not show it.
+        "branch_redraws": tuple(
+            (f"pane-branch-{name}", f"/tree/{name}") for name in COLLECTION_NAMES
         ),
         "palette_shortcut": words.PALETTE_SHORTCUT,
         "close_label": words.CLOSE,
@@ -337,85 +344,116 @@ def job_state(job: Job) -> str:
     return words.JOB_FAILED if job.failed else words.JOB_FINISHED
 
 
-def _job_now(request: Request) -> Job | None:
-    """The running job, for the strip on every page."""
-    jobs: Jobs = request.app.state.jobs
-    return jobs.running()
+@dataclass(frozen=True, slots=True)
+class StatusItem:
+    """One fact on the status bar: an icon and a short value, with a label
+    a screen reader hears in place of the icon, and the whole sentence as
+    the tooltip. `code` sets the value as something to be read verbatim."""
+
+    kind: str
+    value: str
+    label: str = ""
+    title: str = ""
+    role: str = ""
+    code: bool = False
+    # What indexing it would index, for the item that waits: one
+    # collection behind is indexed alone, more is every collection.
+    collection: str = ""
+
+    @property
+    def icon(self) -> str:
+        return words.STATUS_ICONS[self.kind]
 
 
-def _last_job(request: Request) -> tuple[str, str] | None:
-    """The newest job that has ended, as an address and the strip's words."""
-    jobs: Jobs = request.app.state.jobs
-    for job in jobs.recent():
-        if job.done.is_set():
-            return f"/job/{job.id}", words.last_job(job.kind, job_state(job))
-    return None
-
-
-def _strip_status(pane: Pane) -> list[tuple[str, str]]:
+def _strip_status(pane: Pane) -> list[StatusItem]:
     """Where the corpus stands, from the pane the page already drew.
 
-    Plan 11b's four, as `(text, role)`: the commit, what is searchable,
-    what needs indexing, and the last change. The second and third are
-    one collection count and one document count, because a person deciding
-    whether to index asks how much, and a collection that is behind may be
-    behind by one note. A role is empty for ordinary muted text.
+    Plan 11b's four: the commit, what is searchable, what needs indexing,
+    and the last change. The second and third are one collection count and
+    one document count, because a person deciding whether to index asks
+    how much, and a collection that is behind may be behind by one note.
     """
     states = [row.state for row in pane.collections]
-    items = [
-        (
-            words.searchable_summary(
-                searchable=sum(state in ("current", "behind") for state in states),
-                total=len(states),
-                behind=states.count("behind"),
-            ),
-            "",
-        )
-    ]
-    if pane.waiting:
-        items.append((words.documents_waiting(pane.waiting), "warning"))
+    reached = sum(state in ("current", "behind") for state in states)
+    items: list[StatusItem] = []
     change = pane.last_change
     if change is not None:
-        items.insert(0, (words.corpus_at(change.commit[:7]), ""))
+        said = words.last_change(
+            change.operation,
+            change.scope,
+            change.summary,
+            time.time() - change.when.timestamp(),
+        )
         items.append(
-            (
-                words.last_change(
-                    change.operation,
-                    change.scope,
-                    change.summary,
-                    time.time() - change.when.timestamp(),
+            StatusItem(
+                "change",
+                said,
+                label=words.LAST_CHANGE_LABEL,
+                title=f"{words.LAST_CHANGE_LABEL} {said}",
+            )
+        )
+        commit = change.commit[:7]
+        items.append(
+            StatusItem(
+                "commit",
+                commit,
+                label=words.CORPUS_AT_LABEL,
+                title=words.corpus_at(commit),
+                code=True,
+            )
+        )
+    items.append(
+        StatusItem(
+            "searchable",
+            words.searchable_short(reached, len(states)),
+            title=words.searchable_summary(searchable=reached, total=len(states)),
+        )
+    )
+    if pane.waiting:
+        behind = [row.collection for row in pane.collections if row.state == "behind"]
+        items.append(
+            StatusItem(
+                "waiting",
+                words.to_index(pane.waiting),
+                title=(
+                    f"{words.index_now(behind)}: "
+                    f"{words.documents_waiting(pane.waiting)}"
                 ),
-                "",
+                role="warning",
+                collection=behind[0] if len(behind) == 1 else "",
             )
         )
     return items
 
 
-# The strip, on every page: the running job if there is one, otherwise
-# where the corpus stands and what ran last (#405). Functions taking the
-# request, registered here because they are defined above.
-TEMPLATES.env.globals.update(
-    {"job_now": _job_now, "last_job": _last_job, "strip_status": _strip_status}
-)
+# Where the corpus stands, on every page's bar. The job beside it is
+# `routes/jobs.py`'s `bar_job`, which needs the job's outcome.
+TEMPLATES.env.globals["strip_status"] = _strip_status
 
 
 def refused(
-    request: Request, problem: str, *, resolution: str | None = None
+    request: Request,
+    problem: str,
+    *,
+    resolution: str | None = None,
+    role: str = "role-warning",
+    state: str = "",
 ) -> HTMLResponse:
     """A refusal inside the panel, not as a page.
 
     The form the person filled in is still on the page behind this, and
     replacing the page would lose what they typed. `CorpusBusy` is the
     case that makes it matter: something else is writing, nothing was
-    changed, and the answer is to try again in a moment.
+    changed, and the answer is to try again in a moment. A job that
+    failed says so in the error role, which the status bar reads as its
+    state.
     """
     return TEMPLATES.TemplateResponse(
         request,
         "outcome.html",
         {
-            "outcome": ShownOutcome(
-                message=problem, role="role-warning", resolution=resolution
-            )
+            "outcome": ShownOutcome(message=problem, role=role, resolution=resolution),
+            "state": state,
         },
     )
 

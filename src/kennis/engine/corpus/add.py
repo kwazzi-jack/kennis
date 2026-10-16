@@ -613,9 +613,10 @@ def _convert(
             return ready
         return convert_local_file(path, keep_original=options.keep_original)
 
+    # The outcome names the identifier, so the reason does not: one that
+    # did made every missing file a reason of its own (#473).
     raise _Unresolved(
-        f"'{identifier}' is not an existing file or an http(s) URL, and no "
-        f"resolver recognised it"
+        "not an existing file or an http(s) URL, and no resolver recognised it"
     )
 
 

@@ -269,7 +269,185 @@ def test_an_index_started_here_reports_its_outcome(page: playwright.Page) -> Non
     page.click("form[action='/index'] button[type=submit]")
 
     page.wait_for_selector(f"text={words.JOB_KINDS['index']}", timeout=_WAIT_MS)
-    page.wait_for_selector("#job .job-outcome p", timeout=_WAIT_MS)
+    page.wait_for_selector("#job .job[data-state='done']", timeout=_WAIT_MS)
+
+
+def _open_branch(page: playwright.Page, collection: str) -> None:
+    # Opened by its `<details>`, not by a click: the row's name is a link.
+    page.evaluate(
+        f"document.querySelector('.tree li[data-collection={collection}] > details')"
+        ".open = true"
+    )
+    page.wait_for_selector(f"#pane-branch-{collection}", timeout=_WAIT_MS)
+
+
+def test_an_add_here_redraws_the_open_branch_and_is_not_news(
+    corpus: Path, page: playwright.Page, tmp_path: Path
+) -> None:
+    """Brian added papers into `alma` and `alma/special` with the folder
+    open: the pane kept what it held when opened, and the next focus said
+    the corpus had changed elsewhere. The job's outcome carried its commit
+    in a header that `progress.js` fetched and never read."""
+    chosen = tmp_path / "elsewhere" / "rivers.md"
+    chosen.parent.mkdir()
+    chosen.write_text("# Rivers\n\nRivers carry sediment.\n", encoding="utf-8")
+    _open_branch(page, "notes")
+    drawn_at = page.evaluate("fetch('/revision').then(r => r.json())")
+
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] input[name=upload][multiple]',
+        timeout=_WAIT_MS,
+    )
+    page.set_input_files("#dialog input[name=upload][multiple]", str(chosen))
+    page.click("#dialog .choices label:has(input[value=notes])")
+    page.fill("#dialog input[name=group]", "earth / rivers ")
+    page.click("#dialog form[action='/add'] button[type=submit]")
+
+    page.wait_for_selector(
+        "#pane-branch-notes li[data-group='earth/rivers']", timeout=_WAIT_MS
+    )
+    committed = page.evaluate("fetch('/revision').then(r => r.json())")
+    assert committed != drawn_at, "the add should have committed"
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    page.wait_for_timeout(500)
+    assert page.is_hidden("#corpus-changed")
+
+
+def test_a_note_in_a_new_group_appears_in_the_open_branch(
+    page: playwright.Page,
+) -> None:
+    _open_branch(page, "notes")
+    page.click("a[href='/remember']")
+    page.wait_for_selector("#dialog textarea[name=text]", timeout=_WAIT_MS)
+    page.fill("#dialog textarea[name=text]", "Rivers carry sediment.")
+    page.fill("#dialog input[name=group]", "earth / rivers ")
+
+    page.click("#dialog button[type=submit]")
+
+    page.wait_for_selector(
+        "#pane-branch-notes li[data-group='earth/rivers']", timeout=_WAIT_MS
+    )
+
+
+def test_the_status_bar_is_one_slim_line(page: playwright.Page) -> None:
+    """Brian, 2026-10-16: the strip took a third of the window. Option A
+    keeps it one slim line whatever a job says."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.reload()
+
+    height = page.evaluate("document.querySelector('.strip').offsetHeight")
+
+    assert height <= 34, height
+
+
+def _index_from_the_bar(corpus: Path, page: playwright.Page) -> None:
+    source = corpus / "sources" / "rivers.md"
+    source.write_text("# Rivers\n\nRivers carry sediment.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.reload()
+    page.click("#strip-status [data-status='waiting'] button[type=submit]")
+    page.wait_for_selector(".strip .job[data-state='done']", timeout=_WAIT_MS)
+
+
+def test_a_finished_job_is_its_segment_and_its_panel_opens_above_it(
+    corpus: Path, page: playwright.Page
+) -> None:
+    """Finished, the strip kept "2093 of 2093", said the headline on a line
+    of its own and the status under it. Now the segment says the headline
+    in the state the outcome reports, the bar stays one line, and the
+    panel opens above the bar on a click and closes on Escape."""
+    _index_from_the_bar(corpus, page)
+
+    headline = page.inner_text(".strip .job-panel .job-step")
+    assert page.inner_text(".strip .job-segment .job-step") == headline
+    assert page.is_hidden(".strip .job-panel"), "a job that went well stays closed"
+    shown = page.evaluate(
+        "[...document.querySelectorAll('.strip .job-segment .job-state > *')]"
+        ".filter(icon => getComputedStyle(icon).display !== 'none').length"
+    )
+    assert shown == 1, "one state icon at a time"
+    assert page.is_hidden(".strip [data-status='change']"), "the job takes its place"
+    assert page.evaluate("document.querySelector('.strip').offsetHeight") <= 34
+
+    page.click(".strip .job-segment")
+    page.wait_for_selector(".strip .job-panel:popover-open", timeout=_WAIT_MS)
+    panel, bar = page.evaluate(
+        "[document.querySelector('.strip .job-panel').getBoundingClientRect().bottom,"
+        " document.querySelector('.strip').getBoundingClientRect().top]"
+    )
+    assert panel <= bar, (panel, bar)
+    assert page.inner_text(".strip .job-panel .job-count") == ""
+
+    page.keyboard.press("Escape")
+    page.wait_for_selector(".strip .job-panel", state="hidden", timeout=_WAIT_MS)
+
+
+def test_a_job_that_asks_something_opens_its_panel_itself(
+    corpus: Path, page: playwright.Page
+) -> None:
+    """A refusal or a choice is shown, not left behind a click. An add of
+    a file that is not there ends with something for the reader to read."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.evaluate(
+        "htmx.ajax('POST', '/add', {target: '#job', swap: 'innerHTML',"
+        " values: {identifiers: '/nowhere/at/all.md',"
+        " collection: 'notes'}})"
+    )
+    page.wait_for_selector(
+        ".strip .job:is([data-state='failed'], [data-state='attention'])",
+        timeout=_WAIT_MS,
+    )
+
+    page.wait_for_selector(".strip .job-panel:popover-open", timeout=_WAIT_MS)
+
+
+def test_no_link_in_the_status_bar_is_underlined(
+    app_page_with_last_job: playwright.Page,
+) -> None:
+    page = app_page_with_last_job
+    page.click(".strip .job-segment")
+    page.wait_for_selector(".strip .job-panel:popover-open", timeout=_WAIT_MS)
+    underlined = page.evaluate(
+        "[...document.querySelectorAll('.strip a')]"
+        ".filter(a => getComputedStyle(a).textDecorationLine.includes('underline'))"
+        ".map(a => a.outerHTML)"
+    )
+
+    assert page.locator(".strip a").count() >= 3
+    assert underlined == []
+
+
+@pytest.fixture
+def app_page_with_last_job(page: playwright.Page) -> playwright.Page:
+    """A page whose strip shows the last job: an index started and ended
+    from the window, then a fresh page, which the server draws it on."""
+    page.goto(page.url.split("?")[0] + "index")
+    page.click("form[action='/index']:not(.index) button[type=submit]")
+    page.wait_for_selector(".strip .job[data-state='done']", timeout=_WAIT_MS)
+    page.goto(page.url.split("?")[0])
+    page.wait_for_selector(".strip .job-panel a[href^='/job/']", state="attached")
+    return page
+
+
+def test_at_phone_width_the_status_bar_does_not_scroll(
+    app_page_with_last_job: playwright.Page,
+) -> None:
+    page = app_page_with_last_job
+    page.set_viewport_size({"width": 400, "height": 800})
+    page.reload()
+
+    widths = page.evaluate(
+        "[document.querySelector('.strip').scrollWidth,"
+        " document.querySelector('.strip').clientWidth,"
+        " document.documentElement.scrollWidth, window.innerWidth]"
+    )
+
+    assert widths[0] <= widths[1], widths
+    assert widths[2] <= widths[3], widths
 
 
 def test_an_index_starts_without_a_script(address: str) -> None:
@@ -436,7 +614,7 @@ def test_no_link_wears_the_browser_s_own_colour(page: playwright.Page) -> None:
     root = page.url.split("?")[0]
     page.goto(root + "index")
     page.click("form[action='/index'] button[type=submit]")
-    page.wait_for_selector("#job .job-outcome p", timeout=_WAIT_MS)
+    page.wait_for_selector("#job .job[data-state='done']", timeout=_WAIT_MS)
 
     seen: set[str] = set()
     for path in PAGES:

@@ -36,7 +36,7 @@ from kennis.engine.refusals import Quoted
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.jobs import Elapsed, Jobs
-from kennis.gui.pages import shown_add, shown_corpus_sync
+from kennis.gui.pages import ShownItem, ShownJob, shown_add, shown_corpus_sync
 from kennis.gui.responses import TEMPLATES
 from kennis.gui.stream import as_message
 from kennis.render.words import running_for
@@ -241,6 +241,23 @@ def test_the_outcome_line_does_not_repeat_its_name():
     assert shown.headline == "1 document unchanged"
 
 
+def test_a_sync_outcome_names_each_document_where_it_is():
+    """Brian, 2026-10-16: "= c.md - unchanged ... That makes no sense".
+    `c.md` is the note's path inside the pack's source."""
+    action = Action(address="c.md", verdict="keep", declaration=None, existing=None)
+    shown = shown_corpus_sync(
+        CorpusSync(
+            actions=(action,),
+            counts={"keep": 1},
+            deferred=(),
+            edited=(),
+            places={"c.md": "notes/boepie/Recipes.md"},
+        )
+    )
+
+    assert shown.items[0].name == "notes/boepie/Recipes.md"
+
+
 def test_the_live_lines_give_way_to_an_outcome_that_lists_its_items():
     """The outcome is the record and the live lines were progress, so a
     finished sync listed every document twice. Only item lines go: a
@@ -250,7 +267,7 @@ def test_the_live_lines_give_way_to_an_outcome_that_lists_its_items():
 
     assert finish, code
     assert re.search(
-        r'if \(outcome\.querySelector\("\.items"\)\) \{\s*'
+        r'if \(outcome\.querySelector\("\.items, \.group"\)\) \{\s*'
         r'lines\.querySelectorAll\("li\[data-item\]"\)',
         finish.group(1),
     )
@@ -276,9 +293,14 @@ def test_a_page_drawn_while_a_job_runs_carries_it_in_the_strip(
     assert f'data-job="{job_id}"' in strip_of(page)
 
 
-def test_the_script_watches_every_panel_not_only_the_first():
-    """The job's own page and the strip both draw a panel for it."""
-    assert "querySelectorAll" in code_of("progress.js")
+def test_the_script_watches_every_running_panel_and_no_finished_one():
+    """The job's own page and the strip both draw a panel for it. One that
+    has ended arrives drawn by the server; watched, its outcome would be
+    fetched again and a failed one's panel would open on every page."""
+    assert (
+        """document.querySelectorAll('.job[data-job][data-state="running"]')"""
+        ".forEach(watch);" in code_of("progress.js")
+    )
 
 
 def test_an_idle_strip_says_where_the_corpus_stands(client: TestClient):
@@ -302,9 +324,12 @@ def test_an_idle_strip_says_the_commit_what_waits_and_the_last_change(
 
     strip = BeautifulSoup(strip_of(client.get("/").text), "html.parser")
     text = " ".join(strip.get_text(" ").split())
+    waiting = strip.find(attrs={"data-status": "waiting"})
 
-    assert words.corpus_at(head[:7]) in text
-    assert words.documents_waiting(1) in text
+    assert head[:7] in text
+    assert words.to_index(1) in text
+    assert waiting is not None
+    assert words.documents_waiting(1) in str(waiting.find("button")["title"])
     assert "1 added" in text and "notes" in text
 
 
@@ -341,19 +366,306 @@ def test_how_long_ago_is_said_in_the_largest_whole_unit():
 
 def test_a_change_kennis_did_not_record_is_quoted_whole():
     assert words.last_change(None, None, "tidy up by hand", 120) == (
-        "Last change: tidy up by hand, 2 minutes ago"
+        "tidy up by hand, 2 minutes ago"
     )
 
 
-def test_an_idle_strip_links_the_last_job(app: FastAPI, client: TestClient):
+# ---------------------------------------------------------------------------
+# The status bar, option A (Brian, 2026-10-16): a slim bar of facts, and the
+# job as one segment that opens a panel above it
+# ---------------------------------------------------------------------------
+
+
+def a_crashed_job(app: FastAPI) -> str:
+    def fills_the_disk(events: EventSink) -> object:
+        raise OSError(28, "No space left on device")
+
+    job = app.state.jobs.start("add", fills_the_disk)
+    assert job.done.wait(5)
+    return job.id
+
+
+def test_each_fact_is_short_with_its_sentence_as_its_tooltip(
+    corpus: Path, client: TestClient
+):
+    """ "Version 4404361", "3 of 3 collections searchable, 1 needs
+    indexing" and "Last change: ..." were sentences laid along the bar."""
+    a_waiting_note(corpus)
+    head = Repository(corpus / "corpus").head()
+    assert head is not None
+
+    status = BeautifulSoup(client.get("/").text, "html.parser").find(id="strip-status")
+    items = {item["data-status"]: item for item in status.select("[data-status]")}
+
+    assert set(items) == {"change", "commit", "searchable", "waiting"}
+    for kind, item in items.items():
+        assert item.find("svg") is not None, kind
+    assert items["commit"].find("code").get_text() == head[:7]
+    assert items["commit"]["title"] == words.corpus_at(head[:7])
+    assert items["searchable"].get_text(" ", strip=True) == "0/3"
+    assert items["searchable"]["title"] == "0 of 3 collections searchable"
+    assert items["change"].find(class_="visually-hidden").get_text() == "Last change:"
+
+
+def test_what_waits_is_the_button_that_indexes_it(corpus: Path, client: TestClient):
+    """One control rather than a sentence and a button beside it saying
+    the same thing twice."""
+    a_waiting_note(corpus)
+    assert CliRunner().invoke(main, ["corpus", "index"]).exit_code == 0
+    second = corpus / "sources" / "lakes.md"
+    second.write_text("# lakes\n\nLakes hold water.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(second)]).exit_code == 0
+
+    status = BeautifulSoup(client.get("/").text, "html.parser").find(id="strip-status")
+    waiting = status.find(attrs={"data-status": "waiting"})
+
+    assert waiting.name == "form"
+    assert waiting["action"] == waiting["hx-post"] == "/index"
+    assert waiting.find("input", attrs={"name": "collection"})["value"] == "notes"
+    button = waiting.find("button", type="submit")
+    assert button.get_text(" ", strip=True) == "1 to index"
+    assert button["title"] == "Index notes: 1 document needs indexing"
+
+
+def test_the_strip_offers_activity_as_an_icon(client: TestClient):
+    strip = BeautifulSoup(strip_of(client.get("/").text), "html.parser")
+    activity = strip.find("a", href="/activity")
+
+    assert activity is not None
+    assert activity["aria-label"] == activity["title"] == "Activity"
+    assert activity.find("svg") is not None
+    assert activity.get_text(strip=True) == ""
+
+
+# Written by hand: what the line says while each kind of job runs.
+JOB_DOING = {
+    "add": "Adding",
+    "index": "Indexing",
+    "sync": "Syncing the corpus",
+    "context-sync": "Syncing the project context",
+    "pack": "Installing a pack",
+    "backup": "Backing up",
+}
+
+
+def test_every_kind_of_job_says_what_it_is_doing():
+    assert words.JOB_DOING == JOB_DOING
+    assert set(words.JOB_DOING) == set(words.JOB_KINDS)
+
+
+def test_a_running_job_is_a_segment_that_opens_its_panel_without_a_script(
+    app: FastAPI, client: TestClient
+):
+    """The browser's own popover: no script opens it, closes it on Escape
+    or a click elsewhere, or returns focus to the segment."""
     holding, job_id = held(app, "index")
-    holding.set()
-    assert app.state.jobs.get(job_id).done.wait(10)
+    try:
+        strip = BeautifulSoup(strip_of(client.get("/").text), "html.parser")
+    finally:
+        holding.set()
 
-    strip = strip_of(client.get("/").text)
+    job = strip.find(attrs={"data-job": job_id})
+    assert job is not None and job["data-state"] == "running"
+    segment = job.find("button", class_="job-segment")
+    assert segment is not None
+    assert segment.find(class_="job-step").get_text() == "Indexing"
+    assert segment.find(class_="ring") is not None
+    panel = strip.find(id=segment["popovertarget"])
+    assert panel is not None and panel.has_attr("popover")
+    assert panel.find(class_="job-lines") is not None
+    assert panel.find(class_="job-outcome") is not None
+    close = panel.find("button", attrs={"popovertargetaction": "hide"})
+    assert close is not None and close["popovertarget"] == panel["id"]
 
-    assert f'href="/job/{job_id}"' in strip
-    assert words.JOB_KINDS["index"] in strip
+
+def test_a_finished_job_is_drawn_on_the_bar_by_the_server(
+    corpus: Path, client: TestClient
+):
+    """It was a "Last task" link; now the job that ended is the segment,
+    in its state, with its headline and its outcome in the panel."""
+    a_waiting_note(corpus)
+    outcome = BeautifulSoup(indexed_through_the_window(client), "html.parser")
+    headline = outcome.find("p").get_text()
+
+    strip = BeautifulSoup(strip_of(client.get("/").text), "html.parser")
+
+    job = strip.find(class_="job")
+    assert job is not None and job["data-state"] == "done"
+    assert job.find(class_="job-segment").find(class_="job-step").get_text() == (
+        headline
+    )
+    panel = job.find(attrs={"popover": True})
+    assert panel.find(class_="job-outcome").find("p").get_text() == headline
+
+
+def test_a_crashed_job_is_drawn_failed(app: FastAPI, client: TestClient):
+    job_id = a_crashed_job(app)
+
+    strip = BeautifulSoup(strip_of(client.get("/").text), "html.parser")
+
+    job = strip.find(attrs={"data-job": job_id})
+    assert job is not None and job["data-state"] == "failed"
+
+
+def test_the_job_s_own_page_draws_the_panel_in_place(app: FastAPI, client: TestClient):
+    job_id = a_crashed_job(app)
+
+    page = BeautifulSoup(client.get(f"/job/{job_id}").text, "html.parser")
+    section = page.find(class_="job-page")
+
+    assert section.find(attrs={"popover": True}) is None
+    assert section.find(class_="job-outcome").get_text(strip=True) != ""
+
+
+def test_the_script_carries_the_headline_into_the_line_and_sets_the_state():
+    """The script composes no words: it copies the outcome's first line
+    into the step, reads the state the server wrote on that line, clears the count,
+    and opens the panel when the reader has something to do."""
+    finish = re.search(
+        r"function finish\(\) \{(.*?)\n    \}\n", code_of("progress.js"), re.S
+    )
+    assert finish
+    body = finish.group(1)
+
+    assert 'setText(".job-step", first.textContent);' in body
+    assert 'setText(".job-count", "");' in body
+    assert 'var state = (first && first.dataset.state) || "done";' in body
+    assert "panel.dataset.state = state;" in body
+    assert "popover.showPopover();" in body
+
+
+def test_while_a_job_runs_what_waits_is_not_offered():
+    """It said "4 documents need indexing" and offered Index while the
+    index ran."""
+    layout = (STATIC.parent / "layout.css").read_text(encoding="utf-8")
+
+    assert re.search(
+        r'\.strip:has\(\.job\[data-state="running"\]\)\s*'
+        r'\[data-status="waiting"\]\s*\{\s*display:\s*none;',
+        layout,
+    )
+
+
+def test_the_bar_neither_folds_nor_drags_any_more(client: TestClient):
+    """The panel holds a job's details now, so the bar is always its line."""
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+
+    assert page.find(id="strip-toggle") is None
+    assert page.find(attrs={"aria-controls": "strip"}) is None
+    assert page.find(attrs={"data-resize": "strip-height"}) is None
+    assert not (STATIC / "strip.js").exists()
+    assert "data-strip" not in str(page.find("html").attrs)
+    assert "--strip-height" not in (STATIC.parent / "layout.css").read_text(
+        encoding="utf-8"
+    )
+
+
+# ---------------------------------------------------------------------------
+# A long outcome, grouped (Brian's pydantic add, 2026-10-16)
+# ---------------------------------------------------------------------------
+
+PAGE = "https://pydantic.dev/docs/validation/latest/get-started/"
+REFUSED = "the page has no documentation in it: no main-content container"
+
+
+def a_docs_add() -> ShownJob:
+    refused = tuple(
+        ShownItem(marker="!", name=PAGE + page, outcome="failed", detail=REFUSED)
+        for page in ("migration/", "why/", "install/")
+    )
+    added = ShownItem(marker="+", name="docs/pydantic/support", outcome="added")
+    return ShownJob(headline="Added 1 document", items=(*refused, added))
+
+
+def test_failures_that_share_a_reason_are_one_group():
+    groups = a_docs_add().groups
+
+    assert [len(group.items) for group in groups] == [3, 1]
+    refused, added = groups
+    assert (
+        refused.label
+        == "The page has no documentation in it: no main-content container"
+    )
+    assert refused.outcome == "failed"
+    assert refused.base == PAGE
+    assert [refused.short(item) for item in refused.items] == [
+        "migration/",
+        "why/",
+        "install/",
+    ]
+    assert added.label == "Added"
+
+
+def test_an_item_with_a_way_out_stays_on_its_own_and_first():
+    repaired = ShownItem(
+        marker="!",
+        name="paper.pdf",
+        outcome="failed",
+        detail="which paper?",
+        remedies=("kennis corpus add paper.pdf --identifier X",),
+    )
+    shown = ShownJob(headline="h", items=(*a_docs_add().items, repaired))
+
+    assert shown.single == (repaired,)
+    assert [len(group.items) for group in shown.groups] == [3, 1]
+
+
+def test_names_with_nothing_in_common_have_no_base():
+    shown = ShownJob(
+        headline="h",
+        items=(
+            ShownItem(marker="!", name="a.md", outcome="failed", detail="x"),
+            ShownItem(marker="!", name="b.md", outcome="failed", detail="x"),
+        ),
+    )
+
+    assert shown.groups[0].base == ""
+
+
+def test_a_base_is_a_whole_folder_never_part_of_a_name():
+    """`installation` and `integrations` share `in`, which is not a folder."""
+    shown = ShownJob(
+        headline="h",
+        items=(
+            ShownItem(
+                marker="!",
+                name="docs/pydantic/installation",
+                outcome="failed",
+                detail="x",
+            ),
+            ShownItem(
+                marker="!",
+                name="docs/pydantic/integrations",
+                outcome="failed",
+                detail="x",
+            ),
+        ),
+    )
+    group = shown.groups[0]
+
+    assert group.base == "docs/pydantic/"
+    assert [group.short(item) for item in group.items] == [
+        "installation",
+        "integrations",
+    ]
+
+
+def test_a_group_is_drawn_folded_under_its_reason_and_count(client: TestClient):
+    html = TEMPLATES.get_template("job-outcome.html").render(
+        {"shown": a_docs_add(), "request": None}
+    )
+    page = BeautifulSoup(html, "html.parser")
+    group = page.find("details", class_="group")
+
+    assert group is not None and not group.has_attr("open")
+    summary = group.find("summary").get_text(" ", strip=True)
+    assert "no main-content container" in summary and "3" in summary
+    assert group.find(class_="group-base").get_text() == PAGE
+    assert [li.get_text(strip=True) for li in group.select("li")] == [
+        "migration/",
+        "why/",
+        "install/",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -507,6 +819,9 @@ def test_a_finished_job_redraws_the_strip_and_the_pane(
     assert expected <= set(hooks), hooks
     page = BeautifulSoup(before, "html.parser")
     for element, route in hooks.items():
+        # A collection's branch exists only once it has been opened.
+        if element.startswith("pane-branch-"):
+            continue
         assert page.find(id=element) is not None, f"the page has no #{element}"
         drawn = BeautifulSoup(client.get(route, headers=HTMX).text, "html.parser")
         top = drawn.find(True)
@@ -517,6 +832,58 @@ def test_a_finished_job_redraws_the_strip_and_the_pane(
         client.get(hooks["pane-row-notes"], headers=HTMX).text, "html.parser"
     )
     assert row.find(class_="state-current") is not None
+
+
+def outcome_hooks(html: str) -> dict[str, str]:
+    outcome = BeautifulSoup(html, "html.parser")
+    return {
+        str(hook["data-redraw-id"]): str(hook["data-redraw-route"])
+        for hook in outcome.find_all(attrs={"data-redraw-id": True})
+    }
+
+
+def test_a_finished_job_redraws_each_opened_branch(corpus: Path, client: TestClient):
+    """Brian added a paper into a new group with the literature folder
+    open, and the pane never showed it: a branch is fetched once, when it
+    is opened, and a job redrew only the collection's row above it."""
+    a_waiting_note(corpus)
+    branch = BeautifulSoup(client.get("/tree/notes", headers=HTMX).text, "html.parser")
+    top = branch.find(True)
+    assert top is not None and top.get("id") == "pane-branch-notes"
+    assert branch.find(class_="doc-state") is not None, "the note should wait"
+
+    hooks = outcome_hooks(indexed_through_the_window(client))
+
+    for name in ("literature", "docs", "notes"):
+        assert hooks.get(f"pane-branch-{name}") == f"/tree/{name}", hooks
+    redrawn = BeautifulSoup(
+        client.get(hooks["pane-branch-notes"], headers=HTMX).text, "html.parser"
+    )
+    assert redrawn.find(True).get("id") == "pane-branch-notes"
+    assert redrawn.find(class_="doc-state") is None
+
+
+def test_a_branch_never_opened_is_not_on_the_page(client: TestClient):
+    """The redraw's guard is the element's id, so a branch nobody opened
+    is never fetched for them."""
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+
+    assert not page.find_all(id=re.compile("^pane-branch-"))
+
+
+def test_a_note_written_from_the_dialog_redraws_the_branches(
+    corpus: Path, client: TestClient
+):
+    answer = client.post(
+        "/remember",
+        data={"text": "Rivers carry sediment.", "target": "notes", "group": "rivers"},
+        headers=HTMX,
+    )
+
+    hooks = outcome_hooks(answer.text)
+    assert hooks.get("pane-branch-notes") == "/tree/notes", hooks
+    redrawn = client.get(hooks["pane-branch-notes"], headers=HTMX).text
+    assert 'data-group="rivers"' in redrawn
 
 
 def test_a_redrawn_row_is_the_summary_so_an_open_folder_stays_open(client: TestClient):
@@ -578,29 +945,11 @@ def test_a_job_that_crashes_is_reported_as_failed(app: FastAPI, client: TestClie
 
     assert "No space left on device" in outcome
     assert words.NOTHING_TO_SHOW not in outcome
+    # The status bar reads the job's state from this line's role.
+    headline = BeautifulSoup(outcome, "html.parser").find("p")
+    assert headline is not None and "role-error" in headline["class"]
     assert words.JOB_FAILED in activity.get_text()
     assert words.JOB_FINISHED not in activity.get_text()
-
-
-def test_what_needs_indexing_has_a_button_beside_it(corpus: Path, client: TestClient):
-    """ "2 documents need indexing" was a sentence, and the reader had to
-    find the Index dialog themselves. One collection behind is indexed
-    alone."""
-    run = CliRunner()
-    for name in ("first", "second"):
-        source = corpus / f"{name}.md"
-        source.write_text(f"# {name}\n\nText.\n", encoding="utf-8")
-        assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
-        if name == "first":
-            assert run.invoke(main, ["corpus", "index"]).exit_code == 0
-
-    strip = BeautifulSoup(client.get("/").text, "html.parser").find(id="strip-status")
-    form = strip.find("form", class_="index-now")
-
-    assert form is not None, strip
-    assert form["action"] == form["hx-post"] == "/index"
-    assert form.find("input", attrs={"name": "collection"})["value"] == "notes"
-    assert words.index_now(["notes"]) in form.get_text()
 
 
 def test_nothing_behind_offers_no_index_button(client: TestClient):
@@ -623,7 +972,8 @@ def test_an_add_that_wrote_offers_to_index_what_it_wrote():
 
 def test_a_long_outcome_folds_what_needs_nothing_and_shows_what_does():
     """A 4,000-file add listed every file, and the one refusal among them
-    was somewhere in the list."""
+    was somewhere in the list. The refusal comes first; the files added
+    are one folded group."""
     report = AddReport(
         [AddOutcome(f"n{at}.md", Outcome.ADDED) for at in range(30)]
         + [AddOutcome("broken.md", Outcome.FAILED)],
@@ -634,13 +984,12 @@ def test_a_long_outcome_folds_what_needs_nothing_and_shows_what_does():
         "html.parser",
     )
 
-    fold = page.find("details", class_="all-items")
-    assert fold is not None
-    assert "open" not in fold.attrs
-    assert words.every_item(30) in fold.summary.get_text()
-    shown_first = page.find("ul", class_="items")
-    assert fold not in shown_first.parents
-    assert "broken.md" in shown_first.get_text()
+    first = page.find("ul", class_="items")
+    assert "broken.md" in first.get_text()
+    fold = page.find("details", class_="group")
+    assert fold is not None and "open" not in fold.attrs
+    assert fold.summary.get_text(" ", strip=True).endswith("Added 30")
+    assert fold.sourceline > first.sourceline
 
 
 def test_a_short_outcome_is_not_folded():
@@ -649,7 +998,7 @@ def test_a_short_outcome_is_not_folded():
         shown=shown_add(report)
     )
 
-    assert "all-items" not in drawn
+    assert "<details" not in drawn
     assert "one.md" in drawn
 
 

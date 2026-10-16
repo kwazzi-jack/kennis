@@ -1,8 +1,8 @@
-<p class="{{ shown.role }}">{{ shown.headline }}</p>
+<p class="{{ shown.role }}" data-state="{{ state | default('done') }}">{{ shown.headline }}</p>
 {# What the job changed elsewhere on the page: its own parts, then the
    strip's status and the pane, which any job may have changed (#457).
    `progress.js` redraws each only where the page has it. #}
-{% for element, route in shown.redraws + shell_redraws %}<span hidden data-redraw-id="{{ element }}" data-redraw-route="{{ route }}"></span>{% endfor %}
+{% for element, route in shown.redraws + shell_redraws + branch_redraws %}<span hidden data-redraw-id="{{ element }}" data-redraw-route="{{ route }}"></span>{% endfor %}
 {% macro item_row(item) %}
   <li class="role-{{ item.outcome }}">
     <span class="marker">{{ item.marker }}</span> {{ item.name }}
@@ -35,26 +35,29 @@
     {% endif %}
   </li>
 {% endmacro %}
-{# What needs the reader first, always shown; everything else under it,
-   folded away once there is more of it than a glance takes in. #}
-{% if shown.attention %}
+{# What asks something of the reader first, one by one: a repair to
+   choose, a command to run. Then everything else grouped by what
+   happened and why, failures first: a group of one is its line, more is
+   folded under the reason and the count, with the folder the names share
+   said once (Brian, 2026-10-16). #}
+{% if shown.single %}
 <ul class="items">
-  {% for item in shown.attention %}{{ item_row(item) }}{% endfor %}
+  {% for item in shown.single %}{{ item_row(item) }}{% endfor %}
 </ul>
 {% endif %}
-{% if shown.rest %}
-{% if shown.rest | length > folded_after %}
-<details class="all-items"><summary>{{ every_item(shown.rest | length) }}</summary>
-<ul class="items">
-  {% for item in shown.rest %}{{ item_row(item) }}{% endfor %}
-</ul>
-</details>
+{% for group in shown.groups %}
+{% if group.items | length == 1 %}
+<ul class="items">{{ item_row(group.items[0]) }}</ul>
 {% else %}
-<ul class="items">
-  {% for item in shown.rest %}{{ item_row(item) }}{% endfor %}
-</ul>
+<details class="group role-{{ group.outcome }}">
+  <summary>{{ icon("chevron-right") }}<span class="marker">{{ group.marker }}</span> <span class="group-label">{{ group.label }}</span> <span class="count">{{ group.items | length }}</span></summary>
+  {% if group.base %}<p class="group-base">{{ group.base }}</p>{% endif %}
+  <ul class="group-items">
+    {% for item in group.items %}<li>{{ group.short(item) }}</li>{% endfor %}
+  </ul>
+</details>
 {% endif %}
-{% endif %}
+{% endfor %}
 {% for note in shown.notes %}<p class="role-muted">{{ note }}</p>{% endfor %}
 {# The step the note above names, as a control. #}
 {% if shown.index_after %}

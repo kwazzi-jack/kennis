@@ -22,7 +22,7 @@
   <div class="add-fields">
   {% for field in fields %}{% include "forms/add-field.html" %}{% endfor %}
   </div>
-  {% if kind in looking_up %}<p id="add-looking" class="looking role-muted" aria-live="polite">{{ looking_up[kind] }}</p>{% endif %}
+  {% if kind in looking_up %}<p id="add-looking" class="looking role-muted" aria-live="polite"><span class="ring" aria-hidden="true"></span><span class="visually-hidden">{{ looking_up[kind] }}</span></p>{% endif %}
   <div id="add-preview" class="preview" aria-live="polite"></div>
   {% if kind == "paper" %}
   {# What the preview filled in, so the preview and the add can tell it

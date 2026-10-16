@@ -1,11 +1,12 @@
-"""The window's layout is the reader's: panes that resize, a strip that
-collapses, and scrollbars drawn in the theme.
+"""The window's layout is the reader's: panes that resize and scrollbars
+drawn in the theme.
 
-Brian, 2026-10-12: the scrollbars "do not match the theme", the strip
-cannot be collapsed or seen to scroll, "we should be able to move the
-size of panes". `sketches/2026-10-12-layout-sizes.md` says how. Sizes
-and the strip's state are cookies the server draws onto `<html>`, as the
-pane's open state already is, so the first paint is right.
+Brian, 2026-10-12: the scrollbars "do not match the theme", "we should be
+able to move the size of panes". `sketches/2026-10-12-layout-sizes.md`
+says how. Sizes are cookies the server draws onto `<html>`, as the pane's
+open state already is, so the first paint is right. The strip's collapse
+and height went with option A (2026-10-16): the strip is one slim line
+and a job's details are a panel above it, with a size of its own.
 """
 
 from __future__ import annotations
@@ -34,7 +35,6 @@ STATIC = Path(__file__).resolve().parents[1] / "src/kennis/gui/static"
 EXPECTED_SIZES = {
     "pane-width": (160, 480, "/"),
     "inspector-width": (200, 560, "document"),
-    "strip-height": (40, 800, "/"),
 }
 
 
@@ -129,14 +129,6 @@ def test_with_no_cookies_no_size_is_drawn(client: TestClient):
     assert root_of(page_for(client, "/")).get("style") is None
 
 
-def test_the_strip_is_open_unless_the_cookie_says_closed(client: TestClient):
-    assert root_of(page_for(client, "/"))["data-strip"] == "open"
-    client.cookies.set("strip", "closed")
-    assert root_of(page_for(client, "/"))["data-strip"] == "closed"
-    client.cookies.set("strip", "sideways")
-    assert root_of(page_for(client, "/"))["data-strip"] == "open"
-
-
 # ---------------------------------------------------------------------------
 # The handles
 # ---------------------------------------------------------------------------
@@ -153,9 +145,7 @@ def test_each_size_has_a_handle_the_keyboard_can_reach(client: TestClient, name:
     assert handle.get("tabindex") == "0"
     assert handle.get("aria-valuemin") == str(least)
     assert handle.get("aria-valuemax") == str(most)
-    assert handle.get("aria-orientation") == (
-        "horizontal" if name == "strip-height" else "vertical"
-    )
+    assert handle.get("aria-orientation") == "vertical"
     assert handle.get("aria-label") == words.RESIZE_LABELS[name]
 
 
@@ -163,7 +153,6 @@ def test_the_sizes_are_what_the_layout_reads():
     assert "--pane: var(--pane-width)" in rule(":root")
     assert "--pane-width: 16rem" in rule(":root")
     assert "width: var(--inspector-width)" in rule(".inspector")
-    assert "max-height: var(--strip-height)" in rule(".strip")
 
 
 def test_a_closed_pane_or_inspector_has_no_handle_to_grab():
@@ -203,69 +192,6 @@ def test_the_script_is_loaded_and_composes_nothing(client: TestClient):
     assert "path=/" in code and "samesite=strict" in code
     # No sentence: every word is the server's.
     assert not re.search(r'"[A-Z][a-z]+ [a-z]+', code)
-
-
-# ---------------------------------------------------------------------------
-# The strip
-# ---------------------------------------------------------------------------
-
-
-def test_the_strip_has_a_collapse_with_both_labels_from_the_server(
-    client: TestClient,
-):
-    text = page_for(client, "/")
-    page = BeautifulSoup(text, "html.parser")
-    toggle = page.find(id="strip-toggle")
-
-    assert isinstance(toggle, Tag)
-    assert toggle.get("data-show") == words.STRIP_SHOW
-    assert toggle.get("data-hide") == words.STRIP_HIDE
-    assert toggle.get("aria-expanded") == "true"
-    assert '<script defer src="/static/strip.js"></script>' in text
-
-
-def test_a_collapsed_strip_keeps_only_its_first_line():
-    code = css()
-    collapsed = re.search(
-        r':root\[data-strip="closed"\] \.strip :is\((.*?)\) \{([^}]*)\}',
-        code,
-        re.S,
-    )
-
-    assert collapsed, code
-    for part in (".job-lines", ".job-outcome > :not(:first-child)"):
-        assert part in collapsed.group(1), part
-    assert "display: none" in collapsed.group(2)
-
-
-def test_a_dragged_strip_height_is_its_height_while_it_shows_a_job():
-    """The walk dragged the strip up 150px and nothing moved: the size
-    was only a limit, and the job's lines were shorter than it."""
-    assert re.search(
-        r':root\[style\*="--strip-height"\] \.strip:has\(#job:not\(:empty\)\) '
-        r"\{\s*height: var\(--strip-height\);",
-        css(),
-    )
-    # And a collapse still collapses it: the later rule, same specificity.
-    code = css()
-    collapsed = code.index(
-        ':root[data-strip="closed"] .strip:has(#job:not(:empty)) { height: auto; }'
-    )
-    assert collapsed > code.index(':root[style*="--strip-height"] .strip')
-
-
-def test_the_collapse_is_offered_only_when_there_is_a_job():
-    assert re.search(
-        r"\.strip:has\(#job:empty\) #strip-toggle \{[^}]*display: none", css()
-    )
-
-
-def test_the_strip_script_remembers_the_state_as_the_pane_script_does():
-    code = code_of("strip.js")
-
-    assert "dataset.strip" in code
-    assert "strip=" in code and "path=/" in code and "samesite=strict" in code
-    assert "dataset.show" in code and "dataset.hide" in code
 
 
 # ---------------------------------------------------------------------------
