@@ -16,12 +16,12 @@ call a real tool, and hold every byte that came back to being protocol.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import subprocess
 import sys
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,9 +52,6 @@ def corpus(isolated: Path) -> Path:
 
 
 _TIMEOUT_SECONDS = 60
-# Long enough for a synchronous tool to be dispatched and answered
-# before the next message arrives. See `a_session`.
-_SETTLE_SECONDS = 0.6
 
 
 def request(identifier: int, method: str, params: dict[str, object]) -> str:
@@ -84,6 +81,12 @@ def a_session(corpus_root: Path) -> Session:
     *synchronous* tool to its worker thread: the handshake is answered
     and the tool call never is. That looked like a broken tool and was a
     broken test.
+
+    **Each request is waited for by its id, never for a time.** A fixed
+    0.6s between messages assumed the server had started by the last
+    one; importing it takes over two seconds on a loaded machine, so it
+    read the last request and end-of-file together and cancelled the
+    call (#474).
     """
     environment = dict(os.environ)
     environment["KENNIS_CORPUS_ROOT"] = str(corpus_root)
@@ -98,6 +101,7 @@ def a_session(corpus_root: Path) -> Session:
     # test's ability to see it differed.
     environment["PYTHONUNBUFFERED"] = "1"
     received: list[str] = []
+    arrived = threading.Condition()
     # A context manager, so the three pipes are closed. Without it the
     # suite's `filterwarnings = ["error"]` turns the leaked readers into
     # a ResourceWarning and fails the test for a reason that has nothing
@@ -114,29 +118,51 @@ def a_session(corpus_root: Path) -> Session:
 
         def read_stdout() -> None:
             assert server.stdout is not None
-            received.extend(line.rstrip("\n") for line in server.stdout)
+            for line in server.stdout:
+                with arrived:
+                    received.append(line.rstrip("\n"))
+                    arrived.notify_all()
+
+        def answered(identifier: int) -> bool:
+            # A line that is not JSON is the invariant test's to report.
+            for line in received:
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(message, dict) and message.get("id") == identifier:
+                    return True
+            return False
 
         reader = threading.Thread(target=read_stdout, daemon=True)
         reader.start()
 
         assert server.stdin is not None
-        for line in (
-            request(
+        for identifier, line in (
+            (
                 1,
-                "initialize",
-                {
-                    "protocolVersion": "2025-06-18",
-                    "capabilities": {},
-                    "clientInfo": {"name": "kennis-tests", "version": "0"},
-                },
+                request(
+                    1,
+                    "initialize",
+                    {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "kennis-tests", "version": "0"},
+                    },
+                ),
             ),
-            notification("notifications/initialized"),
-            request(2, "tools/list", {}),
-            request(3, "tools/call", {"name": "list_corpus", "arguments": {}}),
+            (None, notification("notifications/initialized")),
+            (2, request(2, "tools/list", {})),
+            (3, request(3, "tools/call", {"name": "list_corpus", "arguments": {}})),
         ):
             server.stdin.write(line + "\n")
             server.stdin.flush()
-            time.sleep(_SETTLE_SECONDS)
+            if identifier is not None:
+                with arrived:
+                    arrived.wait_for(
+                        functools.partial(answered, identifier),
+                        timeout=_TIMEOUT_SECONDS,
+                    )
 
         server.stdin.close()
         server.wait(timeout=_TIMEOUT_SECONDS)
