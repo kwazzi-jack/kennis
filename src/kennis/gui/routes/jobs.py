@@ -56,6 +56,7 @@ from kennis.gui.responses import (
     job_state,
     refused,
     refused_a_post,
+    refused_in_the_form,
     written,
 )
 from kennis.gui.stream import as_stream, sent_event
@@ -145,18 +146,24 @@ def started(
     the corpus lock would refuse it anyway with `timeout=0`, so the
     limit is honest, and dropping a click in silence is not.
     """
+    jobs: Jobs = request.app.state.jobs
     try:
-        job = request.app.state.jobs.start(kind, work, restored=restored)
+        job = jobs.start(kind, work, restored=restored)
     except AlreadyRunning as busy:
         if not from_htmx(request):
             return RedirectResponse(f"/job/{busy.running}", status_code=303)
+        # The running job answers, its panel open and saying why this one
+        # did not start: the bar holds one job, and replacing the running
+        # one with a sentence lost its progress until a reload (#475).
+        running = jobs.get(busy.running)
         return TEMPLATES.TemplateResponse(
             request,
             "job.html",
             {
                 "job_id": busy.running,
-                "kind": kind,
+                "kind": running.kind if running is not None else kind,
                 "problem": words.BUSY_WITH_ANOTHER,
+                "open_panel": True,
             },
         )
     if not from_htmx(request):
@@ -166,6 +173,41 @@ def started(
         return RedirectResponse(f"/job/{job.id}", status_code=303)
     return TEMPLATES.TemplateResponse(
         request, "job.html", {"job_id": job.id, "kind": job.kind}
+    )
+
+
+# Every route that starts a task, and the task it starts: a domain error
+# raised by one before its task began is that task, refused (#475).
+JOB_ROUTES: Final[dict[str, str]] = {
+    "/add": "add",
+    "/backup": "backup",
+    "/context-sync": "context-sync",
+    "/index": "index",
+    "/pack": "pack",
+    "/sync": "sync",
+}
+
+
+def refused_task(request: Request, kind: str, error: KennisError) -> Response:
+    """A task that could not begin, as the bar's job with its panel open.
+
+    A plain form gets the job's page, as every started task does (#412).
+    """
+    job = request.app.state.jobs.refuse(kind, error)
+    if not from_htmx(request):
+        return RedirectResponse(f"/job/{job.id}", status_code=303)
+    outcome = _outcome(request, job)
+    return TEMPLATES.TemplateResponse(
+        request,
+        "job.html",
+        {
+            "job_id": job.id,
+            "kind": job.kind,
+            "state": outcome.state,
+            "headline": outcome.headline,
+            "outcome": Markup(bytes(outcome.answer.body).decode("utf-8")),
+            "open_panel": True,
+        },
     )
 
 
@@ -239,8 +281,7 @@ def start_bundle_sync(request: Request) -> Response:
         # which is the whole point of the errors carrying their
         # own resolution: the advice was chosen where the problem
         # is known.
-        refusal = ContextNotFound()
-        return refused_a_post(request, str(refusal), resolution=refusal.resolution)
+        return refused_task(request, "context-sync", ContextNotFound())
     return started(
         request,
         "context-sync",
@@ -267,7 +308,7 @@ def start_pack_install(request: Request, form: PostedForm) -> Response:
     given = str(form.get("path") or "").strip()
     path = Path(given).expanduser()
     if not given or not path.is_file():
-        return refused_a_post(request, words.no_such_pack(given))
+        return refused_in_the_form(request, "#pack-problem", words.no_such_pack(given))
     context = existing_corpus()
     return started(
         request, "pack", lambda events: install_a_pack(context, path, events=events)

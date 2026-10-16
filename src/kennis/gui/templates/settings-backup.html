@@ -24,6 +24,8 @@
 </div>
 </form>
 <form class="backup-now" action="/backup" method="post" hx-post="/backup" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">
+{# A missing folder or a password that does not match is refused here. #}
+<div id="backup-problem" class="form-problem" role="alert"></div>
 <div class="setting">
 <span class="setting-name">{{ backup_now_label }}</span>
 <div class="setting-control">

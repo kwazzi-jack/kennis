@@ -498,12 +498,13 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
     assert "role-added" not in shown
 
 
-def test_a_project_sync_outside_a_bundle_names_the_command_that_makes_one(
+def test_a_project_sync_outside_a_bundle_is_a_task_naming_what_makes_one(
     client: TestClient,
 ):
+    """A task that could not begin, on the bar like any other (#475)."""
     answer = posted(client, "/context-sync", data={})
 
-    assert "data-job" not in answer.text
+    assert 'data-state="failed"' in answer.text
     assert "kennis context init" in answer.text
 
 

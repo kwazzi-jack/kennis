@@ -38,11 +38,13 @@ EXPECTED_ROWS = [
     "retrieval.default_top_k",
     "chunking.size",
     "conversion.backend",
+    "literature.unpaywall_email",
 ]
 # And the heading each row sits under, as the plan lays the page out.
 EXPECTED_GROUPS = {
     "Searching and indexing": EXPECTED_ROWS[:5],
-    "Converting documents": EXPECTED_ROWS[5:],
+    "Converting documents": EXPECTED_ROWS[5:6],
+    "Adding papers": EXPECTED_ROWS[6:],
 }
 
 

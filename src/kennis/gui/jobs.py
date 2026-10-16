@@ -199,6 +199,26 @@ class Jobs:
         threading.Thread(target=run, daemon=True, name=f"kennis-{kind}").start()
         return job
 
+    def refuse(self, kind: str, error: KennisError) -> Job:
+        """Record a task that ended before it began.
+
+        The reader asked for work and it could not start - no context to
+        sync, a corpus gone from under the window. That is an outcome of
+        their action like any other, so it is a job: on the bar, in
+        Activity, its sentence and its resolution worded by the same
+        function as a failure mid-way (#475). Nothing runs, and it never
+        blocks another job, because it is done when it is made.
+        """
+        job = Job(id=secrets.token_urlsafe(8), kind=kind, error=error)
+        job.done.set()
+        with self._guard:
+            self._forget_the_old()
+            self._jobs[job.id] = job
+        logging.getLogger("kennis.gui").warning(
+            "the %s job was refused before it began: %s", kind, error
+        )
+        return job
+
     def running(self) -> Job | None:
         """The job still running, if any.
 

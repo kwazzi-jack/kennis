@@ -29,7 +29,8 @@ from urllib.parse import quote
 from kennis.engine.corpus.preview import LineCheck, PaperPreview, SitePreview
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.gui import words
-from kennis.render.refusals import describe_refusal
+from kennis.gui.repairs import WayOut, ways_out_for
+from kennis.render.refusals import refusal_fact
 
 ADD_KINDS: Final[tuple[str, ...]] = tuple(kind for kind, _ in words.ADD_TABS)
 
@@ -335,6 +336,11 @@ def paper_prefill(
     return [(name, value or "") for name, value in values.items() if name not in kept]
 
 
+def preview_ways(preview: PaperPreview) -> tuple[WayOut, ...]:
+    """What the reader can do about the refusal a preview foresees."""
+    return () if preview.refusal is None else ways_out_for(preview.refusal)
+
+
 def shown_paper_preview(
     preview: PaperPreview, *, in_fields: frozenset[str] = frozenset()
 ) -> list[ShownLine]:
@@ -353,7 +359,8 @@ def shown_paper_preview(
             return [ShownLine(words.PREVIEW_ADDRESS)]
         return [ShownLine(words.PREVIEW_UNRECOGNISED, "role-muted")]
     if preview.refusal is not None:
-        return [ShownLine(describe_refusal(preview.refusal), "role-warning")]
+        # The window's words; its ways out are `preview_ways`, as controls.
+        return [ShownLine(refusal_fact(preview.refusal), "role-warning")]
     # What arXiv named is the card's, drawn by `shown_paper_found`.
     lines: list[ShownLine] = []
     if preview.title is None and preview.looked_up:

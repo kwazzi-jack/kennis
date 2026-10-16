@@ -28,7 +28,6 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import (
-    HTMLResponse,
     JSONResponse,
     PlainTextResponse,
 )
@@ -255,7 +254,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         return answer
 
     @app.exception_handler(KennisError)
-    def drawn_as_a_problem(request: Request, error: Exception) -> HTMLResponse:
+    def drawn_as_a_problem(request: Request, error: Exception) -> Response:
         """A domain failure no route turned into something of its own.
 
         Design section 20: the engine raises, and each front end turns it
@@ -267,6 +266,11 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         """
         if not isinstance(error, KennisError):
             raise error
+        # A route that starts a task answers into the bar, where a bare
+        # sentence was drawn beside the job: the error is that task (#475).
+        kind = jobs.JOB_ROUTES.get(request.url.path)
+        if kind is not None and request.method == "POST":
+            return jobs.refused_task(request, kind, error)
         if from_htmx(request):
             return refused(request, str(error), resolution=error.resolution)
         return TEMPLATES.TemplateResponse(

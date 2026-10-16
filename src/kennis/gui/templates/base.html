@@ -169,12 +169,14 @@
   {# The status bar (Brian, 2026-10-16, option A): the job as one segment
      that opens its panel, the corpus's facts, and Activity. Every page has
      `#job`, so a dialog opened anywhere has somewhere to put its job
-     (#405); it holds the running job, or the newest that ended. #}
+     (#405); it holds the running job, or the newest that ended. Every
+     variable `job.html` reads is named here: an include sees the page's
+     own, and the search page's `problem` was drawn in the bar (#475). #}
   {% set on_bar = bar_job(request) %}
   {# Not a live region: it would hear a clock. `progress.js` tells
      `#job-status` what is worth hearing. #}
   <p id="job-status" class="visually-hidden" role="status"></p>
-  <div id="job">{% if on_bar %}{% with job_id = on_bar.job_id, kind = on_bar.kind, state = on_bar.state, headline = on_bar.headline, outcome = on_bar.outcome %}{% include "job.html" %}{% endwith %}{% endif %}</div>
+  <div id="job">{% if on_bar %}{% with job_id = on_bar.job_id, kind = on_bar.kind, state = on_bar.state, headline = on_bar.headline, outcome = on_bar.outcome, problem = none, inline = false, open_panel = false %}{% include "job.html" %}{% endwith %}{% endif %}</div>
   {% include "strip-status.html" %}
   <div class="strip-tools">
     <a class="segment" href="/activity" aria-label="{{ activity_heading }}" title="{{ activity_heading }}">{{ icon("activity") }}</a>

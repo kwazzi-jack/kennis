@@ -33,6 +33,8 @@ EXPECTED = {
     "retrieval.corpus_method": ("next_search",),
     "retrieval.default_top_k": ("next_search",),
     "chunking.size": ("rebuild",),
+    # A DOI and the address go to Unpaywall, not a document's text.
+    "literature.unpaywall_email": ("next_add",),
 }
 
 

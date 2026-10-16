@@ -46,7 +46,7 @@ from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
 from kennis.gui.history import Search
-from kennis.gui.repairs import Repair, repairs_for
+from kennis.gui.repairs import Repair, WayOut, repairs_for, ways_out_for
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import (
     DocumentMarks,
@@ -90,7 +90,7 @@ from kennis.render.packs import (
     describe_unfetched,
     describe_why_unfetched,
 )
-from kennis.render.refusals import describe_refusal, remedies_for_refusal
+from kennis.render.refusals import refusal_fact, remedies_for_refusal
 from kennis.render.words import describe_busy_indexes, describe_uncommitted_build
 from kennis.retrieval import Sweep
 
@@ -1265,9 +1265,9 @@ class ShownOutcome:
 class ShownItem:
     """One item an operation touched, and why where there is a why.
 
-    `repairs` is empty except on a refusal the interface can actually
-    act on. An offer that cannot work is worse than none, so a paper
-    whose text sits behind a publisher gets the sentence alone.
+    `repairs` and `ways` are empty except on a refusal the interface can
+    actually act on: a form to post, and a place to go. An offer that
+    cannot work is worse than none.
     """
 
     marker: str
@@ -1276,6 +1276,12 @@ class ShownItem:
     detail: str | None = None
     remedies: tuple[str, ...] = ()
     repairs: tuple[Repair, ...] = ()
+    ways: tuple[WayOut, ...] = ()
+
+    @property
+    def asks(self) -> bool:
+        """Whether it offers the reader something to do about it."""
+        return bool(self.remedies or self.repairs or self.ways)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1309,7 +1315,7 @@ class ShownJob:
     def single(self) -> tuple[ShownItem, ...]:
         """The items with a way out of their own - a repair or a command -
         which are drawn one by one and first, because each asks something."""
-        return tuple(item for item in self.items if item.remedies or item.repairs)
+        return tuple(item for item in self.items if item.asks)
 
     @property
     def groups(self) -> tuple[OutcomeGroup, ...]:
@@ -1321,7 +1327,7 @@ class ShownJob:
         """
         grouped: dict[tuple[str, str], list[ShownItem]] = {}
         for item in self.items:
-            if item.remedies or item.repairs:
+            if item.asks:
                 continue
             grouped.setdefault((item.outcome, item.detail or ""), []).append(item)
         groups = [
@@ -1398,11 +1404,15 @@ def _shown_outcome(outcome: AddOutcome) -> ShownItem:
     if outcome.outcome is not Outcome.FAILED or outcome.refusal is None:
         return shown
     repairs = repairs_for(outcome.refusal)
+    ways = ways_out_for(outcome.refusal)
+    # The window's words: the terminal's sentence ends in flags to type,
+    # and here each way out is a control instead (#475).
     return replace(
         shown,
-        detail=describe_refusal(outcome.refusal),
+        detail=refusal_fact(outcome.refusal),
         repairs=repairs,
-        remedies=() if repairs else remedies_for_refusal(outcome.refusal),
+        ways=ways,
+        remedies=() if repairs or ways else remedies_for_refusal(outcome.refusal),
     )
 
 

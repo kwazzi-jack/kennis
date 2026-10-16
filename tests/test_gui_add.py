@@ -450,7 +450,7 @@ def test_a_doi_alone_is_told_what_the_add_would_say(
     client: TestClient, lookups: list[str]
 ):
     from kennis.engine.refusals import NoPublisherText
-    from kennis.render.refusals import describe_refusal
+    from kennis.render.refusals import refusal_fact
 
     shown = client.get(
         "/add/preview/paper",
@@ -458,9 +458,8 @@ def test_a_doi_alone_is_told_what_the_add_would_say(
         headers=HTMX,
     ).text
 
-    sentence = describe_refusal(
-        NoPublisherText(kind="doi", value="10.1093/mnras/stab1234")
-    )
+    # The window's words for it, as the add's outcome has them (#475).
+    sentence = refusal_fact(NoPublisherText(kind="doi", value="10.1093/mnras/stab1234"))
     assert re.sub(r"\s+", " ", sentence) in re.sub(
         r"\s+", " ", shown.replace("&#39;", "'")
     )

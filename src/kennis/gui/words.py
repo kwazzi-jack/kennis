@@ -331,6 +331,7 @@ KENNIS_SAVE = "Save settings"
 KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("searching", "Searching and indexing"),
     ("converting", "Converting documents"),
+    ("adding", "Adding papers"),
 )
 KENNIS_SAVED = "Saved."
 KENNIS_UNCHANGED = "Nothing changed."
@@ -349,6 +350,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "retrieval.corpus_method": "Default way to match",
     "retrieval.default_top_k": "Results per collection",
     "chunking.size": "Passage size",
+    "literature.unpaywall_email": "Email for Unpaywall",
 }
 # What each setting is for, in an info tip beside its name. The engine's
 # own description, which `config init` prints and the config file

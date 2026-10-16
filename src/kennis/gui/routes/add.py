@@ -33,6 +33,7 @@ from kennis.gui.adding import (
     filled,
     listing_of,
     paper_prefill,
+    preview_ways,
     shown_checks,
     shown_paper_found,
     shown_paper_preview,
@@ -45,8 +46,7 @@ from kennis.gui.responses import (
     action_page,
     frame,
     from_htmx,
-    refused,
-    refused_a_post,
+    refused_in_the_form,
 )
 from kennis.gui.routes.jobs import started
 from kennis.gui.uploads import staged
@@ -217,10 +217,22 @@ def serve_add_form(
     collection: str = "",
     group: str = "",
     project: str = "",
+    source: str = "",
+    pdf: str = "",
+    identifier: str = "",
 ) -> HTMLResponse:
     # The place is filled in when the dialog is opened from the tree's
-    # Add here; choosing the row was the reader choosing it (#431).
-    given = {"collection": collection, "group": group, "project": project}
+    # Add here; choosing the row was the reader choosing it (#431). The
+    # way in and the paper are filled when it is opened as the way out of
+    # a refusal: a paper kennis could not fetch, added from a PDF (#475).
+    given = {
+        "collection": collection,
+        "group": group,
+        "project": project,
+        "source": source,
+        "pdf": pdf,
+        "identifier": identifier,
+    }
     return action_page(request, "/add", "forms/add.html", _add_context(kind, given))
 
 
@@ -278,6 +290,7 @@ def preview_a_paper(
         {
             "found": shown_paper_found(preview, in_fields=in_fields),
             "lines": shown_paper_preview(preview, in_fields=in_fields),
+            "ways": preview_ways(preview),
             "redraws": [(fields[name], value) for name, value in redraws],
         },
     )
@@ -362,11 +375,6 @@ def serve_chooser(
     )
 
 
-# Said by a refusal answered inside the Add dialog, so `dialog.js`
-# leaves the dialog open with what was typed still in it.
-REFUSED_HEADER = "X-Kennis-Refused"
-
-
 def _docs_refusal(
     destination: str, identifiers: list[str], project: str | None
 ) -> str | None:
@@ -375,22 +383,6 @@ def _docs_refusal(
         return None
     unusable = unusable_docs_input(identifiers, project=project)
     return None if unusable is None else words.docs_input_refused(*unusable)
-
-
-def _refused_in_the_form(request: Request, problem: str) -> HTMLResponse:
-    """A refusal the reader can correct, answered above the still-filled
-    fields rather than in the strip with the dialog closed behind it.
-
-    Without a script there is no dialog to keep, so it is the refusal
-    page every plain form gets.
-    """
-    if not from_htmx(request):
-        return refused_a_post(request, problem)
-    answer = refused(request, problem)
-    answer.headers["HX-Retarget"] = "#add-problem"
-    answer.headers["HX-Reswap"] = "innerHTML"
-    answer.headers[REFUSED_HEADER] = "true"
-    return answer
 
 
 @router.post("/add")
@@ -405,13 +397,13 @@ def start_add(request: Request, form: PostedForm) -> Response:
     context = existing_corpus()
     options = _add_options(context, form)
     if isinstance(options, str):
-        return _refused_in_the_form(request, options)
+        return refused_in_the_form(request, "#add-problem", options)
     if form.get("kind") == "group":
         blocks = _group_blocks(form, options.project)
         if isinstance(blocks, str):
-            return _refused_in_the_form(request, blocks)
+            return refused_in_the_form(request, "#add-problem", blocks)
         if not blocks:
-            return _refused_in_the_form(request, words.NOTHING_TO_ADD)
+            return refused_in_the_form(request, "#add-problem", words.NOTHING_TO_ADD)
         restored: list[OutOfBandChange] = []
         return started(
             request,
@@ -440,14 +432,16 @@ def start_add(request: Request, form: PostedForm) -> Response:
     ]
     destination = str(form.get("collection") or "")
     if not identifiers:
-        return _refused_in_the_form(request, _nothing_to_add(form))
+        return refused_in_the_form(request, "#add-problem", _nothing_to_add(form))
     if not destination:
-        return _refused_in_the_form(request, words.CHOOSE_A_COLLECTION)
+        return refused_in_the_form(request, "#add-problem", words.CHOOSE_A_COLLECTION)
     if destination not in COLLECTION_NAMES:
-        return _refused_in_the_form(request, words.unknown_collection(destination))
+        return refused_in_the_form(
+            request, "#add-problem", words.unknown_collection(destination)
+        )
     refusal = _docs_refusal(destination, identifiers, options.project)
     if refusal is not None:
-        return _refused_in_the_form(request, refusal)
+        return refused_in_the_form(request, "#add-problem", refusal)
     put_back: list[OutOfBandChange] = []
 
     def add(events: EventSink) -> AddReport:

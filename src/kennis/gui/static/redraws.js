@@ -30,8 +30,23 @@
 
   window.kennisRedraw = redraw;
 
+  // A job handed back open - refused before it began, or the running one
+  // answering a second request - shows its panel: the answer is to the
+  // reader's own action. The server marks it; nothing here decides.
+  function open(within) {
+    var panels = within.querySelectorAll(".job[data-open] [popover]");
+    Array.prototype.forEach.call(panels, function (panel) {
+      if (panel.showPopover && !panel.matches(":popover-open")) {
+        panel.showPopover();
+      }
+    });
+  }
+
   document.body.addEventListener("htmx:afterSwap", function (event) {
     var swapped = event.detail && event.detail.target;
-    if (swapped && swapped.querySelectorAll) { redraw(swapped); }
+    if (swapped && swapped.querySelectorAll) {
+      redraw(swapped);
+      open(swapped);
+    }
   });
 })();

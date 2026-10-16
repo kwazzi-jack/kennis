@@ -986,6 +986,37 @@ mark {
   background: var(--raised);
 }
 .notice.quiet .icon { flex: none; align-self: center; color: var(--role-muted); }
+/* A notice with its icon beside it: a problem in a preview, a note in a
+   job's panel. The icon carries the warning; the words are prose. */
+.notice:has(> .icon) { display: flex; gap: 0.55rem; align-items: flex-start; }
+.notice > .icon { flex: none; margin-top: 0.15rem; color: var(--role-warning); }
+.notice > div { min-width: 0; }
+/* A refusal answered inside a form: framed as a notice, in prose. The
+   terminal's bold suits one short line; a paragraph of it shouts. */
+.form-problem:not(:empty) {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--role-warning) 45%, var(--rule));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--role-warning) 8%, transparent);
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+}
+.form-problem p { margin: 0; font-weight: 400; color: var(--ink); }
+.form-problem p + p { margin-top: 0.35rem; }
+/* The ways out of a refusal: buttons in a row, wrapping. */
+.ways-out { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 0; }
+.ways-out .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.6rem;
+}
+.ways-out .button .icon { width: 0.85rem; height: 0.85rem; }
+/* An item's reason is prose, not the item's bold name. */
+.items li .role-muted { font-weight: 400; }
+.panel-note { margin: 0 0.9rem 0.5rem; }
 /* The answer when there is none, which is the page's whole answer and
    so is not set pale beside a louder side note. */
 .nothing { color: var(--ink); font-weight: 600; margin: 0 0 1rem; }

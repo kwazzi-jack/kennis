@@ -15,7 +15,7 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
-from kennis.engine.backup import SET_FOLDER_COMMAND, check_backup
+from kennis.engine.backup import check_backup
 from kennis.engine.errors import (
     SettingsError,
 )
@@ -41,7 +41,7 @@ from kennis.gui.responses import (
     PostedForm,
     frame,
     from_htmx,
-    refused_a_post,
+    refused_in_the_form,
 )
 from kennis.gui.routes.jobs import started
 from kennis.operations import (
@@ -331,12 +331,13 @@ def start_backup(request: Request, form: PostedForm) -> Response:
     password = str(form.get("password") or "")
     confirmation = str(form.get("confirmation") or "")
     folder = _backup_folder()
+    # Each is about this section's own fields, so each is said in it (#475).
     if folder is None:
-        return refused_a_post(request, NO_BACKUP_FOLDER, resolution=SET_FOLDER_COMMAND)
+        return refused_in_the_form(request, "#backup-problem", NO_BACKUP_FOLDER)
     if not password:
-        return refused_a_post(request, words.PASSWORD_NEEDED)
+        return refused_in_the_form(request, "#backup-problem", words.PASSWORD_NEEDED)
     if password != confirmation:
-        return refused_a_post(request, words.PASSWORDS_DIFFER)
+        return refused_in_the_form(request, "#backup-problem", words.PASSWORDS_DIFFER)
     context = existing_corpus()
     return started(
         request,

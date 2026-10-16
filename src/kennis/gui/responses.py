@@ -338,6 +338,28 @@ def refused_a_post(
     )
 
 
+# Said by a refusal answered inside a dialog's form, so `dialog.js`
+# leaves the dialog open with what was typed still in it.
+REFUSED_HEADER = "X-Kennis-Refused"
+
+
+def refused_in_the_form(request: Request, place: str, problem: str) -> HTMLResponse:
+    """A refusal the reader can correct, answered at `place` above the
+    still-filled fields rather than on the bar with the dialog closed.
+
+    What was typed is corrected where it was typed; the bar is for work
+    that could not start or failed (#475). Without a script there is no
+    dialog to keep, so it is the refusal page every plain form gets.
+    """
+    if not from_htmx(request):
+        return refused_a_post(request, problem)
+    answer = refused(request, problem)
+    answer.headers["HX-Retarget"] = place
+    answer.headers["HX-Reswap"] = "innerHTML"
+    answer.headers[REFUSED_HEADER] = "true"
+    return answer
+
+
 def job_state(job: Job) -> str:
     if not job.done.is_set():
         return words.JOB_RUNNING

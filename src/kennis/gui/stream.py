@@ -39,7 +39,7 @@ from kennis.engine.refusals import Quoted
 from kennis.gui.jobs import Elapsed
 from kennis.render.diagnostics import describe_diagnostic
 from kennis.render.packs import verdict_word
-from kennis.render.refusals import describe_refusal
+from kennis.render.refusals import refusal_fact
 from kennis.render.words import count_of, fetching_model, progress_label, running_for
 
 # The marker each outcome is shown under, the same vocabulary the
@@ -112,9 +112,7 @@ def as_message(event: Event | Elapsed) -> dict[str, object] | None:
                 "outcome": event.outcome.value,
                 "text": event.item,
                 "detail": (
-                    describe_refusal(event.refusal)
-                    if event.refusal is not None
-                    else None
+                    refusal_fact(event.refusal) if event.refusal is not None else None
                 ),
             }
         case Progress():

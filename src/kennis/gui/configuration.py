@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from kennis.engine.corpus.converters import MineruConverter
 from kennis.engine.corpus.layout import index_root
@@ -180,6 +181,13 @@ def shown_indexes(corpus_root: Path) -> list[ShownIndex]:
     return shown
 
 
+# The heading a section's settings sit under; any other is searching's.
+_GROUP_OF_SECTION: Final[dict[str, str]] = {
+    "conversion": "converting",
+    "literature": "adding",
+}
+
+
 def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     secret = question.kind == "secret"
     value = "" if secret else typed or question.suggested
@@ -187,7 +195,7 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     costs = costs_of(question.key, value)
     return ShownSetting(
         key=question.key,
-        group="converting" if question.section == "conversion" else "searching",
+        group=_GROUP_OF_SECTION.get(question.section, "searching"),
         name=words.SETTING_NAMES[question.key],
         tip=words.setting_tip(
             _sentence(question),

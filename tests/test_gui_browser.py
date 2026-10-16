@@ -405,6 +405,36 @@ def test_a_job_that_asks_something_opens_its_panel_itself(
     page.wait_for_selector(".strip .job-panel:popover-open", timeout=_WAIT_MS)
 
 
+def test_a_pack_file_that_is_not_there_keeps_the_dialog_and_says_so_in_it(
+    page: playwright.Page,
+) -> None:
+    """It closed the dialog and put a bold sentence beside the bar's job
+    (Brian, 2026-10-16). What was typed is corrected where it was typed."""
+    page.click("a.action[href='/pack']")
+    page.wait_for_selector("#dialog input[name=path]", timeout=_WAIT_MS)
+    page.fill("#dialog input[name=path]", "/nowhere/pack.ken.yml")
+
+    page.click("#dialog button[type=submit]")
+
+    page.wait_for_selector("#pack-problem p", timeout=_WAIT_MS)
+    assert page.is_visible("#dialog input[name=path]")
+    assert page.input_value("#dialog input[name=path]") == "/nowhere/pack.ken.yml"
+    weight = page.evaluate(
+        "getComputedStyle(document.querySelector('#pack-problem p')).fontWeight"
+    )
+    assert weight == "400", weight
+    assert page.inner_text("#job") == ""
+
+
+def test_a_task_that_could_not_begin_opens_its_panel(page: playwright.Page) -> None:
+    page.evaluate(
+        "htmx.ajax('POST', '/context-sync', {target: '#job', swap: 'innerHTML'})"
+    )
+
+    page.wait_for_selector(".strip .job[data-state='failed']", timeout=_WAIT_MS)
+    page.wait_for_selector(".strip .job-panel:popover-open", timeout=_WAIT_MS)
+
+
 def test_no_link_in_the_status_bar_is_underlined(
     app_page_with_last_job: playwright.Page,
 ) -> None:

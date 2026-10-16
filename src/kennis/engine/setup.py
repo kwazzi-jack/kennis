@@ -105,6 +105,9 @@ _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]]
     ("retrieval.corpus_method", "choice", ()),
     ("retrieval.default_top_k", "integer", ()),
     ("chunking.size", "integer", ()),
+    # Whose address Unpaywall is asked with: a paper known only by its DOI
+    # is otherwise one the reader must fetch by hand (#475).
+    ("literature.unpaywall_email", "text", ()),
     ("corpus.root", "text", ()),
 )
 

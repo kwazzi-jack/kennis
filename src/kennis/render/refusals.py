@@ -159,6 +159,58 @@ def describe_refusal(refusal: Refusal) -> str:
             return f"unsupported file type '{suffix}'"
 
 
+def refusal_fact(refusal: Refusal) -> str:
+    """What happened, without the terminal's way out.
+
+    `describe_refusal` ends several sentences with what to type - `-l`,
+    `--identifier`, "supply that address the same way" - which a reader
+    of the window has nowhere to type. The window says this instead and
+    offers each way out as a control (`gui/repairs.py`). A test holds
+    every refusal to naming no flag here, and to stating the same fact
+    as the terminal's sentence begins with.
+    """
+    match refusal:
+        case NoIdentity():
+            return (
+                "no arXiv id, DOI or ADS bibcode found on its first page, so "
+                "it has no bibliographic identity and cannot go to literature"
+            )
+        case IdentityMismatch(named=named, kind=kind, stated=stated, found=found):
+            offered = ", ".join(f"'{value}'" for value in found)
+            return (
+                f"the document at '{named}' names the {kind} {offered} and not "
+                f"'{stated}', so it may not be the paper you meant"
+            )
+        case NoPublisherText(
+            kind=kind, value=value, asked_unpaywall=asked, accepted_manuscript=accepted
+        ):
+            said = _no_publisher_fact(kind, value, asked=asked)
+            if accepted is not None:
+                said += (
+                    f". The authors' accepted manuscript is open at {accepted} "
+                    f"and may differ from the published paper"
+                )
+            return said
+        case NoArxivText(named=named, declined=declined):
+            said = f" ({declined})" if declined else ""
+            return f"arXiv has no rendering of '{named}' to fetch{said}"
+        case (
+            Quoted()
+            | SameContent()
+            | SamePaper()
+            | SamePage()
+            | AmbiguousIdentity()
+            | NotAnInput()
+            | BibliographyIncomplete()
+            | NothingConverted()
+            | SymlinkSkipped()
+            | KennisOwn()
+            | UnsupportedFormat()
+        ):
+            # Nothing in these to type: the sentence is the fact.
+            return describe_refusal(refusal)
+
+
 def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
     """The commands that would resolve it, each runnable as written.
 
@@ -226,17 +278,31 @@ _PAPER_PAGES: Final[dict[str, str]] = {
 }
 
 
+def paper_page(kind: str, value: str) -> str:
+    """Where a reader opens a paper to download it.
+
+    The value is quoted with only its own slashes kept: a DOI may hold
+    `#` or `?`, which would end or reshape the address.
+    """
+    return _PAPER_PAGES.get(kind, "{}").format(quote(value, safe="/"))
+
+
+def _no_publisher_fact(kind: str, value: str, *, asked: bool) -> str:
+    named = "the DOI" if kind == "doi" else "the ADS bibcode"
+    return f"kennis has no copy of {named} '{value}' it can fetch" + (
+        ": Unpaywall knows no open copy of the published paper" if asked else ""
+    )
+
+
 def _no_publisher_text(
     kind: str, value: str, *, asked: bool, accepted: str | None
 ) -> str:
     """A paper kennis has no copy of, with where to get one and how to add
     it - and, where there is one, the manuscript it would not take unasked.
     """
-    named = "the DOI" if kind == "doi" else "the ADS bibcode"
-    page = _PAPER_PAGES.get(kind, "{}").format(quote(value, safe="/"))
+    page = paper_page(kind, value)
     said = (
-        f"kennis has no copy of {named} '{value}' it can fetch"
-        + (": Unpaywall knows no open copy of the published paper" if asked else "")
+        _no_publisher_fact(kind, value, asked=asked)
         + f"; download it from {page} and supply the document with -l and "
         f"--identifier '{value}'"
     )
@@ -254,4 +320,10 @@ def _no_publisher_text(
     return said
 
 
-__all__ = ["choices_for_refusal", "describe_refusal", "remedies_for_refusal"]
+__all__ = [
+    "choices_for_refusal",
+    "describe_refusal",
+    "paper_page",
+    "refusal_fact",
+    "remedies_for_refusal",
+]

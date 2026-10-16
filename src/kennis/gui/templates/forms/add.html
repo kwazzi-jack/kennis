@@ -12,7 +12,7 @@
   {# Where a refusal the form can be corrected for is answered: in the
      dialog, above the fields still holding what was typed. It closed and
      answered in the strip, and everything typed was lost. #}
-  <div id="add-problem" role="alert"></div>
+  <div id="add-problem" class="form-problem" role="alert"></div>
   <input type="hidden" name="kind" value="{{ kind }}">
   {% if fixed_collection %}<input type="hidden" name="collection" value="{{ fixed_collection }}">{% endif %}
   {% if kind == "group" %}
