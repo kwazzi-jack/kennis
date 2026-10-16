@@ -1,10 +1,17 @@
 {% from "tip.html" import tip %}
 <p class="role-muted"><span id="pack-preamble">{{ pack_preamble }}</span> {{ tip("pack", title, pack_tip) }}</p>
-<form action="/pack" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/pack" hx-target="#job" hx-swap="innerHTML" data-closes-dialog>
+<form action="/pack" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/pack" hx-target="#job" hx-swap="innerHTML" hx-disinherit="*" data-closes-dialog>
   {# A file that is not there is refused here, with the dialog kept. #}
   <div id="pack-problem" class="form-problem" role="alert"></div>
   <div class="fields">
-    <label class="labelled"><span class="name">{{ pack_path_label }}</span><input type="text" name="path" placeholder="/path/to/pack.ken.yml" aria-describedby="pack-preamble" autofocus></label>
+    {# kennis's own chooser, not the browser's picker: a pack is read from
+       its path, with its sources beside it, and an upload is a copy. #}
+    <label class="labelled" for="pack-path"><span class="name">{{ pack_path_label }}</span></label>
+    <span class="entry-row">
+      <input id="pack-path" type="text" name="path" placeholder="/path/to/pack.ken.yml" aria-describedby="pack-preamble" autofocus>
+      <button type="button" class="ghost browse" hx-get="/browse?target=path" hx-target="#chooser-pack" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+    </span>
+    <div class="chooser" id="chooser-pack"></div>
   </div>
   {# Every dialog's foot, as Add's is: Cancel, then the one action the
      form exists for, at the right. #}

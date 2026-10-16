@@ -426,6 +426,28 @@ def test_a_pack_file_that_is_not_there_keeps_the_dialog_and_says_so_in_it(
     assert page.inner_text("#job") == ""
 
 
+def test_a_pack_file_is_chosen_from_the_chooser(
+    corpus: Path, page: playwright.Page
+) -> None:
+    pack = corpus / "sources" / "alpha.ken.yml"
+    pack.write_text("id: alpha\n", encoding="utf-8")
+    page.click("a.action[href='/pack']")
+    page.wait_for_selector("#dialog input[name=path]", timeout=_WAIT_MS)
+    page.click("#dialog .browse")
+    page.wait_for_selector("#dialog .chooser-panel", timeout=_WAIT_MS)
+    # Opened at the folder holding the pack, as a click on folders would.
+    page.evaluate(
+        "folder => htmx.ajax('GET', '/browse?target=path&path=' +"
+        " encodeURIComponent(folder), {target: '#dialog .chooser', swap: 'innerHTML'})",
+        str(pack.parent),
+    )
+    page.wait_for_selector(f"#dialog [data-choose='{pack}']", timeout=_WAIT_MS)
+
+    page.click(f"#dialog [data-choose='{pack}']")
+
+    assert page.input_value("#dialog input[name=path]") == str(pack)
+
+
 def test_a_task_that_could_not_begin_opens_its_panel(page: playwright.Page) -> None:
     page.evaluate(
         "htmx.ajax('POST', '/context-sync', {target: '#job', swap: 'innerHTML'})"

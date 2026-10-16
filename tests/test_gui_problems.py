@@ -445,3 +445,36 @@ def test_a_paper_preview_says_the_fact_and_offers_the_ways_out():
     assert [line.text for line in lines] == [refusal_fact(refusal)]
     assert link_saying(drawn, ADD_FROM_A_PDF) is not None
     assert "--identifier" not in drawn.get_text()
+
+
+# Written by hand: every page and dialog that draws a form.
+FORM_PAGES = [
+    "/add",
+    "/add?kind=paper",
+    "/add?kind=site",
+    "/add?kind=files",
+    "/add?kind=group",
+    "/index",
+    "/sync",
+    "/pack",
+    "/remember",
+    "/settings",
+]
+
+
+@pytest.mark.parametrize("route", FORM_PAGES)
+def test_a_form_holding_its_own_htmx_control_passes_nothing_down(
+    client: TestClient, route: str
+):
+    """The pack form's Browse inherited `hx-disabled-elt="find
+    button[type=submit]"`, which found nothing inside itself (#430 again)."""
+    page = BeautifulSoup(client.get(route, headers=HTMX).text, "html.parser")
+
+    for form in page.find_all("form"):
+        inner = [
+            control
+            for control in form.find_all(True)
+            if control.has_attr("hx-get") or control.has_attr("hx-post")
+        ]
+        if inner:
+            assert form.get("hx-disinherit") == "*", (route, form.get("action"))

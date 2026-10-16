@@ -517,6 +517,27 @@ def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     assert "/nowhere/at/all.ken.yml" in answer.text
 
 
+def test_the_pack_field_browses_the_computer_kennis_runs_on(client: TestClient):
+    """A pack is read from its path, and its sources from beside it, so the
+    browser's own picker - which uploads a copy - cannot choose one
+    (Brian, 2026-10-16: "the ability to look for a file")."""
+    form = BeautifulSoup(
+        client.get("/pack", headers={"HX-Request": "true"}).text, "html.parser"
+    ).find("form")
+    browse = form.find(
+        attrs={"hx-get": lambda value: bool(value) and value.startswith("/browse")}
+    )
+    assert browse is not None
+    address = str(browse["hx-get"])
+
+    assert "target=path" in address
+    assert "folders" not in address, "a pack is a file"
+    slot = form.find(id=str(browse["hx-target"]).removeprefix("#"))
+    assert slot is not None and "chooser" in slot["class"]
+    assert form.find("input", attrs={"name": "path"}) is not None
+    assert client.get(address, headers={"HX-Request": "true"}).status_code == 200
+
+
 def test_the_sync_dialog_offers_the_project_context_only_where_there_is_one(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
