@@ -113,6 +113,9 @@ class LiteratureEntry(BaseModel):
 
     `url` is where the text is, when the identifier alone does not reach it.
     The document found there must not name a different paper.
+
+    `group` is a folder inside the pack's own, `literature/<pack id>/`,
+    and may hold folders of its own.
     """
 
     model_config = _FORBID
@@ -121,6 +124,7 @@ class LiteratureEntry(BaseModel):
     title: str
     identifier: str
     url: str | None = None
+    group: str | None = None
     authors: str | None = None
     # An int, because `year_min` filtering compares numerically and a string
     # year invites a lexicographic comparison bug at the filter.
@@ -151,6 +155,14 @@ class LiteratureEntry(BaseModel):
                 f"'{value}' is not an arXiv identifier, a DOI or an ADS bibcode"
             )
         return value.strip()
+
+    @field_validator("group")
+    @classmethod
+    def _stays_inside_the_packs_folder(cls, value: str | None) -> str | None:
+        problem = None if value is None else group_problem(value)
+        if problem is not None:
+            raise ValueError(f"the group '{value}' {problem}")
+        return value
 
     @field_validator("url")
     @classmethod

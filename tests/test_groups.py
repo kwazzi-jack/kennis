@@ -275,3 +275,31 @@ def test_a_pack_docs_project_with_more_than_one_part_is_refused(project: str):
 def test_a_group_may_still_hold_groups():
     assert AddOptions(group="radio/calibration").group == "radio/calibration"
     assert AddOptions(project="numpy").project == "numpy"
+
+
+PACK_WITH_PAPER_GROUP = """
+kennis:
+  schema_version: 1
+pack:
+  id: a
+  name: n
+  version: "1"
+corpus:
+  literature:
+    - citekey: welman2024
+      title: "A Paper"
+      identifier: "2409.19750"
+      group: "{group}"
+"""
+
+
+@pytest.mark.parametrize("group", ["../outside", "/absolute", ".hidden"])
+def test_a_pack_paper_group_that_leaves_is_refused(group: str):
+    with pytest.raises(PackInvalid, match="group"):
+        load_pack(PACK_WITH_PAPER_GROUP.format(group=group))
+
+
+def test_a_pack_paper_group_inside_is_kept():
+    pack = load_pack(PACK_WITH_PAPER_GROUP.format(group="calibration/gains"))
+
+    assert pack.corpus.literature[0].group == "calibration/gains"

@@ -408,3 +408,96 @@ def test_the_sync_does_not_commit_by_itself(corpus: Path, tmp_path: Path):
         stdin=subprocess.DEVNULL,
     )
     assert "sync" not in log.stdout
+
+
+# ---------------------------------------------------------------------------
+# Where a pack's notes are filed (Brian, 2026-10-16)
+# ---------------------------------------------------------------------------
+
+
+def folder_of(document: Document, corpus: Path) -> str:
+    """The group a document is filed in, as a path inside `notes/`."""
+    return document.md_path.parent.relative_to(corpus / "notes").as_posix()
+
+
+def test_a_pack_note_is_filed_under_the_pack(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path)
+
+    sync_corpus(corpus)
+
+    assert folder_of(only_note(corpus), corpus) == "alpha"
+
+
+def test_a_pack_notes_group_and_its_folders_are_folders_under_the_pack(
+    corpus: Path, tmp_path: Path
+):
+    """Design section 5: `group:` is part of where a note lands. It was
+    part of the identity only, and every note landed at the top."""
+    installed(corpus, tmp_path, files={"notes/deep/one.md": "One.\n"}, group="cabs")
+
+    sync_corpus(corpus)
+
+    assert folder_of(only_note(corpus), corpus) == "alpha/cabs/deep"
+
+
+def moved_to_the_top(document: Document, corpus: Path) -> Document:
+    """Where a sync before this change wrote it."""
+    from kennis.engine.corpus.document import move_document
+
+    return move_document(
+        document, target_md_path=corpus / "notes" / document.md_path.name
+    )
+
+
+def test_a_pack_note_filed_elsewhere_is_moved_under_the_pack_at_its_identifier(
+    corpus: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path)
+    sync_corpus(corpus)
+    before = moved_to_the_top(only_note(corpus), corpus)
+
+    result = sync_corpus(corpus)
+
+    after = only_note(corpus)
+    assert folder_of(after, corpus) == "alpha"
+    assert after.id == before.id
+    assert after.body == before.body
+    # Something changed on disk, so "unchanged" would be wrong.
+    assert result.counts.get("rewrite") == 1
+    assert result.counts.get("keep") is None
+    assert sync_corpus(corpus).counts == {"keep": 1}
+
+
+def test_a_pack_note_the_user_edited_is_not_moved(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path)
+    sync_corpus(corpus)
+    edited = moved_to_the_top(only_note(corpus), corpus)
+    edited.md_path.write_text(
+        edited.md_path.read_text(encoding="utf-8") + "\nMine now.\n", encoding="utf-8"
+    )
+
+    result = sync_corpus(corpus)
+
+    assert folder_of(only_note(corpus), corpus) == "."
+    assert result.counts.get("edited") == 1
+
+
+def test_a_note_the_user_filed_under_the_packs_name_is_left_alone(
+    corpus: Path, tmp_path: Path
+):
+    collection = Collection(root=corpus, name="notes")
+    write_note(
+        collection,
+        Uniqueness.of(collection),
+        converted=Converted(
+            markdown="Mine.\n", via="remember", format="markdown", origin="inline:"
+        ),
+        title="Mine",
+        group="elsewhere",
+    )
+    installed(corpus, tmp_path)
+
+    sync_corpus(corpus)
+
+    mine = next(one for one in notes_in(corpus) if one.frontmatter.title == "Mine")
+    assert folder_of(mine, corpus) == "elsewhere"

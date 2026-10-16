@@ -193,7 +193,7 @@
     },
     "LiteratureEntry": {
       "additionalProperties": false,
-      "description": "A paper the pack declares, fetched over the network rather than copied.\n\nThe citekey is a handle for humans - it goes in a `.bib`, in prose and in\na read call. The **identifier** is the identity, which is why it is\nrequired and why section 5 keys the diff on it: correcting a citekey\nagainst an unchanged identifier is a rename, not a delete and a refetch.\n\n**One identifier field**, which takes an arXiv identifier, a DOI or an\nADS bibcode and is read as whichever it is. Three fields, one per kind,\nasked an author which kind a paper's identifier was and then which wins\nwhen two were given.\n\n`url` is where the text is, when the identifier alone does not reach it.\nThe document found there must not name a different paper.",
+      "description": "A paper the pack declares, fetched over the network rather than copied.\n\nThe citekey is a handle for humans - it goes in a `.bib`, in prose and in\na read call. The **identifier** is the identity, which is why it is\nrequired and why section 5 keys the diff on it: correcting a citekey\nagainst an unchanged identifier is a rename, not a delete and a refetch.\n\n**One identifier field**, which takes an arXiv identifier, a DOI or an\nADS bibcode and is read as whichever it is. Three fields, one per kind,\nasked an author which kind a paper's identifier was and then which wins\nwhen two were given.\n\n`url` is where the text is, when the identifier alone does not reach it.\nThe document found there must not name a different paper.\n\n`group` is a folder inside the pack's own, `literature/<pack id>/`,\nand may hold folders of its own.",
       "properties": {
         "authors": {
           "anyOf": [
@@ -210,6 +210,18 @@
         "citekey": {
           "title": "Citekey",
           "type": "string"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
         },
         "identifier": {
           "title": "Identifier",

@@ -589,7 +589,7 @@ def test_an_edited_document_names_the_command_that_keeps_the_edit(
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     document_id = sole_id(run)
-    written = next((isolated / "notes").glob("*.md"))
+    written = next((isolated / "notes").rglob("*.md"))
     written.write_text(
         written.read_text().replace("First.", "Mine now."), encoding="utf-8"
     )

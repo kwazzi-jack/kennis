@@ -46,13 +46,15 @@ pack:
 {description}
 # What this pack ships. Every section is optional, and a path is relative to
 # this file. Run `kennis pack update` after adding one, then
-# `kennis pack validate` to check it.
+# `kennis pack validate` to check it. Papers and notes land under
+# literature/{identifier}/ and notes/{identifier}/; a docs project is one folder.
 #
 # corpus:
 #   literature:          # fetched over the network; needs a real identifier
 #     - citekey: smirnovRevisitingRIMEI2011
 #       title: "Revisiting the radio interferometer measurement equation I"
 #       identifier: "1101.1764"
+#       group: calibration   # optional, a folder under literature/{identifier}/
 #   docs:                # crawled from base_url
 #     - project: stimela
 #       base_url: "https://stimela.readthedocs.io/en/latest/"

@@ -53,6 +53,7 @@ corpus:
       title: "A paper published in a journal"
       identifier: "10.1093/mnras/stab1234"
       url: "https://example.org/papers/welman2021.pdf"
+      group: calibration
   docs:
     - project: stimela
       base_url: "https://stimela.readthedocs.io/en/latest/"
@@ -93,7 +94,27 @@ context:
 ```
 
 `notes` goes into the machine-global corpus; `context` goes into each
-project's `.context/` bundle. A `source:` is a directory relative to the
+project's `.context/` bundle.
+
+## Where it lands
+
+Everything a pack adds to the corpus is filed under the pack's own `id`, so
+a reader can see at once what came from which pack:
+
+| section | lands in |
+|---|---|
+| `corpus.literature` | `literature/<pack id>/`, then the entry's `group` if it has one |
+| `corpus.notes` | `notes/<pack id>/`, then the source's `group`, then the folders inside the source |
+| `corpus.docs` | `docs/<project>/` - a project is one folder, with no groups inside it |
+
+So the paper above with `group: calibration` lands in
+`literature/<pack id>/calibration/`, and a file `notes/cabs/run.md` shipped
+with `group: stimela` lands in `notes/<pack id>/stimela/cabs/`. A `group`
+may hold folders of its own (`calibration/gains`). A document the pack
+filed somewhere else - by an earlier kennis, or under a group it has since
+changed - is moved there on the next `kennis corpus sync`, keeping its
+identifier, so nothing that refers to it breaks and nothing is fetched
+again. A document you have edited is not moved. A `source:` is a directory relative to the
 pack file, and it may not leave the pack - neither as a written path nor
 through a symlink.
 

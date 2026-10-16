@@ -626,3 +626,83 @@ def test_a_paper_kennis_cannot_reach_is_handed_back_with_where_to_get_it(
     assert "https://doi.org/10.1093/mnras/stab1234" in describe_why_unfetched(
         address, refusal
     )
+
+
+# ---------------------------------------------------------------------------
+# Where a pack's papers are filed (Brian, 2026-10-16)
+# ---------------------------------------------------------------------------
+
+
+def literature_folder(document: Document, corpus: Path) -> str:
+    holder = document.wrapper_dir or document.md_path
+    return holder.parent.relative_to(corpus / "literature").as_posix()
+
+
+GROUPED_PAPER = PAPER + "      group: calibration/gains\n"
+
+
+def test_a_pack_paper_is_filed_under_the_pack(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path, body=PAPER)
+
+    synced(corpus)
+
+    (paper,) = papers_in(corpus)
+    assert literature_folder(paper, corpus) == "alpha"
+
+
+def test_a_pack_paper_with_a_group_is_filed_in_it_under_the_pack(
+    corpus: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, body=GROUPED_PAPER)
+
+    synced(corpus)
+
+    (paper,) = papers_in(corpus)
+    assert literature_folder(paper, corpus) == "alpha/calibration/gains"
+
+
+def test_a_paper_whose_group_changed_is_moved_and_not_fetched_again(
+    corpus: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, body=PAPER)
+    synced(corpus)
+    (before,) = papers_in(corpus)
+    installed(corpus, tmp_path, body=GROUPED_PAPER)
+
+    result = synced(corpus, arxiv=unreachable_client())
+
+    (after,) = papers_in(corpus)
+    assert literature_folder(after, corpus) == "alpha/calibration/gains"
+    assert after.id == before.id
+    assert result.failed == ()
+    assert result.counts.get("rewrite") == 1
+
+
+def test_a_paper_the_user_owns_stays_where_the_user_filed_it(
+    corpus: Path, tmp_path: Path
+):
+    from kennis.engine.corpus.add import add_literature
+
+    add_literature(
+        Collection(root=corpus, name="literature"),
+        ["2409.19750"],
+        arxiv=arxiv_client(),
+    )
+    installed(corpus, tmp_path, body=PAPER)
+
+    synced(corpus, arxiv=unreachable_client())
+
+    (paper,) = papers_in(corpus)
+    assert literature_folder(paper, corpus) == "."
+
+
+def test_a_docs_project_is_still_one_folder_by_its_name(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path, body=DOCS)
+
+    synced(corpus)
+
+    folders = {
+        page.md_path.parent.relative_to(corpus / "docs").as_posix()
+        for page in pages_in(corpus)
+    }
+    assert folders == {"stimela"}

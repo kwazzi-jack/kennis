@@ -28,7 +28,7 @@ from __future__ import annotations
 import time
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 
@@ -43,8 +43,9 @@ from kennis.engine.corpus.add import (
     write_note,
 )
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document, write_document
+from kennis.engine.corpus.document import Document, move_document, write_document
 from kennis.engine.corpus.intake import Converted
+from kennis.engine.corpus.moving import holding, move_target
 from kennis.engine.corpus.schema import (
     Bibliography,
     DocsFrontmatter,
@@ -62,6 +63,7 @@ from kennis.engine.events import (
     Progress,
 )
 from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.groups import group_directory
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.installed import (
     InstalledPack,
@@ -152,6 +154,8 @@ def sync_corpus(
     papers = _literature_plan(corpus_root, packs)
     projects = _docs_plan(corpus_root, packs)
     _refuse_what_cannot_be_classified(notes, papers, projects)
+    notes = _relocated(Collection(root=corpus_root, name="notes"), notes)
+    papers = _relocated(Collection(root=corpus_root, name="literature"), papers)
 
     why: dict[str, Refusal] = {}
     failed = _carried_out(
@@ -244,6 +248,67 @@ def _refuse_what_cannot_be_classified(*plans: _Plan) -> None:
         f"synchronised: {', '.join(named)}",
         resolution="kennis corpus status",
     )
+
+
+# The verdicts that leave a pack's document standing as the pack's. Not
+# `edited`: the reader changed it, and the report asks them to claim it.
+_STANDING: Final = frozenset({"keep", "rewrite", "adopt"})
+
+
+def _relocated(collection: Collection, plan: _Plan) -> _Plan:
+    """Move each standing pack document into the folder it is declared in.
+
+    A pack's notes and papers are filed under the pack's id (Brian,
+    2026-10-16), and `resolve` keys them by address, never by path, so a
+    document somewhere else - written before that decision, or under a
+    group the pack has since changed - is the same document in the wrong
+    place. It is moved at its identifier, body and filename, and the plan
+    is returned with the moved document held, so a rewrite that follows
+    writes where it now is. A `keep` that moved becomes a `rewrite`: the
+    disk changed, and "unchanged" would say it had not.
+    """
+    held = dict(plan.held)
+    actions: list[Action] = []
+    for action in plan.actions:
+        declaration = action.declaration
+        if action.verdict not in _STANDING or declaration is None:
+            actions.append(action)
+            continue
+        existing, document = held[action.address]
+        group = _declared_group(plan, declaration)
+        if (
+            holding(document).resolve()
+            == group_directory(collection.path, group).resolve()
+        ):
+            actions.append(action)
+            continue
+        target = move_target(collection, document, group=group, title=None)
+        if target.exists() or (target.parent / target.stem).exists():
+            target = move_target(
+                collection, document, group=group, title=document.frontmatter.title
+            )
+        held[action.address] = (
+            existing,
+            move_document(document, target_md_path=target),
+        )
+        actions.append(
+            replace(action, verdict="rewrite") if action.verdict == "keep" else action
+        )
+    return replace(plan, actions=tuple(actions), held=held)
+
+
+def _declared_group(plan: _Plan, declaration: Declaration) -> str:
+    """The folder a pack's document is declared in, inside its collection:
+    the pack's id, then a paper's `group`, or a note's address's folders."""
+    entry = plan.entries.get(declaration.address)
+    if isinstance(entry, LiteratureEntry):
+        return _paper_group(declaration, entry)
+    return _note_group(declaration)
+
+
+def _paper_group(declaration: Declaration, entry: LiteratureEntry) -> str:
+    """Where a pack's paper is filed: under the pack, in its `group`."""
+    return "/".join(part for part in (declaration.pack_id, entry.group) if part)
 
 
 def _unreadable_in(collection: Collection) -> tuple[str, ...]:
@@ -433,6 +498,7 @@ def _fetched_literature(
                 # arrived under a citekey kennis invented would answer to
                 # nothing the pack says.
                 citekey=entry.citekey,
+                group=_paper_group(declaration, entry),
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
                 request_delay_seconds=request_delay_seconds,
@@ -860,10 +926,16 @@ def _written(
             sha256=content_digest(body.encode("utf-8")),
         ),
         title=title,
-        group=None,
+        group=_note_group(declaration),
         owner=f"pack:{declaration.pack_id}",
         pack_sha256=declaration.digest,
     )
+
+
+def _note_group(declaration: Declaration) -> str:
+    """Where a pack's note is filed: under the pack, in its address's folders."""
+    inside = declaration.address.rpartition("/")[0]
+    return "/".join(part for part in (declaration.pack_id, inside) if part)
 
 
 def _rewritten(
