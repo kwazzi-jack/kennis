@@ -664,3 +664,142 @@ def test_a_move_says_which_document_deleted_by_hand_it_put_back(
     )
 
     assert f"{named} was deleted outside kennis and has been restored" in answer.text
+
+
+# ---------------------------------------------------------------------------
+# Groups inside groups
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def nested(corpus: Path) -> dict[str, str]:
+    """`radio` holds one note and a group; `optics/lenses` is a group whose
+    parent holds nothing of its own."""
+    held = {
+        "top": add_note(corpus, "Radio Overview", "Antennas.", group="radio"),
+        "deep": add_note(
+            corpus, "Gain Drift", "Gains drift.", group="radio/calibration"
+        ),
+        "lens": add_note(corpus, "Thin Lens", "Focal length.", group="optics/lenses"),
+    }
+    assert CliRunner().invoke(main, ["corpus", "index"]).exit_code == 0
+    held["later"] = add_note(
+        corpus, "Phase Wrap", "Added after the index.", group="radio/calibration"
+    )
+    return held
+
+
+def folder_name(group: Tag) -> str:
+    summary = group.find("summary")
+    assert isinstance(summary, Tag), group
+    name = summary.find("span", class_="name")
+    assert isinstance(name, Tag), summary
+    return name.get_text(strip=True)
+
+
+def test_a_group_inside_a_group_is_drawn_inside_it(
+    client: TestClient, nested: dict[str, str]
+):
+    tree = tree_of(client)
+    radio = group_of(tree, "radio")
+    calibration = group_of(radio, "radio/calibration")
+
+    assert folder_name(radio) == "radio"
+    assert folder_name(calibration) == "calibration"
+    assert row_of(calibration, nested["deep"])
+    # The parent's own note is its own, not the child's.
+    assert (
+        row_of(radio, nested["top"]).find_parent("li", attrs={"data-group": True})
+        is radio
+    )
+
+
+def test_a_folder_holding_only_folders_is_drawn(
+    client: TestClient, nested: dict[str, str]
+):
+    optics = group_of(tree_of(client), "optics")
+
+    assert row_of(group_of(optics, "optics/lenses"), nested["lens"])
+
+
+def test_a_folder_counts_and_marks_everything_beneath_it(
+    client: TestClient, nested: dict[str, str]
+):
+    summary = group_of(tree_of(client), "radio").find("summary")
+    assert isinstance(summary, Tag)
+    mark = summary.find("span", class_="doc-state")
+
+    assert summary.find("span", class_="count").get_text() == "3"
+    assert isinstance(mark, Tag), summary
+    assert mark.get_text() == EXPECTED_LETTERS["unindexed"]
+    assert mark["title"] == words.attention_count(1)
+
+
+def test_add_here_on_a_group_inside_a_group_names_the_whole_path(
+    client: TestClient, nested: dict[str, str]
+):
+    link = add_here_link(group_of(tree_of(client), "radio/calibration"))
+    dialog = BeautifulSoup(
+        client.get(str(link["href"]), headers=HTMX).text, "html.parser"
+    )
+    group = dialog.find("input", attrs={"name": "group"})
+
+    assert isinstance(group, Tag) and group["value"] == "radio/calibration"
+
+
+def test_every_level_is_offered_to_move_into(
+    client: TestClient, nested: dict[str, str]
+):
+    tree = tree_of(client)
+    offered = tree.find("datalist", id="groups-notes")
+
+    assert isinstance(offered, Tag)
+    assert [option["value"] for option in offered.find_all("option")] == [
+        "optics",
+        "optics/lenses",
+        "radio",
+        "radio/calibration",
+    ]
+
+
+@pytest.mark.parametrize(("path", "kind"), [("/add", "file"), ("/remember", None)])
+def test_every_level_is_offered_where_a_note_is_added(
+    client: TestClient, nested: dict[str, str], path: str, kind: str | None
+):
+    params = {"kind": kind, "collection": "notes"} if kind else {}
+    dialog = BeautifulSoup(
+        client.get(path, params=params, headers=HTMX).text, "html.parser"
+    )
+    field = dialog.find("input", attrs={"name": "group"})
+    assert isinstance(field, Tag)
+    offered = dialog.find("datalist", id=str(field["list"]))
+
+    assert isinstance(offered, Tag)
+    values = [option["value"] for option in offered.find_all("option")]
+    assert {"optics", "optics/lenses", "radio", "radio/calibration"} <= set(values)
+
+
+def test_moving_into_a_group_inside_a_group_files_it_there(
+    client: TestClient, nested: dict[str, str]
+):
+    client.post(
+        "/move",
+        data={
+            "collection": "notes",
+            "document": nested["lens"],
+            "group": "optics/lenses/thin",
+        },
+        headers=HTMX,
+    )
+
+    assert (
+        path_of(nested["lens"])
+        .parent.relative_to(existing_corpus().corpus_root / "notes")
+        .as_posix()
+        == "optics/lenses/thin"
+    )
+
+
+def test_the_group_field_says_how_to_put_a_group_inside_another():
+    assert "/" in words.FIELD_TIPS["group"]
+    assert "/" in words.MOVE_GROUP_EMPTY

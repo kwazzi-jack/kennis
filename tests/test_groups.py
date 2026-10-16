@@ -252,3 +252,26 @@ def test_a_refusal_says_which_way_out_it_was(group: str, reason: str):
 
     assert problem is not None
     assert reason in problem
+
+
+# A docs project is one folder (Brian, 2026-10-16): every page of a site is
+# written directly inside it, and the window offers groups within groups
+# everywhere else. Written by hand, in both separators.
+NESTED_PROJECTS = ["numpy/indexing", "numpy\\indexing", "a/b/c"]
+
+
+@pytest.mark.parametrize("project", NESTED_PROJECTS)
+def test_a_docs_project_option_with_more_than_one_part_is_refused(project: str):
+    with pytest.raises(InputError, match="one folder"):
+        AddOptions(project=project)
+
+
+@pytest.mark.parametrize("project", NESTED_PROJECTS)
+def test_a_pack_docs_project_with_more_than_one_part_is_refused(project: str):
+    with pytest.raises(PackInvalid, match="one folder"):
+        load_pack(PACK_WITH_PROJECT.format(project=project.replace("\\", "\\\\")))
+
+
+def test_a_group_may_still_hold_groups():
+    assert AddOptions(group="radio/calibration").group == "radio/calibration"
+    assert AddOptions(project="numpy").project == "numpy"

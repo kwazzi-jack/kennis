@@ -30,6 +30,21 @@
 </div>
 </details>
 {% endmacro %}
+{# A group, drawn by its last part and named by its whole path, with its
+   own documents first and the groups inside it after, each drawn by this
+   same macro. #}
+{% macro folder(branch) %}
+<li class="group{% if not branch.mark %} quiet{% endif %}" data-group="{{ branch.group }}" data-state="{{ branch.state }}">
+<details open>
+<summary class="node" title="{{ branch.group }}">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ branch.name }}</span><span class="count">{{ branch.count }}</span>{{ mark(branch.mark) }}</summary>
+<ul class="tree">
+{% for shown in branch.entries %}{{ entry(shown, branch.add_here) }}{% endfor %}
+{% for child in branch.children %}{{ folder(child) }}{% endfor %}
+</ul>
+</details>
+{{ menu(branch.group, "", branch.add_here) }}
+</li>
+{% endmacro %}
 {% macro entry(shown, add_here) %}
 <li class="row{% if not shown.mark %} quiet{% endif %}"{% if shown.document_id %} data-document="{{ shown.document_id }}"{% endif %} data-state="{{ shown.state }}">
 {% if shown.document_id %}<a class="node leaf" href="/document/{{ tree.collection }}/{{ shown.document_id }}" title="{{ shown.title }}">{{ icon("file-text") }}<span class="name">{{ shown.title }}</span>{{ mark(shown.mark) }}</a>
@@ -43,17 +58,7 @@
 {% if tree.movable %}<datalist id="groups-{{ tree.collection }}">{% for name in tree.groups %}<option value="{{ name }}">{% endfor %}</datalist>{% endif %}
 <ul class="tree">
 {% for shown in tree.top.entries %}{{ entry(shown, tree.top.add_here) }}{% endfor %}
-{% for branch in tree.branches %}
-<li class="group{% if not branch.mark %} quiet{% endif %}" data-group="{{ branch.group }}" data-state="{{ branch.state }}">
-<details open>
-<summary class="node">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ branch.group }}</span><span class="count">{{ branch.entries | length }}</span>{{ mark(branch.mark) }}</summary>
-<ul class="tree">
-{% for shown in branch.entries %}{{ entry(shown, branch.add_here) }}{% endfor %}
-</ul>
-</details>
-{{ menu(branch.group, "", branch.add_here) }}
-</li>
-{% endfor %}
+{% for branch in tree.branches %}{{ folder(branch) }}{% endfor %}
 </ul>
 {# A move changed what the pane counts and what is behind its index. #}
 {% if moved %}{% include "shell-redraws.html" %}{% endif %}

@@ -1,9 +1,11 @@
 {# One group of Several at once: a name, a collection, and its lines,
    each line checked as its own tab would check it. #}
+{% from "tip.html" import tip %}
 <fieldset class="block">
   <legend>{{ block_heading }} {{ index }}</legend>
   <div class="field">
     <label class="name" for="group-{{ index }}">{{ field_labels.group }}</label>
+    {{ tip("block-group-" ~ index, field_labels.group, field_tips.group) }}
     <span class="need">{{ required }}</span>
     <input id="group-{{ index }}" type="text" name="group-{{ index }}" list="add-groups">
   </div>

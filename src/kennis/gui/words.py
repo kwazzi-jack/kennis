@@ -831,7 +831,14 @@ FIELD_TIPS: Final[dict[str, str]] = {
         "when the PDF does not show one, or shows the wrong one."
     ),
     "citekey": "The key you cite it by in LaTeX or BibTeX.",
-    "project": "The name its pages are filed under in docs.",
+    "group": (
+        "A folder in the collection. Write radio/calibration to file it in "
+        "calibration, inside radio."
+    ),
+    "project": (
+        "The name its pages are filed under in docs: one folder, with no "
+        "groups inside it."
+    ),
     "max_depth": "How many links away from the start page kennis follows.",
 }
 
@@ -1152,7 +1159,7 @@ TITLE_HINT = "Optional. Default: the first line"
 
 GROUP_LABEL = "Group"
 
-GROUP_HINT = "Optional"
+GROUP_HINT = "Optional; a/b puts b inside a"
 
 TARGET_LABEL = "Save to"
 
@@ -1349,7 +1356,7 @@ MENU_ADD_HERE = "Add here"
 MENU_INDEX = "Index this collection"
 
 MOVE_GROUP_LABEL = "New group"
-MOVE_GROUP_EMPTY = "Leave empty for no group"
+MOVE_GROUP_EMPTY = "Empty for no group; a/b puts b inside a"
 
 
 def attention_count(count: int) -> str:

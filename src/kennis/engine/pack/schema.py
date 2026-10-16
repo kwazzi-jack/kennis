@@ -44,7 +44,7 @@ from pydantic import (
 )
 
 from kennis.engine.errors import PackInvalid
-from kennis.engine.groups import group_problem
+from kennis.engine.groups import group_problem, project_problem
 from kennis.engine.literature.identifiers import (
     PaperIdentifier,
     identifier_if_reference,
@@ -190,9 +190,9 @@ class DocsEntry(BaseModel):
     @field_validator("project")
     @classmethod
     def _names_a_folder_inside_docs(cls, value: str) -> str:
-        # A project is the directory its pages are written to, so it is a
-        # group by another name and the same rule applies.
-        problem = group_problem(value)
+        # A project is the directory its pages are written to: a group by
+        # another name, and one folder deep.
+        problem = project_problem(value)
         if problem is not None:
             raise ValueError(f"the project '{value}' {problem}")
         return value

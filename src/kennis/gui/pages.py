@@ -13,7 +13,7 @@ change a word and a change of wording cannot need a template edit.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -799,6 +799,7 @@ __all__ = [
     "add_here_address",
     "byline_of",
     "document_details",
+    "every_level",
     "known_groups",
     "ordered_by",
     "palette_entries",
@@ -897,7 +898,18 @@ def known_groups(context: Context, collections: Sequence[str]) -> list[str]:
             group = _group_of(root, collection, _anchor(document))
             if group:
                 found.add(group)
-    return sorted(found)
+    return every_level(found)
+
+
+def every_level(groups: Iterable[str]) -> list[str]:
+    """Each group and every group it is inside, once each, sorted: a
+    folder holding only folders is a group to file into too."""
+    levels: set[str] = set()
+    for group in groups:
+        parts = group.split("/")
+        levels.update("/".join(parts[:depth]) for depth in range(1, len(parts) + 1))
+    levels.discard("")
+    return sorted(levels)
 
 
 def _group_of(corpus_root: Path, collection: str, anchor: Path) -> str:
@@ -1111,20 +1123,35 @@ class ShownTreeEntry:
 
 @dataclass(frozen=True, slots=True)
 class ShownBranch:
-    """One group's entries, and the worst state beneath it.
+    """One group: its own entries, the groups inside it, and the worst
+    state anywhere beneath it.
 
-    `group` is empty for the collection's own top level, which is drawn
-    without a heading.
+    `group` is the whole path, which is what Add here, the Move field and
+    `data-group` name; `name` is its last part, which is what the folder
+    is called where it is drawn. `group` is empty for the collection's own
+    top level, which is drawn without a heading.
     """
 
     group: str
     entries: list[ShownTreeEntry]
     mark: ShownMark | None
     add_here: str
+    children: list[ShownBranch]
+    count: int
+
+    @property
+    def name(self) -> str:
+        return self.group.rpartition("/")[2]
 
     @property
     def state(self) -> str:
         return self.mark.state if self.mark else ""
+
+    def beneath(self) -> list[ShownTreeEntry]:
+        """Every entry in this group and in every group inside it."""
+        return self.entries + [
+            entry for child in self.children for entry in child.beneath()
+        ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1167,36 +1194,42 @@ def shown_tree(context: Context, collection: str) -> ShownTree:
                 mark=_mark("unreadable"),
             )
         )
-    branches = [
-        _branch(collection, group, entries)
-        for group, entries in sorted(
-            grouped.items(), key=lambda pair: (pair[0] != "", pair[0])
-        )
-    ]
-    top = (
-        branches.pop(0)
-        if branches and branches[0].group == ""
-        else _branch(collection, "", [])
-    )
-    every = [entry for branch in (top, *branches) for entry in branch.entries]
+    levels = every_level(grouped)
+    top = _branch(collection, "", grouped, levels)
+    every = top.beneath()
     return ShownTree(
         collection=collection,
-        top=top,
-        branches=branches,
-        groups=[branch.group for branch in branches],
+        top=replace(top, children=[]),
+        branches=top.children,
+        groups=levels,
         attention=sum(1 for entry in every if entry.mark),
         movable=collection != "docs",
     )
 
 
-def _branch(collection: str, group: str, entries: list[ShownTreeEntry]) -> ShownBranch:
-    attention = [entry.state for entry in entries if entry.mark]
+def _branch(
+    collection: str,
+    group: str,
+    grouped: dict[str, list[ShownTreeEntry]],
+    levels: list[str],
+) -> ShownBranch:
+    """`group` and, drawn inside it, every group one level down."""
+    children = [
+        _branch(collection, level, grouped, levels)
+        for level in levels
+        if level.rpartition("/")[0] == group
+    ]
+    entries = grouped.get(group, [])
+    beneath = entries + [entry for child in children for entry in child.beneath()]
+    attention = [entry.state for entry in beneath if entry.mark]
     worst = next((state for state in STATE_ORDER if state in attention), "")
     return ShownBranch(
         group=group,
         entries=entries,
         mark=_mark(worst, words.attention_count(len(attention))) if worst else None,
         add_here=add_here_address(collection, group),
+        children=children,
+        count=len(beneath),
     )
 
 

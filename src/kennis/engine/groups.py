@@ -42,6 +42,34 @@ def group_problem(group: str) -> str | None:
     return None
 
 
+def project_problem(project: str) -> str | None:
+    """Why `project` cannot be a docs project's folder, or None.
+
+    The group rule, and one folder: every page of a site is written
+    directly inside its project, so docs hold no groups within groups
+    while literature and notes do (Brian, 2026-10-16).
+    """
+    problem = group_problem(project)
+    if problem is not None:
+        return problem
+    if any(
+        len(path.parts) > 1
+        for path in (PurePosixPath(project), PureWindowsPath(project))
+    ):
+        return "has more than one part; a docs project is one folder"
+    return None
+
+
+def checked_project(project: str | None) -> str | None:
+    """`project` as given, or `InputError` saying why it cannot be one."""
+    if not project:
+        return project
+    problem = project_problem(project)
+    if problem is not None:
+        raise InputError(f"the project '{project}' {problem}")
+    return project
+
+
 def checked_group(group: str | None) -> str | None:
     """`group` as given, or `InputError` saying why it cannot be one."""
     if not group:
@@ -60,4 +88,10 @@ def group_directory(base: Path, group: str | None) -> Path:
     return base / checked if checked else base
 
 
-__all__ = ["checked_group", "group_directory", "group_problem"]
+__all__ = [
+    "checked_group",
+    "checked_project",
+    "group_directory",
+    "group_problem",
+    "project_problem",
+]

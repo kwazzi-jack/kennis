@@ -62,7 +62,9 @@ all under the project's group. Two limits apply, both adjustable:
 ```
 
 `--project` is what the pages are grouped under, and is also what `--project`
-on a search filters by.
+on a search filters by. A project is one folder: `stimela` is a project, and
+`stimela/cabs` is refused, because every page of a site is filed directly
+inside its project.
 
 ## A directory
 
@@ -80,8 +82,10 @@ Every readable file in it, converted as needed.
 kennis corpus add paper.pdf -l --group radio-astronomy
 ```
 
-Groups are ordinary directories and can nest. They are what `--group` filters
-on at search time.
+Groups are ordinary directories and can nest: `--group radio/calibration`
+files the paper in `calibration`, inside `radio`, and creates both if they are
+not there. They are what `--group` filters on at search time. The window
+draws them nested, and its Group fields offer every level already held.
 
 ## Keeping the source
 

@@ -107,7 +107,7 @@ from kennis.engine.events import (
     Severity,
     TitleDotStripped,
 )
-from kennis.engine.groups import checked_group, group_directory
+from kennis.engine.groups import checked_group, checked_project, group_directory
 from kennis.engine.literature.citekeys import (
     derive_citekey,
     literature_stem,
@@ -203,7 +203,7 @@ class AddOptions:
         # Both name a directory beneath the collection. Here as well as at
         # the join, so a refusal comes before a download or a conversion.
         checked_group(self.group)
-        checked_group(self.project)
+        checked_project(self.project)
 
 
 @dataclass(frozen=True, slots=True)
