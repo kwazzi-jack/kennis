@@ -202,8 +202,10 @@ class AddOptions:
     def __post_init__(self) -> None:
         # Both name a directory beneath the collection. Here as well as at
         # the join, so a refusal comes before a download or a conversion.
-        checked_group(self.group)
-        checked_project(self.project)
+        # Stored tidied, so `a / b` and `a/b` are one folder everywhere
+        # the options travel - the preview, the add and its report.
+        object.__setattr__(self, "group", checked_group(self.group))
+        object.__setattr__(self, "project", checked_project(self.project))
 
 
 @dataclass(frozen=True, slots=True)

@@ -75,7 +75,7 @@ class RememberOptions:
     def __post_init__(self) -> None:
         # Here rather than at the join alone, so the MCP tool's refusal
         # comes before the lock is taken.
-        checked_group(self.group)
+        object.__setattr__(self, "group", checked_group(self.group))
 
 
 @dataclass(frozen=True, slots=True)

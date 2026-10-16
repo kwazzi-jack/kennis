@@ -60,26 +60,48 @@ def project_problem(project: str) -> str | None:
     return None
 
 
+def spaces_trimmed(group: str) -> str:
+    """`group` with the spaces around each `/`-separated part removed.
+
+    `alma / special ` and `alma/special` are one group (Brian,
+    2026-10-16). Spaces inside a part stay. The rule is applied to what
+    this returns, so a space cannot carry a leading `/` or a dot past it.
+    """
+    return "/".join(part.strip() for part in group.split("/"))
+
+
+def tidied(group: str) -> str | None:
+    """A checked group as it is stored: no empty parts, None for none.
+
+    Only after the rule, which has refused a leading `/` as absolute, so
+    dropping empty parts removes a doubled or trailing separator and
+    nothing else.
+    """
+    return "/".join(part for part in group.split("/") if part) or None
+
+
 def checked_project(project: str | None) -> str | None:
-    """`project` as given, or `InputError` saying why it cannot be one."""
+    """`project` tidied, or `InputError` saying why it cannot be one."""
     if not project:
         return project
-    problem = project_problem(project)
+    trimmed = spaces_trimmed(project)
+    problem = project_problem(trimmed)
     if problem is not None:
         raise InputError(f"the project '{project}' {problem}")
-    return project
+    return tidied(trimmed)
 
 
 def checked_group(group: str | None) -> str | None:
-    """`group` as given, or `InputError` saying why it cannot be one."""
+    """`group` tidied, or `InputError` saying why it cannot be one."""
     if not group:
         return group
-    problem = group_problem(group)
+    trimmed = spaces_trimmed(group)
+    problem = group_problem(trimmed)
     if problem is not None:
         raise InputError(
             f"the group '{group}' {problem}; a group is a folder inside its collection"
         )
-    return group
+    return tidied(trimmed)
 
 
 def group_directory(base: Path, group: str | None) -> Path:
@@ -94,4 +116,6 @@ __all__ = [
     "group_directory",
     "group_problem",
     "project_problem",
+    "spaces_trimmed",
+    "tidied",
 ]

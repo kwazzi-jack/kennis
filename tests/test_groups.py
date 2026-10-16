@@ -303,3 +303,59 @@ def test_a_pack_paper_group_inside_is_kept():
     pack = load_pack(PACK_WITH_PAPER_GROUP.format(group="calibration/gains"))
 
     assert pack.corpus.literature[0].group == "calibration/gains"
+
+
+# ---------------------------------------------------------------------------
+# A group is stored tidied
+# ---------------------------------------------------------------------------
+
+# Written by hand (Brian, 2026-10-16): `alma / special ` and `alma/special`
+# are one group, stored as the latter. Spaces inside a part stay.
+UNTIDY = [
+    ("alma / special ", "alma/special"),
+    (" alma/special", "alma/special"),
+    ("alma/special/", "alma/special"),
+    ("alma//special", "alma/special"),
+    ("alma /  special  / x", "alma/special/x"),
+    (" with space ", "with space"),
+]
+
+
+@pytest.mark.parametrize(("typed", "stored"), UNTIDY)
+def test_spaces_around_each_part_of_a_group_are_removed(typed: str, stored: str):
+    assert checked_group(typed) == stored
+    assert AddOptions(group=typed).group == stored
+    assert RememberOptions(group=typed).group == stored
+
+
+@pytest.mark.parametrize(("typed", "stored"), UNTIDY)
+def test_a_tidied_group_is_the_folder_written(tmp_path: Path, typed: str, stored: str):
+    assert group_directory(tmp_path, typed) == tmp_path / stored
+
+
+@pytest.mark.parametrize(("typed", "stored"), UNTIDY)
+def test_a_pack_group_is_tidied_too(typed: str, stored: str):
+    notes = load_pack(PACK_WITH_GROUP.format(group=typed))
+    papers = load_pack(PACK_WITH_PAPER_GROUP.format(group=typed))
+
+    assert notes.corpus.notes[0].group == stored
+    assert papers.corpus.literature[0].group == stored
+
+
+@pytest.mark.parametrize("group", [" /absolute", "a/ .. /b", " . hidden", "a/ .x"])
+def test_removing_the_spaces_does_not_admit_a_way_out(group: str):
+    """The rule is applied to what would be stored, so a space cannot carry
+    a leading separator or a dot past it."""
+    with pytest.raises(InputError):
+        checked_group(group)
+
+
+def test_a_group_of_only_spaces_is_no_group():
+    assert AddOptions(group="  ").group is None
+    assert RememberOptions(group=" ").group is None
+
+
+def test_a_project_is_tidied_too():
+    assert AddOptions(project=" numpy ").project == "numpy"
+    pack = load_pack(PACK_WITH_PROJECT.format(project=" numpy "))
+    assert pack.corpus.docs[0].project == "numpy"

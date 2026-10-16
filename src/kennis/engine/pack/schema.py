@@ -44,7 +44,12 @@ from pydantic import (
 )
 
 from kennis.engine.errors import PackInvalid
-from kennis.engine.groups import group_problem, project_problem
+from kennis.engine.groups import (
+    group_problem,
+    project_problem,
+    spaces_trimmed,
+    tidied,
+)
 from kennis.engine.literature.identifiers import (
     PaperIdentifier,
     identifier_if_reference,
@@ -159,10 +164,13 @@ class LiteratureEntry(BaseModel):
     @field_validator("group")
     @classmethod
     def _stays_inside_the_packs_folder(cls, value: str | None) -> str | None:
-        problem = None if value is None else group_problem(value)
+        if value is None:
+            return None
+        trimmed = spaces_trimmed(value)
+        problem = group_problem(trimmed)
         if problem is not None:
             raise ValueError(f"the group '{value}' {problem}")
-        return value
+        return tidied(trimmed)
 
     @field_validator("url")
     @classmethod
@@ -204,10 +212,11 @@ class DocsEntry(BaseModel):
     def _names_a_folder_inside_docs(cls, value: str) -> str:
         # A project is the directory its pages are written to: a group by
         # another name, and one folder deep.
-        problem = project_problem(value)
+        trimmed = spaces_trimmed(value)
+        problem = project_problem(trimmed)
         if problem is not None:
             raise ValueError(f"the project '{value}' {problem}")
-        return value
+        return tidied(trimmed) or trimmed
 
 
 class ContentSource(BaseModel):
@@ -248,10 +257,13 @@ class ContentSource(BaseModel):
     def _stays_inside_its_collection(cls, value: str | None) -> str | None:
         # The same rule every writer applies, so a pack is refused when it
         # is read rather than part way through a sync.
-        problem = None if value is None else group_problem(value)
+        if value is None:
+            return None
+        trimmed = spaces_trimmed(value)
+        problem = group_problem(trimmed)
         if problem is not None:
             raise ValueError(f"the group '{value}' {problem}")
-        return value
+        return tidied(trimmed)
 
 
 class CorpusSection(BaseModel):
