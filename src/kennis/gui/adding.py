@@ -280,6 +280,42 @@ class ShownLine:
     role: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class ShownFound:
+    """The paper a preview found, laid out as a card.
+
+    `title` is set only when the Title field is not already showing it.
+    `authors` is the byline shortened; `every_author` is the whole list,
+    for its tooltip.
+    """
+
+    label: str
+    href: str
+    year: str
+    authors: str
+    every_author: str
+    title: str | None
+
+
+def shown_paper_found(
+    preview: PaperPreview, *, in_fields: frozenset[str] = frozenset()
+) -> ShownFound | None:
+    """The card for the paper arXiv named, or None when it named none."""
+    if preview.recognised is None or preview.title is None or preview.refusal:
+        return None
+    names = [name.strip() for name in (preview.authors or "").split(" and ")]
+    names = [name for name in names if name]
+    identifier = preview.recognised.value
+    return ShownFound(
+        label=words.found_on_arxiv(identifier),
+        href=f"https://arxiv.org/abs/{identifier}",
+        year=preview.year or "",
+        authors=words.shortened_authors(names) if names else "",
+        every_author=", ".join(names),
+        title=None if "title" in in_fields else preview.title,
+    )
+
+
 def paper_prefill(
     preview: PaperPreview, *, several: bool, kept: frozenset[str]
 ) -> list[tuple[str, str]]:
@@ -318,19 +354,9 @@ def shown_paper_preview(
         return [ShownLine(words.PREVIEW_UNRECOGNISED, "role-muted")]
     if preview.refusal is not None:
         return [ShownLine(describe_refusal(preview.refusal), "role-warning")]
+    # What arXiv named is the card's, drawn by `shown_paper_found`.
     lines: list[ShownLine] = []
-    if preview.title is not None:
-        lines.append(
-            ShownLine(
-                words.previewed_arxiv(
-                    preview.recognised.value,
-                    preview.authors or "",
-                    preview.year or "",
-                    title=None if "title" in in_fields else preview.title,
-                )
-            )
-        )
-    elif preview.looked_up:
+    if preview.title is None and preview.looked_up:
         lines.append(ShownLine(words.ARXIV_SILENT, "role-warning"))
     if preview.citekey is not None and "citekey" not in in_fields:
         lines.append(
@@ -475,6 +501,7 @@ __all__ = [
     "ShownChoice",
     "ShownEntry",
     "ShownField",
+    "ShownFound",
     "ShownLine",
     "ShownListing",
     "ShownTab",
@@ -487,6 +514,7 @@ __all__ = [
     "listing_of",
     "paper_prefill",
     "shown_checks",
+    "shown_paper_found",
     "shown_paper_preview",
     "shown_site_preview",
 ]

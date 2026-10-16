@@ -25,7 +25,7 @@
 </span>{% endmacro %}
 {% set typed %}{{ typed_input(field) }}{% endset %}
 {% if field.widget == "ways" %}
-<div class="ways choices segmented" role="radiogroup" aria-label="{{ field.label }}">{% for choice in field.choices %}<label><input type="radio" name="{{ field.name }}" value="{{ choice.value }}" required{% if choice.value == field.value %} checked{% endif %} hx-get="{{ field.preview }}" hx-trigger="change" hx-target="#add-preview" hx-include="closest form">{{ icon(choice.icon) }}{{ choice.label }}</label>{% endfor %}</div>
+<div class="ways choices segmented" role="radiogroup" aria-label="{{ field.label }}">{% for choice in field.choices %}<label><input type="radio" name="{{ field.name }}" value="{{ choice.value }}" required{% if choice.value == field.value %} checked{% endif %} hx-get="{{ field.preview }}" hx-trigger="change" hx-target="#add-preview" hx-include="closest form" hx-indicator="#add-looking">{{ icon(choice.icon) }}{{ choice.label }}</label>{% endfor %}</div>
 {% else %}
 <div class="field" data-name="{{ field.name }}"{% if field.when %} data-when="{{ field.when }}"{% endif %} data-need="{{ 'required' if field.required else 'optional' }}"{% if field.upload %} data-uploads="{{ field.upload }}"{% endif %}>
   {% if field.widget == "choice" or field.upload %}<span class="name" id="add-{{ field.name }}-name">{{ field.label }}</span>{% else %}<label class="name" for="add-{{ field.name }}">{{ field.label }}</label>{% endif %}

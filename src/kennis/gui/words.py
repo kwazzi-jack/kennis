@@ -944,18 +944,35 @@ def not_a_count(label: str, given: str) -> str:
 
 
 # The preview, for a paper.
-def previewed_arxiv(
-    identifier: str, authors: str, year: str, *, title: str | None = None
-) -> str:
-    """The paper arXiv names. Its title only when the Title field is not
-    already showing it."""
-    who = ", ".join(part for part in (authors, year) if part)
-    named = f"arXiv {identifier}" + (f": {title}" if title else "")
-    return named + (f" - {who}" if who else "")
-
-
 def previewed_citekey(citekey: str) -> str:
     return f"Citekey: {citekey}"
+
+
+# Shown while a preview's request is out: arXiv takes a second or more,
+# and an Add pressed before it answers loses what it would have said.
+LOOKING_UP: Final[dict[str, str]] = {
+    "paper": "Looking up the paper...",
+    "site": "Reading the address...",
+}
+
+# How many authors the found paper's card names before "and N others".
+AUTHORS_SHOWN: Final = 3
+
+
+def found_on_arxiv(identifier: str) -> str:
+    return f"arXiv {identifier}"
+
+
+def shortened_authors(names: Sequence[str]) -> str:
+    """The first few authors and how many more, as a byline reads."""
+    if len(names) <= AUTHORS_SHOWN:
+        return ", ".join(names[:-1]) + (" and " if len(names) > 1 else "") + names[-1]
+    rest = len(names) - AUTHORS_SHOWN
+    return (
+        ", ".join(names[:AUTHORS_SHOWN])
+        + f" and {rest} other"
+        + ("s" if rest > 1 else "")
+    )
 
 
 # Read by a screen reader on a field the preview filled in, which is
@@ -1468,6 +1485,7 @@ __all__ = [
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
     "ATTENTION_ONLY",
+    "AUTHORS_SHOWN",
     "BACKUP_CONFIRMATION",
     "BACKUP_FOLDER_LABEL",
     "BACKUP_HEADING",
@@ -1561,6 +1579,7 @@ __all__ = [
     "LOAD_IMAGES",
     "LOCKED",
     "LOCKED_HEADING",
+    "LOOKING_UP",
     "MARK_WITHHELD",
     "MATCHES_WITHHELD",
     "MEASURE_ICONS",
@@ -1711,6 +1730,7 @@ __all__ = [
     "documents_held",
     "documents_waiting",
     "every_item",
+    "found_on_arxiv",
     "group_empty_means",
     "index_collection",
     "index_now",
@@ -1731,7 +1751,6 @@ __all__ = [
     "open_candidate",
     "overridden_by",
     "passage_label",
-    "previewed_arxiv",
     "previewed_citekey",
     "previewed_project",
     "results_for",
@@ -1739,6 +1758,7 @@ __all__ = [
     "search_hint_for",
     "searchable_summary",
     "setting_tip",
+    "shortened_authors",
     "time_ago",
     "tip_about",
     "unknown_collection",

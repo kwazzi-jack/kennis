@@ -1,6 +1,11 @@
 {# A preview's sentences, and, for a paper, the Title and Citekey fields
    it fills or empties, out of band, each with what kennis put there. #}
 {% from "forms/add-input.html" import typed_input with context %}
+{% if found %}<div class="found">
+<p class="found-head"><a href="{{ found.href }}" target="_blank" rel="noopener noreferrer">{{ found.label }}</a>{% if found.year %}<span class="year">{{ found.year }}</span>{% endif %}</p>
+{% if found.title %}<p class="found-title">{{ found.title }}</p>{% endif %}
+{% if found.authors %}<p class="authors" title="{{ found.every_author }}">{{ found.authors }}</p>{% endif %}
+</div>{% endif %}
 {% for line in lines %}<p class="{{ line.role }}">{{ line.text }}</p>{% endfor %}
 {% for field, value in redraws | default([]) %}<span class="entry-row" id="add-{{ field.name }}-entry" hx-swap-oob="true">{{ typed_input(field, value) }}</span>
 <span id="add-prefilled-{{ field.name }}" hx-swap-oob="true"><input type="hidden" name="prefilled-{{ field.name }}" value="{{ value }}"></span>

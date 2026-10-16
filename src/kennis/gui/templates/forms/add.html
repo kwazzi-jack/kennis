@@ -22,6 +22,7 @@
   <div class="add-fields">
   {% for field in fields %}{% include "forms/add-field.html" %}{% endfor %}
   </div>
+  {% if kind in looking_up %}<p id="add-looking" class="looking role-muted" aria-live="polite">{{ looking_up[kind] }}</p>{% endif %}
   <div id="add-preview" class="preview" aria-live="polite"></div>
   {% if kind == "paper" %}
   {# What the preview filled in, so the preview and the add can tell it
@@ -31,7 +32,7 @@
   <span id="add-prefilled-note" class="visually-hidden">{{ prefilled_note }}</span>
   {% endif %}
   {% if kind == "site" %}
-  <button type="button" class="ghost probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview">{{ check_site }}</button>
+  <button type="button" class="ghost probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview" hx-indicator="#add-looking">{{ check_site }}</button>
   {% endif %}
   {% endif %}
   {# Where it goes, Cancel, and the add. Each part of the destination

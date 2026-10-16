@@ -34,6 +34,7 @@ from kennis.gui.adding import (
     listing_of,
     paper_prefill,
     shown_checks,
+    shown_paper_found,
     shown_paper_preview,
     shown_site_preview,
 )
@@ -270,14 +271,13 @@ def preview_a_paper(
         preview, several=len(papers_named) > 1, kept=frozenset(kept)
     )
     fields = {field.name: field for field in add_fields("paper", default_group=None)}
+    in_fields = frozenset(name for name, value in redraws if value)
     return TEMPLATES.TemplateResponse(
         request,
         "forms/add-preview.html",
         {
-            "lines": shown_paper_preview(
-                preview,
-                in_fields=frozenset(name for name, value in redraws if value),
-            ),
+            "found": shown_paper_found(preview, in_fields=in_fields),
+            "lines": shown_paper_preview(preview, in_fields=in_fields),
             "redraws": [(fields[name], value) for name, value in redraws],
         },
     )

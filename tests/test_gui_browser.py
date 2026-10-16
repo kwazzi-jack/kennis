@@ -626,3 +626,27 @@ def test_the_paper_preview_fills_the_fields_and_an_edit_unmarks_one(
         arg=[title.element_handle(), marked],
         timeout=_WAIT_MS,
     )
+
+
+def test_a_slow_lookup_says_it_is_looking_until_it_answers(
+    page: playwright.Page, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pasted address and an immediate Add closed the dialog before
+    arXiv answered, and nothing said a lookup was under way."""
+    import time
+
+    from kennis.engine.literature.metadata import ArxivMetadata
+
+    def slowly(arxiv_id: str, *, client: object = None) -> ArxivMetadata:
+        time.sleep(1.5)
+        return ArxivMetadata(title="Slow Paper", authors="Ada One", year="2024")
+
+    monkeypatch.setattr("kennis.engine.corpus.preview.lookup_arxiv_metadata", slowly)
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .ways", timeout=_WAIT_MS)
+    page.fill("#dialog input[name=identifiers]", "https://arxiv.org/abs/2409.19750")
+
+    page.wait_for_selector("#add-looking", state="visible", timeout=_WAIT_MS)
+    page.wait_for_selector("#dialog .found", timeout=_WAIT_MS)
+    assert page.is_hidden("#add-looking")

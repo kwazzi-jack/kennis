@@ -1403,3 +1403,91 @@ def test_the_field_being_typed_in_is_not_redrawn(
 
     assert redrawn(shown, "citekey") is None
     assert redrawn(shown, "title") is not None
+
+
+# ---------------------------------------------------------------------------
+# What the preview found, as a card, and that it is looking
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def five_authors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "kennis.engine.corpus.preview.lookup_arxiv_metadata",
+        lambda arxiv_id, *, client=None: ArxivMetadata(
+            title="A Paper About Calibration",
+            authors="Ada One and Bo Two and Cy Three and Di Four and Ed Five",
+            year="2024",
+        ),
+    )
+
+
+def found_card(shown: BeautifulSoup) -> Tag:
+    card = shown.find(class_="found")
+    assert isinstance(card, Tag), shown
+    return card
+
+
+def test_the_found_paper_is_a_card_with_a_link_to_its_abstract(
+    client: TestClient, five_authors: None
+):
+    card = found_card(previewed(client, identifiers="https://arxiv.org/abs/2409.19750"))
+    link = card.find("a")
+
+    assert isinstance(link, Tag)
+    assert link["href"] == "https://arxiv.org/abs/2409.19750"
+    assert link.get("target") == "_blank"
+    assert "noreferrer" in (link.get("rel") or [])
+    assert "2409.19750" in link.get_text()
+    assert "2024" in card.get_text()
+
+
+def test_a_long_author_list_is_shortened_and_kept_whole_as_a_tooltip(
+    client: TestClient, five_authors: None
+):
+    card = found_card(previewed(client, identifiers="2409.19750"))
+    authors = card.find(class_="authors")
+
+    assert isinstance(authors, Tag)
+    assert authors.get_text(strip=True) == "Ada One, Bo Two, Cy Three and 2 others"
+    assert authors["title"] == "Ada One, Bo Two, Cy Three, Di Four, Ed Five"
+
+
+def test_the_card_names_the_title_only_when_its_field_does_not(
+    client: TestClient, five_authors: None
+):
+    filled = found_card(previewed(client, identifiers="2409.19750"))
+    typed = found_card(
+        previewed(
+            client,
+            identifiers="2409.19750",
+            title="My Own Words",
+            **{"prefilled-title": ""},
+        )
+    )
+
+    assert "A Paper About Calibration" not in filled.get_text()
+    assert "A Paper About Calibration" in typed.get_text()
+
+
+@pytest.mark.parametrize("kind", ["paper", "site"])
+def test_every_field_that_asks_for_a_preview_shows_the_looking_line(
+    client: TestClient, kind: str
+):
+    dialog = BeautifulSoup(dialog_of(client, kind), "html.parser")
+    asking = dialog.select("[hx-get^='/add/preview']")
+    looking = dialog.find(id="add-looking")
+
+    assert asking
+    for element in asking:
+        assert element.get("hx-indicator") == "#add-looking", element
+    assert isinstance(looking, Tag)
+    assert looking.get_text(strip=True) == words.LOOKING_UP[kind]
+
+
+def test_the_looking_line_shows_only_while_a_request_is_out():
+    from kennis.gui.theme import layout_css
+
+    css = layout_css()
+    assert re.search(r"\.looking\s*\{[^}]*display:\s*none", css)
+    assert re.search(r"\.looking\.htmx-request\s*\{[^}]*display:\s*(?!none)", css)

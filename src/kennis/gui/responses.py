@@ -219,6 +219,7 @@ TEMPLATES.env.globals.update(
         "optional": words.OPTIONAL,
         "empty_prefix": words.EMPTY_PREFIX,
         "prefilled_note": words.PREFILLED_NOTE,
+        "looking_up": words.LOOKING_UP,
         "field_labels": words.FIELD_LABELS,
         "field_tips": words.FIELD_TIPS,
         "browse": words.BROWSE,

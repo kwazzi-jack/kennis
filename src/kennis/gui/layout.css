@@ -1837,6 +1837,27 @@ button:focus-visible, a:focus-visible {
 .add-tab .field[data-uploads="file"] .uploads { margin-top: 0.4rem; }
 .add-tab .preview { min-height: 1.2rem; margin: 0 0 0.75rem; }
 .add-tab .preview p { margin: 0 0 0.3rem; }
+/* While a preview's request is out, and only then: htmx puts
+   `htmx-request` on the indicator a field names. The last answer dims
+   meanwhile, since it is about to be replaced. */
+.add-tab .looking { display: none; margin: 0 0 0.4rem; }
+.add-tab .looking.htmx-request { display: block; }
+.add-tab:has(.looking.htmx-request) .preview { opacity: 0.5; }
+/* The paper a preview found: a card, the identifier linking to its
+   abstract, the year beside it, the authors under it. */
+.add-tab .found {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--raised);
+  margin: 0 0 0.5rem;
+}
+.add-tab .found p { margin: 0; }
+.add-tab .found-head { display: flex; gap: 0.6rem; align-items: baseline; }
+.add-tab .found-head a { font-weight: 600; }
+.add-tab .found-head .year { color: var(--role-muted); }
+.add-tab .found-title { margin-top: 0.2rem; }
+.add-tab .found .authors { color: var(--role-muted); margin-top: 0.15rem; }
 .add-tab .probe { margin: 0 0 0.75rem; }
 
 /* Where the add goes, Cancel, and the add itself, at the foot. Inside
