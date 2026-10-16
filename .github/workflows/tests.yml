@@ -71,9 +71,16 @@ jobs:
         # on one version, because a second would triple a failure set
         # that says nothing new. macOS needs no second version: it
         # shares every platform-sensitive path with Linux.
+        #
+        # `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19, so Ubuntu
+        # 24.04 is named as well: the release people are most likely to
+        # run, kept after the label moves on. One Python on it, the
+        # oldest kennis supports, which is also the one 24.04 ships.
         os: [ubuntu-latest]
         python: ["3.12", "3.13", "3.14"]
         include:
+          - os: ubuntu-24.04
+            python: "3.12"
           - os: macos-latest
             python: "3.12"
           - os: windows-latest
@@ -158,8 +165,18 @@ jobs:
   # browser's behaviour and kennis's markup, neither of which changes with
   # the operating system or the Python. Deselected from the job above by
   # the `browser` marker, which needs a browser that job does not install.
+  #
+  # On two Ubuntu releases nonetheless, because `playwright install
+  # --with-deps` installs system packages by name and supports a fixed
+  # list of releases: when `ubuntu-latest` becomes one the pinned
+  # Playwright does not know, this job fails there and 24.04 still says
+  # whether the window works.
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v7
 

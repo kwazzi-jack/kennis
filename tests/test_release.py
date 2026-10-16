@@ -99,6 +99,36 @@ def test_a_release_refuses_a_tag_that_is_not_the_projects_version():
     )
 
 
+def matrix_pairs(job: dict[str, object]) -> set[tuple[str, str]]:
+    """The (os, python) pairs a job's matrix runs, with `include` added.
+    A job without a matrix runs nowhere this can name, so it is empty."""
+    strategy = job.get("strategy")
+    if not isinstance(strategy, dict):
+        return set()
+    matrix = strategy["matrix"]
+    assert isinstance(matrix, dict)
+    pairs = {
+        (str(os_name), str(python))
+        for os_name in matrix.get("os", [])
+        for python in matrix.get("python", [])
+    }
+    pairs |= {
+        (str(entry["os"]), str(entry["python"])) for entry in matrix.get("include", [])
+    }
+    return pairs
+
+
+def test_the_rehearsal_installs_on_every_pair_the_tests_run_on():
+    """The tests install from the lock; a person's install resolves afresh,
+    and what it finds depends on the platform and the Python - a dependency
+    with no wheel for 3.14 or for Windows. So the rehearsal installs the
+    uploaded wheel wherever the suite passes, and nowhere else."""
+    tested = matrix_pairs(jobs_of(load_workflow("tests.yml"))["test"])
+    rehearsed = matrix_pairs(jobs_of(load_workflow("rehearse.yml"))["install"])
+    assert len(tested) >= 6, "the test matrix is smaller than this test assumes"
+    assert rehearsed == tested
+
+
 def hosts_named_in_source() -> dict[str, list[str]]:
     """Every host in a URL inside a string literal under `src/kennis`,
     docstrings excluded, because a docstring describes rather than calls.

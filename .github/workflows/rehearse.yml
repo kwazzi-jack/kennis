@@ -71,16 +71,35 @@ jobs:
           --publish-url https://test.pypi.org/legacy/
 
   # What a person typing `pip install kennis` would get, from the index
-  # rather than from the build directory.
+  # rather than from the build directory, on every platform and Python the
+  # tests run on (`tests.yml`; a test keeps the two matrices equal). The
+  # tests install from the lock and this resolves afresh, so this is where
+  # a dependency with no wheel for one platform or one Python shows.
   install:
     needs: [build, publish]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-24.04
+            python: "3.12"
+          - os: macos-latest
+            python: "3.12"
+          - os: windows-latest
+            python: "3.12"
+    # Git Bash on Windows, so one script serves every platform.
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
       - uses: astral-sh/setup-uv@v10.2.0
 
-      - run: uv venv --python 3.12
+      - run: uv venv --python ${{ matrix.python }}
 
       # Only kennis comes from TestPyPI. Anyone may upload anything there,
       # and it holds unrelated packages under common names - a `fastapi
@@ -89,21 +108,33 @@ jobs:
       # TestPyPI serves for this version is fetched by its own JSON
       # description, checked against the digest TestPyPI states, and
       # installed as a file. A just-uploaded version can take a minute or
-      # two to appear, hence the retries.
+      # two to appear, hence the retries. In Python rather than curl, jq
+      # and sha256sum, which are not the same tools on every image.
       - name: Fetch the wheel from TestPyPI
         run: |
-          for attempt in 1 2 3 4 5 6; do
-            if curl -fsS "https://test.pypi.org/pypi/kennis/$VERSION/json" -o release.json; then
-              break
-            fi
-            echo "attempt $attempt: not served yet" >&2
-            sleep 30
-          done
-          url="$(jq -r '.urls[] | select(.packagetype == "bdist_wheel") | .url' release.json)"
-          digest="$(jq -r '.urls[] | select(.packagetype == "bdist_wheel") | .digests.sha256' release.json)"
-          mkdir -p wheel
-          curl -fsS "$url" -o "wheel/$(basename "$url")"
-          echo "$digest  wheel/$(basename "$url")" | sha256sum --check
+          uv run --no-project --python ${{ matrix.python }} python - <<'EOF'
+          import hashlib, json, os, pathlib, time, urllib.request
+          address = f"https://test.pypi.org/pypi/kennis/{os.environ['VERSION']}/json"
+          for attempt in range(1, 7):
+              try:
+                  with urllib.request.urlopen(address, timeout=60) as answer:
+                      release = json.load(answer)
+                  break
+              except OSError as error:
+                  print(f"attempt {attempt}: not served yet ({error})", flush=True)
+                  time.sleep(30)
+          else:
+              raise SystemExit(f"{address} was never served")
+          (wheel,) = [entry for entry in release["urls"] if entry["packagetype"] == "bdist_wheel"]
+          with urllib.request.urlopen(wheel["url"], timeout=120) as answer:
+              content = answer.read()
+          if hashlib.sha256(content).hexdigest() != wheel["digests"]["sha256"]:
+              raise SystemExit(f"{wheel['filename']}: digest differs from TestPyPI's")
+          target = pathlib.Path("wheel") / wheel["filename"]
+          target.parent.mkdir(exist_ok=True)
+          target.write_bytes(content)
+          print(f"{target}: OK")
+          EOF
 
       # Every dependency from PyPI, and torch from PyTorch's CPU index so
       # MinerU's torch is a few hundred megabytes rather than the CUDA
@@ -117,9 +148,11 @@ jobs:
           --extra-index-url https://download.pytorch.org/whl/cpu
           --index-strategy unsafe-best-match
 
-      - run: .venv/bin/kennis --version
+      # `uv run --no-project` uses `.venv` here, whose scripts are in
+      # `bin` on Linux and macOS and in `Scripts` on Windows.
+      - run: uv run --no-project kennis --version
 
       - name: The installed version is the one uploaded
         run: |
-          installed="$(.venv/bin/python -c 'import importlib.metadata as m; print(m.version("kennis"))')"
+          installed="$(uv run --no-project python -c 'import importlib.metadata as m; print(m.version("kennis"))')"
           test "$installed" = "$VERSION"
