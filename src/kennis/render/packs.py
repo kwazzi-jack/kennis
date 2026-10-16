@@ -320,10 +320,15 @@ _VERDICT_WORDS: dict[Verdict, str] = {
 }
 
 
-def describe_action(action: Action) -> str:
+def describe_action(action: Action, name: str | None = None) -> str:
     """One line about one address, for a front end that prints the
-    address nowhere else on the line - the command line."""
-    return f"{action.address}: {describe_outcome_of(action)}"
+    address nowhere else on the line - the command line.
+
+    `name` is what the reader knows the document by, where that is not
+    the address: a corpus document's place, since its address is the
+    pack's own (`c.md` inside its notes source).
+    """
+    return f"{name or action.address}: {describe_outcome_of(action)}"
 
 
 def describe_outcome_of(action: Action) -> str:

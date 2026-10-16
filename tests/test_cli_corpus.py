@@ -522,8 +522,28 @@ def test_sync_records_one_commit_naming_what_it_did(
 
     history = run.invoke(main, ["corpus", "history"])
 
-    assert "sync(notes)" in history.output
+    # A sync converges every collection, and said `notes` when it had
+    # deleted papers and docs pages (Brian's corpus, 2026-10-16).
+    assert "sync(corpus)" in history.output
     assert "1 write" in history.output
+
+
+def test_sync_names_each_document_where_it_is(
+    run: CliRunner, isolated: Path, tmp_path: Path
+):
+    initialised(run)
+    path = a_notes_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    synced = run.invoke(main, ["corpus", "sync"])
+
+    assert synced.exit_code == 0, synced.output
+    placed = [
+        path.relative_to(isolated).as_posix()
+        for path in (isolated / "notes").rglob("*.md")
+    ]
+    assert len(placed) == 1
+    assert f"{placed[0]}: " in synced.output
 
 
 def test_a_sync_that_changed_nothing_adds_no_commit(

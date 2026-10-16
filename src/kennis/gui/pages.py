@@ -1415,7 +1415,8 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
         items=tuple(
             ShownItem(
                 marker=SYNC_MARKERS.get(action.verdict, ">"),
-                name=action.address,
+                # Where the document is, not the pack's address for it.
+                name=result.places.get(action.address, action.address),
                 outcome=action.verdict,
                 detail=describe_outcome_of(action),
             )

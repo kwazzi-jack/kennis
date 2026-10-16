@@ -45,6 +45,7 @@ from kennis.engine.corpus.add import (
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, move_document, write_document
 from kennis.engine.corpus.intake import Converted
+from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.moving import holding, move_target
 from kennis.engine.corpus.schema import (
     Bibliography,
@@ -120,6 +121,13 @@ class CorpusSync:
     # sync that kept that to itself left the reader nothing to do but wait
     # for a next run that would fail the same way.
     why: tuple[tuple[str, Refusal], ...] = ()
+    # Where each address's document is, relative to the corpus root:
+    # after the sync, or where it was for one removed. An address is the
+    # pack's name for a document - `c.md` inside its notes source,
+    # `arxiv:2409.19750` - and a report naming it told the reader nothing
+    # about their corpus (Brian, 2026-10-16). An address with no document
+    # either side, a fetch that failed, has no place.
+    places: dict[str, str] = field(default_factory=dict)
 
 
 def sync_corpus(
@@ -173,7 +181,8 @@ def sync_corpus(
 
     actions = notes.actions + papers.actions + projects.actions
     counts = Counter(action.verdict for action in actions)
-    _reported(events, actions, started)
+    places = _places(corpus_root, notes, papers, projects)
+    _reported(events, actions, places, started)
     return CorpusSync(
         actions=actions,
         counts=dict(counts),
@@ -185,7 +194,34 @@ def sync_corpus(
         ),
         failed=failed,
         why=tuple(why.items()),
+        places=places,
     )
+
+
+def _places(
+    corpus_root: Path, notes: _Plan, papers: _Plan, projects: _Plan
+) -> dict[str, str]:
+    """Where each action's document is now, or was before a delete.
+
+    Notes and papers are found again after carrying out, by the keys their
+    plans use, because a write files a document and a relocation moves one.
+    A docs project is its folder.
+    """
+    places: dict[str, str] = {}
+    sections = (
+        (notes, _held(Collection(root=corpus_root, name="notes"))),
+        (papers, _held_papers(Collection(root=corpus_root, name="literature"))),
+    )
+    for plan, now in sections:
+        for action in plan.actions:
+            found = now.get(action.address) or plan.held.get(action.address)
+            if found is not None:
+                places[action.address] = relative_to_corpus(
+                    found[1].md_path, corpus_root
+                )
+    for action in projects.actions:
+        places[action.address] = f"docs/{action.address}"
+    return places
 
 
 @dataclass(frozen=True, slots=True)
@@ -678,6 +714,18 @@ def _literature_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Pl
         ],
     )
     collection = Collection(root=corpus_root, name="literature")
+    held = _held_papers(collection)
+    return _Plan(
+        actions=resolve(declarations, {one: held[one][0] for one in held}),
+        held=held,
+        declarations=declarations,
+        entries=entries,
+        unreadable=_unreadable_in(collection),
+    )
+
+
+def _held_papers(collection: Collection) -> dict[str, tuple[Existing, Document]]:
+    """The literature collection's papers, keyed as a declaration is."""
     held: dict[str, tuple[Existing, Document]] = {}
     for document in collection.contents().documents:
         frontmatter = document.frontmatter
@@ -687,13 +735,7 @@ def _literature_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Pl
         if key is None:
             continue
         held[key] = (_declared_existing(key, document), document)
-    return _Plan(
-        actions=resolve(declarations, {one: held[one][0] for one in held}),
-        held=held,
-        declarations=declarations,
-        entries=entries,
-        unreadable=_unreadable_in(collection),
-    )
+    return held
 
 
 def _docs_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
@@ -1011,7 +1053,10 @@ def _reowned(document: Document, owner: str) -> Document:
 
 
 def _reported(
-    events: EventSink | None, actions: tuple[Action, ...], started: float
+    events: EventSink | None,
+    actions: tuple[Action, ...],
+    places: dict[str, str],
+    started: float,
 ) -> None:
     if events is None:
         return
@@ -1022,7 +1067,7 @@ def _reported(
         events.emit(
             ItemFinished(
                 operation=OPERATION,
-                item=action.address,
+                item=places.get(action.address, action.address),
                 outcome=outcome,
                 refusal=Quoted(action.verdict),
             )

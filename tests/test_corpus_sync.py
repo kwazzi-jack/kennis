@@ -501,3 +501,39 @@ def test_a_note_the_user_filed_under_the_packs_name_is_left_alone(
 
     mine = next(one for one in notes_in(corpus) if one.frontmatter.title == "Mine")
     assert folder_of(mine, corpus) == "elsewhere"
+
+
+# ---------------------------------------------------------------------------
+# Where each document is, for the report (Brian, 2026-10-16)
+# ---------------------------------------------------------------------------
+
+
+def test_a_note_is_reported_where_it_is_not_by_its_address(
+    corpus: Path, tmp_path: Path
+):
+    """ "= c.md - unchanged" named the file inside the pack's source; the
+    corpus holds it as `notes/boepie/Recipes.md`."""
+    installed(corpus, tmp_path, files={"notes/c.md": "# Recipes\n\nRun it.\n"})
+    events = Recorder()
+
+    result = sync_corpus(corpus, events=events)
+
+    place = only_note(corpus).md_path.relative_to(corpus).as_posix()
+    assert place == "notes/alpha/Recipes.md"
+    (action,) = result.actions
+    assert action.address == "c.md"
+    assert result.places["c.md"] == place
+    finished = [
+        event.item for event in events.events if type(event).__name__ == "ItemFinished"
+    ]
+    assert finished == [place]
+
+
+def test_a_kept_note_is_reported_where_it_is(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path, files={"notes/c.md": "# Recipes\n\nRun it.\n"})
+    sync_corpus(corpus)
+
+    result = sync_corpus(corpus)
+
+    assert result.counts == {"keep": 1}
+    assert result.places["c.md"] == "notes/alpha/Recipes.md"

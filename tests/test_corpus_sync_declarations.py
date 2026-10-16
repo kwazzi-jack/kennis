@@ -706,3 +706,48 @@ def test_a_docs_project_is_still_one_folder_by_its_name(corpus: Path, tmp_path: 
         for page in pages_in(corpus)
     }
     assert folders == {"stimela"}
+
+
+# ---------------------------------------------------------------------------
+# Where each document is, for the report (Brian, 2026-10-16)
+# ---------------------------------------------------------------------------
+
+
+def place_of(document: Document, corpus: Path) -> str:
+    return document.md_path.relative_to(corpus).as_posix()
+
+
+def test_a_fetched_paper_is_reported_where_it_was_filed(corpus: Path, tmp_path: Path):
+    """The report said `arxiv:2409.19750`, the key only a pack author reads."""
+    installed(corpus, tmp_path, body=PAPER)
+
+    result = synced(corpus)
+
+    (paper,) = papers_in(corpus)
+    (action,) = result.actions
+    assert result.places[action.address] == place_of(paper, corpus)
+    assert result.places[action.address].startswith("literature/alpha/")
+
+
+def test_a_removed_paper_is_reported_where_it_was(corpus: Path, tmp_path: Path):
+    """tron's 13 papers were reported as 13 arXiv keys when removed."""
+    installed(corpus, tmp_path, body=PAPER)
+    synced(corpus)
+    (paper,) = papers_in(corpus)
+    was = place_of(paper, corpus)
+
+    installed(corpus, tmp_path, body="corpus:\n  notes: []\n")
+    result = synced(corpus)
+
+    (action,) = result.actions
+    assert action.verdict == "delete"
+    assert result.places[action.address] == was
+
+
+def test_a_project_is_reported_as_its_folder(corpus: Path, tmp_path: Path):
+    installed(corpus, tmp_path, body=DOCS)
+
+    result = synced(corpus)
+
+    (action,) = result.actions
+    assert result.places[action.address] == "docs/stimela"

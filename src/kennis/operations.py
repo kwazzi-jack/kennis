@@ -383,7 +383,7 @@ def synchronise_corpus(
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        with committed_if_interrupted(context, "sync", scope="notes"):
+        with committed_if_interrupted(context, "sync", scope="corpus"):
             result = sync_corpus(
                 context.corpus_root,
                 events=events,
@@ -391,7 +391,7 @@ def synchronise_corpus(
                 unpaywall_email=context.settings.literature.unpaywall_email,
             )
         Repository(context.corpus_root).commit(
-            "sync", scope="notes", summary=describe_sync_summary(result.counts)
+            "sync", scope="corpus", summary=describe_sync_summary(result.counts)
         )
     return result
 

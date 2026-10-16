@@ -568,7 +568,10 @@ def sync_command() -> None:
     report_restored(restored)
     display.operation("Synchronised", describe_sync(result.counts, noun="document"))
     for action in result.actions:
-        display.detail(display.sync_marker(action.verdict), describe_action(action))
+        display.detail(
+            display.sync_marker(action.verdict),
+            describe_action(action, result.places.get(action.address)),
+        )
     _report_what_a_sync_left(result)
     if any(action.verdict in ACTING for action in result.actions):
         display.next_step("kennis corpus index")
