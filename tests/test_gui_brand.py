@@ -10,8 +10,10 @@ and which the content policy's `img-src data:` already admits.
 from __future__ import annotations
 
 import base64
+import re
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import unquote
 from xml.etree import ElementTree
 
 import pytest
@@ -20,6 +22,12 @@ from fastapi.testclient import TestClient
 
 from kennis.cli.__main__ import main
 from kennis.gui.app import build_app
+from kennis.gui.theme import (
+    CSS_COLOURS_DARK,
+    DARK_GROUND,
+    css_variables,
+    layout_css,
+)
 
 TOKEN = "a-test-token"
 FAVICON = (
@@ -96,3 +104,76 @@ def test_every_page_carries_the_open_book_inline(client: TestClient, kind: str):
     (href,) = icon_links(page_of(client, kind))
     assert href.startswith(DATA_PREFIX), href[:40]
     assert base64.b64decode(href.removeprefix(DATA_PREFIX)) == FAVICON.read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# The bar
+# ---------------------------------------------------------------------------
+
+BRAND = FAVICON.parent
+
+
+class Wordmark(HTMLParser):
+    """The bar's wordmark link: its text, and the elements inside it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.depth = 0
+        self.text = ""
+        self.inside: list[dict[str, str | None]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if self.depth:
+            self.depth += 1
+            self.inside.append(attributes)
+        elif tag == "a" and "wordmark" in (attributes.get("class") or "").split():
+            self.depth = 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.depth:
+            self.depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self.depth:
+            self.text += data
+
+
+def test_the_bar_draws_the_book_beside_the_name(client: TestClient):
+    """The book is decoration beside the word, so the link is still
+    called "kennis" and the mark is hidden from a screen reader."""
+    wordmark = Wordmark()
+    wordmark.feed(page_of(client, "workbench"))
+
+    assert wordmark.text.strip() == "kennis"
+    books = [
+        element
+        for element in wordmark.inside
+        if "book" in (element.get("class") or "").split()
+    ]
+    assert len(books) == 1
+    assert books[0].get("aria-hidden") == "true"
+
+
+def brand_mark_in(block: str) -> bytes:
+    (address,) = re.findall(r'--brand-mark: url\("([^"]*)"\);', block)
+    prefix = "data:image/svg+xml,"
+    assert address.startswith(prefix)
+    return unquote(address.removeprefix(prefix)).encode("utf-8")
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_each_theme_carries_its_own_book(scheme: str):
+    """Chosen by the theme blocks every other colour is chosen by, so
+    light, dark and the system's choice all get the right one."""
+    emitted = css_variables(
+        CSS_COLOURS_DARK if scheme == "dark" else None,
+        DARK_GROUND if scheme == "dark" else None,
+        scheme,
+    )
+    assert brand_mark_in(emitted) == (BRAND / f"mark-{scheme}.svg").read_bytes()
+
+
+def test_the_layout_shows_the_mark_from_the_theme():
+    rules = re.findall(r"\.wordmark \.book\s*\{([^}]*)\}", layout_css())
+    assert any("var(--brand-mark)" in rule for rule in rules)

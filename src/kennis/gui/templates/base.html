@@ -44,7 +44,7 @@
           aria-expanded="{{ 'false' if pane_open == 'closed' else 'true' }}"
           aria-label="{{ pane_show if pane_open == 'closed' else pane_hide }}"
           >{{ icon("panel-left") }}</button>
-  <a class="wordmark" href="/">kennis</a>
+  <a class="wordmark" href="/"><span class="book" aria-hidden="true"></span>kennis</a>
   {# **`action="/"`, and the live search only where `#hits` is.** The
      form is on every page now, so with no action a scriptless search
      from `/corpus` would go to `/corpus?q=`; and never `/hits`, which

@@ -130,6 +130,23 @@ def test_the_page_is_drawn_in_the_theme(page: playwright.Page) -> None:
     assert ground not in ("rgba(0, 0, 0, 0)", "rgb(255, 255, 255)")
 
 
+def test_the_bar_draws_the_book_in_each_theme(page: playwright.Page) -> None:
+    """The book is a background the theme block chooses, so a test of the
+    source can say only that a variable exists. Here it is resolved: drawn
+    at a size, and a different drawing on a dark system than a light."""
+    drawn: dict[str, str] = {}
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        book = page.locator(".wordmark .book")
+        box = book.bounding_box()
+        assert box is not None and box["width"] >= 16 and box["height"] >= 16
+        drawn[scheme] = book.evaluate(
+            "element => getComputedStyle(element).backgroundImage"
+        )
+        assert drawn[scheme].startswith('url("data:image/svg+xml,'), drawn[scheme][:40]
+    assert drawn["light"] != drawn["dark"]
+
+
 def test_typing_a_search_draws_its_results(page: playwright.Page) -> None:
     page.fill("input[name=q]", "antenna")
 

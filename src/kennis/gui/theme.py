@@ -39,6 +39,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Final, Literal
+from urllib.parse import quote
 
 from pygments.token import STANDARD_TYPES, Token, _TokenType
 
@@ -166,6 +167,13 @@ COLLECTION_COLOURS: Final[dict[str, dict[str, str]]] = {
 }
 
 
+_BRAND: Final = Path(__file__).parent / "static" / "brand"
+_BRAND_MARKS: Final[dict[str, str]] = {
+    scheme: quote((_BRAND / f"mark-{scheme}.svg").read_text(encoding="utf-8"), safe="")
+    for scheme in ("light", "dark")
+}
+
+
 def css_variables(
     colours: dict[AnsiColour, str] | None = None,
     ground: str | None = None,
@@ -217,6 +225,11 @@ def css_variables(
         )
     for name, accents in COLLECTION_COLOURS.items():
         lines.append(f"  --collection-{name}: {accents[scheme]};")
+    # The open book in the bar, in this theme's drawing. Here because the
+    # theme blocks are what choose light or dark; a data address because
+    # the locked and stopped pages fetch nothing; percent-encoded rather
+    # than base64, whose `;base64` would put a semicolon in the value.
+    lines.append(f'  --brand-mark: url("data:image/svg+xml,{_BRAND_MARKS[scheme]}");')
     for name, role in ROLES.items():
         lines.append(f"  --role-{name}: {_value_for(role, table)};")
     return "\n".join(lines)

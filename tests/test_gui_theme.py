@@ -345,7 +345,11 @@ def test_the_vendored_face_is_declared_and_present():
     css = stylesheet()
     assert "@font-face" in css
     vendored = TEMPLATES.parent / "static/vendor/fonts"
-    for match in re.findall(r"url\(([^)]+)\)", css):
+    # Within `@font-face` only: the bar's book is a `url()` too, and a
+    # data address is carried in the sheet rather than vendored.
+    faces = re.findall(r"@font-face\s*\{[^}]*\}", css)
+    assert faces
+    for match in re.findall(r"url\(([^)]+)\)", "\n".join(faces)):
         name = match.strip("\"'").rsplit("/", 1)[-1]
         assert (vendored / name).is_file(), f"{name} is declared and not vendored"
 
