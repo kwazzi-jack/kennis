@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.datastructures import FormData
 from fastapi.responses import (
     HTMLResponse,
@@ -32,6 +32,7 @@ from kennis.gui.adding import (
     destination_of,
     filled,
     listing_of,
+    paper_prefill,
     shown_checks,
     shown_paper_preview,
     shown_site_preview,
@@ -170,13 +171,19 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
     return AddOptions(
         max_pages=max_pages,
         max_depth=max_depth,
-        title=str(form.get("title") or "") or None,
+        title=_typed(
+            str(form.get("title") or ""), str(form.get("prefilled-title") or "")
+        )
+        or None,
         group=str(form.get("group") or "")
         or context.settings.corpus.default_group
         or None,
         keep_original=context.settings.corpus.keep_original,
         identifier=identifier,
-        citekey=str(form.get("citekey") or "") or None,
+        citekey=_typed(
+            str(form.get("citekey") or ""), str(form.get("prefilled-citekey") or "")
+        )
+        or None,
         unpaywall_email=context.settings.literature.unpaywall_email,
         project=str(form.get("project") or "") or None,
         batch_size=context.settings.conversion.batch_size,
@@ -238,20 +245,49 @@ def preview_a_paper(
     source: str = "",
     pdf: str = "",
     identifier: str = "",
+    prefilled_title: str = Query("", alias="prefilled-title"),
+    prefilled_citekey: str = Query("", alias="prefilled-citekey"),
 ) -> HTMLResponse:
     # From a PDF, the paper is the one its identifier names, when given:
     # looked up as it is typed, so the reader sees which paper it will be.
     if source == "pdf":
-        first = identifier.strip() or next(iter(_lines(pdf)), "")
+        papers_named = [identifier.strip()] if identifier.strip() else _lines(pdf)
     else:
-        first = next(iter(_lines(identifiers)), "")
+        papers_named = _lines(identifiers)
+    first = next(iter(papers_named), "")
+    typed_title = _typed(title, prefilled_title)
+    typed_citekey = _typed(citekey, prefilled_citekey)
     papers = Collection(root=existing_corpus().corpus_root, name="literature")
     preview = preview_paper(
-        papers, first, citekey=citekey.strip() or None, title=title.strip() or None
+        papers, first, citekey=typed_citekey or None, title=typed_title or None
     )
+    # The field whose input asked is the one the reader is in: emptied to
+    # type afresh, it must not be refilled under the cursor.
+    kept = {"title"} if typed_title else set()
+    kept |= {"citekey"} if typed_citekey else set()
+    kept |= {request.headers.get("HX-Trigger-Name", "")}
+    redraws = paper_prefill(
+        preview, several=len(papers_named) > 1, kept=frozenset(kept)
+    )
+    fields = {field.name: field for field in add_fields("paper", default_group=None)}
     return TEMPLATES.TemplateResponse(
-        request, "forms/add-preview.html", {"lines": shown_paper_preview(preview)}
+        request,
+        "forms/add-preview.html",
+        {
+            "lines": shown_paper_preview(
+                preview,
+                in_fields=frozenset(name for name, value in redraws if value),
+            ),
+            "redraws": [(fields[name], value) for name, value in redraws],
+        },
     )
+
+
+def _typed(value: str, prefilled: str) -> str:
+    """`value` when the reader typed it; empty when it is what kennis
+    filled in, which is a suggestion rather than an answer."""
+    value = value.strip()
+    return "" if value == prefilled.strip() else value
 
 
 @router.get("/add/preview/site")

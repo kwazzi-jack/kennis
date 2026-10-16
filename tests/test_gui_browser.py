@@ -588,3 +588,41 @@ def test_the_paper_tab_shows_only_the_way_in_chosen(page: playwright.Page) -> No
     page.click("#dialog .choices label:has(input[value=pdf])")
     assert page.is_hidden(typed)
     assert page.is_visible(pdf) and page.is_visible(which)
+
+
+def test_the_paper_preview_fills_the_fields_and_an_edit_unmarks_one(
+    page: playwright.Page, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Out of band, so htmx must process the redraw it did not target;
+    and the mark follows the reader's edit, which only a browser runs."""
+    from kennis.engine.literature.metadata import ArxivMetadata
+
+    monkeypatch.setattr(
+        "kennis.engine.corpus.preview.lookup_arxiv_metadata",
+        lambda arxiv_id, *, client=None: ArxivMetadata(
+            title="A Paper About Calibration", authors="Brian Welman", year="2024"
+        ),
+    )
+    page.goto(page.url.split("?")[0])
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .ways", timeout=_WAIT_MS)
+    page.fill("#dialog input[name=identifiers]", "2409.19750")
+    page.wait_for_selector("#dialog input[name=title].prefilled", timeout=_WAIT_MS)
+
+    title = page.locator("#dialog input[name=title]")
+    assert title.input_value() == "A Paper About Calibration"
+    assert page.locator("#dialog input[name=citekey]").input_value() == (
+        "welmanPaperAboutCalibration2024"
+    )
+    marked = title.evaluate("element => getComputedStyle(element).backgroundColor")
+
+    title.press("End")
+    title.type(" II")
+    assert "prefilled" not in (title.get_attribute("class") or "")
+    # Waited for rather than read once: the field's colours change by a
+    # transition, so the first frame after the edit is still the wash.
+    page.wait_for_function(
+        "([element, marked]) => getComputedStyle(element).backgroundColor !== marked",
+        arg=[title.element_handle(), marked],
+        timeout=_WAIT_MS,
+    )

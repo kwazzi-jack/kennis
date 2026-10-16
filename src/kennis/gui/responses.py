@@ -218,6 +218,7 @@ TEMPLATES.env.globals.update(
         "required": words.REQUIRED,
         "optional": words.OPTIONAL,
         "empty_prefix": words.EMPTY_PREFIX,
+        "prefilled_note": words.PREFILLED_NOTE,
         "field_labels": words.FIELD_LABELS,
         "field_tips": words.FIELD_TIPS,
         "browse": words.BROWSE,

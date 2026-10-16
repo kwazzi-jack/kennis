@@ -23,6 +23,13 @@
   {% for field in fields %}{% include "forms/add-field.html" %}{% endfor %}
   </div>
   <div id="add-preview" class="preview" aria-live="polite"></div>
+  {% if kind == "paper" %}
+  {# What the preview filled in, so the preview and the add can tell it
+     from what the reader typed. #}
+  <span id="add-prefilled-title"><input type="hidden" name="prefilled-title" value=""></span>
+  <span id="add-prefilled-citekey"><input type="hidden" name="prefilled-citekey" value=""></span>
+  <span id="add-prefilled-note" class="visually-hidden">{{ prefilled_note }}</span>
+  {% endif %}
   {% if kind == "site" %}
   <button type="button" class="ghost probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview">{{ check_site }}</button>
   {% endif %}

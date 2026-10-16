@@ -14,6 +14,7 @@
    of them shows only while that way is chosen, by the radios' own state,
    so it holds without a script. #}
 {% from "tip.html" import tip %}
+{% from "forms/add-input.html" import typed_input with context %}
 {% macro picker(field) %}<span class="uploads"{% for case, said in upload_said.items() %} data-said-{{ case }}="{{ said }}"{% endfor %}>
   <span class="upload-buttons">
   <label class="upload-button">{{ icon("file-plus") }}<span class="upload-label">{{ upload_pdf if field.upload == "file" else upload_files }}</span><input type="file" name="upload" multiple{% if field.upload == "file" %} accept=".pdf,application/pdf"{% endif %}></label>
@@ -22,7 +23,7 @@
   </span>
   <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="link upload-clear" data-upload-clear hidden>{{ upload_clear }}</button></span>
 </span>{% endmacro %}
-{% set typed %}<input id="add-{{ field.name }}" type="{{ 'number' if field.widget == 'number' else 'text' }}" name="{{ field.name }}"{% if field.value %} value="{{ field.value }}"{% endif %}{% if field.empty %} placeholder="{{ empty_prefix }} {{ field.empty }}"{% endif %}{% if field.widget == "number" %} min="1" step="1"{% endif %}{% if field.name == "identifiers" and not field.upload %} autofocus{% endif %}{% if field.name == "group" %} list="add-groups"{% endif %}{% if field.preview %} hx-get="{{ field.preview }}" hx-trigger="input changed delay:600ms" hx-target="#add-preview" hx-include="closest form"{% endif %}>{% endset %}
+{% set typed %}{{ typed_input(field) }}{% endset %}
 {% if field.widget == "ways" %}
 <div class="ways choices segmented" role="radiogroup" aria-label="{{ field.label }}">{% for choice in field.choices %}<label><input type="radio" name="{{ field.name }}" value="{{ choice.value }}" required{% if choice.value == field.value %} checked{% endif %} hx-get="{{ field.preview }}" hx-trigger="change" hx-target="#add-preview" hx-include="closest form">{{ icon(choice.icon) }}{{ choice.label }}</label>{% endfor %}</div>
 {% else %}
@@ -41,7 +42,7 @@
     <span class="entry-row">{{ typed }}</span>
   </details>
   {% else %}
-  <span class="entry-row{% if field.name == 'identifiers' and field.when %} wand{% endif %}">{% if field.name == "identifiers" and field.when %}{{ icon("wand-sparkles") }}{% endif %}{{ typed }}</span>
+  <span class="entry-row{% if field.name == 'identifiers' and field.when %} wand{% endif %}" id="add-{{ field.name }}-entry">{% if field.name == "identifiers" and field.when %}{{ icon("wand-sparkles") }}{% endif %}{{ typed }}</span>
   {% endif %}
 </div>
 {% endif %}

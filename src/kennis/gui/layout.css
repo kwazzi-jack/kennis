@@ -1781,6 +1781,12 @@ button:focus-visible, a:focus-visible {
   flex: 1 1 auto;
   min-width: 0;
 }
+/* A value the preview filled in, in the highlighter's wash: kennis's
+   suggestion, there to be kept or typed over. */
+.add-tab .entry-row input.prefilled {
+  background: var(--brand-wash);
+  border-color: var(--brand);
+}
 .add-tab .choices { justify-self: start; flex-wrap: wrap; }
 .add-tab .browse { display: inline-flex; align-items: center; gap: 0.3rem; }
 /* The browser's own file picker, as kennis's buttons: the inputs stay in

@@ -1,0 +1,7 @@
+{# A typed field's input, drawn by the field and by a preview's redraw of
+   it, so the redraw cannot drop what the form's own input carries. With
+   `prefilled`, the value is one kennis filled in: marked, described for
+   a screen reader, and remembered on the input so `prefill.js` can tell
+   when the reader has changed it. An empty `prefilled` draws the field
+   empty. #}
+{% macro typed_input(field, prefilled=none) %}<input id="add-{{ field.name }}" type="{{ 'number' if field.widget == 'number' else 'text' }}" name="{{ field.name }}"{% if prefilled %} value="{{ prefilled }}" class="prefilled" data-prefilled="{{ prefilled }}" aria-describedby="add-prefilled-note"{% elif prefilled is none and field.value %} value="{{ field.value }}"{% endif %}{% if field.empty %} placeholder="{{ empty_prefix }} {{ field.empty }}"{% endif %}{% if field.widget == "number" %} min="1" step="1"{% endif %}{% if field.name == "identifiers" and not field.upload %} autofocus{% endif %}{% if field.name == "group" %} list="add-groups"{% endif %}{% if field.preview %} hx-get="{{ field.preview }}" hx-trigger="input changed delay:600ms" hx-target="#add-preview" hx-include="closest form"{% endif %}>{% endmacro %}

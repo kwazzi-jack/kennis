@@ -937,14 +937,23 @@ def not_a_count(label: str, given: str) -> str:
 
 
 # The preview, for a paper.
-def previewed_arxiv(identifier: str, title: str, authors: str, year: str) -> str:
+def previewed_arxiv(
+    identifier: str, authors: str, year: str, *, title: str | None = None
+) -> str:
+    """The paper arXiv names. Its title only when the Title field is not
+    already showing it."""
     who = ", ".join(part for part in (authors, year) if part)
-    return f"arXiv {identifier}: {title}" + (f" - {who}" if who else "")
+    named = f"arXiv {identifier}" + (f": {title}" if title else "")
+    return named + (f" - {who}" if who else "")
 
 
 def previewed_citekey(citekey: str) -> str:
     return f"Citekey: {citekey}"
 
+
+# Read by a screen reader on a field the preview filled in, which is
+# marked by colour alone.
+PREFILLED_NOTE = "Filled in from arXiv. Change it to use your own."
 
 ARXIV_SILENT = (
     "arXiv did not respond, so the citekey comes from the title for now. "
@@ -1607,6 +1616,7 @@ __all__ = [
     "PASSWORD_NEEDED",
     "PREFERENCE_CHOICES",
     "PREFERENCE_WORDS",
+    "PREFILLED_NOTE",
     "PREVIEW_ADDRESS",
     "PREVIEW_FILE",
     "PREVIEW_UNRECOGNISED",

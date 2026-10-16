@@ -250,7 +250,10 @@ def test_each_tab_asks_only_its_own_fields(
     dialog = dialog_of(client, kind)
     named = set(re.findall(r'<(?:input|textarea)[^>]*\bname="([^"]+)"', dialog))
 
-    assert named - {"kind", "collection"} == fields - {"collection"}
+    # Hidden bookkeeping rather than fields: the kind, a fixed collection,
+    # and what the Paper preview filled in.
+    bookkeeping = {"kind", "collection", "prefilled-title", "prefilled-citekey"}
+    assert named - bookkeeping == fields - {"collection"}
 
 
 # ---------------------------------------------------------------------------
@@ -1200,3 +1203,203 @@ def test_from_a_pdf_the_preview_looks_up_the_identifier_given(
 
     assert lookups == ["2409.19750"]
     assert "A Paper About Calibration" in shown
+
+
+# ---------------------------------------------------------------------------
+# What the preview found, in the fields
+# ---------------------------------------------------------------------------
+
+
+def previewed(client: TestClient, **fields: str) -> BeautifulSoup:
+    answer = client.get("/add/preview/paper", params=fields, headers=HTMX)
+    assert answer.status_code == 200
+    return BeautifulSoup(answer.text, "html.parser")
+
+
+def redrawn(shown: BeautifulSoup, name: str) -> Tag | None:
+    """The input named `name` the preview redraws out of band, if any."""
+    for swapped in shown.select("[hx-swap-oob]"):
+        found = swapped.find("input", attrs={"name": name})
+        if isinstance(found, Tag):
+            return found
+    return None
+
+
+def test_the_preview_fills_the_title_and_citekey_and_marks_them(
+    client: TestClient, lookups: list[str]
+):
+    shown = previewed(client, identifiers="2409.19750")
+
+    title = redrawn(shown, "title")
+    citekey = redrawn(shown, "citekey")
+    assert title is not None and citekey is not None
+    assert title.get("value") == "A Paper About Calibration"
+    assert citekey.get("value") == "welmanPaperAboutCalibration2024"
+    for field in (title, citekey):
+        assert "prefilled" in (field.get("class") or [])
+        assert field.get("aria-describedby")
+    assert redrawn(shown, "prefilled-title").get("value") == "A Paper About Calibration"
+    assert (
+        redrawn(shown, "prefilled-citekey").get("value")
+        == "welmanPaperAboutCalibration2024"
+    )
+
+
+def test_the_paragraph_no_longer_repeats_what_is_in_the_fields(
+    client: TestClient, lookups: list[str]
+):
+    shown = previewed(client, identifiers="2409.19750")
+    paragraph = " ".join(
+        element.get_text()
+        for element in shown.find_all("p")
+        if not element.get("hx-swap-oob")
+    )
+
+    assert "Brian Welman" in paragraph and "2024" in paragraph
+    assert "A Paper About Calibration" not in paragraph
+    assert "welmanPaperAboutCalibration2024" not in paragraph
+
+
+def test_a_typed_title_is_never_redrawn_and_shapes_the_citekey(
+    client: TestClient, lookups: list[str]
+):
+    shown = previewed(
+        client,
+        identifiers="2409.19750",
+        title="My Own Words",
+        **{"prefilled-title": "A Paper About Calibration"},
+    )
+
+    assert redrawn(shown, "title") is None
+    citekey = redrawn(shown, "citekey")
+    assert citekey is not None
+    assert citekey.get("value") == "welmanMyOwnWords2024"
+
+
+def test_a_value_still_kenniss_follows_a_changed_identifier(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    titles = {"2409.19750": "First Paper", "2501.00001": "Second Paper"}
+    monkeypatch.setattr(
+        "kennis.engine.corpus.preview.lookup_arxiv_metadata",
+        lambda arxiv_id, *, client=None: ArxivMetadata(
+            title=titles[arxiv_id], authors="Brian Welman", year="2024"
+        ),
+    )
+
+    shown = previewed(
+        client,
+        identifiers="2501.00001",
+        title="First Paper",
+        citekey="welmanFirstPaper2024",
+        **{
+            "prefilled-title": "First Paper",
+            "prefilled-citekey": "welmanFirstPaper2024",
+        },
+    )
+
+    assert redrawn(shown, "title").get("value") == "Second Paper"
+    assert redrawn(shown, "citekey").get("value") == "welmanSecondPaper2024"
+
+
+def test_nothing_found_empties_what_kennis_had_filled(
+    client: TestClient, lookups: list[str]
+):
+    shown = previewed(
+        client,
+        identifiers="not an identifier",
+        title="A Paper About Calibration",
+        **{"prefilled-title": "A Paper About Calibration"},
+    )
+
+    title = redrawn(shown, "title")
+    assert title is not None
+    assert not title.get("value")
+    assert "prefilled" not in (title.get("class") or [])
+
+
+def test_several_papers_prefill_nothing(client: TestClient, lookups: list[str]):
+    """A title names one document."""
+    shown = previewed(client, source="pdf", pdf="a.pdf\nb.pdf", identifier="")
+
+    for name in ("title", "citekey"):
+        field = redrawn(shown, name)
+        assert field is None or not field.get("value")
+
+
+def test_the_redrawn_citekey_still_asks_for_a_preview(
+    client: TestClient, lookups: list[str]
+):
+    """One macro draws the input in the form and in the redraw, so the
+    redraw cannot drop the attributes the form's own input has."""
+    drawn = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    in_form = drawn.find("input", attrs={"name": "citekey"})
+    again = redrawn(previewed(client, identifiers="2409.19750"), "citekey")
+
+    assert isinstance(in_form, Tag) and again is not None
+    for attribute in ("hx-get", "hx-trigger", "hx-target", "hx-include", "id"):
+        assert again.get(attribute) == in_form.get(attribute), attribute
+
+
+def test_the_dialog_holds_what_kennis_filled_in(client: TestClient):
+    drawn = BeautifulSoup(dialog_of(client, "paper"), "html.parser")
+    form = drawn.find("form")
+    assert isinstance(form, Tag)
+
+    for name in ("prefilled-title", "prefilled-citekey"):
+        hidden = form.find("input", attrs={"name": name})
+        assert isinstance(hidden, Tag), name
+        assert hidden.get("type") == "hidden"
+
+
+def test_an_add_treats_a_value_still_kenniss_as_empty(
+    app: FastAPI, client: TestClient, adds: list[AddCall]
+):
+    """So the add derives what it would have derived, and a title kennis
+    filled in for the first paper never reaches an add of several."""
+    client.post(
+        "/add",
+        data={
+            "kind": "paper",
+            "collection": "literature",
+            "source": "identifier",
+            "identifiers": "2409.19750",
+            "title": "A Paper About Calibration",
+            "prefilled-title": "A Paper About Calibration",
+            "citekey": "mine2024",
+            "prefilled-citekey": "welmanPaperAboutCalibration2024",
+        },
+        headers=HTMX,
+    )
+    finished(app)
+
+    [(_, _, options)] = adds
+    assert options.title is None
+    assert options.citekey == "mine2024"
+
+
+def test_the_prefill_script_composes_no_words():
+    code = code_of("prefill.js")
+
+    assert "prefilled" in code
+    assert not re.search(r"[\"'][A-Z][a-z]+ [a-z]+", code)
+
+
+def test_the_field_being_typed_in_is_not_redrawn(
+    client: TestClient, lookups: list[str]
+):
+    """Emptied to type afresh, the Citekey field asks for a preview; it
+    must not be refilled under the cursor."""
+    answer = client.get(
+        "/add/preview/paper",
+        params={
+            "identifiers": "2409.19750",
+            "citekey": "",
+            "prefilled-citekey": "welmanPaperAboutCalibration2024",
+        },
+        headers={**HTMX, "HX-Trigger-Name": "citekey"},
+    )
+    shown = BeautifulSoup(answer.text, "html.parser")
+
+    assert redrawn(shown, "citekey") is None
+    assert redrawn(shown, "title") is not None

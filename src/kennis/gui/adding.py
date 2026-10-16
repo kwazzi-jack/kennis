@@ -280,11 +280,33 @@ class ShownLine:
     role: str = ""
 
 
-def shown_paper_preview(preview: PaperPreview) -> list[ShownLine]:
+def paper_prefill(
+    preview: PaperPreview, *, several: bool, kept: frozenset[str]
+) -> list[tuple[str, str]]:
+    """The Title and Citekey fields to redraw, each with its new value.
+
+    `kept` names the fields not to redraw: one the reader typed, and the
+    one whose input asked for this preview, which the reader is in. Any
+    other is kennis's, and is filled from the preview or emptied when it
+    found nothing, so a changed identifier never leaves the last paper's
+    title behind. Several papers fill nothing: a title names one.
+    """
+    found = not several and preview.refusal is None and preview.title is not None
+    values = {
+        "title": preview.title if found else None,
+        "citekey": preview.citekey if found else None,
+    }
+    return [(name, value or "") for name, value in values.items() if name not in kept]
+
+
+def shown_paper_preview(
+    preview: PaperPreview, *, in_fields: frozenset[str] = frozenset()
+) -> list[ShownLine]:
     """What a paper's preview says, in the order a reader wants it.
 
     A refusal is worded by `render/refusals.py`, the same sentence the add
     would print, so the preview and the add cannot disagree about why.
+    What `in_fields` names is already in its field and is not repeated.
     """
     if not preview.asked.strip():
         return []
@@ -302,15 +324,15 @@ def shown_paper_preview(preview: PaperPreview) -> list[ShownLine]:
             ShownLine(
                 words.previewed_arxiv(
                     preview.recognised.value,
-                    preview.title,
                     preview.authors or "",
                     preview.year or "",
+                    title=None if "title" in in_fields else preview.title,
                 )
             )
         )
     elif preview.looked_up:
         lines.append(ShownLine(words.ARXIV_SILENT, "role-warning"))
-    if preview.citekey is not None:
+    if preview.citekey is not None and "citekey" not in in_fields:
         lines.append(
             ShownLine(words.previewed_citekey(preview.citekey), "role-command")
         )
@@ -463,6 +485,7 @@ __all__ = [
     "destination_of",
     "filled",
     "listing_of",
+    "paper_prefill",
     "shown_checks",
     "shown_paper_preview",
     "shown_site_preview",
