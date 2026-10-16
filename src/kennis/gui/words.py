@@ -723,6 +723,10 @@ def change_line(operation: str | None, scope: str | None, summary: str) -> str:
     if operation is None or scope is None:
         return summary
     kind = CHANGE_KINDS.get(operation, operation)
+    # The parenthesis says how much. A summary that counts nothing only
+    # restates the verb: "created corpus (create the corpus)" (#476).
+    if not re.search(r"\d", summary):
+        return f"{kind} {scope}"
     return f"{kind} {scope} ({_one_is_one(summary)})"
 
 

@@ -1463,7 +1463,7 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
     if acted:
         notes.append(words.NOT_SEARCHABLE_YET)
     return ShownJob(
-        headline=describe_sync(result.counts, noun="document"),
+        headline=capitalised(describe_sync(result.counts, noun="document")),
         role="role-added" if acted else "role-muted",
         items=tuple(
             ShownItem(
@@ -1481,6 +1481,11 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
     )
 
 
+def capitalised(said: str) -> str:
+    """A line of the render layer's, as a headline: it starts a sentence."""
+    return said[:1].upper() + said[1:]
+
+
 def shown_bundle_sync(result: BundleSync) -> ShownJob:
     """A context sync. No commit happened and the page has to say so."""
     notes: list[str] = [words.BUNDLE_NOT_COMMITTED]
@@ -1488,7 +1493,7 @@ def shown_bundle_sync(result: BundleSync) -> ShownJob:
         notes.append(describe_deferred(result.deferred))
     acted = any(action.verdict in ACTING for action in result.actions)
     return ShownJob(
-        headline=describe_sync(result.counts),
+        headline=capitalised(describe_sync(result.counts)),
         role="role-added" if acted else "role-muted",
         items=tuple(
             ShownItem(

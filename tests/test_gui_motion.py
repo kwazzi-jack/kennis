@@ -69,7 +69,9 @@ def test_no_motion_is_longer_than_a_quarter_second():
             continue
         for value in re.findall(r"(?:transition|animation)[^:]*:([^;]*)", body):
             for seconds in re.findall(r"\b(\d*\.?\d+)s\b", value):
-                if "turning" in value:
+                # A status that lasts as long as its wait is not an entry:
+                # the ring turns and an unknown progress travels (#476).
+                if "turning" in value or "travelling" in value:
                     continue
                 assert float(seconds) <= LONGEST, (head.strip(), value)
 

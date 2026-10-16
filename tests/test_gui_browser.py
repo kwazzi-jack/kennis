@@ -272,6 +272,18 @@ def test_an_index_started_here_reports_its_outcome(page: playwright.Page) -> Non
     page.wait_for_selector("#job .job[data-state='done']", timeout=_WAIT_MS)
 
 
+def _wait_for_htmx(page: playwright.Page, selector: str) -> None:
+    """Until htmx has processed a swapped-in element, so its triggers are
+    listening. The element existing is not enough: a field filled in the
+    gap sent nothing, and a test that ran after another failed for it."""
+    page.wait_for_function(
+        "selector => { const element = document.querySelector(selector);"
+        " return Boolean(element && element['htmx-internal-data']); }",
+        arg=selector,
+        timeout=_WAIT_MS,
+    )
+
+
 def _open_branch(page: playwright.Page, collection: str) -> None:
     # Opened by its `<details>`, not by a click: the row's name is a link.
     page.evaluate(
@@ -455,6 +467,49 @@ def test_a_task_that_could_not_begin_opens_its_panel(page: playwright.Page) -> N
 
     page.wait_for_selector(".strip .job[data-state='failed']", timeout=_WAIT_MS)
     page.wait_for_selector(".strip .job-panel:popover-open", timeout=_WAIT_MS)
+
+
+def test_the_browser_draws_its_own_parts_in_the_theme(page: playwright.Page) -> None:
+    """A select's list, the search field's cross and a number field's
+    arrows were light in the dark theme: no `color-scheme` (#476)."""
+    page.emulate_media(color_scheme="dark")
+    page.reload()
+
+    scheme = page.evaluate("getComputedStyle(document.documentElement).colorScheme")
+    select = page.evaluate(
+        "getComputedStyle(document.querySelector('select[name=scope]')).appearance"
+    )
+
+    assert scheme == "dark"
+    assert select == "base-select"
+
+
+def test_a_running_job_s_bar_is_drawn_by_the_theme(
+    app_page_with_last_job: playwright.Page,
+) -> None:
+    page = app_page_with_last_job
+    drawn = page.evaluate(
+        "[...document.querySelectorAll('progress')]"
+        ".map(bar => getComputedStyle(bar).appearance)"
+    )
+
+    assert drawn and set(drawn) == {"none"}
+
+
+def test_a_segmented_control_is_no_wider_than_its_buttons(
+    page: playwright.Page,
+) -> None:
+    page.click("a.action[href='/index']")
+    page.wait_for_selector("#dialog .segmented", timeout=_WAIT_MS)
+
+    widths = page.evaluate(
+        "(() => { const control = document.querySelector('#dialog .segmented');"
+        " const buttons = [...control.children].reduce("
+        "(sum, child) => sum + child.getBoundingClientRect().width, 0);"
+        " return [control.getBoundingClientRect().width, buttons]; })()"
+    )
+
+    assert widths[0] <= widths[1] + 4, widths
 
 
 def test_no_link_in_the_status_bar_is_underlined(
@@ -836,6 +891,7 @@ def test_the_paper_preview_fills_the_fields_and_an_edit_unmarks_one(
     page.goto(page.url.split("?")[0])
     page.click("a.action[href='/add']")
     page.wait_for_selector("#dialog .ways", timeout=_WAIT_MS)
+    _wait_for_htmx(page, "#dialog input[name=identifiers]")
     page.fill("#dialog input[name=identifiers]", "2409.19750")
     page.wait_for_selector("#dialog input[name=title].prefilled", timeout=_WAIT_MS)
 
@@ -875,8 +931,11 @@ def test_a_slow_lookup_says_it_is_looking_until_it_answers(
     page.goto(page.url.split("?")[0])
     page.click("a.action[href='/add']")
     page.wait_for_selector("#dialog .ways", timeout=_WAIT_MS)
+    _wait_for_htmx(page, "#dialog input[name=identifiers]")
     page.fill("#dialog input[name=identifiers]", "https://arxiv.org/abs/2409.19750")
 
     page.wait_for_selector("#add-looking", state="visible", timeout=_WAIT_MS)
     page.wait_for_selector("#dialog .found", timeout=_WAIT_MS)
-    assert page.is_hidden("#add-looking")
+    # Waited for, not read at once: htmx drops its request class just after
+    # the swap, and in a loaded suite the read landed between the two.
+    page.wait_for_selector("#add-looking", state="hidden", timeout=_WAIT_MS)

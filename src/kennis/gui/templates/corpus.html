@@ -7,8 +7,8 @@
   <thead><tr>{% for column in holdings_columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
   <tbody>
   {% for row in rows %}
-    <tr>
-      <td><a href="/collection/{{ row.collection }}">{{ row.collection }}</a></td>
+    <tr data-collection="{{ row.collection }}">
+      <td><a href="/collection/{{ row.collection }}">{{ icon(collection_icons[row.collection]) }}{{ row.collection }}</a></td>
       <td>{{ row.count }}</td>
       <td class="{% if row.is_current %}role-unchanged{% else %}role-warning{% endif %}">{{ row.index }}</td>
     </tr>

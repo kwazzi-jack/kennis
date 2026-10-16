@@ -193,6 +193,11 @@ def css_variables(
     table = CSS_COLOURS if colours is None else colours
     on = LIGHT_GROUND if ground is None else ground
     lines = [f"  --ground: {on};", f"  --ink: {table['white']};"]
+    # What the browser draws for itself - a select's open list, a search
+    # field's clear button, a number field's arrows, a file field's button,
+    # a scrollbar corner - follows this, not the page's colours. Without
+    # it each was drawn light in the dark theme (#476).
+    lines.append(f"  color-scheme: {scheme};")
     # The hairline under the header and between table rows. The muted
     # grey at low opacity rather than a tenth colour, so the palette
     # stays nine.

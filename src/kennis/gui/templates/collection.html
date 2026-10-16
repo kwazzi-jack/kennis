@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 {% block title %}kennis - {{ collection }}{% endblock %}
 {% block main %}
+<div data-collection="{{ collection }}">
 <h1>{{ collection }}</h1>
 <p class="role-muted">{{ summary }}</p>
 {% for group, documents in groups %}
   {% if group %}<h2 class="role-muted">{{ group }}</h2>{% endif %}
   <ul class="documents">
   {% for document in documents %}
-    <li>
-      <a href="/document/{{ collection }}/{{ document.document_id }}">{{ document.title }}</a>
-      <span class="role-muted">{{ document.document_id }}</span>
-    </li>
+    {# The id is a handle for a program; a reader opens the row (#476). #}
+    <li><a href="/document/{{ collection }}/{{ document.document_id }}" title="{{ document.document_id }}">{{ icon("file-text") }}<span>{{ document.title }}</span></a></li>
   {% endfor %}
   </ul>
 {% endfor %}
+</div>
 {% if unreadable %}
 <p class="role-error">{{ unreadable }}</p>
 {% endif %}
