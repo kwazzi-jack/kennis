@@ -24,7 +24,20 @@ _REQUEST_TIMEOUT_SECONDS: Final = 30
 # The rendered main-content container, in preference order. Sphinx themes
 # differ on the element and agree on role="main": furo and pydata render
 # `<article role="main">`, the classic Read the Docs theme a `<div>`.
-_CONTENT_SELECTORS: Final = ('[role="main"]', "div.document", "article")
+# Astro Starlight (pydantic's docs) has neither: its prose is in
+# `.sl-markdown-content`, a class its code annotations' pop-ups share. MkDocs
+# Material's `<main>` holds the navigation too, so its article comes before
+# `main`; and a bare `article` comes last and never as a list item, because a
+# page of cards is a page of articles - pydantic's support page was stored as
+# its first card.
+_CONTENT_SELECTORS: Final = (
+    ".sl-markdown-content:not(.annotation-popover-content)",
+    '[role="main"]',
+    "div.document",
+    "article.md-content__inner",
+    "main",
+    'article:not([role="listitem"])',
+)
 
 # Chrome inside the container that carries no prose: the per-heading anchor
 # marks, sidebars, breadcrumb and footer navigation, scripts.
@@ -45,7 +58,9 @@ def fetch_page(client: httpx.Client, page_url: str) -> str:
         response = get_within(client, page_url, origin=origin_of(page_url))
         response.raise_for_status()
     except httpx.HTTPError as error:
-        raise SourceUnreadable(f"could not fetch '{page_url}': {error}") from error
+        # The page is named by every line that reports this; saying it
+        # again made each refusal a different sentence (#473).
+        raise SourceUnreadable(f"could not fetch the page: {error}") from error
     return convert_page(response.text, page_url)
 
 
@@ -67,12 +82,20 @@ def convert_page(html: str, page_url: str) -> str:
             break
     if main is None:
         raise SourceUnreadable(
-            f"'{page_url}' has no documentation in it: no main-content container"
+            "the page has no documentation in it: no main-content container"
         )
 
     for selector in _CHROME_SELECTORS:
         for node in main.select(selector):
             node.decompose()
+
+    # A theme that draws the title in a header outside the prose (Starlight)
+    # would leave the page titled by its path. Only one heading of the page's
+    # own is unambiguous.
+    if main.find("h1") is None:
+        titles = soup.find_all("h1")
+        if len(titles) == 1:
+            main.insert(0, titles[0].extract())
 
     # The markdown leaves the site it came from, so a relative reference in it
     # would point at nothing.

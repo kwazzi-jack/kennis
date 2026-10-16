@@ -85,3 +85,96 @@ def test_a_page_with_no_documentation_container_is_refused():
     HTML body and no documentation in it."""
     with pytest.raises(SourceUnreadable):
         convert_page(CHALLENGE, PAGE_URL)
+
+
+# Written by hand in the shapes the themes render (Brian's pydantic add,
+# 2026-10-16): Astro Starlight puts the prose in `.sl-markdown-content`, the
+# title in a header outside it, and code annotations in pop-ups with the
+# same class; its pages can hold cards that are `<article role="listitem">`.
+STARLIGHT = """<html><body>
+<div class="annotation-popover-content sl-markdown-content">Stray note.</div>
+<nav class="sidebar-content">Get Started Concepts API</nav>
+<main data-pagefind-body>
+  <div class="content-panel"><h1 id="_top">Installation</h1></div>
+  <div class="content-panel">
+    <div class="sl-markdown-content">
+      <p>Install with <code>uv add pydantic</code>.</p>
+      <article class="support-area" role="listitem"><h3>Triage</h3></article>
+      <div class="annotation-popover-content sl-markdown-content">A note.</div>
+    </div>
+  </div>
+</main>
+</body></html>
+"""
+
+# MkDocs Material: `<main>` holds both sidebars as well as the article.
+MATERIAL = """<html><body>
+<main class="md-main"><div class="md-main__inner">
+  <div class="md-sidebar">Navigation</div>
+  <div class="md-content"><article class="md-content__inner md-typeset">
+    <h1>Validators</h1><p>Field validators run after parsing.</p>
+  </article></div>
+</div></main>
+</body></html>
+"""
+
+# A page with only `<main>`, whose cards are articles.
+MAIN_WITH_CARDS = """<html><body>
+<main><h1>Support</h1><p>Ways to get help.</p>
+<article role="listitem"><h3>Triage</h3><p>Incidents.</p></article>
+<article role="listitem"><h3>Reviews</h3><p>Design reviews.</p></article>
+</main></body></html>
+"""
+
+
+def test_a_starlight_page_is_its_prose_under_its_own_title():
+    markdown = convert_page(STARLIGHT, PAGE_URL)
+
+    assert markdown.startswith("# Installation\n")
+    assert "uv add pydantic" in markdown
+    assert "Get Started Concepts API" not in markdown
+    assert "Stray note." not in markdown
+
+
+def test_a_material_page_is_its_article_not_its_navigation():
+    markdown = convert_page(MATERIAL, PAGE_URL)
+
+    assert "Field validators run after parsing." in markdown
+    assert "Navigation" not in markdown
+
+
+def test_a_card_is_not_taken_for_the_page():
+    """pydantic's enterprise-support page was stored as its first card,
+    "Production incident triage", because a card is an `article`."""
+    markdown = convert_page(MAIN_WITH_CARDS, PAGE_URL)
+
+    assert "Ways to get help." in markdown
+    assert "Reviews" in markdown
+
+
+def test_a_title_outside_the_container_is_not_taken_when_there_are_two():
+    two = STARLIGHT.replace('<h1 id="_top">Installation</h1>', "<h1>A</h1><h1>B</h1>")
+
+    markdown = convert_page(two, PAGE_URL)
+
+    assert not markdown.startswith("# ")
+
+
+def test_a_page_of_nothing_but_cards_is_refused_rather_than_taken_as_one():
+    cards = (
+        '<html><body><article role="listitem"><h3>Triage</h3></article>'
+        '<article role="listitem"><h3>Reviews</h3></article></body></html>'
+    )
+
+    with pytest.raises(SourceUnreadable):
+        convert_page(cards, PAGE_URL)
+
+
+def test_a_refusal_does_not_repeat_the_page_it_is_about():
+    """Every line already names its page, so eight refusals read as eight
+    reasons and could not be grouped under the one they share."""
+    with pytest.raises(SourceUnreadable) as refused:
+        convert_page(CHALLENGE, PAGE_URL)
+
+    assert PAGE_URL not in str(refused.value)
+    assert "no main-content container" in str(refused.value)
