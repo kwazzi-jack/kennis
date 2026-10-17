@@ -87,8 +87,14 @@ A collection that matched nothing gets no group.
 kennis search "query" --collection literature   # one scope
 kennis search "query" --group 'physics/*'       # one group, shell-style
 kennis search "query" --project stimela         # docs only: by project
+kennis search "query" --version 2.12            # docs only: another version
 kennis search "query" -k 20                     # more hits
 ```
+
+`docs` searches each project's current version unless `--version` names
+others: `2.12` for every project holding it, `pydantic=2.12` for one
+project's, or `all`. It can be given more than once. See
+[Add a documentation site](add-a-documentation-site.md#which-version-a-search-uses).
 
 Quote a group pattern. Your shell expands an unquoted `*` before kennis sees
 it.

@@ -23,6 +23,7 @@ from typing import Final
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
+from kennis.engine.docs.versions import ProjectVersions
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.rag.search import DocumentSpan
@@ -53,6 +54,23 @@ def count_of(number: int, noun: str, plural: str | None = None) -> str:
     if number == 1:
         return f"1 {noun}"
     return f"{number} {plural or noun + 's'}"
+
+
+# `kennis corpus version` when no docs project is held by version.
+NO_DOCS_VERSIONS: Final = "no documentation is held by version"
+
+
+def describe_held_versions(versions: ProjectVersions) -> str:
+    """A project's versions in order, the one searched by default marked:
+    `2.12  2.14 (current)`."""
+    return "  ".join(
+        f"{version} (current)" if version == versions.current else version
+        for version in versions.held
+    )
+
+
+def describe_current_version(project: str, version: str) -> str:
+    return f"{project} {version} is the version searched by default"
 
 
 def joined(items: Sequence[str]) -> str:

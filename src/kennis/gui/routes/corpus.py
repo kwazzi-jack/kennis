@@ -15,6 +15,7 @@ from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import pages_of_version, project_versions
 from kennis.engine.errors import (
     KennisError,
     UnknownCollection,
@@ -30,6 +31,7 @@ from kennis.gui.pane import bundle_folders
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
+    action_page,
     frame,
     from_htmx,
     problem_page,
@@ -42,7 +44,9 @@ from kennis.holdings import (
     installed_packs,
 )
 from kennis.operations import (
+    make_docs_version_current,
     move_a_document,
+    remove_docs_version,
 )
 from kennis.render.packs import describe_holdings
 from kennis.render.words import describe_change
@@ -78,6 +82,68 @@ def _tree(
             "menu_for": words.menu_for,
         },
     )
+
+
+@router.post("/docs/current")
+def make_a_version_current(request: Request, form: PostedForm) -> Response:
+    """Search this version of a docs project by default (#489), chosen
+    from its folder's menu in the tree."""
+    project = str(form.get("project") or "")
+    version = str(form.get("version") or "")
+    try:
+        make_docs_version_current(existing_corpus(), project, version)
+    except KennisError as error:
+        if from_htmx(request):
+            return _tree(request, "docs", problem=str(error))
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return written(_tree(request, "docs"))
+    return RedirectResponse("/collection/docs", status_code=303)
+
+
+@router.get("/docs/remove-version")
+def ask_to_remove_a_version(
+    request: Request, project: str = "", version: str = ""
+) -> HTMLResponse:
+    """What removing a version of a docs project would remove, and the
+    form that removes it (#489): reached from the version's menu in the
+    tree, so nothing goes on one click."""
+    docs_root = Collection(root=existing_corpus().corpus_root, name="docs").path
+    try:
+        pages = pages_of_version(docs_root, project, version)
+    except KennisError as error:
+        return problem_page(request, error)
+    current = project_versions(docs_root)[project].current == version
+    return action_page(
+        request,
+        "/docs/remove-version",
+        "forms/remove-version.html",
+        {
+            "project": project,
+            "version": version,
+            "removing": words.removing_version(
+                project, version, pages, current=current
+            ),
+            "remove_version_action": words.REMOVE_VERSION_ACTION,
+        },
+    )
+
+
+@router.post("/docs/remove-version")
+def remove_a_version(request: Request, form: PostedForm) -> Response:
+    """Remove every page of one version of a docs project, and redraw the
+    docs branch of the pane, whose counts it changed."""
+    project = str(form.get("project") or "")
+    version = str(form.get("version") or "")
+    try:
+        remove_docs_version(existing_corpus(), project, version)
+    except KennisError as error:
+        if from_htmx(request):
+            return _tree(request, "docs", problem=str(error))
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return written(_tree(request, "docs", moved=True))
+    return RedirectResponse("/collection/docs", status_code=303)
 
 
 @router.get("/corpus")

@@ -593,7 +593,10 @@ def test_one_key_heads_the_results_and_no_group_repeats_a_basis(
     source = corpus / "sources" / "paper.md"
     source.write_text("# Paper\n\nAn antenna paper.\n", encoding="utf-8")
     run = CliRunner()
-    added = run.invoke(main, ["corpus", "add", "-d", "--project", "radio", str(source)])
+    added = run.invoke(
+        main,
+        ["corpus", "add", "-d", "--project", "radio", "--version", "1.0", str(source)],
+    )
     assert added.exit_code == 0, added.output
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 

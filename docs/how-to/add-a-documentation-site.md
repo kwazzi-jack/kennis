@@ -5,16 +5,18 @@ command reads a whole site, or one part of it, and saves each page as a
 markdown document you can search and read without a connection:
 
 ```
-kennis corpus add -d https://pydantic.dev/docs/validation/latest/
+kennis corpus add -d https://pydantic.dev/docs/validation/2.12/
 kennis corpus index --collection docs
 ```
 
-The first line fetches the pages and files them under a project, here
-`pydantic`. The second makes them searchable; adding alone does not.
+The first line fetches the pages and files them under a project and a
+version, here `pydantic` and `2.12`. The second makes them searchable;
+adding alone does not.
 
 This page explains what the address you give decides, how kennis finds and
-reads the pages, what happens when you add a site again, and what kennis
-does to stay within what a site permits.
+reads the pages, how versions are kept apart and which one a search uses,
+how to refresh or remove a version, and what kennis does to stay within
+what a site permits.
 
 ## Choose the address
 
@@ -36,9 +38,9 @@ it is the right choice when you want only that section.
 
 ## Name the project
 
-Every page of a site is filed under one project, which is a folder of the
-`docs` collection: `docs/pydantic/Installation.md`. A search can be narrowed
-to it with `--project pydantic`.
+Every page of a site is filed under one project and one version, which are
+folders of the `docs` collection: `docs/pydantic/2.12/Installation.md`. A
+search can be narrowed to a project with `--project pydantic`.
 
 Without `--project`, kennis names the project from the site's host: the
 first part of the name, skipping `docs` and `www`.
@@ -58,15 +60,55 @@ kennis corpus add -d https://example.org/manual/ --project caracal
 
 A project name becomes a folder, so it must be lowercase letters, digits,
 `-` and `_`, beginning with a letter or a digit. It is one folder:
-`stimela/cabs` is refused, because every page of a site is filed directly
-inside its project.
+`stimela/cabs` is refused, because a project holds versions and nothing
+else.
 
-A page you wrote yourself can join a project too, from a file:
+A page you wrote yourself can join a project too, from a file. It joins the
+project's current version unless you name one:
 
 ```
 kennis corpus add my-tutorial.md -d --project stimela
+kennis corpus add my-tutorial.md -d --project stimela --version 2.2
 ```
 
+## Name the version
+
+**Each version of a project is kept apart**, in its own folder, so the 2.12
+and 2.14 manuals can both be held and neither overwrites the other. kennis
+reads the version from the address: the last folder that is a release
+number, or one of the names sites give a moving version.
+
+| address | version |
+|---|---|
+| `https://pydantic.dev/docs/validation/2.12/` | `2.12` |
+| `https://stimela.readthedocs.io/en/latest/` | `latest` |
+| `https://example.org/docs/v1.4.0/api/` | `v1.4.0` |
+| `https://example.org/manual/` | none: the add is refused |
+
+A release number has a dot or a leading `v`, such as `2.12`, `v2` or
+`2.2.0rc1`. The names of a moving version are `latest`, `stable`, `dev`,
+`main`, `master` and `nightly`.
+
+When the address names no version, the add is refused and says so. kennis
+does not invent one, because a label it made up would sit beside every
+search result looking like a fact. Name it yourself:
+
+```
+kennis corpus add -d https://example.org/manual/ --version 3.1
+```
+
+`--version` also overrides what the address says. Like a project, a
+version becomes a folder, so it is letters, digits, `.`, `-` and `_`,
+beginning with a letter or a digit.
+
+**Prefer a pinned version to `latest`.** The pages at `/2.12/` describe
+release 2.12 and do not change. The pages at `/latest/` describe whatever
+was released most recently, and change under the copy you hold: kennis
+keeps what the site said on the day it was fetched, and nothing tells you
+when the site moved on. Add the release you actually use, and add the next
+one beside it when you upgrade. A Sphinx site also states its own release
+number, which kennis records in each page's frontmatter as `docs.release`,
+so a page from `latest` still says which release it described.
 ## How kennis finds the pages
 
 kennis tries three ways, in this order, and uses the first that works. The
@@ -113,34 +155,94 @@ that is not found are all sent with the status "OK", so this check is the
 only way kennis can tell them from documentation. If a whole site is refused
 this way, its theme is one kennis does not recognise yet.
 
-Two things are not kept:
+**A code block keeps the language its site marked**, so the window colours
+it. Sphinx, Astro Starlight and MkDocs all write each block's language into
+the page, and kennis copies that name into the block it saves. kennis never
+guesses a language from the code itself: a block the site did not mark, or
+marked with a name the highlighter does not know (Sphinx marks a terminal
+session `pytest`), is shown uncoloured. Pages added before this change gain
+their languages when they are added again or refreshed with `--refresh`.
 
-- **Figures stay on the site.** A page keeps the address of each image, but
-  the window does not load images from other sites, because loading one
-  tells that site which page you are reading. It shows a placeholder naming
-  the host instead.
-- **A code block's language is not recorded yet**, so code from a crawled
-  site is shown without syntax colouring.
+**Figures stay on the site.** A page keeps the address of each image, but
+the window does not load images from other sites, because loading one tells
+that site which page you are reading. It shows a placeholder naming the host
+instead.
 
-## Adding the same site again
+## Which version a search uses
 
-A page is identified by its project and its path on the site. Adding a site
-again therefore never makes a second copy:
+**Each project has a current version, and a search uses it.** The current
+version is the one you added most recently, so adding 2.14 beside 2.12
+moves your searches to 2.14. An ordinary search therefore never returns the
+same passage twice from two versions. To see what is held, and to choose
+another:
+
+```
+kennis corpus version                    # every project, current marked
+kennis corpus version pydantic 2.12      # search 2.12 by default
+```
+
+To search other versions for one search only, name them:
+
+```
+kennis search "validators" --version 2.12            # every project holding 2.12
+kennis search "validators" --version pydantic=2.12   # one project's 2.12
+kennis search "validators" --version all             # every version held
+```
+
+`--version` can be given more than once, and a project you do not name
+keeps its current version. A version that is not held is refused, with the
+versions that are.
+
+**Every result from `docs` names its version.** When you search several
+versions, a passage whose text is exactly the same in each is shown once,
+labelled with each version that holds it, such as `pydantic 2.12, 2.14`. A
+passage that differs at all is shown once per version, which is where a
+change between releases shows.
+
+## Adding the same site again, and refreshing it
+
+A page is identified by its project, its version and its path on the site.
+Adding a site again therefore never makes a second copy:
 
 - pages already held are reported as unchanged (`=`), and are **not**
   fetched again;
 - pages the site has added since are fetched and added.
 
-**A page that changed on the site is not updated.** To take a newer copy of
-one page, remove it and add the site again; only the removed page is
-fetched:
+**A page that changed on the site is updated only when you ask.** A pinned
+version never needs it. For a moving version such as `latest`, add the
+site again with `--refresh`:
 
 ```
-kennis corpus remove <handle> --collection docs
-kennis corpus add -d https://pydantic.dev/docs/validation/latest/
+kennis corpus add -d https://stimela.readthedocs.io/en/latest/ --refresh
+kennis corpus index --collection docs
 ```
 
-There is no single command yet that refreshes a whole project.
+For each page already held, kennis asks the site whether it has changed.
+Where the site sent an `ETag` or a `Last-Modified` date with the page last
+time, kennis sends them back, and a site whose page has not changed answers
+"not modified" without sending the page again. Where the site sent neither,
+the page is fetched in full and its text compared with the copy held.
+Either way, a page whose text is unchanged is left exactly as it is, and
+one that changed is rewritten in place: the same identifier, the same file,
+the new text. The report counts it as updated, and the index needs building
+again to search the new text.
+
+Read the Docs sends these dates, so a refresh of a Sphinx site costs little
+when little has changed. Some hosts send neither, and there every page is
+fetched again in full. A refresh is paced like a first crawl.
+
+## Removing a version
+
+One command removes every page of a version:
+
+```
+kennis corpus remove --project pydantic --version 2.12
+```
+
+It says how many pages will go and asks first; `-y` skips the question. If
+the version was the current one, the version whose pages were fetched most
+recently becomes current; choose another with `kennis corpus version`. The pages stay in the corpus's history, as every
+removal does.
 
 ## Staying within what a site permits
 
@@ -157,7 +259,7 @@ kennis reads a site the way a well-behaved crawler does:
   read it now.
 - **It goes slowly.** One request at a time, at least 0.2 seconds apart,
   or as far apart as the site's `Crawl-delay` asks, up to 30 seconds. A
-  page already held costs no request at all.
+  page already held costs no request at all, unless you refresh it.
 - **It stays in scope.** One site, one folder, and the limits above.
 
 `robots.txt` says what automated access a site allows. It does not settle
@@ -187,10 +289,23 @@ User-Agent naming kennis. Nothing from your corpus is sent.
 ## In the window
 
 **Add** has a **Documentation site** tab. Enter the site's address, and a
-project name if the one kennis would make is not the one you want.
-**Check site** asks the site which of the three ways kennis would use,
-before anything is added. The crawl then runs in the background and
-reports its progress in the strip at the bottom of the page.
+project name or a version if the ones kennis would read from the address
+are not the ones you want; the preview says which version the pages will
+be filed under, or that the address names none. Tick **Refresh held pages**
+to refresh a version you already hold. **Check site** asks the site which
+of the three ways kennis would use, before anything is added. The crawl
+then runs in the background and reports its progress in the strip at the
+bottom of the page.
+
+In the side pane, each project's versions are folders, and the current one
+is marked **current**. A version's menu offers **Search this version by
+default** and **Remove this version**, which says how many pages will go
+before anything does.
+
+When some project holds more than one version, the search box has a
+**Versions** list. Tick the versions to search; the choice is part of the
+page's address, so Back and a shared link repeat it. A document page lists
+the same page in the other versions held, under **Also held**.
 
 ## When something goes wrong
 
@@ -199,5 +314,7 @@ reports its progress in the strip at the bottom of the page.
 | far fewer pages than the site has | the address names a folder inside the manual; start from its root |
 | exactly `--max-pages` pages | the site is larger than the limit; raise it or narrow the address |
 | "the page has no documentation in it" for every page | the site's theme is one kennis does not recognise yet; please report the address |
-| a page is out of date | remove it and add the site again (see above) |
+| the add is refused because the address names no version | name one with `--version`, or in the Version field |
+| a page from `latest` is out of date | add the site again with `--refresh` |
+| a search shows an older release than you expected | the current version is not the one you want; see `kennis corpus version` |
 | nothing found, and the site works in a browser | the site may build its pages with JavaScript, which kennis does not run; or its `robots.txt` forbids crawlers |

@@ -17,6 +17,8 @@ from typing import Literal
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import project_versions
+from kennis.render.words import describe_held_versions
 
 type Detail = Literal["summary", "documents"]
 
@@ -53,6 +55,15 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
         contents = Collection(root=context.corpus_root, name=name).contents()
         held = contents.documents
         lines.append(f"{name}: {len(held)} document{'' if len(held) == 1 else 's'}")
+        if name == "docs":
+            # What `search_docs` may be told to search, as `kennis corpus
+            # version` says it: a line per project, not per page.
+            lines.extend(
+                f"  {project}: {describe_held_versions(versions)}"
+                for project, versions in project_versions(
+                    Collection(root=context.corpus_root, name=name).path
+                ).items()
+            )
         if detail == "documents":
             lines.extend(
                 f"  {document.id}  {document.md_path.name}" for document in held

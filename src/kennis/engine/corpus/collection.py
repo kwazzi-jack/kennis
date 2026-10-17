@@ -207,5 +207,8 @@ def _alias_keys(document: Document) -> list[str]:
             frontmatter.bib.bibcode or "",
         ]
     elif isinstance(frontmatter, DocsFrontmatter):
-        keys.append(f"{frontmatter.docs.project}/{frontmatter.docs.page}")
+        docs = frontmatter.docs
+        keys.append(f"{docs.project}/{docs.page}")
+        if docs.version is not None:
+            keys.append(f"{docs.project}/{docs.version}/{docs.page}")
     return [key for key in keys if key]

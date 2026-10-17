@@ -137,6 +137,14 @@ def _scopes(
     help="Docs only: an alias for --group, since a page's project is its group.",
 )
 @click.option(
+    "--version",
+    "versions",
+    multiple=True,
+    metavar="VERSION",
+    help="Docs versions to search, repeatable: '2.12', 'pydantic=2.12', or "
+    "'all'. Each project's current version without it.",
+)
+@click.option(
     "--snippet",
     type=click.Choice(["none", "short", "full"]),
     default="short",
@@ -157,6 +165,7 @@ def search_command(
     mode: str | None,
     group: str | None,
     project: str | None,
+    versions: tuple[str, ...],
     snippet: str,
     scores: str,
 ) -> None:
@@ -187,6 +196,7 @@ def search_command(
         top_k=top_k,
         filters=_filters(group if group is not None else project),
         mode=mode,
+        versions=versions,
     )
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))

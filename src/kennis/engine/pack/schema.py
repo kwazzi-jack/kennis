@@ -43,7 +43,8 @@ from pydantic import (
     model_validator,
 )
 
-from kennis.engine.errors import PackInvalid
+from kennis.engine.docs.versions import checked_version, version_in_address
+from kennis.engine.errors import InputError, PackInvalid
 from kennis.engine.groups import (
     group_problem,
     project_problem,
@@ -205,7 +206,30 @@ class DocsEntry(BaseModel):
 
     project: str
     base_url: str
+    # Which version of the documentation, filed as `docs/<project>/<version>/`
+    # (#489). Read from `base_url` when it is left out; a pack whose address
+    # names none must say.
+    version: str | None = None
     exclude: list[str] = Field(default_factory=list)
+
+    @field_validator("version")
+    @classmethod
+    def _names_a_folder(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            return checked_version(value)
+        except InputError as error:
+            raise ValueError(str(error)) from error
+
+    @model_validator(mode="after")
+    def _has_a_version(self) -> DocsEntry:
+        if self.version is None and version_in_address(self.base_url) is None:
+            raise ValueError(
+                f"'{self.base_url}' names no version of the documentation: "
+                "add `version:`, such as `version: latest`"
+            )
+        return self
 
     @field_validator("project")
     @classmethod

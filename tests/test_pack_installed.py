@@ -166,7 +166,7 @@ def test_a_corrupt_stored_declaration_does_not_hide_the_pack(
 # ---------------------------------------------------------------------------
 
 
-DOCS = 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n'
+DOCS = 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/latest/"\n'
 PAPER = (
     "corpus:\n  literature:\n    - citekey: kenyon2018\n"
     '      title: t\n      identifier: "1712.01093"\n'
@@ -317,8 +317,8 @@ def test_a_pack_declaring_an_item_twice_is_not_an_overlap_with_itself(
     corpus: Path, tmp_path: Path
 ):
     body = (
-        'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n'
-        '    - project: stimela\n      base_url: "https://y/"\n'
+        'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/latest/"\n'
+        '    - project: stimela\n      base_url: "https://y/latest/"\n'
     )
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha", body=body))
 

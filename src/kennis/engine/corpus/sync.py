@@ -569,7 +569,8 @@ def _crawled_docs(
 
     **`keep` does not re-crawl.** A crawl is hundreds of requests, the
     design's diff key for docs is the project alone, and refreshing a
-    site is what `corpus add --docs` is for. Concern #277.
+    site is the reader's decision, made with `corpus add -d --refresh`
+    (#277, #489). A plain add of a held site writes nothing.
 
     A delete removes every page of the project, because the unit of
     declaration is the project and leaving some pages would leave a
@@ -593,6 +594,7 @@ def _crawled_docs(
             [entry.base_url],
             AddOptions(
                 project=entry.project,
+                version=entry.version,
                 exclude=tuple(entry.exclude),
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
@@ -865,11 +867,12 @@ def _literature_digest(entry: LiteratureEntry) -> str:
 
 def _docs_digest(entry: DocsEntry) -> str:
     """The fields of a documentation project's declaration, digested."""
-    return content_digest(
-        "\n".join([entry.project, entry.base_url, *sorted(entry.exclude)]).encode(
-            "utf-8"
-        )
-    )
+    # The version only when given, so a declaration written before it
+    # existed keeps its digest and is not crawled again for nothing.
+    fields = [entry.project, entry.base_url, *sorted(entry.exclude)]
+    if entry.version is not None:
+        fields.append(f"version={entry.version}")
+    return content_digest("\n".join(fields).encode("utf-8"))
 
 
 def _held(collection: Collection) -> dict[str, tuple[Existing, Document]]:

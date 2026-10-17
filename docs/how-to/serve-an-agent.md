@@ -50,10 +50,10 @@ Install a pack, restart the agent, and the description changes. See
 
 | tool | what it does |
 |---|---|
-| `list_corpus` | what the corpus holds, per collection or in summary |
+| `list_corpus` | what the corpus holds, per collection or in summary, with each docs project's versions |
 | `search_notes` | search the notes collection |
 | `search_literature` | search the literature collection |
-| `search_docs` | search the documentation collection |
+| `search_docs` | search the documentation collection: each project's current version, or the versions its `version` argument names |
 | `search_context` | search this project's `.context/` bundle |
 | `read_notes` | read passages from notes, several at once |
 | `read_literature` | read passages from literature, several at once |

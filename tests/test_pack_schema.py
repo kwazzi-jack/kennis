@@ -404,3 +404,40 @@ def test_the_generated_block_is_absent_from_a_hand_written_pack(tmp_path: Path):
     been updated is valid without it and nothing downstream may assume it."""
     del tmp_path
     assert a_pack().generated is None
+
+
+# ---------------------------------------------------------------------------
+# A docs entry's version (#489)
+# ---------------------------------------------------------------------------
+
+
+def docs_entry(lines: str) -> str:
+    return MINIMAL + "corpus:\n  docs:\n    - project: stimela\n" + lines
+
+
+def test_a_docs_entry_takes_its_version_from_the_address():
+    pack = a_pack(docs_entry('      base_url: "https://s.io/en/latest/"\n'))
+
+    assert pack.corpus.docs[0].version is None
+
+
+def test_a_docs_entry_may_name_its_version():
+    pack = a_pack(
+        docs_entry('      base_url: "https://s.io/docs/"\n      version: "2.1"\n')
+    )
+
+    assert pack.corpus.docs[0].version == "2.1"
+
+
+def test_a_docs_entry_with_no_version_anywhere_is_refused():
+    with pytest.raises(PackInvalid, match="version"):
+        a_pack(docs_entry('      base_url: "https://s.io/docs/"\n'))
+
+
+def test_a_docs_entry_s_version_must_be_a_folder():
+    with pytest.raises(PackInvalid, match="version"):
+        a_pack(
+            docs_entry(
+                '      base_url: "https://s.io/en/1.0/"\n      version: "../x"\n'
+            )
+        )

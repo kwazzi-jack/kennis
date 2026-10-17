@@ -375,7 +375,7 @@ def a_second_provider(root: Path, run: CliRunner, *, identifier: str) -> Path:
     path = root / f"{identifier}.ken.yml"
     path.write_text(
         HEADER.replace("id: boepie", f"id: {identifier}")
-        + 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n',
+        + 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/latest/"\n',
         encoding="utf-8",
     )
     assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0

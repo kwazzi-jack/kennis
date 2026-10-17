@@ -40,6 +40,7 @@ from kennis.engine.corpus.sync import (
     claim_document,
     disown_document,
 )
+from kennis.engine.docs.versions import pages_of_version, project_versions
 from kennis.engine.errors import KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
@@ -57,7 +58,9 @@ from kennis.engine.rag.index import read_manifest
 from kennis.operations import (
     add_documents,
     build_indexes,
+    make_docs_version_current,
     move_a_document,
+    remove_docs_version,
     restore_hand_deletions,
     synchronise_corpus,
 )
@@ -76,12 +79,15 @@ from kennis.render.refusals import (
     remedies_for_refusal,
 )
 from kennis.render.words import (
+    NO_DOCS_VERSIONS,
     conversion_cost,
     conversion_repairs,
     count_of,
     describe_busy_indexes,
     describe_change,
+    describe_current_version,
     describe_freshness,
+    describe_held_versions,
     describe_uncommitted_build,
     remedies_for,
 )
@@ -99,6 +105,8 @@ _SHORTHANDS: Final[dict[str, str]] = {
 # usage error elsewhere rather than a flag that is quietly ignored.
 _COLLECTION_ONLY: Final[dict[str, str]] = {
     "--project": "docs",
+    "--version": "docs",
+    "--refresh": "docs",
     "--citekey": "literature",
     "--identifier": "literature",
 }
@@ -350,6 +358,22 @@ def _inside_a_wrapper(path: Path, identifiers: dict[str, str | None]) -> bool:
 @click.option("--identifier", help="arXiv id, DOI or bibcode. Literature only.")
 @click.option("--citekey", help="Citekey to use instead of a derived one.")
 @click.option("--project", help="The docs project a page belongs to. Docs only.")
+@click.option(
+    "--version",
+    "docs_version",
+    help=(
+        "Which version of the documentation the pages are, such as 2.12 or "
+        "latest. Read from the address when not given. Docs only."
+    ),
+)
+@click.option(
+    "--refresh",
+    is_flag=True,
+    help=(
+        "Ask the site again for each page already held, and update one that "
+        "changed. Docs only."
+    ),
+)
 @click.option("--max-pages", type=int, default=300, show_default=True)
 @click.option("--max-depth", type=int, default=5, show_default=True)
 def add_command(
@@ -364,6 +388,8 @@ def add_command(
     identifier: str | None,
     citekey: str | None,
     project: str | None,
+    docs_version: str | None,
+    refresh: bool,
     max_pages: int,
     max_depth: int,
 ) -> None:
@@ -373,7 +399,12 @@ def add_command(
         collection, notes=notes, literature=literature, docs=docs
     )
     _refuse_foreign_options(
-        destination, identifier=identifier, citekey=citekey, project=project
+        destination,
+        identifier=identifier,
+        citekey=citekey,
+        project=project,
+        docs_version=docs_version,
+        refresh=refresh,
     )
 
     options = AddOptions(
@@ -388,6 +419,8 @@ def add_command(
         citekey=citekey,
         unpaywall_email=context.settings.literature.unpaywall_email,
         project=project,
+        version=docs_version,
+        refresh=refresh,
         max_pages=max_pages,
         max_depth=max_depth,
         batch_size=context.settings.conversion.batch_size,
@@ -462,6 +495,8 @@ def _refuse_foreign_options(
     identifier: str | None,
     citekey: str | None,
     project: str | None,
+    docs_version: str | None,
+    refresh: bool = False,
 ) -> None:
     """Refuse an option that means nothing for the collection being written.
 
@@ -473,6 +508,8 @@ def _refuse_foreign_options(
         "--identifier": identifier is not None,
         "--citekey": citekey is not None,
         "--project": project is not None,
+        "--version": docs_version is not None,
+        "--refresh": refresh,
     }
     for flag, given in supplied.items():
         owner = _COLLECTION_ONLY[flag]
@@ -496,9 +533,11 @@ def _report_add(report: AddReport) -> None:
     # free local conversion a blank where a number used to be.
     priced = conversion_cost(report.cost_cents)
     repaired = conversion_repairs(report.repairs)
+    updated = counts.get(Outcome.CHANGED, 0)
     display.operation(
         "Added",
         count_of(counts.get(Outcome.ADDED, 0), "document")
+        + (f", {updated} updated" if updated else "")
         + (f", {priced}" if priced else "")
         + (f", {repaired}" if repaired else ""),
         elapsed=report.elapsed_seconds,
@@ -643,16 +682,48 @@ def disown_command(handle: str) -> None:
 
 
 @corpus_group.command(name="remove")
-@click.argument("handle")
+@click.argument("handle", required=False)
 @click.option(
     "--collection",
     type=click.Choice(COLLECTION_NAMES),
     help="Look only here. All three by default.",
 )
+@click.option(
+    "--project",
+    help="With --version: remove that version of a docs project, every page of it.",
+)
+@click.option(
+    "--version",
+    "docs_version",
+    help="With --project: the docs version to remove.",
+)
 @click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
-def remove_command(handle: str, collection: str | None, yes: bool) -> None:
-    """Delete a document, and its assets when it has any."""
+def remove_command(
+    handle: str | None,
+    collection: str | None,
+    project: str | None,
+    docs_version: str | None,
+    yes: bool,
+) -> None:
+    """Delete a document, and its assets when it has any, or every page of
+    one version of a docs project."""
     context = existing_corpus()
+    if project is not None or docs_version is not None:
+        if handle is not None:
+            raise display.CliError(
+                "name a document or a docs version (--project and --version), not both."
+            )
+        if project is None or docs_version is None:
+            raise display.CliError(
+                "--project and --version name a docs version together: pass both."
+            )
+        _remove_docs_version(context, project, docs_version, yes=yes)
+        return
+    if handle is None:
+        raise display.CliError(
+            "name the document to remove, or a docs version with --project "
+            "and --version."
+        )
     found, document = resolve_document(context, handle, collection)
 
     if not yes:
@@ -674,6 +745,55 @@ def remove_command(handle: str, collection: str | None, yes: bool) -> None:
         )
 
     display.operation("Removed", f"{document.id}  {document.frontmatter.title}")
+
+
+def _remove_docs_version(
+    context: Context, project: str, version: str, *, yes: bool
+) -> None:
+    docs_root = Collection(root=context.corpus_root, name="docs").path
+    pages = pages_of_version(docs_root, project, version)
+    if not yes:
+        click.confirm(
+            f"Remove {project} {version}, {count_of(pages, 'document')}, from docs?",
+            abort=True,
+        )
+    removed = remove_docs_version(context, project, version)
+    display.operation(
+        "Removed", f"{project} {version}, {count_of(removed.pages, 'document')}"
+    )
+    if removed.current is not None:
+        display.note(describe_current_version(project, removed.current))
+
+
+@corpus_group.command(name="version")
+@click.argument("project", required=False)
+@click.argument("version", required=False)
+def version_command(project: str | None, version: str | None) -> None:
+    """List the versions of each docs project held, or choose the one a
+    search uses by default.
+
+    With no argument, every project; with a project, its versions; with a
+    project and a version, that version becomes the one searched unless a
+    search names others with --version.
+    """
+    context = existing_corpus()
+    if project is not None and version is not None:
+        make_docs_version_current(context, project, version)
+        display.operation("Current", f"{project} {version}")
+        return
+    held = project_versions(Collection(root=context.corpus_root, name="docs").path)
+    if project is not None:
+        if project not in held:
+            raise display.CliError(
+                f"no versions of '{project}' are held"
+                + (f" - projects with versions: {', '.join(held)}" if held else "")
+            )
+        held = {project: held[project]}
+    if not held:
+        display.note(NO_DOCS_VERSIONS)
+        return
+    for name, versions in held.items():
+        display.row(name, describe_held_versions(versions))
 
 
 @corpus_group.command(name="move")

@@ -66,6 +66,29 @@ SEARCH_ACTION = "Search"
 # request, which is the point: the request is 12ms of a 412ms wait
 # and an indicator for it alone would never be seen. Concern #365.
 SEARCHING = "Searching"
+# The docs versions beside the search box, a document's other versions,
+# and a version folder in the tree (#489).
+VERSIONS_LABEL = "Versions"
+CURRENT_VERSION = "current"
+ALSO_HELD = "Also held"
+MAKE_CURRENT = "Search this version by default"
+MENU_REMOVE_VERSION = "Remove this version"
+REMOVE_VERSION_ACTION = "Remove"
+
+
+def removing_version(project: str, version: str, pages: int, *, current: bool) -> str:
+    """What the removal dialog says before anything is removed."""
+    said = (
+        f"Every page of {project} {version} will be removed from docs: "
+        f"{count_of(pages, 'document')}. It stays in the corpus history."
+    )
+    if current:
+        said += (
+            " It is the version searched by default, so the newest version "
+            "left becomes that."
+        )
+    return said
+
 
 SCOPE_LABEL = "Search in"
 
@@ -152,6 +175,7 @@ DETAIL_LABELS: Final[dict[str, str]] = {
     "project": "Project",
     "page": "Page",
     "version": "Version",
+    "release": "Release",
     "source": "Source",
     "converted": "Converted from",
     "added": "Added",
@@ -569,6 +593,7 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/sync": "Sync packs",
     "/pack": "Install a pack",
     "/palette": "Actions and places",
+    "/docs/remove-version": "Remove a version",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -769,6 +794,7 @@ CHANGE_KINDS: Final[dict[str, str]] = {
     "sync": "synced",
     "remember": "note saved in",
     "restore": "restored",
+    "version": "chose the version searched in",
 }
 
 
@@ -922,6 +948,8 @@ FIELD_LABELS: Final[dict[str, str]] = {
     "citekey": "Citekey",
     "group": "Group",
     "project": "Project",
+    "version": "Version",
+    "refresh": "Refresh held pages",
     "collection": "Collection",
     "max_pages": "Page limit",
     "max_depth": "Link depth limit",
@@ -944,6 +972,17 @@ FIELD_TIPS: Final[dict[str, str]] = {
         "The name its pages are filed under in docs: one folder, with no "
         "groups inside it."
     ),
+    "version": (
+        "Which version of the documentation these pages are, such as 2.12 or "
+        "latest. Each version is kept in its own folder, and a search uses "
+        "the one added most recently."
+    ),
+    "refresh": (
+        "Ask the site again for each page already held, and update a page "
+        "whose text changed. A site that says when a page last changed is "
+        "asked only for the pages that did; any other is fetched again in "
+        "full and compared."
+    ),
     "max_depth": "How many links away from the start page kennis follows.",
 }
 
@@ -955,6 +994,9 @@ EMPTY_MEANS: Final[dict[str, str]] = {
     "citekey": "author, year, title",
     "project": "taken from the address",
     "file_project": "none (docs needs one)",
+    "version": "taken from the address",
+    "file_version": "the project's current version",
+    "refresh": "pages already held are left as they are",
     "max_pages": "300",
     "max_depth": "5",
 }
@@ -1106,6 +1148,11 @@ def docs_input_refused(identifier: str, reason: str) -> str:
     typed gone."""
     if reason == "missing":
         return f"'{identifier}' is not a site address or an existing file."
+    if reason == "unversioned":
+        return (
+            f"'{identifier}' does not say which version of the documentation "
+            "it is. Enter a Version, such as latest."
+        )
     return (
         f"'{identifier}' is a file, so no project name can be made from it. "
         "Enter a Project name."
@@ -1113,6 +1160,13 @@ def docs_input_refused(identifier: str, reason: str) -> str:
 
 
 PROJECT_UNNAMED = "No project name can be made from this address. Enter a Project name."
+VERSION_UNNAMED = "The address names no version. Enter a Version, such as latest."
+
+
+def previewed_version(version: str) -> str:
+    return f"Pages will be filed under version '{version}'."
+
+
 CHECK_SITE = "Check site"
 # Words for each way `discovery_mode` answers.
 DISCOVERY_WORDS: Final[dict[str, str]] = {
@@ -1596,6 +1650,7 @@ __all__ = [
     "ADD_TABS_LABEL",
     "ADD_TAB_ICONS",
     "ADD_TIPS",
+    "ALSO_HELD",
     "ANOTHER_GROUP",
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
@@ -1648,6 +1703,7 @@ __all__ = [
     "CREDENTIAL_SET",
     "CREDENTIAL_UNSET",
     "CRUMBS_LABEL",
+    "CURRENT_VERSION",
     "DETAILS_HEADING",
     "DETAIL_LABELS",
     "DISCOVERY_WORDS",
@@ -1701,6 +1757,7 @@ __all__ = [
     "LOCKED",
     "LOCKED_HEADING",
     "LOOKING_UP",
+    "MAKE_CURRENT",
     "MARK_WITHHELD",
     "MATCHES_WITHHELD",
     "MEASURE_ICONS",
@@ -1708,6 +1765,7 @@ __all__ = [
     "MENU_INDEX",
     "MENU_MOVE",
     "MENU_OPEN",
+    "MENU_REMOVE_VERSION",
     "MODE_CHOICES",
     "MODE_DEFAULT",
     "MODE_LABEL",
@@ -1790,6 +1848,7 @@ __all__ = [
     "REMEMBER_PREAMBLE",
     "REMEMBER_TARGETS",
     "REMEMBER_TIP",
+    "REMOVE_VERSION_ACTION",
     "REQUIRED",
     "RESIZE_LABELS",
     "RESULTS_HEADING",
@@ -1831,6 +1890,8 @@ __all__ = [
     "UPLOAD_SAID",
     "UPLOAD_TYPED",
     "UPLOAD_TYPED_PDF",
+    "VERSIONS_LABEL",
+    "VERSION_UNNAMED",
     "WELCOME",
     "WELCOME_ACTIONS",
     "WELCOME_HEADING",
@@ -1874,6 +1935,8 @@ __all__ = [
     "passage_label",
     "previewed_citekey",
     "previewed_project",
+    "previewed_version",
+    "removing_version",
     "results_for",
     "search_crumb",
     "search_hint_for",

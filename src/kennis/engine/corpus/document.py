@@ -224,8 +224,15 @@ def _identities_of(mapping: dict[str, object]) -> tuple[str, ...]:
     if isinstance(docs, dict):
         project = docs.get("project")
         page = docs.get("page")
+        version = docs.get("version")
         if isinstance(project, str) and isinstance(page, str) and project and page:
-            return (natural_key_for_docs(project=project, page=page),)
+            return (
+                natural_key_for_docs(
+                    project=project,
+                    version=version if isinstance(version, str) and version else None,
+                    page=page,
+                ),
+            )
     return ()
 
 

@@ -270,7 +270,7 @@ def test_one_busy_index_does_not_abandon_the_others(isolated: Path):
         context,
         "docs",
         [str(a_source(isolated, "page.md"))],
-        AddOptions(project="stimela"),
+        AddOptions(project="stimela", version="latest"),
     )
     root = index_root(context.corpus_root)
 

@@ -696,7 +696,9 @@ def test_a_paper_the_user_owns_stays_where_the_user_filed_it(
     assert literature_folder(paper, corpus) == "."
 
 
-def test_a_docs_project_is_still_one_folder_by_its_name(corpus: Path, tmp_path: Path):
+def test_a_docs_project_is_one_folder_by_its_name_holding_its_version(
+    corpus: Path, tmp_path: Path
+):
     installed(corpus, tmp_path, body=DOCS)
 
     synced(corpus)
@@ -705,7 +707,20 @@ def test_a_docs_project_is_still_one_folder_by_its_name(corpus: Path, tmp_path: 
         page.md_path.parent.relative_to(corpus / "docs").as_posix()
         for page in pages_in(corpus)
     }
-    assert folders == {"stimela"}
+    assert folders == {"stimela/latest"}
+
+
+def test_a_pack_s_named_version_decides_the_folder(corpus: Path, tmp_path: Path):
+    """#489: an entry's `version` wins over the one in its address."""
+    installed(corpus, tmp_path, body=DOCS + '      version: "2.2"\n')
+
+    synced(corpus)
+
+    folders = {
+        page.md_path.parent.relative_to(corpus / "docs").as_posix()
+        for page in pages_in(corpus)
+    }
+    assert folders == {"stimela/2.2"}
 
 
 # ---------------------------------------------------------------------------

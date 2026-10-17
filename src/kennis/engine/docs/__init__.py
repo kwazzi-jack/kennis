@@ -15,17 +15,26 @@ from kennis.engine.docs.discover import (
     discovery_mode,
     page_key,
 )
-from kennis.engine.docs.fetch import convert_page, fetch_page
+from kennis.engine.docs.fetch import (
+    FetchedPage,
+    Validators,
+    convert_page,
+    fetch_page,
+    fetch_page_if_changed,
+)
 from kennis.engine.docs.sites import DocsSite, project_name_from_url
 
 __all__ = [
     "DiscoveredPage",
     "Discovery",
     "DocsSite",
+    "FetchedPage",
+    "Validators",
     "convert_page",
     "discover_pages",
     "discovery_mode",
     "fetch_page",
+    "fetch_page_if_changed",
     "page_key",
     "project_name_from_url",
 ]

@@ -154,6 +154,11 @@ body {
 .bar {
   grid-area: bar;
   view-transition-name: bar;
+  /* Above the centre pane: `view-transition-name` makes the bar a
+     stacking context, so a list dropped from it - the docs versions
+     (#489) - was painted under the page's notices whatever its own
+     z-index. A grid item takes a z-index without a position. */
+  z-index: 6;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -262,6 +267,46 @@ body {
   color: var(--role-muted);
 }
 .searchbox .searching { margin: 0 0.5rem; }
+/* The docs versions (#489): a disclosure beside the selects, its list
+   dropped under it as a menu's is, so the box keeps its one row. */
+.searchbox .versions { position: relative; flex: none; align-self: stretch; }
+.searchbox .versions > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 100%;
+  padding: 0 0.6rem;
+  border-left: 1px solid var(--rule);
+  font-size: 0.75rem;
+  color: var(--role-muted);
+  cursor: pointer;
+  list-style: none;
+}
+.searchbox .versions > summary::-webkit-details-marker { display: none; }
+.versions-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 12rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--ground);
+  box-shadow: 0 4px 14px var(--rule);
+}
+.versions-list fieldset { margin: 0; padding: 0; border: 0; }
+.versions-list legend { font-size: 0.75rem; font-weight: 600; color: var(--ink); }
+.versions-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
 
 /* Quit is a form so it works without a script; `contents` lets its
    button sit in the row of actions as if the form were not there. */
@@ -468,7 +513,19 @@ details.menu[open] > .menu-button { opacity: 1; }
   box-shadow: 0 4px 14px var(--rule);
   transition: opacity 0.12s ease, translate 0.12s ease;
 }
-.menu-items form.index { margin: 0; }
+.menu-items form.index, .menu-items form.make-current { margin: 0; }
+/* Removing a version says what goes above the form, which holds only
+   the foot. */
+form.remove-version { margin-top: 1rem; }
+/* The version of a docs project a search uses by default (#489). */
+.current-version {
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  color: var(--role-muted);
+}
 .menu-items .item {
   display: block;
   width: 100%;
@@ -1172,6 +1229,7 @@ main.document {
 .details dt { color: var(--role-muted); }
 .details dd { margin: 0; overflow-wrap: anywhere; }
 .details dd.verbatim { font-family: var(--mono); font-size: 0.75rem; }
+.details dd.other-versions { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; }
 .matches ol, .outline ul {
   margin: 0;
   padding: 0 0.9rem 0.8rem 2rem;
@@ -1517,6 +1575,13 @@ main.document {
   vertical-align: top;
 }
 .full th { font-weight: 600; }
+
+/* Which docs version a passage is from (#489), in the margin's words. */
+.hit-version {
+  font-family: var(--gutter);
+  font-size: 0.75rem;
+  color: var(--role-muted);
+}
 
 /* `kennis read`'s coordinates, to copy. */
 .handle {
@@ -2703,6 +2768,10 @@ a.button:active { translate: 0 1px; }
 .segmented label .icon { width: 0.9rem; height: 0.9rem; margin-right: 0.35rem; }
 /* The identifier is looked up as it is typed: the wand inside its box. */
 .add-tab .entry-row.wand { position: relative; }
+/* A checkbox keeps its own size, with what unticked means beside it. */
+.add-tab .field:has(> .entry-row.flag) { grid-column: 1 / -1; }
+.add-tab .entry-row.flag { align-items: center; }
+.add-tab .entry-row.flag input { flex: none; }
 .add-tab .entry-row.wand > .icon {
   position: absolute;
   left: 0.7rem;

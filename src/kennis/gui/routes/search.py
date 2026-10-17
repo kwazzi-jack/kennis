@@ -5,16 +5,18 @@ was asked.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Final
+from typing import Annotated, Final
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import (
     HTMLResponse,
     RedirectResponse,
 )
 
 from kennis.context import existing_corpus
+from kennis.engine.corpus.collection import Collection
+from kennis.engine.docs.versions import chosen_or_default, project_versions
 from kennis.engine.errors import (
     KennisError,
 )
@@ -25,6 +27,7 @@ from kennis.gui.pages import (
     shown_orders,
     shown_recents,
     shown_skips,
+    versions_query,
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, frame, from_htmx
 from kennis.retrieval import (
@@ -67,6 +70,7 @@ def _hits_context(
     *,
     k: int = 0,
     record: bool = True,
+    versions: Sequence[str] = (),
 ) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -88,6 +92,9 @@ def _hits_context(
         "question": question,
         "scope": scope,
         "mode": mode,
+        # As the address names them, for the form's boxes to be ticked
+        # by; `chosen` below is what the search and its links carry.
+        "versions": tuple(versions),
         # Only this page's form searches as you type: live search swaps
         # into `#hits`, which no other page has.
         "searching_here": True,
@@ -126,6 +133,15 @@ def _hits_context(
     # three (the flows review, F4).
     wanted = k if 0 < k <= MOST else existing_corpus().settings.retrieval.default_top_k
     try:
+        # A choice that searches what the default does is no choice, so
+        # an ordinary search's address and history entry are unchanged.
+        chosen = chosen_or_default(
+            project_versions(
+                Collection(root=existing_corpus().corpus_root, name="docs").path
+            ),
+            versions,
+        )
+        context["chosen_versions"] = chosen
         found = sweep(
             question,
             scopes=asked,
@@ -135,6 +151,7 @@ def _hits_context(
             # own setting. Not the same as "hybrid": a bundle index is
             # lexical by design.
             mode=mode or None,
+            versions=chosen,
         )
         context["groups"] = shown_groups_of(found, question, order)
         found_count = sum(len(hits) for hits in found.groups.values())
@@ -143,10 +160,11 @@ def _hits_context(
         # why this is the usual case rather than the exception.
         capped = any(len(hits) >= wanted for hits in found.groups.values())
         if wanted < MOST:
-            chosen = f"&mode={quote(mode)}" if mode else ""
+            asked_mode = f"&mode={quote(mode)}" if mode else ""
             context["more"] = {
                 name: (
-                    f"/?q={quote(question)}&scope={quote(name)}{chosen}"
+                    f"/?q={quote(question)}&scope={quote(name)}{asked_mode}"
+                    f"{versions_query(chosen)}"
                     f"&k={min(wanted + MORE_STEP, MOST)}"
                 )
                 for name, hits in found.groups.items()
@@ -163,7 +181,11 @@ def _hits_context(
         # nothing.
         if key is not None and len(key.lines) > 1:
             context["orders"] = shown_orders(
-                question=question, scope=scope, mode=mode, order=order
+                question=question,
+                scope=scope,
+                mode=mode,
+                order=order,
+                versions=chosen,
             )
         context["skips"] = shown_skips(found)
         # The command line has printed this since milestone 1 and the
@@ -190,6 +212,7 @@ def _hits_context(
                 mode=mode,
                 hits=found_count,
                 capped=capped,
+                versions=chosen,
             )
     except KennisError as error:
         context["problem"] = str(error)
@@ -228,8 +251,17 @@ def serve_search(
     mode: str = words.MODE_DEFAULT,
     order: str = "",
     k: int = 0,
+    version: Annotated[list[str] | None, Query()] = None,
 ) -> HTMLResponse:
-    context = _hits_context(q, scope, mode, order, k=k, record=not _prefetched(request))
+    context = _hits_context(
+        q,
+        scope,
+        mode,
+        order,
+        k=k,
+        record=not _prefetched(request),
+        versions=version or (),
+    )
     # Only with no query. With one, the results have that space -
     # a page showing both would put what was looked for before
     # beside what was just found, which is two answers to one
@@ -263,15 +295,21 @@ def serve_hits(
     mode: str = words.MODE_DEFAULT,
     order: str = "",
     k: int = 0,
+    version: Annotated[list[str] | None, Query()] = None,
 ) -> HTMLResponse:
     # The partial htmx swaps in. The same context as the page, so
     # a first load and a keystroke cannot disagree about what a
     # result looks like.
-    answer = TEMPLATES.TemplateResponse(
-        request,
-        "hits.html",
-        _hits_context(q, scope, mode, order, k=k, record=not _prefetched(request)),
+    context = _hits_context(
+        q,
+        scope,
+        mode,
+        order,
+        k=k,
+        record=not _prefetched(request),
+        versions=version or (),
     )
+    answer = TEMPLATES.TemplateResponse(request, "hits.html", context)
     # **The address the reader should end up at, not the one that
     # was fetched.** `hx-push-url="true"` pushes the request URL,
     # which is this route - so Back and reload rendered the bare
@@ -282,5 +320,9 @@ def serve_hits(
     # says the reader chose the default rather than not having
     # chosen.
     chosen = f"&mode={quote(mode)}" if mode else ""
-    answer.headers["HX-Push-Url"] = f"/?q={quote(q)}&scope={quote(scope)}{chosen}"
+    carried = context.get("chosen_versions", ())
+    pushed = versions_query(carried if isinstance(carried, tuple) else ())
+    answer.headers["HX-Push-Url"] = (
+        f"/?q={quote(q)}&scope={quote(scope)}{chosen}{pushed}"
+    )
     return answer

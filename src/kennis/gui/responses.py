@@ -23,7 +23,9 @@ from fastapi.templating import Jinja2Templates
 
 from kennis.context import Context, existing_corpus
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import project_versions
 from kennis.engine.errors import (
     KennisError,
 )
@@ -34,6 +36,8 @@ from kennis.gui.jobs import Job
 from kennis.gui.layout import SIZES, sizes_of
 from kennis.gui.pages import (
     ShownOutcome,
+    ShownVersionProject,
+    shown_version_choices,
 )
 from kennis.gui.pane import Pane, pane_now
 from kennis.gui.preferences import (
@@ -107,6 +111,24 @@ def _inspector_state(request: Request) -> str:
 # Every preference of this window, rendered onto `<html>` from its
 # cookie (`gui/preferences.py`), for the reason the pane's is.
 TEMPLATES.env.globals["preferences"] = preferences_of
+
+
+def _version_choices(request: Request) -> list[ShownVersionProject]:
+    """The docs versions the search box offers, ticked by the address.
+
+    A function of the request rather than a value in `_frame`, because
+    the box is on every page and not every route builds its context
+    there, and because what is ticked is what this address asked (#489).
+    """
+    try:
+        root = existing_corpus().corpus_root
+    except KennisError:
+        return []
+    held = project_versions(Collection(root=root, name="docs").path)
+    return shown_version_choices(held, request.query_params.getlist("version"))
+
+
+TEMPLATES.env.globals["version_choices"] = _version_choices
 
 
 # The open book, carried whole as a `data:` address rather than served:
@@ -241,6 +263,11 @@ TEMPLATES.env.globals.update(
         "search_action": words.SEARCH_ACTION,
         "search_key_title": words.SEARCH_KEY_TITLE,
         "searching": words.SEARCHING,
+        "versions_label": words.VERSIONS_LABEL,
+        "current_version": words.CURRENT_VERSION,
+        "also_held": words.ALSO_HELD,
+        "make_current": words.MAKE_CURRENT,
+        "menu_remove_version": words.MENU_REMOVE_VERSION,
         # The Add dialog's words, global because its fragments - a
         # preview, a block, a chooser - are drawn by routes of their own.
         "add_tabs_label": words.ADD_TABS_LABEL,

@@ -219,7 +219,7 @@ pack:
 corpus:
   docs:
     - project: "{project}"
-      base_url: https://example.org/
+      base_url: https://example.org/en/latest/
 """
 
 

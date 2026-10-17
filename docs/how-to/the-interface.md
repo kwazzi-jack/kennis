@@ -94,6 +94,12 @@ open it for the details. Hits are listed in the order the search ranked
 them, which combines both measures by rank, so a hit with weaker bars can
 be listed first.
 
+A result from `docs` names its project and version. When a project holds
+more than one version, the search box has a **Versions** list for searching
+others than the current one, and a document page lists the same page in
+the other versions under **Also held** (see
+[Add a documentation site](add-a-documentation-site.md#which-version-a-search-uses)).
+
 The passage under a hit shows the part around the first match. **Show the
 whole passage** opens it in place to the whole chunk, the text before and
 after appearing around what was already shown, and the arrow beside the
@@ -129,7 +135,8 @@ path, with its identifier when the PDF does not show it or shows the wrong
 one. Only the fields of the way chosen show, and only they are added from.
 Documentation site takes the address of
 the site or of the section you want, whose folder decides which pages are
-taken (see [Add a documentation site](add-a-documentation-site.md)); File takes a file or a folder and asks which collection;
+taken, with the version the pages are filed under and whether to refresh
+pages already held (see [Add a documentation site](add-a-documentation-site.md)); File takes a file or a folder and asks which collection;
 Several by group takes a block per group, one item per line. Every field
 says whether it is required, and an optional one says what an empty field
 becomes. As you type, the dialog previews what the add would do: the

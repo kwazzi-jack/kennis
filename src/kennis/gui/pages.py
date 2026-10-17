@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -30,6 +30,7 @@ from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, DocumentFacts
+from kennis.engine.corpus.ids import derive_id, natural_key_for_docs
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import (
     COLLECTION_NAMES,
@@ -38,6 +39,12 @@ from kennis.engine.corpus.schema import (
     LiteratureFrontmatter,
 )
 from kennis.engine.corpus.sync import CorpusSync
+from kennis.engine.docs.versions import (
+    ProjectVersions,
+    excluded_versions,
+    project_versions,
+    versions_holding,
+)
 from kennis.engine.errors import DocumentNotFound, KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
@@ -65,6 +72,7 @@ from kennis.render.hits import (
     Relevance,
     ScoreStyle,
     best_lexical,
+    docs_versions_of,
     relevance_phrase,
     relevances,
     rendered_hit,
@@ -157,6 +165,9 @@ class ShownHit:
     # that chose between them with an `{% if %}` would be a template
     # deciding where a document lives.
     href: str
+    # `pydantic 2.14`, or the versions a merged passage stands for; empty
+    # for a hit that is not a versioned docs page (#489).
+    version: str = ""
 
     @property
     def opens(self) -> bool:
@@ -222,9 +233,65 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
                     hit.result.chunk.chunk_index,
                     question,
                 ),
+                version=docs_versions_of(hit) or "",
             )
         )
     return shown
+
+
+def versions_query(versions: Sequence[str]) -> str:
+    """`&version=...` for each docs version a search was asked for, so a
+    link that runs it again searches the same versions (#489)."""
+    return "".join(f"&version={quote(version)}" for version in versions)
+
+
+@dataclass(frozen=True, slots=True)
+class ShownVersionChoice:
+    """One version of one project, as a checkbox beside the search box."""
+
+    value: str
+    version: str
+    checked: bool
+    current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ShownVersionProject:
+    project: str
+    choices: tuple[ShownVersionChoice, ...]
+
+
+def shown_version_choices(
+    held: Mapping[str, ProjectVersions], chosen: Sequence[str]
+) -> list[ShownVersionProject]:
+    """Each project that holds more than one version, its versions ticked
+    as `chosen` searches them; none when there is nothing to choose.
+
+    Ticked by `excluded_versions`, the rule the search itself follows,
+    so the boxes cannot say something other than what was searched. A
+    choice that cannot be read ticks the default, and the page says why
+    above the results.
+    """
+    try:
+        left_out = set(excluded_versions(held, chosen))
+    except KennisError:
+        left_out = set(excluded_versions(held, ()))
+    return [
+        ShownVersionProject(
+            project=project,
+            choices=tuple(
+                ShownVersionChoice(
+                    value=f"{project}={version}",
+                    version=version,
+                    checked=f"{project}/{version}" not in left_out,
+                    current=version == versions.current,
+                )
+                for version in versions.held
+            ),
+        )
+        for project, versions in held.items()
+        if len(versions.held) > 1
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,7 +373,12 @@ class ShownOrder:
 
 
 def shown_orders(
-    *, question: str, scope: str, mode: str, order: str
+    *,
+    question: str,
+    scope: str,
+    mode: str,
+    order: str,
+    versions: Sequence[str] = (),
 ) -> list[ShownOrder]:
     """The orders on offer, each a link carrying the search it reorders.
 
@@ -318,6 +390,7 @@ def shown_orders(
         query = f"/?q={quote(question)}&scope={quote(scope)}"
         if mode:
             query += f"&mode={quote(mode)}"
+        query += versions_query(versions)
         if value:
             query += f"&order={value}"
         shown.append(ShownOrder(label=label, href=query, current=value == order))
@@ -455,6 +528,7 @@ def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
             href=(
                 f"/?q={quote(search.query)}&scope={quote(search.scope)}"
                 + (f"&mode={quote(search.mode)}" if search.mode else "")
+                + versions_query(search.versions)
             ),
         )
         for search in searches
@@ -502,6 +576,9 @@ class ShownDocument:
     byline: str | None = None
     details: tuple[ShownDetail, ...] = ()
     outline: tuple[Heading, ...] = ()
+    # The same docs page in the other versions held, as (version, link):
+    # what changed between two releases is a click away (#489).
+    other_versions: tuple[tuple[str, str], ...] = ()
 
 
 def byline_of(frontmatter: DocumentFrontmatter) -> str | None:
@@ -559,6 +636,11 @@ def document_details(
         rows.append(ShownDetail(label["page"], frontmatter.docs.page, verbatim=True))
         if frontmatter.docs.version:
             rows.append(ShownDetail(label["version"], frontmatter.docs.version))
+        # What the site calls its own release, when it says something the
+        # folder does not: `latest` built as 2.2.0rc1.
+        release = frontmatter.docs.release
+        if release and release != frontmatter.docs.version:
+            rows.append(ShownDetail(label["release"], release))
     source = frontmatter.source
     fetched = source.origin.removeprefix("url:")
     rows.append(
@@ -692,6 +774,33 @@ def shown_document(
             state=None if marks is None else state_in(marks, corpus_root, anchor),
         ),
         outline=tuple(headings_of(document.body, without_title=frontmatter.title)),
+        other_versions=_other_versions(held, frontmatter),
+    )
+
+
+def _other_versions(
+    held: Collection, frontmatter: DocumentFrontmatter
+) -> tuple[tuple[str, str], ...]:
+    """Where the same page is in the project's other versions.
+
+    Linked by the identifier an add derives from the project, the version
+    and the page, which is the one every copy was written under.
+    """
+    if not isinstance(frontmatter, DocsFrontmatter) or frontmatter.docs.version is None:
+        return ()
+    docs = frontmatter.docs
+    return tuple(
+        (
+            version,
+            "/document/docs/"
+            + derive_id(
+                natural_key_for_docs(
+                    project=docs.project, version=version, page=docs.page
+                )
+            ),
+        )
+        for version in versions_holding(held.path, docs.project, docs.page)
+        if version != docs.version
     )
 
 
@@ -1139,6 +1248,11 @@ class ShownBranch:
     add_here: str
     children: list[ShownBranch]
     count: int
+    # For a docs version's folder (#489): its project and version, and
+    # whether a search uses it by default. Empty for any other group.
+    project: str = ""
+    version: str = ""
+    current: bool = False
 
     @property
     def name(self) -> str:
@@ -1196,7 +1310,12 @@ def shown_tree(context: Context, collection: str) -> ShownTree:
             )
         )
     levels = every_level(grouped)
-    top = _branch(collection, "", grouped, levels)
+    held = (
+        project_versions(Collection(root=root, name="docs").path)
+        if collection == "docs"
+        else {}
+    )
+    top = _branch(collection, "", grouped, levels, held)
     every = top.beneath()
     return ShownTree(
         collection=collection,
@@ -1213,13 +1332,17 @@ def _branch(
     group: str,
     grouped: dict[str, list[ShownTreeEntry]],
     levels: list[str],
+    held: Mapping[str, ProjectVersions],
 ) -> ShownBranch:
     """`group` and, drawn inside it, every group one level down."""
     children = [
-        _branch(collection, level, grouped, levels)
+        _branch(collection, level, grouped, levels, held)
         for level in levels
         if level.rpartition("/")[0] == group
     ]
+    project, _, version = group.partition("/")
+    versions = held.get(project)
+    is_version = versions is not None and version in versions.held
     entries = grouped.get(group, [])
     beneath = entries + [entry for child in children for entry in child.beneath()]
     attention = [entry.state for entry in beneath if entry.mark]
@@ -1231,6 +1354,9 @@ def _branch(
         add_here=add_here_address(collection, group),
         children=children,
         count=len(beneath),
+        project=project if is_version else "",
+        version=version if is_version else "",
+        current=is_version and versions is not None and versions.current == version,
     )
 
 

@@ -69,15 +69,23 @@ def search_literature(question: str, top_k: int = 5) -> str:
     return _searched("literature", question, top_k)
 
 
-def search_docs(question: str, top_k: int = 5) -> str:
-    """Search the docs collection - documentation sites, one per project.
+def search_docs(question: str, top_k: int = 5, version: list[str] | None = None) -> str:
+    """Search the docs collection - documentation sites, one folder per
+    project and version.
 
     Reach for this for upstream usage, configuration and syntax. Call
-    `list_corpus` first if you need to know which projects are held.
+    `list_corpus` first if you need to know which projects and versions
+    are held.
+
+    Each project's current version is searched unless `version` names
+    others: `"2.12"` for every project holding 2.12, `"pydantic=2.12"`
+    for one project's, `"all"` for every version held. Each hit names
+    its version; a passage equal in several versions is shown once,
+    naming each.
 
     Returns ranked hits with a `document_id` and `chunk` for `read_docs`.
     """
-    return _searched("docs", question, top_k)
+    return _searched("docs", question, top_k, versions=tuple(version or ()))
 
 
 def search_context(question: str, top_k: int = 5) -> str:
@@ -94,7 +102,9 @@ def search_context(question: str, top_k: int = 5) -> str:
     return _searched(CONTEXT_COLLECTION, question, top_k)
 
 
-def _searched(collection: str, question: str, top_k: int) -> str:
+def _searched(
+    collection: str, question: str, top_k: int, *, versions: tuple[str, ...] = ()
+) -> str:
     """One scope, searched and rendered.
 
     The searching is `kennis.retrieval.search_scope`, shared with the
@@ -105,7 +115,7 @@ def _searched(collection: str, question: str, top_k: int) -> str:
     Its exceptions carry the command that resolves them, and fastmcp
     turns them into a tool error the agent can read.
     """
-    hits = search_scope(collection, question, top_k)
+    hits = search_scope(collection, question, top_k, versions=versions)
     if not hits:
         return _NOTHING
     # The degraded flag is dropped rather than printed. A command line

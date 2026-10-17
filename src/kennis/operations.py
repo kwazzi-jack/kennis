@@ -30,6 +30,7 @@ printing it. Concern #324.
 from __future__ import annotations
 
 import contextlib
+import shutil
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -51,6 +52,12 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync, sync_corpus
+from kennis.engine.docs.versions import (
+    current_version_file,
+    make_current,
+    pages_of_version,
+    project_versions,
+)
 from kennis.engine.errors import CorpusBusy, IndexBusy, KennisError
 from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.history import commit_summary, outcome_summary
@@ -282,6 +289,71 @@ def move_a_document(
     return moved
 
 
+def make_docs_version_current(context: Context, project: str, version: str) -> None:
+    """Search `version` of `project` by default: lock, restore, write, commit.
+
+    Through the lock and into history like any other write to the corpus,
+    because `.current` is a file of it: uncommitted, the next write would
+    sweep it in under another operation's name (#489).
+    """
+    docs = Collection(root=context.corpus_root, name="docs")
+    pages_of_version(docs.path, project, version)
+    with corpus_lock(context.corpus_root):
+        restore_hand_deletions(context)
+        make_current(docs.path, project, version)
+        Repository(context.corpus_root).commit(
+            "version", scope="docs", summary=f"{project} {version}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RemovedVersion:
+    """What removing one version of a docs project did."""
+
+    project: str
+    version: str
+    pages: int
+    # The project's current version afterwards; None when none is left.
+    current: str | None
+
+
+def remove_docs_version(context: Context, project: str, version: str) -> RemovedVersion:
+    """Remove every page of one version of a docs project, as one write:
+    lock, restore, remove, commit (#489).
+
+    The folder goes whole, so a page kennis cannot read goes with the rest
+    rather than keeping a version alive that the reader removed. A record
+    of the current version that named it goes too, so the newest version
+    left is current; one naming another version stays. A project left with
+    no version is removed. Recoverable through git like any removal.
+    """
+    docs = Collection(root=context.corpus_root, name="docs")
+    project_dir = docs.path / project
+    with corpus_lock(context.corpus_root):
+        restore_hand_deletions(context)
+        # Counted inside the lock, where nothing else can add to it.
+        pages = pages_of_version(docs.path, project, version)
+        shutil.rmtree(project_dir / version)
+        record = current_version_file(docs.path, project)
+        if record.is_file() and record.read_text(encoding="utf-8").strip() == version:
+            record.unlink()
+        left = project_versions(docs.path).get(project)
+        if left is None:
+            shutil.rmtree(project_dir)
+        Repository(context.corpus_root).commit(
+            "remove",
+            scope="docs",
+            summary=f"{project} {version}, "
+            + outcome_summary({Outcome.REMOVED: pages}),
+        )
+    return RemovedVersion(
+        project=project,
+        version=version,
+        pages=pages,
+        current=left.current if left is not None else None,
+    )
+
+
 def build_indexes(
     context: Context,
     collection: str | None = None,
@@ -446,13 +518,16 @@ __all__ = [
     "BuiltIndex",
     "GroupBlock",
     "IndexBuild",
+    "RemovedVersion",
     "add_documents",
     "add_in_groups",
     "back_up_corpus",
     "build_indexes",
     "committed_if_interrupted",
     "install_a_pack",
+    "make_docs_version_current",
     "move_a_document",
+    "remove_docs_version",
     "restore_hand_deletions",
     "synchronise_bundle",
     "synchronise_corpus",

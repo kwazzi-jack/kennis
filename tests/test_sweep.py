@@ -64,7 +64,17 @@ def a_doc(tmp_path: Path, name: str, body: str) -> None:
     source.write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
     assert (
         run.invoke(
-            main, ["corpus", "add", "-d", str(source), "--project", "stimela"]
+            main,
+            [
+                "corpus",
+                "add",
+                "-d",
+                str(source),
+                "--project",
+                "stimela",
+                "--version",
+                "latest",
+            ],
         ).exit_code
         == 0
     )

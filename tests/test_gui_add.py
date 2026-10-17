@@ -178,8 +178,18 @@ REQUIRED_FIELDS = {
 # hand (#373); `group` is `words.group_empty_means`, which reads the settings.
 EMPTY_MEANS_OF = {
     "paper": {"identifier": "identifier", "title": "title", "citekey": "citekey"},
-    "site": {"project": "project", "max_pages": "max_pages", "max_depth": "max_depth"},
-    "file": {"title": "file_title", "project": "file_project"},
+    "site": {
+        "project": "project",
+        "version": "version",
+        "refresh": "refresh",
+        "max_pages": "max_pages",
+        "max_depth": "max_depth",
+    },
+    "file": {
+        "title": "file_title",
+        "project": "file_project",
+        "version": "file_version",
+    },
     "group": {},
 }
 
@@ -213,11 +223,20 @@ def test_every_field_says_whether_it_is_needed_and_what_empty_means(
         )
         assert need.group(1) == expected, row
         if expected == words.OPTIONAL:
+            checkbox = re.search(
+                rf'<input id="add-{name.group(1)}" type="checkbox"[^>]*>'
+                r'<span class="role-muted">([^<]*)</span>',
+                row,
+            )
             control = re.search(
                 rf'<input id="add-{name.group(1)}" type="(?:text|number)"[^>]*>', row
             )
-            assert control, row
-            placeholder = re.search(r'placeholder="([^"]*)"', control.group(0))
+            # A checkbox has no placeholder: what unticked means is beside it.
+            placeholder = (
+                re.search(r'placeholder="([^"]*)"', control.group(0))
+                if control
+                else checkbox
+            )
             assert placeholder, row
             said = unescape(placeholder.group(1))
             assert said.startswith(words.EMPTY_PREFIX), row
@@ -240,8 +259,22 @@ def test_every_field_says_whether_it_is_needed_and_what_empty_means(
                 "group",
             },
         ),
-        ("site", {"identifiers", "project", "max_pages", "max_depth"}),
-        ("file", {"identifiers", "upload", "collection", "title", "group", "project"}),
+        (
+            "site",
+            {"identifiers", "project", "version", "refresh", "max_pages", "max_depth"},
+        ),
+        (
+            "file",
+            {
+                "identifiers",
+                "upload",
+                "collection",
+                "title",
+                "group",
+                "project",
+                "version",
+            },
+        ),
     ],
 )
 def test_each_tab_asks_only_its_own_fields(
@@ -293,7 +326,7 @@ def test_a_site_carries_its_limits(
         data={
             "kind": "site",
             "collection": "docs",
-            "identifiers": "https://stimela.readthedocs.io/",
+            "identifiers": "https://stimela.readthedocs.io/en/latest/",
             "max_pages": "40",
             "max_depth": "",
         },
@@ -738,11 +771,84 @@ def test_a_local_page_into_docs_with_a_project_starts(
             "identifiers": str(page),
             "collection": "docs",
             "project": "example",
+            "version": "latest",
         },
         headers=HTMX,
     )
 
     assert len(adds) == 1
+
+
+def test_a_site_whose_address_names_no_version_is_refused_in_the_form(
+    client: TestClient, adds: list[AddCall]
+):
+    """#489: the reader is asked, rather than given a label kennis made up."""
+    refused = client.post(
+        "/add",
+        data={
+            "kind": "site",
+            "collection": "docs",
+            "identifiers": "https://example.org/docs/",
+        },
+        headers=HTMX,
+    )
+
+    assert adds == []
+    assert "Enter a Version" in refused.text
+
+
+def test_a_version_typed_in_the_form_reaches_the_add(
+    app: FastAPI, client: TestClient, adds: list[AddCall]
+):
+    client.post(
+        "/add",
+        data={
+            "kind": "site",
+            "collection": "docs",
+            "identifiers": "https://example.org/docs/",
+            "version": "2.12",
+        },
+        headers=HTMX,
+    )
+    finished(app)
+
+    assert adds[0][2].version == "2.12"
+
+
+@pytest.mark.parametrize(("ticked", "refresh"), [(True, True), (False, False)])
+def test_refresh_ticked_in_the_form_reaches_the_add(
+    app: FastAPI, client: TestClient, adds: list[AddCall], ticked: bool, refresh: bool
+):
+    sent = {
+        "kind": "site",
+        "collection": "docs",
+        "identifiers": "https://example.org/docs/2.12/",
+    }
+    if ticked:
+        sent["refresh"] = "on"
+    client.post("/add", data=sent, headers=HTMX)
+    finished(app)
+
+    assert adds[0][2].refresh is refresh
+
+
+def test_refresh_is_a_checkbox(client: TestClient):
+    dialog = dialog_of(client, "site")
+
+    assert re.search(r'<input[^>]*type="checkbox"[^>]*name="refresh"', dialog)
+
+
+def test_the_site_preview_names_the_version(client: TestClient):
+    named = client.get(
+        "/add/preview/site",
+        params={"identifiers": "https://pydantic.dev/docs/validation/2.12/"},
+    )
+    unnamed = client.get(
+        "/add/preview/site", params={"identifiers": "https://example.org/docs/"}
+    )
+
+    assert words.previewed_version("2.12") in unescape(named.text)
+    assert words.VERSION_UNNAMED in unescape(unnamed.text)
 
 
 # ---------------------------------------------------------------------------

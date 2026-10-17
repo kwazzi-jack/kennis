@@ -652,7 +652,17 @@ def test_a_sweep_names_the_scopes_it_could_not_search(corpus: Path, client: Test
     source.write_text("# doc\n\nSome documentation text.\n", encoding="utf-8")
     assert (
         run.invoke(
-            main, ["corpus", "add", "-d", str(source), "--project", "stimela"]
+            main,
+            [
+                "corpus",
+                "add",
+                "-d",
+                str(source),
+                "--project",
+                "stimela",
+                "--version",
+                "latest",
+            ],
         ).exit_code
         == 0
     )

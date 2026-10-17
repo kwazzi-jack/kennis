@@ -879,3 +879,40 @@ def test_remember_does_not_report_the_note_it_just_indexed_as_unindexed(
     found = run.invoke(main, ["search", "ionospheric", "--collection", "notes"])
     assert found.exit_code == 0, found.output
     assert "onospheric" in found.output
+
+
+def test_a_docs_version_on_a_notes_add_is_refused(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    source = a_source(tmp_path, "trees.md")
+
+    result = run.invoke(main, ["corpus", "add", "-n", "--version", "1.0", str(source)])
+
+    assert result.exit_code != 0
+    assert "--version" in result.output and "docs" in result.output
+
+
+def test_a_docs_version_files_the_page_under_it(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """#489: `--version` reaches the add."""
+    source = a_source(tmp_path, "tutorial.md")
+
+    result = run.invoke(
+        main,
+        ["corpus", "add", "-d", "--project", "demo", "--version", "2.1", str(source)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (corpus / "docs" / "demo" / "2.1").is_dir()
+
+
+def test_a_docs_page_with_no_version_says_how_to_name_one(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    source = a_source(tmp_path, "tutorial.md")
+
+    result = run.invoke(main, ["corpus", "add", "-d", "--project", "demo", str(source)])
+
+    assert result.exit_code != 0
+    assert "--version" in result.output

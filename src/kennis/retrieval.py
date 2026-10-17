@@ -15,7 +15,7 @@ operation from "search this one and fail if it has no index".
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, cast, get_args
 
@@ -25,6 +25,7 @@ from kennis.engine.context.index import CONTEXT_COLLECTION, load_bundle_index
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import excluded_versions, project_versions
 from kennis.engine.errors import (
     ContextNotFound,
     KennisError,
@@ -61,7 +62,9 @@ def context_for(collection: str) -> Context:
     return resolve_context() if collection == CONTEXT_COLLECTION else existing_corpus()
 
 
-def search_scope(collection: str, question: str, top_k: int = 5) -> list[Hit]:
+def search_scope(
+    collection: str, question: str, top_k: int = 5, versions: Sequence[str] = ()
+) -> list[Hit]:
     """The best hits for `question` in exactly one scope.
 
     Raises `ContextNotFound` outside a project when the scope is the
@@ -75,20 +78,29 @@ def search_scope(collection: str, question: str, top_k: int = 5) -> list[Hit]:
     index = index_for(context, collection)
     model = index.binding.model.model if index.binding.model else None
     running = mode_for(context, index, collection)
+    wanted = max(1, min(top_k, MAX_TOP_K))
+    choice = (
+        versions_left_out(context, versions)
+        if collection == "docs"
+        else VersionChoice(left_out=(), breadth=1)
+    )
     results = search(
         index,
         question,
-        top_k=max(1, min(top_k, MAX_TOP_K)),
-        filters=None,
+        top_k=wanted * choice.breadth,
+        # An agent sees each project's current docs version, as a person
+        # does, unless it names others (#489).
+        filters=_with_versions(None, choice.left_out),
         mode=running,
         host=resolve_host(
             index.binding.model.kind if index.binding.model else "",
             context.settings.embedding.base_url or None,
         ),
     )
-    return [
+    hits = [
         Hit(collection=collection, result=result, model=model) for result in results
     ]
+    return merged_across_versions(hits)[:wanted] if collection == "docs" else hits
 
 
 def index_for(context: Context, collection: str) -> LoadedIndex:
@@ -215,6 +227,7 @@ def sweep(
     top_k: int | None = None,
     filters: list[Filter] | None = None,
     mode: str | None = None,
+    versions: Sequence[str] = (),
 ) -> Sweep:
     """Search every scope in `scopes` that can be searched.
 
@@ -231,6 +244,10 @@ def sweep(
 
     Moved here from the command line, which held it privately while
     `mode_for` stated the same mode rule beside it. Concern #314.
+
+    `versions` is the reader's choice of docs versions, as
+    `excluded_versions` reads it; nothing chosen searches each project's
+    current one, so an ordinary search holds one copy of a page (#489).
     """
     wants_corpus = any(scope != CONTEXT_COLLECTION for scope in scopes)
     # Required only when a corpus scope was *named*. Under a sweep a
@@ -250,6 +267,11 @@ def sweep(
     skipped: list[Skipped] = []
     degraded: list[str] = []
     groups: dict[str, list[Hit]] = {}
+    choice = (
+        versions_left_out(context, versions)
+        if "docs" in scopes
+        else VersionChoice(left_out=(), breadth=1)
+    )
 
     for name in [scope for scope in SCOPE_NAMES if scope in scopes]:
         index = _load(context, name, bundle=bundle, named=named)
@@ -274,13 +296,23 @@ def sweep(
         if running != asked and asked != "bm25":
             degraded.append(name)
         model = index.binding.model.model if index.binding.model else None
+        # Enough candidates that merging equal passages across versions
+        # still leaves `wanted`: asked for three over two versions, the
+        # unchanged passage came twice, merged to one, and the changed
+        # passage that ranked fourth - the one a reader comparing
+        # versions wants - went unshown.
+        breadth = choice.breadth if name == "docs" else 1
         found = [
             Hit(collection=name, result=result, model=model)
             for result in search(
                 index,
                 question,
-                top_k=wanted,
-                filters=filters,
+                top_k=wanted * breadth,
+                # The docs scope alone: a notes group may be called
+                # `pydantic/2.12` as well.
+                filters=_with_versions(filters, choice.left_out)
+                if name == "docs"
+                else filters,
                 mode=running,
                 # The address, from the configuration in force now. It
                 # is not in the stored binding, because it is not part
@@ -291,6 +323,8 @@ def sweep(
                 ),
             )
         ]
+        if name == "docs":
+            found = merged_across_versions(found)[:wanted]
         # `top_k` per collection, not across them: each group is a
         # complete answer from its source rather than a truncated
         # share of a blend.
@@ -305,6 +339,70 @@ def sweep(
         skipped=tuple(skipped),
         degraded=tuple(degraded),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class VersionChoice:
+    """What a docs search leaves out, and how many versions of one page
+    it may find at most - which is how many candidates it takes to still
+    fill the count once equal passages are merged."""
+
+    left_out: tuple[str, ...]
+    breadth: int
+
+
+def versions_left_out(context: Context, versions: Sequence[str]) -> VersionChoice:
+    """The docs `project/version` groups a search leaves out, by the
+    reader's choice; see `excluded_versions`."""
+    held = project_versions(Collection(root=context.corpus_root, name="docs").path)
+    left_out = excluded_versions(held, versions)
+    searched = [
+        sum(
+            1
+            for version in held_versions.held
+            if f"{project}/{version}" not in left_out
+        )
+        for project, held_versions in held.items()
+    ]
+    return VersionChoice(left_out=left_out, breadth=max([1, *searched]))
+
+
+def _with_versions(
+    filters: list[Filter] | None, left_out: tuple[str, ...]
+) -> list[Filter] | None:
+    if not left_out:
+        return filters
+    return [*(filters or []), Filter(field="group", op="not_in", value=list(left_out))]
+
+
+def merged_across_versions(hits: list[Hit]) -> list[Hit]:
+    """One hit for a passage that is word for word the same in several
+    versions of one page, labelled with each (#489).
+
+    Exact equality and nothing looser: a passage that differs by a word is
+    shown in each version, because the difference is what a reader
+    searching two versions is looking for. The first, best-ranked copy
+    stands for the rest.
+    """
+    kept: list[Hit] = []
+    first_of: dict[tuple[str, str, str], int] = {}
+    for hit in hits:
+        docs = hit.result.chunk.metadata.get("docs")
+        version = docs.get("version") if isinstance(docs, dict) else None
+        if not isinstance(docs, dict) or not isinstance(version, str):
+            kept.append(hit)
+            continue
+        key = (str(docs.get("project")), str(docs.get("page")), hit.result.chunk.text)
+        if key not in first_of:
+            first_of[key] = len(kept)
+            kept.append(hit)
+            continue
+        position = first_of[key]
+        earlier = kept[position]
+        kept[position] = replace(
+            earlier, merged_versions=(*earlier.merged_versions, version)
+        )
+    return kept
 
 
 def _runnable(index: LoadedIndex, asked: str) -> Mode:

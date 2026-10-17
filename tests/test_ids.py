@@ -100,17 +100,29 @@ class TestLiteraturePrecedence:
         assert key == "doi:10.1088/x"
 
 
-def test_a_docs_page_is_keyed_by_project_and_page():
-    assert natural_key_for_docs(project="numpy", page="quickstart") == (
-        "docs:numpy/quickstart"
+def test_a_docs_page_is_keyed_by_project_version_and_page():
+    assert natural_key_for_docs(project="numpy", version="2.0", page="quickstart") == (
+        "docs:numpy/2.0/quickstart"
     )
 
 
 def test_two_pages_of_one_project_are_different_documents():
-    first = derive_id(natural_key_for_docs(project="numpy", page="quickstart"))
-    second = derive_id(natural_key_for_docs(project="numpy", page="install"))
+    first = derive_id(
+        natural_key_for_docs(project="numpy", version="2.0", page="quickstart")
+    )
+    second = derive_id(
+        natural_key_for_docs(project="numpy", version="2.0", page="install")
+    )
 
     assert first != second
+
+
+def test_one_page_in_two_versions_is_two_documents():
+    """#489: a version is part of a page's identity."""
+    older = derive_id(natural_key_for_docs(project="numpy", version="1.26", page="a"))
+    newer = derive_id(natural_key_for_docs(project="numpy", version="2.0", page="a"))
+
+    assert older != newer
 
 
 @pytest.mark.parametrize(

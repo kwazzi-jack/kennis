@@ -44,7 +44,7 @@ import httpx
 
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.converters import Converter, default_converter
-from kennis.engine.corpus.document import write_document
+from kennis.engine.corpus.document import read_document, write_document
 from kennis.engine.corpus.ids import (
     derive_id,
     mint_id,
@@ -77,14 +77,26 @@ from kennis.engine.corpus.schema import (
     NoteFrontmatter,
     Owner,
     Source,
+    utc_now,
 )
 from kennis.engine.docs.discover import discover_pages, page_key
-from kennis.engine.docs.fetch import convert_page, fetch_page
+from kennis.engine.docs.fetch import (
+    Validators,
+    convert_page,
+    fetch_page,
+    fetch_page_if_changed,
+)
 from kennis.engine.docs.http import USER_AGENT as DOCS_USER_AGENT
 from kennis.engine.docs.sites import (
     DocsSite,
     project_name_from_url,
     validate_project_name,
+)
+from kennis.engine.docs.versions import (
+    checked_version,
+    make_current,
+    project_versions,
+    version_in_address,
 )
 from kennis.engine.errors import (
     ConversionFailed,
@@ -173,6 +185,10 @@ class AddOptions:
     # name both. Derived from the site's host when it is not given, which a
     # local file has none of. Docs only.
     project: str | None = None
+    # Which version of the project's documentation the pages are, filed as
+    # `docs/<project>/<version>/`. Read from the address when not given; a
+    # local file joins the project's current version (#489). Docs only.
+    version: str | None = None
     # How a docs site's pages are found, and how far the walk reaches.
     # `discovery` left out is probed for; the answer is recorded per page.
     discovery: str | None = None
@@ -180,6 +196,10 @@ class AddOptions:
     exclude: tuple[str, ...] = ()
     max_pages: int = 300
     max_depth: int = 5
+    # Ask the site again for each page already held, and rewrite one that
+    # changed where it is. Without it a held page is not asked for. Docs
+    # only (#489).
+    refresh: bool = False
     # Seconds between requests to one host. None takes the default for the
     # collection being added to, which differs because the hosts do. Zero is
     # how a caller whose transport never leaves the machine says so.
@@ -206,6 +226,8 @@ class AddOptions:
         # the options travel - the preview, the add and its report.
         object.__setattr__(self, "group", checked_group(self.group))
         object.__setattr__(self, "project", checked_project(self.project))
+        if self.version is not None:
+            checked_version(self.version)
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +302,8 @@ class Uniqueness:
     # `.bib` entry and a bare arXiv identifier derive different citekeys and
     # share no source bytes, so neither the citekey nor the checksum can.
     identities: dict[str, str] = field(default_factory=dict)
+    # Document identifier to its file, so a refresh can read the copy held.
+    paths: dict[str, Path] = field(default_factory=dict)
 
     # Documents the survey could not validate, one line each. Reported as
     # diagnostics rather than dropped: a corpus served nine tenths of in
@@ -304,6 +328,7 @@ class Uniqueness:
                 record.citekeys.add(facts.citekey)
             if facts.identifier:
                 record.identifiers.add(facts.identifier)
+                record.paths[facts.identifier] = facts.md_path
                 if facts.title:
                     record.titles[facts.identifier] = facts.title
                 if facts.checksum:
@@ -1567,7 +1592,10 @@ class _Page:
     # every page twice.
     html: str | None = None
     base_url: str | None = None
+    # The folder it is filed in below its project (#489).
     version: str | None = None
+    # What the site says its own release is.
+    release: str | None = None
     crawl: CrawlScope | None = None
     # A file at an address - a PDF, a markdown or a source file - fetched and
     # converted whole, rather than a page of a site.
@@ -1619,7 +1647,9 @@ def add_docs(
     )
     delay = _delay_for(options, _DOCS_DELAY_SECONDS)
     try:
-        pages, outcomes = _pages_of(identifiers, options, active, delay, sink)
+        pages, outcomes = _pages_of(
+            identifiers, options, active, delay, sink, docs_root=collection.path
+        )
         requested = 0
         for position, page in enumerate(pages):
             # Pacing belongs here rather than in the crawl alone: the Sphinx
@@ -1630,7 +1660,7 @@ def add_docs(
             # held - costs no wait either: a re-crawl of a held site slept
             # before every page it then skipped.
             wait = page.pace if page.pace is not None else delay
-            if _requests(page, record):
+            if _requests(page, record, refresh=options.refresh):
                 if requested and wait:
                     time.sleep(wait)
                 requested += 1
@@ -1675,6 +1705,8 @@ def _pages_of(
     client: httpx.Client,
     delay: float,
     sink: EventSink,
+    *,
+    docs_root: Path,
 ) -> tuple[list[_Page], list[AddOutcome]]:
     """Expand each argument into the pages it names.
 
@@ -1689,7 +1721,12 @@ def _pages_of(
     # Checked whole before any site is crawled: a local page with no project
     # name, after a minute of crawling the site beside it, threw the crawl
     # away.
-    unusable = unusable_docs_input(identifiers, project=options.project)
+    unusable = unusable_docs_input(
+        identifiers,
+        project=options.project,
+        version=options.version,
+        docs_root=docs_root,
+    )
     if unusable is not None:
         raise _docs_input_refused(*unusable)
 
@@ -1697,14 +1734,23 @@ def _pages_of(
         if looks_like_url(identifier) and names_a_file(identifier):
             # One document, not a site: crawling from a PDF's address walked
             # the site it was on, and a file was never what that found.
+            project = (
+                validate_project_name(options.project)
+                if options.project is not None
+                else project_name_from_url(identifier)
+            )
             pages.append(
                 _Page(
                     key=page_key(identifier, "/"),
-                    project=validate_project_name(options.project)
-                    if options.project is not None
-                    else project_name_from_url(identifier),
+                    project=project,
                     url=identifier,
                     base_url=identifier,
+                    version=docs_version(
+                        identifier,
+                        project=project,
+                        version=options.version,
+                        docs_root=docs_root,
+                    ),
                     whole_file=True,
                 )
             )
@@ -1716,41 +1762,95 @@ def _pages_of(
         path = Path(identifier).expanduser()
         if options.project is None:
             raise _docs_input_refused(identifier, "unnamed")
+        project = validate_project_name(options.project)
         pages.append(
             _Page(
                 key=path.stem,
-                project=validate_project_name(options.project),
+                project=project,
                 path=path,
+                version=docs_version(
+                    identifier,
+                    project=project,
+                    version=options.version,
+                    docs_root=docs_root,
+                ),
             )
         )
     return pages, outcomes
 
 
+def docs_version(
+    identifier: str, *, project: str | None, version: str | None, docs_root: Path
+) -> str | None:
+    """The version `identifier`'s pages are filed under, or None when there
+    is none to take (#489).
+
+    The one named, else the one in a site's address. A site is never filed
+    under a version it did not say: a file - local or at an address - may
+    join its project's current version instead, because it extends what is
+    held rather than describing a release of its own.
+    """
+    if version is not None:
+        return version
+    if looks_like_url(identifier):
+        found = version_in_address(identifier)
+        if found is not None or not names_a_file(identifier):
+            return found
+    if project is None:
+        return None
+    held = project_versions(docs_root).get(project)
+    return held.current if held is not None else None
+
+
+type DocsInputProblem = Literal["missing", "unnamed", "unversioned"]
+
+
 def unusable_docs_input(
-    identifiers: Sequence[str], *, project: str | None
-) -> tuple[str, Literal["missing", "unnamed"]] | None:
+    identifiers: Sequence[str],
+    *,
+    project: str | None,
+    version: str | None = None,
+    docs_root: Path | None = None,
+) -> tuple[str, DocsInputProblem] | None:
     """The first argument a docs add cannot use, and why: a file that does
-    not exist, or a local page with no project to file it under.
+    not exist, a local page with no project to file it under, or anything
+    with no version to file it under (#489).
 
     Its own function so a front end can ask before the add starts, while
-    what was typed is still in front of the person who typed it.
+    what was typed is still in front of the person who typed it. Without
+    `docs_root` the version is not checked.
     """
     for identifier in identifiers:
-        if looks_like_url(identifier):
+        if not looks_like_url(identifier):
+            if not Path(identifier).expanduser().is_file():
+                return identifier, "missing"
+            if project is None:
+                return identifier, "unnamed"
+        if docs_root is None:
             continue
-        if not Path(identifier).expanduser().is_file():
-            return identifier, "missing"
-        if project is None:
-            return identifier, "unnamed"
+        owner = project
+        if owner is None and looks_like_url(identifier):
+            try:
+                owner = project_name_from_url(identifier)
+            except InputError:
+                owner = None
+        found = docs_version(
+            identifier, project=owner, version=version, docs_root=docs_root
+        )
+        if found is None:
+            return identifier, "unversioned"
     return None
 
 
-def _docs_input_refused(
-    identifier: str, reason: Literal["missing", "unnamed"]
-) -> InputError:
+def _docs_input_refused(identifier: str, reason: DocsInputProblem) -> InputError:
     if reason == "missing":
         return InputError(
             f"'{identifier}' is neither a documentation site nor a file that exists"
+        )
+    if reason == "unversioned":
+        return InputError(
+            f"'{identifier}' does not say which version of the documentation "
+            "it is: name one with --version, such as --version latest"
         )
     return InputError(
         f"'{identifier}' is a local file, so there is no site to take a "
@@ -1771,6 +1871,7 @@ def _pages_of_site(
         if options.project is not None
         else project_name_from_url(base_url)
     )
+    version = options.version or version_in_address(base_url)
     site = DocsSite(
         project=project,
         base_url=base_url,
@@ -1817,7 +1918,8 @@ def _pages_of_site(
             url=page.url,
             html=found.html.get(page.url),
             base_url=base_url,
-            version=found.version,
+            version=version,
+            release=found.version,
             crawl=crawl,
             pace=found.delay,
         )
@@ -1825,12 +1927,15 @@ def _pages_of_site(
     ]
 
 
-def _requests(page: _Page, record: Uniqueness) -> bool:
-    """Whether adding `page` will ask its site for it."""
+def _requests(page: _Page, record: Uniqueness, *, refresh: bool) -> bool:
+    """Whether adding `page` will ask its site for it: a held page is asked
+    for again only by a refresh."""
     if page.html is not None or page.url is None:
         return False
-    natural_key = natural_key_for_docs(project=page.project, page=page.key)
-    return natural_key not in record.identities
+    natural_key = natural_key_for_docs(
+        project=page.project, version=page.version, page=page.key
+    )
+    return refresh or natural_key not in record.identities
 
 
 def _add_page(
@@ -1841,9 +1946,14 @@ def _add_page(
     options: AddOptions,
 ) -> AddOutcome:
     """Fetch, convert and write one page, or say why it was not written."""
-    natural_key = natural_key_for_docs(project=page.project, page=page.key)
+    natural_key = natural_key_for_docs(
+        project=page.project, version=page.version, page=page.key
+    )
     existing = record.identities.get(natural_key)
     if existing is not None:
+        held = record.paths.get(existing)
+        if options.refresh and held is not None:
+            return _refreshed_page(page, existing, held, record, client)
         return AddOutcome(
             identifier=page.identifier,
             outcome=Outcome.UNCHANGED,
@@ -1853,7 +1963,7 @@ def _add_page(
         )
 
     try:
-        converted = _converted_page(page, client)
+        converted, validators = _converted_page(page, client)
     except KennisError as error:
         return AddOutcome(
             identifier=page.identifier,
@@ -1867,6 +1977,7 @@ def _add_page(
         record,
         page=page,
         converted=converted,
+        validators=validators,
         title=title,
         natural_key=natural_key,
         owner=options.owner,
@@ -1881,10 +1992,18 @@ def _add_page(
     )
 
 
-def _converted_page(page: _Page, client: httpx.Client) -> Converted:
-    """The markdown for one page, from the site or from a local file."""
+def _converted_page(
+    page: _Page, client: httpx.Client, held: Validators | None = None
+) -> tuple[Converted, Validators]:
+    """The markdown for one page, from the site or from a local file, and
+    what the site sent to identify that copy - nothing, for a page that was
+    not fetched on its own.
+
+    With `held`, a page the site answers is unchanged raises `_NotModified`,
+    so the caller has no text to compare and nothing to write.
+    """
     if page.path is not None:
-        return convert_local_file(page.path)
+        return convert_local_file(page.path), Validators()
     if page.url is None:
         raise InputError(f"'{page.key}' names neither a file nor a page")
     if page.whole_file:
@@ -1893,13 +2012,19 @@ def _converted_page(page: _Page, client: httpx.Client) -> Converted:
             converted,
             suggested_title=converted.suggested_title
             or title_from_markdown(converted.markdown, page.key),
-        )
+        ), Validators()
 
-    markdown = (
-        convert_page(page.html, page.url)
-        if page.html is not None
-        else fetch_page(client, page.url)
-    )
+    if page.html is not None:
+        markdown, validators = convert_page(page.html, page.url), Validators()
+    else:
+        fetched = (
+            fetch_page_if_changed(client, page.url, held)
+            if held is not None
+            else fetch_page(client, page.url)
+        )
+        if fetched is None:
+            raise _NotModified
+        markdown, validators = fetched.markdown, fetched.validators
     return Converted(
         markdown=markdown,
         via="html",
@@ -1907,6 +2032,83 @@ def _converted_page(page: _Page, client: httpx.Client) -> Converted:
         origin=f"url:{page.url}",
         sha256=None,
         suggested_title=title_from_markdown(markdown, page.key),
+    ), validators
+
+
+class _NotModified(Exception):
+    """The site answered that the copy held is still current."""
+
+
+def _refreshed_page(
+    page: _Page,
+    document_id: str,
+    held_path: Path,
+    record: Uniqueness,
+    client: httpx.Client,
+) -> AddOutcome:
+    """Ask the site for a held page again and rewrite it where it is if its
+    text changed (#489).
+
+    By the validators the site sent last time where it sent any, so an
+    unchanged page costs no body; otherwise fetched and its markdown
+    compared with the body held. The identifier and the filename stay, so
+    every handle and every link to the page still reaches it; the title,
+    the body, the time of the fetch and the validators are the site's new
+    ones.
+    """
+    unchanged = AddOutcome(
+        identifier=page.identifier,
+        outcome=Outcome.UNCHANGED,
+        document_id=document_id,
+        title=record.titles.get(document_id),
+        refusal=SamePage(project=page.project, key=page.key),
+    )
+    try:
+        document = read_document(held_path, collection="docs")
+        frontmatter = document.frontmatter
+        if not isinstance(frontmatter, DocsFrontmatter):
+            raise InputError(f"'{held_path}' is not a documentation page")
+        held = Validators(
+            etag=frontmatter.docs.etag, last_modified=frontmatter.docs.last_modified
+        )
+        converted, validators = _converted_page(page, client, held)
+    except _NotModified:
+        return unchanged
+    except KennisError as error:
+        return AddOutcome(
+            identifier=page.identifier,
+            outcome=Outcome.FAILED,
+            document_id=document_id,
+            refusal=Quoted(str(error)),
+        )
+    if converted.markdown.rstrip("\n") == document.body.rstrip("\n"):
+        return unchanged
+
+    title = converted.suggested_title or page.key
+    write_document(
+        held_path,
+        frontmatter=frontmatter.model_copy(
+            update={
+                "title": title,
+                "source": frontmatter.source.model_copy(update={"at": utc_now()}),
+                "docs": frontmatter.docs.model_copy(
+                    update={
+                        "release": page.release or frontmatter.docs.release,
+                        "etag": validators.etag,
+                        "last_modified": validators.last_modified,
+                    }
+                ),
+            }
+        ),
+        body=converted.markdown,
+    )
+    record.titles[document_id] = title
+    return AddOutcome(
+        identifier=page.identifier,
+        outcome=Outcome.CHANGED,
+        document_id=document_id,
+        title=title,
+        path=held_path,
     )
 
 
@@ -1916,6 +2118,7 @@ def _write_page(
     *,
     page: _Page,
     converted: Converted,
+    validators: Validators,
     title: str,
     natural_key: str,
     owner: Owner = "user",
@@ -1923,15 +2126,25 @@ def _write_page(
 ) -> tuple[str, Path]:
     """Write one page, keeping `record` current.
 
-    The identifier is derived from the project and the page key rather than
-    minted, so two machines that crawl the same site write byte-identical
-    frontmatter and git has nothing to resolve.
+    The identifier is derived from the project, the version and the page
+    key rather than minted, so two machines that crawl the same site write
+    byte-identical frontmatter and git has nothing to resolve.
+
+    **A name is unique within its version's folder**, not across the
+    collection: every version of a site has an "Installation", and the
+    collection-wide rule filed the second as "Installation (1)" (#489).
+    A version's first page makes it the project's current one.
     """
     document_id = derive_id(natural_key)
     record.identifiers.add(document_id)
     record.identities[natural_key] = document_id
 
-    filename = unique_filename(title_filename(title), record.filenames)
+    target_dir = group_directory(
+        collection.path,
+        f"{page.project}/{page.version}" if page.version else page.project,
+    )
+    first_of_version = page.version is not None and not target_dir.is_dir()
+    filename = unique_filename(title_filename(title), _names_in(target_dir))
     record.filenames.add(filename)
 
     frontmatter = DocsFrontmatter(
@@ -1952,14 +2165,31 @@ def _write_page(
             page=page.key,
             base_url=page.base_url,
             version=page.version,
+            release=page.release,
+            etag=validators.etag,
+            last_modified=validators.last_modified,
             crawl=page.crawl,
         ),
     )
 
-    target_dir = group_directory(collection.path, page.project)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
         body=converted.markdown,
     )
+    record.paths[document_id] = document.md_path
+    if first_of_version and page.version is not None:
+        make_current(collection.path, page.project, page.version)
     return document_id, document.md_path
+
+
+def _names_in(directory: Path) -> set[str]:
+    """The names documents already take in `directory`, as `.md` names: a
+    wrapped document's is its folder's."""
+    if not directory.is_dir():
+        return set()
+    return {
+        child.name if child.is_file() else f"{child.name}.md"
+        for child in directory.iterdir()
+        if not child.name.startswith(".")
+    }

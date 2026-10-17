@@ -54,7 +54,7 @@
   {% set asked_scope = scope | default(everywhere) %}
   <form class="searchbox" role="search" action="/" method="get"
         {% if searching_here %}hx-get="/hits" hx-target="#hits"
-        hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope], change from:select[name=mode]"{% endif %}>
+        hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope], change from:select[name=mode], change from:.versions"{% endif %}>
     {{ icon("search") }}
     <input type="search" name="q" value="{{ question | default('') }}"
            placeholder="{{ scope_hints[asked_scope] }}" aria-label="{{ search_action }}"
@@ -76,6 +76,25 @@
     </select>
     {# Not drawn, as the mockup has none, but kept: a browser submits on
        Enter through it, and a reader without a script needs it. #}
+    {# Which docs versions to search, drawn only when a project holds
+       more than one (#489). Checkboxes, because several may be chosen;
+       inside the form, so a scriptless search carries them. #}
+    {% set offered_versions = version_choices(request) %}
+    {% if offered_versions %}
+    <details class="versions">
+      <summary title="{{ versions_label }}">{{ icon("history") }}<span class="label">{{ versions_label }}</span></summary>
+      <div class="versions-list">
+      {% for project in offered_versions %}
+        <fieldset>
+          <legend>{{ project.project }}</legend>
+          {% for choice in project.choices %}
+          <label{% if choice.current %} data-current="true"{% endif %}><input type="checkbox" name="version" value="{{ choice.value }}"{% if choice.checked %} checked{% endif %}><span>{{ choice.version }}</span>{% if choice.current %}<span class="role-muted">{{ current_version }}</span>{% endif %}</label>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+      </div>
+    </details>
+    {% endif %}
     <button type="submit" class="visually-hidden" tabindex="-1">{{ search_action }}</button>
     {% if searching_here %}<p class="searching role-muted" id="searching" aria-live="polite" hidden>{{ searching }}</p>{% endif %}
   </form>

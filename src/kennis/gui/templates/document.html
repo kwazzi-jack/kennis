@@ -54,6 +54,9 @@
       {% for detail in document.details %}
       <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{% if detail.href %}<a href="{{ detail.href }}" target="_blank" rel="noopener noreferrer">{{ detail.value }}</a>{% else %}{{ detail.value }}{% endif %}{% if detail.copyable %} <button type="button" class="ghost copy" data-copy="{{ detail.value }}" data-copied="{{ copied_label }}" hidden>{{ copy_label }}</button>{% endif %}</dd>
       {% endfor %}
+      {% if document.other_versions %}
+      <dt>{{ also_held }}</dt><dd class="other-versions">{% for version, href in document.other_versions %}<a href="{{ href }}">{{ version }}</a>{% endfor %}</dd>
+      {% endif %}
     </dl>
   </details>
   {% if question %}

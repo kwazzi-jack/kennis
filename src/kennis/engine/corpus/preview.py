@@ -36,6 +36,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.intake import looks_like_url
 from kennis.engine.docs.discover import discovery_mode
 from kennis.engine.docs.sites import project_name_from_url
+from kennis.engine.docs.versions import version_in_address
 from kennis.engine.errors import InputError
 from kennis.engine.literature.citekeys import derive_citekey, unique_citekey
 from kennis.engine.literature.identifiers import (
@@ -133,12 +134,15 @@ def preview_paper(
 class SitePreview:
     """What adding a documentation site would be filed as, and found by.
 
-    `project` is None when no name can be made from the address, which
-    the add would refuse. `discovery` is None until the site is probed.
+    `project` is None when no name can be made from the address, and
+    `version` when the address names none and none was given; the add
+    would refuse either (#489). `discovery` is None until the site is
+    probed.
     """
 
     address: str
     project: str | None
+    version: str | None = None
     discovery: str | None = None
 
 
@@ -146,11 +150,12 @@ def preview_site(
     address: str,
     *,
     project: str | None = None,
+    version: str | None = None,
     probe: bool = False,
     client: httpx.Client | None = None,
 ) -> SitePreview:
-    """The project a site would be filed under, and, when asked, how its
-    pages would be found."""
+    """The project and version a site would be filed under, and, when
+    asked, how its pages would be found."""
     candidate = address.strip()
     named = project
     if named is None and looks_like_url(candidate):
@@ -158,8 +163,11 @@ def preview_site(
             named = project_name_from_url(candidate)
         except InputError:
             named = None
+    filed_as = version or (
+        version_in_address(candidate) if looks_like_url(candidate) else None
+    )
     if not probe or not looks_like_url(candidate):
-        return SitePreview(address=address, project=named)
+        return SitePreview(address=address, project=named, version=filed_as)
     owned = client is None
     asking = client if client is not None else httpx.Client(follow_redirects=True)
     try:
@@ -169,7 +177,7 @@ def preview_site(
     finally:
         if owned:
             asking.close()
-    return SitePreview(address=address, project=named, discovery=mode)
+    return SitePreview(address=address, project=named, version=filed_as, discovery=mode)
 
 
 type LineKind = Literal[

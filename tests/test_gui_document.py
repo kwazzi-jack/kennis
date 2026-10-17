@@ -19,7 +19,7 @@ from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
-from kennis.engine.corpus.schema import LiteratureFrontmatter
+from kennis.engine.corpus.schema import DocsFrontmatter, LiteratureFrontmatter
 from kennis.engine.rag.index import load_index
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
@@ -237,6 +237,57 @@ def test_a_papers_details_carry_its_citekey_and_identifiers_verbatim():
     assert shown[words.DETAIL_LABELS["doi"]] == ("10.1051/0004-6361/201016082", True)
     assert shown[words.DETAIL_LABELS["converted"]] == ("html", False)
     assert words.DETAIL_LABELS["group"] not in shown
+
+
+def a_docs_page(*, version: str | None, release: str | None) -> DocsFrontmatter:
+    return DocsFrontmatter.model_validate(
+        {
+            "id": "abcdefghij",
+            "title": "Models",
+            "owner": "user",
+            "source": {
+                "from": "url:https://h.io/2.12/m/",
+                "via": "html",
+                "format": "html",
+            },
+            "docs": {
+                "project": "pydantic",
+                "page": "m",
+                "version": version,
+                "release": release,
+            },
+        }
+    )
+
+
+def test_a_docs_page_s_details_say_its_version_and_the_site_s_release():
+    """#489: the folder's version, and the site's release when it says more."""
+    shown = {
+        detail.label: detail.value
+        for detail in document_details(
+            a_docs_page(version="latest", release="2.2.0rc1"),
+            collection="docs",
+            group="",
+            state="",
+        )
+    }
+
+    assert shown[words.DETAIL_LABELS["version"]] == "latest"
+    assert shown[words.DETAIL_LABELS["release"]] == "2.2.0rc1"
+
+
+def test_a_release_the_version_already_says_is_not_said_twice():
+    shown = [
+        detail.label
+        for detail in document_details(
+            a_docs_page(version="2.12", release="2.12"),
+            collection="docs",
+            group="",
+            state="",
+        )
+    ]
+
+    assert words.DETAIL_LABELS["release"] not in shown
 
 
 def test_an_index_that_cannot_be_checked_says_nothing_about_the_document():

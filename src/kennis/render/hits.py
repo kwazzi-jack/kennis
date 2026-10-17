@@ -47,6 +47,7 @@ from typing import Final, Literal
 
 from kennis.engine.context.bundle import BUNDLE_DIRNAME
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.docs.versions import version_order
 from kennis.engine.rag.models import SearchResult
 from kennis.render.words import snippet_of
 
@@ -312,6 +313,23 @@ class Hit:
     collection: str
     result: SearchResult
     model: str | None
+    # The other versions of the same docs page whose passage is this one,
+    # word for word, merged into it when a search ran over several (#489).
+    merged_versions: tuple[str, ...] = ()
+
+
+def docs_versions_of(hit: Hit) -> str | None:
+    """`pydantic 2.14`, or `pydantic 2.12, 2.14` for a merged passage: which
+    project and versions a docs hit comes from. None for any other hit,
+    and for a page written before versions."""
+    docs = hit.result.chunk.metadata.get("docs")
+    if not isinstance(docs, dict):
+        return None
+    project, version = docs.get("project"), docs.get("version")
+    if not isinstance(project, str) or not isinstance(version, str):
+        return None
+    versions = sorted({version, *hit.merged_versions}, key=version_order)
+    return f"{project} {', '.join(versions)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,12 +390,16 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
         if hit.collection == CONTEXT_COLLECTION
         else hit_handle(hit.result)
     )
+    # Which version a docs passage is from travels with its handle, so the
+    # command line, an agent and the window all say it (#489).
+    where = docs_versions_of(hit)
+    reach = (where, handle) if where is not None else (handle,)
     if style == "none":
-        return (handle,)
+        return reach
     if style == "raw":
-        return (raw_scores(hit.result), handle)
+        return (raw_scores(hit.result), *reach)
     found = relevances(hit.result, model=hit.model, best=best)
-    return (*(f"{LEG_LABELS[leg]}: {level}" for leg, level in found), handle)
+    return (*(f"{LEG_LABELS[leg]}: {level}" for leg, level in found), *reach)
 
 
 def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:

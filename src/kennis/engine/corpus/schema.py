@@ -223,15 +223,26 @@ class CrawlScope(BaseModel):
 
 
 class DocsPage(BaseModel):
-    """Notes plus site structure: which project a page belongs to, and which
-    page of it this is."""
+    """Notes plus site structure: which project a page belongs to, which
+    version of it, and which page of that version this is."""
 
     model_config = ConfigDict(extra="forbid")
 
     project: str
     page: str
     base_url: str | None = None
+    # The folder the page is filed in, `docs/<project>/<version>/`, read from
+    # the address or named by the reader (#489). None for a page written
+    # before versions.
     version: str | None = None
+    # What the site says its own release is - Sphinx's `VERSION` - which a
+    # moving version such as `latest` keeps across many builds.
+    release: str | None = None
+    # What the site sent to identify this copy of the page, sent back by
+    # `corpus add --refresh` to ask whether it has changed. Kept verbatim:
+    # a validator is only ever compared by the site that issued it.
+    etag: str | None = None
+    last_modified: str | None = None
     crawl: CrawlScope | None = None
 
 
