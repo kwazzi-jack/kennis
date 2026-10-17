@@ -177,3 +177,44 @@ def test_each_theme_carries_its_own_book(scheme: str):
 def test_the_layout_shows_the_mark_from_the_theme():
     rules = re.findall(r"\.wordmark \.book\s*\{([^}]*)\}", layout_css())
     assert any("var(--brand-mark)" in rule for rule in rules)
+
+
+DOCS_BRAND = Path(__file__).resolve().parent.parent / "docs" / "assets" / "brand"
+
+
+def drawing_of_the_book(svg: str) -> str:
+    """The book's group: the first `<g>` after the title, to its close.
+
+    The wordmark wraps the same group in a transform that sizes it beside
+    the name, so the group is compared and the wrapper is not. Each file
+    names its own gradient, and only the name is allowed to differ.
+    """
+    svg = re.sub(r"kennis-(?:icon|wordmark)-", "kennis-", svg)
+    start = svg.index('<g transform="translate(0 -5)">')
+    depth = 0
+    for match in re.finditer(r"<g[ >]|</g>", svg[start:]):
+        depth += -1 if match.group() == "</g>" else 1
+        if depth == 0:
+            return svg[start : start + match.end()]
+    raise AssertionError("the book's group is never closed")
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_bar_draws_the_whole_book_the_wordmark_draws(scheme: str):
+    """Brian, 2026-10-17: the bar showed the plainer drawing made for 24
+    to 48 px, with one highlight; he asked for the most complete one."""
+    wordmark = (DOCS_BRAND / f"wordmark-{scheme}.svg").read_text(encoding="utf-8")
+    mark = (BRAND / f"mark-{scheme}.svg").read_text(encoding="utf-8")
+
+    assert drawing_of_the_book(mark) == drawing_of_the_book(wordmark)
+
+
+def test_the_docs_header_draws_the_whole_book():
+    config = (DOCS_BRAND.parent.parent.parent / "mkdocs.yml").read_text(
+        encoding="utf-8"
+    )
+    (logo,) = re.findall(r"^\s+logo: (\S+)$", config, re.M)
+    wordmark = (DOCS_BRAND / "wordmark-light.svg").read_text(encoding="utf-8")
+    drawn = (DOCS_BRAND.parent.parent / logo).read_text(encoding="utf-8")
+
+    assert drawing_of_the_book(drawn) == drawing_of_the_book(wordmark)

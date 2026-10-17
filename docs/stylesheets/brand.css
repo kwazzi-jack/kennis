@@ -1,0 +1,7 @@
+/* The whole open book in the header. Material draws the logo at 1.2rem,
+   where the drawing's pages blur together; the header is 2.4rem high. */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 2rem;
+  width: auto;
+}
