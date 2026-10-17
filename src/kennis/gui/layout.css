@@ -993,6 +993,9 @@ mark {
 .notice:has(> .icon) { display: flex; gap: 0.55rem; align-items: flex-start; }
 .notice > .icon { flex: none; margin-top: 0.15rem; color: var(--role-warning); }
 .notice > div { min-width: 0; }
+/* A role on the notice colours its frame and icon, never the prose: the
+   terminal's bold for a warning suits one short line, not a paragraph. */
+.notice:has(> .icon) > :not(.icon) { font-weight: 400; color: var(--ink); }
 /* A refusal answered inside a form: framed as a notice, in prose. The
    terminal's bold suits one short line; a paragraph of it shouts. */
 .form-problem:not(:empty) {

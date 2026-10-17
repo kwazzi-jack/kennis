@@ -416,3 +416,9 @@ def still_running_on_interrupt(kind: str) -> str:
         f"A {kind} job is still running, and stopping now would end it "
         "wherever it is. Wait for it, or press Ctrl-C again to stop anyway."
     )
+
+
+# The published documentation, as `mkdocs.yml`'s `site_url` names it; a
+# test holds the two together. A page's address is this, the page's path
+# under `docs/` without `.md`, and a heading's fragment.
+DOCS_SITE: Final = "https://kwazzi-jack.github.io/kennis/"

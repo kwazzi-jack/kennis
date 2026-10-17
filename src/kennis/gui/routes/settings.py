@@ -48,6 +48,9 @@ from kennis.operations import (
     back_up_corpus,
 )
 from kennis.render.backup import (
+    BACKUP_CAUTION,
+    BACKUP_CAUTION_LINK,
+    BACKUP_CAUTION_PAGE,
     BACKUP_CONTENTS,
     NO_BACKUP_FOLDER,
     describe_archive,
@@ -137,6 +140,9 @@ def _backup_section(
     return {
         "backup_heading": words.BACKUP_HEADING,
         "backup_contents": BACKUP_CONTENTS,
+        "backup_caution": BACKUP_CAUTION,
+        "backup_caution_link": BACKUP_CAUTION_LINK,
+        "backup_caution_page": BACKUP_CAUTION_PAGE,
         "backup_outcome": outcome,
         "backup_problem": problem,
         "backup_about": about,

@@ -111,6 +111,58 @@ def test_the_section_says_what_the_backup_holds(client: TestClient):
     assert BACKUP_CONTENTS in section.get_text(" ", strip=True)
 
 
+def test_the_caution_is_a_warning_with_a_page_that_explains_it(client: TestClient):
+    """Brian, 2026-10-17: make the warning "explicit about the legal notice"
+    with "a link to something to help them understand the issue"."""
+    from kennis.render.backup import BACKUP_CAUTION, BACKUP_CAUTION_PAGE
+
+    section = section_of(client.get("/settings").text)
+    caution = section.select_one(".notice.role-warning")
+    assert isinstance(caution, Tag)
+    link = caution.find("a")
+
+    assert "role-warning" in (caution.get("class") or [])
+    assert BACKUP_CAUTION in caution.get_text(" ", strip=True)
+    assert isinstance(link, Tag)
+    assert link["href"] == BACKUP_CAUTION_PAGE
+    assert link["target"] == "_blank"
+    # A list: `rel` is one of the attributes BeautifulSoup splits.
+    assert set(link["rel"]) >= {"noopener", "noreferrer"}
+
+
+def test_the_caution_names_who_decides_and_that_encryption_does_not():
+    from kennis.render.backup import BACKUP_CAUTION
+
+    assert "personal data" in BACKUP_CAUTION
+    assert "law" in BACKUP_CAUTION
+    assert "encrypted" in BACKUP_CAUTION.lower()
+
+
+def test_the_caution_page_is_a_section_of_the_docs():
+    """The address is composed from `DOCS_SITE`, so a moved page or a
+    renamed heading would send the reader to a 404 the suite cannot see."""
+    import re
+
+    from kennis.render.backup import BACKUP_CAUTION_PAGE
+    from kennis.render.words import DOCS_SITE
+
+    root = Path(__file__).resolve().parent.parent
+    config = (root / "mkdocs.yml").read_text(encoding="utf-8")
+    (site,) = re.findall(r"^site_url: (\S+)$", config, re.M)
+    assert site == DOCS_SITE
+    assert BACKUP_CAUTION_PAGE.startswith(DOCS_SITE)
+    page, _, fragment = BACKUP_CAUTION_PAGE.removeprefix(DOCS_SITE).partition("#")
+    source = root / "docs" / f"{page.rstrip('/')}.md"
+    headings = [
+        re.sub(r"[^a-z0-9 -]", "", heading.lower()).strip().replace(" ", "-")
+        for heading in re.findall(
+            r"^#+ (.+)$", source.read_text(encoding="utf-8"), re.M
+        )
+    ]
+
+    assert fragment in headings
+
+
 def test_with_no_folder_it_says_so(client: TestClient):
     section = section_of(client.get("/settings").text)
 

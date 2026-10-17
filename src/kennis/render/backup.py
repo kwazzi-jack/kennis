@@ -11,18 +11,28 @@ from datetime import datetime
 from typing import Final
 
 from kennis.engine.backup import BackupCheck, BackupReport, RestoreReport
-from kennis.render.words import count_of
+from kennis.render.words import DOCS_SITE, count_of
 
 BACKUP_PASSWORD_PROMPT: Final = "Backup password"
 NO_BACKUP_FOLDER: Final = "no backup folder is set"
-# What the backup holds, said where the folder is chosen (#413, #418). A
-# folder a cloud client synchronises is the expected case, and encryption
-# does not settle whether an institution allows the material there.
+# What the backup holds, said where the folder is chosen (#413, #418).
 BACKUP_CONTENTS: Final = (
     "The backup holds the full text of every document and its history, "
-    "encrypted with your password. Material covered by an institution's "
-    "data policy, such as notes holding research participants' personal "
-    "data, may not be allowed in consumer cloud storage even encrypted."
+    "encrypted with your password."
+)
+# What encryption does not settle, drawn as a warning (Brian, 2026-10-17):
+# a folder a cloud client synchronises is the expected case, and whether
+# the material may be there is the law's and the institution's to say. The
+# page explains what to check; kennis gives no legal advice.
+BACKUP_CAUTION: Final = (
+    "Encrypted personal data is still personal data. If the corpus holds "
+    "any, such as research participants' details, data-protection law, an "
+    "ethics approval or your institution's policy may decide whether a "
+    "cloud folder may hold the backup. kennis cannot decide that for you."
+)
+BACKUP_CAUTION_LINK: Final = "What to check before using a cloud folder"
+BACKUP_CAUTION_PAGE: Final = (
+    f"{DOCS_SITE}how-to/back-up/#before-you-choose-a-cloud-folder"
 )
 
 _UNITS: Final = ("bytes", "kB", "MB", "GB", "TB")
@@ -75,6 +85,9 @@ def describe_restored(report: RestoreReport) -> str:
 
 
 __all__ = [
+    "BACKUP_CAUTION",
+    "BACKUP_CAUTION_LINK",
+    "BACKUP_CAUTION_PAGE",
     "BACKUP_CONTENTS",
     "BACKUP_PASSWORD_PROMPT",
     "NO_BACKUP_FOLDER",

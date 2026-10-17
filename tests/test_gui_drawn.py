@@ -179,3 +179,12 @@ def test_a_sync_s_headline_begins_with_a_capital():
     shown = shown_corpus_sync(CorpusSync(actions=(), counts={}, deferred=(), edited=()))
 
     assert shown.headline[:1].isupper(), shown.headline
+
+
+def test_a_notice_with_an_icon_writes_its_words_as_prose():
+    """The backup's caution carries `role-warning`, which is bold yellow in
+    a terminal; a paragraph of it shouted (2026-10-17)."""
+    rule = rule_for(code(), ".notice:has(> .icon) > :not(.icon)")
+
+    assert "font-weight: 400" in rule
+    assert "color: var(--ink)" in rule

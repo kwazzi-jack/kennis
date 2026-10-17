@@ -7,6 +7,9 @@
 <section data-section="backup" id="backup" class="backup">
 <h2>{{ backup_heading }}</h2>
 <p class="role-muted">{{ backup_contents }}</p>
+{# Outside the window, so a new tab that cannot reach back and is told
+   nothing about where it was opened from (#433). #}
+<p class="notice role-warning">{{ icon("triangle-alert") }}<span>{{ backup_caution }} <a href="{{ backup_caution_page }}" target="_blank" rel="noopener noreferrer">{{ backup_caution_link }}</a></span></p>
 <form class="backup-folder" action="/settings/backup" method="post" hx-post="/settings/backup" hx-target="closest section" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">
 <div class="setting">
 <label class="setting-name" for="backup-folder">{{ backup_folder_label }}</label>
