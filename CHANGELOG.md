@@ -1,3 +1,31 @@
+## v0.9.0 (2026-10-17)
+
+### Feat
+
+- **config**: name each setting in the file that kennis does not read
+- **gui**: run one window at a time and let a second launch open it or replace it
+- **gui**: ask in a dialog when something else changed the corpus and say what changed
+- **gui**: draw each link by what it does and open every link out of kennis in a new tab
+- **backup**: say what encryption does not settle and link to what to check before using a cloud folder
+- **settings**: offer every setting on the settings page and read the logging section that nothing read
+- **gui**: name the window's keys where each control is pointed at and in the palette rather than as caps in the bar
+- **brand**: draw the whole open book in the window's bar and the docs header
+- **gui**: choose a pack file with kennis's own chooser and pass nothing down from a form to its controls
+- **gui**: put each problem in one place and offer its ways out as controls
+- **gui**: draw the status bar as one slim line whose job opens a panel, and redraw open branches after a write
+- **gui**: say a paper is being looked up, and show what was found as a card
+- **pack**: file a pack's papers and notes under the pack's id and move what is filed elsewhere
+- **gui**: draw groups inside groups and offer every level where a group is typed
+- **gui**: fill the title and citekey from a paper's preview, marked until edited
+- **gui**: draw the open book beside the name in the window's bar
+
+### Fix
+
+- **gui**: draw the browser's own parts in the theme and style the pages that were left plain
+- **docs**: read starlight and material pages and never take a card for the page
+- **sync**: name each document by where it is in the corpus and commit a sync as the corpus
+- **groups**: remove the spaces around each part of a group and store it that way
+
 ## v0.8.0 (2026-10-15)
 
 ### Feat
