@@ -178,7 +178,7 @@ TEMPLATES.env.globals.update(
         "branch_redraws": tuple(
             (f"pane-branch-{name}", f"/tree/{name}") for name in COLLECTION_NAMES
         ),
-        "palette_shortcut": words.PALETTE_SHORTCUT,
+        "palette_pointed": words.PALETTE_POINTED,
         "close_label": words.CLOSE,
         "collection_icons": words.COLLECTION_ICONS,
         "corpus_heading": words.CORPUS_HEADING,

@@ -211,7 +211,9 @@ def more_from(collection: str) -> str:
 
 # The key hint inside the search box: the key itself is drawn, and this
 # is its tooltip.
-SEARCH_KEY_TITLE = "Press / to search from anywhere"
+# Said where the field is pointed at, not drawn in it: a bare "/" in the
+# box told the reader nothing (Brian, 2026-10-17).
+SEARCH_KEY_TITLE = "Search. Press / to come here from anywhere."
 
 
 def unknown_order(asked: str) -> str:
@@ -513,7 +515,12 @@ PALETTE_TITLE = "Actions and places"
 PALETTE_PROMPT = "Find an action or place"
 PALETTE_EMPTY = "Nothing matches"
 PALETTE_SHORTCUT = "Ctrl K"
+PALETTE_POINTED = f"{PALETTE_TITLE} ({PALETTE_SHORTCUT})"
+# Every key the window answers, written down once: the bar draws no key
+# caps (Brian, 2026-10-17).
 PALETTE_KEYS: Final[tuple[tuple[str, str], ...]] = (
+    ("/", "search"),
+    (PALETTE_SHORTCUT, "this list"),
     ("Up Down", "move"),
     ("Enter", "open"),
     ("Esc", "close"),
@@ -1676,6 +1683,7 @@ __all__ = [
     "PALETTE_KEYS",
     "PALETTE_KINDS",
     "PALETTE_PAGES",
+    "PALETTE_POINTED",
     "PALETTE_PROMPT",
     "PALETTE_SHORTCUT",
     "PALETTE_TITLE",

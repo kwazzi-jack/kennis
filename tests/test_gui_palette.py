@@ -223,7 +223,39 @@ def test_the_bar_opens_the_palette_without_being_one_of_its_actions(client: Test
     assert link["hx-target"] == "#dialog"
     assert "action" not in classes(link)
     assert link["aria-label"] == words.PALETTE_TITLE
-    assert words.PALETTE_SHORTCUT in link.get_text()
+
+
+def test_the_bar_draws_no_key_cap(client: TestClient):
+    """Brian, 2026-10-17: "the search bar has a '/' in it? Not sure why?"
+    and the palette's "Ctrl K" label should go. A key is named where the
+    control is pointed at and in the palette's list of keys."""
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+    bar = page.find("header", class_="bar")
+    assert isinstance(bar, Tag)
+
+    assert bar.find("kbd") is None
+    assert bar.select(".kbd") == []
+
+
+def test_each_control_with_a_key_says_so_when_pointed_at(client: TestClient):
+    page = BeautifulSoup(client.get("/").text, "html.parser")
+    link = page.select_one("header.bar a.palette-open")
+    field = page.select_one("header.bar input[name=q]")
+    assert isinstance(link, Tag) and isinstance(field, Tag)
+
+    assert link["aria-keyshortcuts"] == "Control+K"
+    assert words.PALETTE_SHORTCUT in str(link["title"])
+    assert field["aria-keyshortcuts"] == "/"
+    assert str(field["title"]) == words.SEARCH_KEY_TITLE
+
+
+def test_the_palette_lists_every_key_the_window_answers(client: TestClient):
+    page = BeautifulSoup(client.get("/palette", headers=HTMX).text, "html.parser")
+    keys = [cap.get_text() for cap in page.select(".palette-keys .kbd")]
+
+    assert "/" in keys
+    assert words.PALETTE_SHORTCUT in keys
+    assert {"Up Down", "Enter", "Esc"} <= set(keys)
 
 
 def test_the_index_form_checks_the_collection_it_was_opened_on(client: TestClient):

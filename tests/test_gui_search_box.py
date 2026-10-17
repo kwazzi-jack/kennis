@@ -320,9 +320,10 @@ def test_the_indicator_is_hidden_when_the_hits_match_the_box(
 def test_the_search_box_is_one_control_with_its_button_out_of_sight(
     corpus: Path, client: TestClient
 ):
-    """The mockup's box: an icon, the field, the key that reaches it and
-    the two selects, inside one border. The button stays, because the
-    Enter key and the scriptless path need it, but is not drawn (#447)."""
+    """The mockup's box: an icon, the field and the two selects, inside
+    one border. The button stays, because the Enter key and the
+    scriptless path need it, but is not drawn (#447). The mockup's `/`
+    key cap is gone: it told a reader nothing (Brian, 2026-10-17)."""
     admitted(client)
 
     page = client.get("/").text
@@ -333,7 +334,7 @@ def test_the_search_box_is_one_control_with_its_button_out_of_sight(
 
     assert str(icon("search")) in raw
     assert raw.index(str(icon("search"))) < raw.index("<input")
-    assert isinstance(key, Tag) and key.get_text(strip=True) == "/"
+    assert key is None
     assert isinstance(button, Tag)
     assert "visually-hidden" in (button.get("class") or [])
 

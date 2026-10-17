@@ -58,8 +58,8 @@
     {{ icon("search") }}
     <input type="search" name="q" value="{{ question | default('') }}"
            placeholder="{{ scope_hints[asked_scope] }}" aria-label="{{ search_action }}"
+           title="{{ search_key_title }}" aria-keyshortcuts="/"
            {% if searching_here %}autofocus{% endif %}>
-    <kbd class="kbd" title="{{ search_key_title }}">/</kbd>
     <select name="scope" aria-label="{{ scope_label }}" title="{{ scope_label }}">
       <option value="{{ everywhere }}" data-hint="{{ scope_hints[everywhere] }}"{% if asked_scope == everywhere %} selected{% endif %}>{{ everywhere_label }}</option>
       {% for name in scopes %}
@@ -88,7 +88,7 @@
     {% endfor %}
     {# The palette is reached from the bar but is not one of its actions:
        it is every action and place again, under one key. #}
-    <a class="ghost palette-open" href="/palette" hx-get="/palette" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ palette_title }}" title="{{ palette_title }}">{{ icon("command") }}<span class="kbd">{{ palette_shortcut }}</span></a>
+    <a class="ghost palette-open" href="/palette" hx-get="/palette" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ palette_title }}" title="{{ palette_pointed }}" aria-keyshortcuts="Control+K">{{ icon("command") }}</a>
     <a class="ghost settings-open" href="/settings" aria-label="{{ settings_heading }}" title="{{ settings_heading }}">{{ icon("settings") }}</a>
     {# A plain form, not htmx: it works without a script, and what it
        answers with is a whole page, because nothing will be left to

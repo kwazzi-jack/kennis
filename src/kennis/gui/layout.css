@@ -250,7 +250,6 @@ body {
 /* The box keeps room to type in; the selects give way first. On a
    phone they took the row and left the box a sliver. */
 .searchbox input[type="search"] { min-width: 7rem; }
-.searchbox .kbd { margin-right: 0.5rem; flex: none; }
 .searchbox select {
   font-size: 0.75rem;
   min-width: 0;
@@ -2488,7 +2487,6 @@ article table, .full table { font-variant-numeric: tabular-nums; }
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .palette-open .kbd { display: none; }
   .searchbox { order: 3; flex-basis: 100%; max-width: none; flex-wrap: wrap; }
   main { padding: 1.5rem 1rem 4rem; }
 }
