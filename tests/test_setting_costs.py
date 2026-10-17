@@ -16,7 +16,7 @@ from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
 from kennis.engine.setting_costs import COSTLESS, costs_of
-from kennis.engine.setup import credential_status, setup_questions
+from kennis.engine.setup import credential_status, every_question
 from kennis.render.settings import describe_cost, describe_costs
 
 # Written by hand (#373): every key's cost for an ordinary value.
@@ -35,6 +35,25 @@ EXPECTED = {
     "chunking.size": ("rebuild",),
     # A DOI and the address go to Unpaywall, not a document's text.
     "literature.unpaywall_email": ("next_add",),
+    # Stored vectors were scaled, or not, when they were built.
+    "embedding.normalise": ("rebuild",),
+    # How many passages go to the backend at once: a build's speed, not
+    # what is built.
+    "embedding.batch_size": ("next_index",),
+    "embedding.api_key_env": ("next_search",),
+    "chunking.overlap": ("rebuild",),
+    # Which legs run is read at the search; whether a bundle's index has
+    # vectors for the meaning leg is decided when it is built.
+    "retrieval.context_method": ("next_search", "next_index"),
+    "corpus.keep_original": ("next_add",),
+    "corpus.default_group": ("next_add",),
+    "conversion.repair_ligatures": ("next_add",),
+    "conversion.batch_size": ("next_add",),
+    "literature.request_delay": ("next_add",),
+    # Read once, when kennis starts and opens the log.
+    "logging.level": ("next_start",),
+    "logging.max_bytes": ("next_start",),
+    "logging.backup_count": ("next_start",),
 }
 
 
@@ -56,7 +75,7 @@ def test_each_setting_costs_what_was_written_down(key: str, costs: tuple[str, ..
 def test_every_question_has_a_cost_or_is_named_as_having_none():
     """A setting added to the catalogue with no cost fails here, rather
     than reaching a page that cannot say what changing it does."""
-    for question in setup_questions():
+    for question in every_question():
         assert question.key in EXPECTED or question.key in COSTLESS, question.key
 
 

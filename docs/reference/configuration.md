@@ -50,6 +50,14 @@ it: an exported variable is for the shell that set it. `config init` replaces
 the whole file, so on an existing one it asks first, and anything edited by
 hand, comments included, is lost.
 
+**The settings page offers every setting** except two: `corpus.root`, because
+changing it under an open window moves the corpus from under every page, and
+`backup.folder`, which is chosen in the page's Backup section. `config init`
+asks only the settings where the right answer depends on you.
+
+The `[logging]` section is read when kennis starts, so a change to it takes
+effect the next time a command runs or the window is opened.
+
 `kennis config show` writes the file to standard output and its warnings to
 standard error, so `kennis config show > config.toml` produces a usable file
 rather than one with a warning in the middle.

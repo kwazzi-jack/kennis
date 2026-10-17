@@ -1,7 +1,9 @@
 """kennis's configuration as rows on the settings page (12b).
 
-The questions are the engine's: `setup_questions` is the catalogue
-`config init` walks, `questions_for` decides which apply, and
+The questions are the engine's: `every_question` is every setting a front
+end may offer - `config init` walks a shorter catalogue, and the page took
+that walk for the whole until 2026-10-17 - `questions_for` decides which
+apply, and
 `validate_answer` and `apply_answers` check and write. This module only
 lays each one out - its name, its value, what changing it costs, and for a
 key the variable it is read from - so the window cannot offer a setting
@@ -19,7 +21,7 @@ from kennis.engine.corpus.converters import MineruConverter
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.rag.index import read_binding
-from kennis.engine.setting_costs import COSTLESS, costs_of
+from kennis.engine.setting_costs import costs_of
 from kennis.engine.settings import (
     CREDENTIALS_KEPT,
     credentials_path,
@@ -30,8 +32,8 @@ from kennis.engine.setup import (
     Question,
     QuestionKind,
     credential_status,
+    every_question,
     questions_for,
-    setup_questions,
 )
 from kennis.gui import words
 from kennis.render.settings import describe_cost, describe_costs
@@ -80,10 +82,12 @@ class ShownIndex:
 
 
 def offered(answers: Answers) -> list[Question]:
-    """The questions that apply to these answers, less what is not offered."""
-    return [
-        question for question in questions_for(answers) if question.key not in COSTLESS
-    ]
+    """The questions that apply to these answers.
+
+    What is not offered - `corpus.root`, `backup.folder` - the engine's
+    `every_question` leaves out, once.
+    """
+    return questions_for(answers, every=True)
 
 
 def answers_in(form: Mapping[str, object]) -> dict[str, str]:
@@ -118,7 +122,7 @@ def _offers() -> dict[str, set[str]]:
     The value in force and each other backend's own model and width.
     """
     offers: dict[str, set[str]] = {}
-    for question in setup_questions():
+    for question in every_question():
         offers.setdefault(question.key, set()).add(question.suggested)
     return offers
 
@@ -184,7 +188,9 @@ def shown_indexes(corpus_root: Path) -> list[ShownIndex]:
 # The heading a section's settings sit under; any other is searching's.
 _GROUP_OF_SECTION: Final[dict[str, str]] = {
     "conversion": "converting",
+    "corpus": "adding",
     "literature": "adding",
+    "logging": "logging",
 }
 
 

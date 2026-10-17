@@ -46,7 +46,7 @@ from kennis.engine.settings import (
     toml_value,
 )
 
-type QuestionKind = Literal["choice", "text", "integer", "boolean", "secret"]
+type QuestionKind = Literal["choice", "text", "integer", "number", "boolean", "secret"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +111,40 @@ _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]]
     ("corpus.root", "text", ()),
 )
 
+# Every other setting, for a front end that offers them all: the settings
+# page (Brian, 2026-10-17). The walk is what a new user is asked; this is
+# what anyone may change. Each kind comes from the field's annotation, and
+# a condition is kept only where a setting means nothing otherwise.
+_EMBEDDING_BACKENDS: Final = ("fastembed", "ollama", "openai")
+_ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
+    *(
+        (key, (("embedding.backend", backend),))
+        for key in ("embedding.normalise", "embedding.batch_size")
+        for backend in _EMBEDDING_BACKENDS
+    ),
+    ("embedding.api_key_env", (("embedding.backend", "openai"),)),
+    ("chunking.overlap", ()),
+    ("retrieval.context_method", ()),
+    ("corpus.keep_original", ()),
+    ("corpus.default_group", ()),
+    ("conversion.repair_ligatures", (("conversion.backend", "mineru"),)),
+    ("conversion.batch_size", ()),
+    ("literature.request_delay", ()),
+    ("logging.level", ()),
+    ("logging.max_bytes", ()),
+    ("logging.backup_count", ()),
+)
+# What a front end offering every setting leaves out. `corpus.root` moves
+# the corpus from under whatever is open; `backup.folder` is chosen where
+# the backup is made, beside the chooser and the test.
+_NOT_OFFERED: Final = frozenset({"corpus.root", "backup.folder"})
+# Where each key sits among its section's fields. A secret is no field of
+# the model, so it sits after the field it belongs with.
+_SECRET_AFTER: Final[dict[str, str]] = {
+    "embedding.api_key": "api_key_env",
+    "conversion.api_key": "mode",
+}
+
 
 def setup_questions() -> tuple[Question, ...]:
     """Every question the setup can ask, in the order it would ask them.
@@ -122,8 +156,26 @@ def setup_questions() -> tuple[Question, ...]:
     return tuple(_question(key, kind, when, settings) for key, kind, when in _ASKED)
 
 
-def questions_for(answers: Mapping[str, str]) -> list[Question]:
+def every_question() -> tuple[Question, ...]:
+    """Every setting a front end may offer, in the configuration file's order.
+
+    The walk's questions, conditions and secrets included, and every other
+    setting beside them, less `_NOT_OFFERED`. In the model's order rather
+    than the walk's, so a setting sits beside its neighbours; a key asked
+    under several conditions keeps the walk's order among them.
+    """
+    settings = load_settings()
+    entries = [
+        (key, kind, when) for key, kind, when in _ASKED if key not in _NOT_OFFERED
+    ] + [(key, _kind_of(key), when) for key, when in _ALSO_OFFERED]
+    entries.sort(key=lambda entry: _position_of(entry[0]))
+    return tuple(_question(key, kind, when, settings) for key, kind, when in entries)
+
+
+def questions_for(answers: Mapping[str, str], *, every: bool = False) -> list[Question]:
     """The questions that apply, given what has been answered so far.
+
+    `every` widens the walk to `every_question`.
 
     A question whose condition names a key that has not been answered yet is
     judged against the value currently in effect, so a setup run that skips
@@ -131,7 +183,7 @@ def questions_for(answers: Mapping[str, str]) -> list[Question]:
     """
     settled = dict(answers)
     applicable: list[Question] = []
-    for question in setup_questions():
+    for question in every_question() if every else setup_questions():
         if _applies(question, settled):
             applicable.append(question)
             settled.setdefault(question.key, question.current)
@@ -298,6 +350,31 @@ def _suggested(key: str, when: tuple[tuple[str, str], ...], settings: Settings) 
     return _current(key, settings)
 
 
+# By identity, so `bool` is never taken for the `int` it subclasses.
+_KIND_OF_TYPE: Final[dict[object, QuestionKind]] = {
+    bool: "boolean",
+    int: "integer",
+    float: "number",
+}
+
+
+def _kind_of(key: str) -> QuestionKind:
+    annotation = _field_of(key).annotation
+    if get_origin(annotation) is Literal:
+        return "choice"
+    return _KIND_OF_TYPE.get(annotation, "text")
+
+
+def _position_of(key: str) -> tuple[int, float]:
+    section, _, name = key.partition(".")
+    sections = list(Settings.model_fields)
+    annotation = Settings.model_fields[section].annotation
+    fields = list(getattr(annotation, "model_fields", {}))
+    if name in fields:
+        return sections.index(section), float(fields.index(name))
+    return sections.index(section), fields.index(_SECRET_AFTER[key]) + 0.5
+
+
 def _options_of(annotation: object) -> tuple[str, ...]:
     if get_origin(annotation) is Literal:
         return tuple(str(value) for value in get_args(annotation))
@@ -353,6 +430,11 @@ def _coerce(question: Question, value: str) -> object:
             return int(value)
         except ValueError:
             raise ValueError(f"'{value}' is not a whole number") from None
+    if question.kind == "number":
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f"'{value}' is not a number") from None
     if question.kind == "boolean":
         if value.lower() not in {"true", "false", "yes", "no"}:
             return _refuse_boolean(value)
@@ -543,6 +625,7 @@ __all__ = [
     "QuestionKind",
     "apply_answers",
     "credential_status",
+    "every_question",
     "questions_for",
     "setup_questions",
     "validate_answer",

@@ -32,7 +32,27 @@ from kennis.cli.commands import (
     serve_command,
 )
 from kennis.cli.group import KennisGroup
+from kennis.engine.errors import SettingsError
+from kennis.engine.settings import load_settings
 from kennis.logs import start_logging
+
+
+def _logging_settings() -> dict[str, int]:
+    """The configuration's `[logging]` section, as `start_logging` takes it.
+
+    A configuration that will not load still gets a log, at the defaults:
+    the log is how the reason gets read, and the command reports the
+    failure itself when it loads the settings again.
+    """
+    try:
+        section = load_settings().logging
+    except SettingsError:
+        return {}
+    return {
+        "level": logging.getLevelNamesMapping()[section.level.upper()],
+        "max_bytes": section.max_bytes,
+        "backup_count": section.backup_count,
+    }
 
 
 @click.group(cls=KennisGroup, context_settings={"help_option_names": ["-h", "--help"]})
@@ -47,7 +67,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
     display.set_verbosity(quiet=quiet, progress=not no_progress)
     # Always on, because the log is what you ask for when something went
     # wrong and it has to already exist by then.
-    start_logging()
+    start_logging(**_logging_settings())
     logging.getLogger("kennis.cli").info("kennis %s", __version__)
     # Which command, with which parameters, is logged by `KennisCommand` -
     # after this callback, so the handler above already exists. Click 8.5

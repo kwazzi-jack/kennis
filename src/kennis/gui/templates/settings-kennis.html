@@ -51,8 +51,14 @@
 </select>
 {% elif setting.kind == "secret" %}
 <input id="setting-{{ setting.key }}" type="password" name="{{ setting.key }}" autocomplete="off">
-{% elif setting.kind == "integer" %}
-<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}>
+{% elif setting.kind == "integer" or setting.kind == "number" %}
+<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.kind == "number" %} step="any"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}>
+{% elif setting.kind == "boolean" %}
+{# An unticked box sends nothing, and nothing means "keep": the hidden
+   `false` comes first, so a ticked box's `true` is the later value and
+   the one the server reads. #}
+<input type="hidden" name="{{ setting.key }}" value="false"{% if setting.overridden_by %} disabled{% endif %} data-redraw>
+<input id="setting-{{ setting.key }}" type="checkbox" name="{{ setting.key }}" value="true"{% if setting.value == "true" %} checked{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
 {% else %}
 <input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
 {% endif %}

@@ -139,7 +139,7 @@ def test_a_bad_value_in_the_file_is_named_with_its_repair(
         '[retrieval]\ndefault_top_k = "lots"\n', encoding="utf-8"
     )
 
-    result = run.invoke(main, ["config", "get", "retrieval.rrf_k"])
+    result = run.invoke(main, ["config", "get", "chunking.overlap"])
 
     assert result.exit_code != 0
     assert "config.toml" in result.output
@@ -153,14 +153,15 @@ def test_a_bad_value_in_the_file_does_not_refuse_its_own_repair(
     named as the way out failed on the same error."""
     isolated.mkdir(parents=True)
     (isolated / "config.toml").write_text(
-        '[retrieval]\ndefault_top_k = "lots"\nrrf_k = 50\n', encoding="utf-8"
+        '[retrieval]\ndefault_top_k = "lots"\n[chunking]\noverlap = 50\n',
+        encoding="utf-8",
     )
 
     result = run.invoke(main, ["config", "set", "retrieval.default_top_k", "7"])
 
     assert result.exit_code == 0, result.output
     assert load_settings().retrieval.default_top_k == 7
-    assert load_settings().retrieval.rrf_k == 50
+    assert load_settings().chunking.overlap == 50
 
 
 def test_a_bad_value_elsewhere_in_the_file_is_named_by_set(
@@ -185,8 +186,8 @@ def test_a_bad_variable_is_named_as_the_source_and_does_not_block_set(
     `config show` for a value exported in their shell."""
     monkeypatch.setenv("KENNIS_RETRIEVAL_DEFAULT_TOP_K", "abc")
 
-    refused = run.invoke(main, ["config", "get", "retrieval.rrf_k"])
-    written = run.invoke(main, ["config", "set", "retrieval.rrf_k", "50"])
+    refused = run.invoke(main, ["config", "get", "chunking.overlap"])
+    written = run.invoke(main, ["config", "set", "chunking.overlap", "50"])
 
     assert "set by KENNIS_RETRIEVAL_DEFAULT_TOP_K" in refused.output
     assert "unset KENNIS_RETRIEVAL_DEFAULT_TOP_K" in refused.output

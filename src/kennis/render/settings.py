@@ -20,6 +20,10 @@ def describe_cost(cost: SettingCost) -> str:
             return "takes effect at the next search"
         case "next_add":
             return "takes effect at the next add"
+        case "next_index":
+            return "takes effect at the next index"
+        case "next_start":
+            return "takes effect the next time kennis starts"
         case "rebuild":
             return "takes effect in each index only once it is rebuilt"
         case "leaves_machine":

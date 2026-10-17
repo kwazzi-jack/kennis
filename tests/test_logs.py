@@ -161,3 +161,76 @@ def test_the_log_rotates_rather_than_growing_without_bound(isolated: Path):
 
     assert list(isolated.glob("kennis.log*")) != [isolated / "kennis.log"]
     assert len(list(isolated.glob("kennis.log*"))) <= 3
+
+
+# ---------------------------------------------------------------------------
+# The configuration's [logging] section
+# ---------------------------------------------------------------------------
+
+
+def configured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, toml: str) -> None:
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "config.toml").write_text(toml, encoding="utf-8")
+    monkeypatch.setenv("KENNIS_CONFIG_DIR", str(config))
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+
+
+def run_a_command() -> None:
+    from click.testing import CliRunner
+
+    from kennis.cli.__main__ import main
+
+    CliRunner().invoke(main, ["config", "show"])
+
+
+def test_the_configured_level_is_the_logs(
+    isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`start_logging()` was called with its own defaults, so the section
+    the configuration file documents changed nothing (2026-10-17)."""
+    configured(tmp_path, monkeypatch, '[logging]\nlevel = "warning"\n')
+
+    run_a_command()
+
+    # The command line's own first line is INFO: "kennis <version>".
+    assert " INFO " not in written(isolated)
+
+
+def test_the_default_level_writes_information_and_not_detail(
+    isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    configured(tmp_path, monkeypatch, "")
+
+    run_a_command()
+
+    # The level itself: the command writes no detail of its own, so the
+    # file's contents alone would pass at any level.
+    assert logging.getLogger("kennis").getEffectiveLevel() == logging.INFO
+    assert " INFO " in written(isolated)
+
+
+def test_the_configured_rotation_is_the_handlers(
+    isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from kennis import logs
+
+    configured(tmp_path, monkeypatch, "[logging]\nmax_bytes = 4096\nbackup_count = 7\n")
+
+    run_a_command()
+
+    handler = logs._installed
+    assert handler is not None
+    assert (handler.maxBytes, handler.backupCount) == (4096, 7)
+
+
+def test_a_configuration_that_will_not_load_still_gets_a_log(
+    isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The log is what is asked for when something went wrong, and a
+    broken configuration is something going wrong."""
+    configured(tmp_path, monkeypatch, '[logging]\nlevel = "loud"\n')
+
+    run_a_command()
+
+    assert " INFO " in written(isolated)

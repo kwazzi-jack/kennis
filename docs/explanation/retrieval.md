@@ -40,7 +40,7 @@ only the positions:
 score = sum over legs of  1 / (k + rank)
 ```
 
-with `k = 60` (`retrieval.rrf_k`) and `rank` counted from 1. A chunk ranked
+with `k = 60`, fixed rather than a setting, and `rank` counted from 1. A chunk ranked
 first by one leg and not at all by the other scores `1/61`. A chunk ranked
 third by both scores `2/63`, and so beats it. Agreement between two methods
 that fail differently is the signal.

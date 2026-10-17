@@ -333,7 +333,8 @@ KENNIS_SAVE = "Save settings"
 KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("searching", "Searching and indexing"),
     ("converting", "Converting documents"),
-    ("adding", "Adding papers"),
+    ("adding", "Adding documents"),
+    ("logging", "Log file"),
 )
 KENNIS_SAVED = "Saved."
 KENNIS_UNCHANGED = "Nothing changed."
@@ -353,6 +354,19 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "retrieval.default_top_k": "Results per collection",
     "chunking.size": "Passage size",
     "literature.unpaywall_email": "Email for Unpaywall",
+    "embedding.normalise": "Unit-length vectors",
+    "embedding.batch_size": "Passages per request",
+    "embedding.api_key_env": "Variable holding the OpenAI key",
+    "chunking.overlap": "Passage overlap",
+    "retrieval.context_method": "Way to match in a project",
+    "corpus.keep_original": "Keep the original file",
+    "corpus.default_group": "Default group",
+    "conversion.repair_ligatures": "Repair ff, fi and fl",
+    "conversion.batch_size": "Documents per converter run",
+    "literature.request_delay": "Seconds between arXiv requests",
+    "logging.level": "Detail",
+    "logging.max_bytes": "Size before a new file (bytes)",
+    "logging.backup_count": "Old files kept",
 }
 # What each setting is for, in an info tip beside its name. The engine's
 # own description, which `config init` prints and the config file
@@ -386,6 +400,45 @@ SETTING_TIPS: Final[dict[str, str]] = {
         "About how many characters make one passage. Smaller passages match "
         "more precisely; larger ones give more context."
     ),
+    "embedding.normalise": (
+        "Scale each vector to length one, so similarity is a plain dot "
+        "product. Leave on unless a model asks otherwise."
+    ),
+    "embedding.batch_size": (
+        "How many passages are sent to the meaning search at once while "
+        "indexing. Larger is faster and uses more memory."
+    ),
+    "embedding.api_key_env": (
+        "The environment variable kennis reads the OpenAI key from, and "
+        "the name it saves a key under."
+    ),
+    "chunking.overlap": (
+        "How many characters neighbouring passages share, so a sentence "
+        "cut at a boundary is whole in one of them."
+    ),
+    "retrieval.context_method": (
+        "How searches match in a project's context. Keywords only keeps "
+        "the project's index small and needs no model."
+    ),
+    "corpus.keep_original": (
+        "Keep the PDF or other file a document was converted from, beside the document."
+    ),
+    "corpus.default_group": (
+        "The group a document is filed under when none is given. Empty "
+        "files it at the top of its collection."
+    ),
+    "conversion.repair_ligatures": (
+        "MinerU sometimes drops a letter from ff, fi and fl. This puts it "
+        "back using the PDF's own text, at about 0.7 ms a page."
+    ),
+    "conversion.batch_size": (
+        "How many documents the converter takes in one run. 0 converts "
+        "everything in one run."
+    ),
+    "literature.request_delay": "arXiv asks for three seconds between requests.",
+    "logging.level": "How much kennis writes to its log file.",
+    "logging.max_bytes": "The size at which the log starts a new file.",
+    "logging.backup_count": "How many earlier log files are kept.",
 }
 
 
@@ -422,6 +475,15 @@ SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
         "accurate": "Accurate",
     },
     "retrieval.corpus_method": {value: label for value, label in MODE_CHOICES if value},
+    "retrieval.context_method": {
+        value: label for value, label in MODE_CHOICES if value
+    },
+    "logging.level": {
+        "debug": "Everything",
+        "info": "What happened",
+        "warning": "Warnings and errors",
+        "error": "Errors only",
+    },
 }
 CONVERTER_MISSING = "MinerU is not installed. To install it, run:"
 # Completed by the variable's name: "DATALAB_API_KEY is set". Neither

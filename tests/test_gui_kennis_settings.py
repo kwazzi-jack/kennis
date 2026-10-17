@@ -28,24 +28,41 @@ from kennis.render.settings import describe_cost, describe_costs
 TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
 
-# Written by hand: the rows the default configuration shows, in order.
-# `corpus.root` is absent on purpose: changing it under an open window
-# moves the corpus from under every page and every running job.
-EXPECTED_ROWS = [
-    "embedding.backend",
-    "embedding.model",
-    "retrieval.corpus_method",
-    "retrieval.default_top_k",
-    "chunking.size",
-    "conversion.backend",
-    "literature.unpaywall_email",
-]
-# And the heading each row sits under, as the plan lays the page out.
+# Written by hand: the rows the default configuration shows, in order -
+# every setting kennis has (Brian, 2026-10-17), in the file's own order
+# under each heading. `corpus.root` is absent on purpose: changing it
+# under an open window moves the corpus from under every page and every
+# running job. `backup.folder` is in the Backup section.
 EXPECTED_GROUPS = {
-    "Searching and indexing": EXPECTED_ROWS[:5],
-    "Converting documents": EXPECTED_ROWS[5:6],
-    "Adding papers": EXPECTED_ROWS[6:],
+    "Searching and indexing": [
+        "embedding.backend",
+        "embedding.model",
+        "embedding.normalise",
+        "embedding.batch_size",
+        "chunking.size",
+        "chunking.overlap",
+        "retrieval.default_top_k",
+        "retrieval.corpus_method",
+        "retrieval.context_method",
+    ],
+    "Converting documents": [
+        "conversion.backend",
+        "conversion.repair_ligatures",
+        "conversion.batch_size",
+    ],
+    "Adding documents": [
+        "corpus.keep_original",
+        "corpus.default_group",
+        "literature.request_delay",
+        "literature.unpaywall_email",
+    ],
+    "Log file": [
+        "logging.level",
+        "logging.max_bytes",
+        "logging.backup_count",
+    ],
 }
+EXPECTED_ROWS = [key for keys in EXPECTED_GROUPS.values() for key in keys]
 
 
 @pytest.fixture
@@ -300,9 +317,9 @@ def test_a_typed_key_never_travels_in_an_address(client: TestClient):
 
 def test_every_offered_choice_and_setting_has_words():
     from kennis.engine.setting_costs import COSTLESS
-    from kennis.engine.setup import setup_questions
+    from kennis.engine.setup import every_question
 
-    for question in setup_questions():
+    for question in every_question():
         if question.key in COSTLESS:
             continue
         assert question.key in words.SETTING_NAMES, question.key
@@ -353,6 +370,11 @@ def sent_from(form: Tag, **changes: str) -> dict[str, str]:
         if control.name == "select":
             chosen = control.find("option", attrs={"selected": True})
             sent[name] = str(chosen["value"]) if isinstance(chosen, Tag) else ""
+        elif control.get("type") == "checkbox":
+            # A browser sends a box only when it is ticked, and the later
+            # of two values for one name is the one the server reads.
+            if control.has_attr("checked"):
+                sent[name] = str(control["value"])
         else:
             value = control.get("value")
             sent[name] = value if isinstance(value, str) else ""
@@ -597,3 +619,74 @@ def test_the_settings_page_leaves_the_panels_own_heading_alone(client: TestClien
     heads = [head.get_text(strip=True) for head in page.select("h2.pane-head")]
     assert words.KENNIS_HEADING in heads
     assert words.KENNIS_SETTINGS_HEADING not in heads
+
+
+# ---------------------------------------------------------------------------
+# Every setting (Brian, 2026-10-17)
+# ---------------------------------------------------------------------------
+
+
+def test_the_openai_key_variable_is_offered_with_openai(client: TestClient):
+    form = form_of(section_of(client.get("/settings").text))
+    redrawn = redrawn_from(client, form, **{"embedding.backend": "openai"})
+
+    assert redrawn.find(attrs={"data-key": "embedding.api_key_env"}) is not None
+    assert form.find(attrs={"data-key": "embedding.api_key_env"}) is None
+
+
+def test_a_yes_or_no_setting_is_a_box(client: TestClient):
+    row = row_of(section_of(client.get("/settings").text), "corpus.keep_original")
+    box = row.find("input", attrs={"type": "checkbox"})
+
+    assert isinstance(box, Tag)
+    assert box["name"] == "corpus.keep_original"
+    assert box["value"] == "true"
+    assert not box.has_attr("checked")
+
+
+def test_ticking_a_box_writes_true(client: TestClient):
+    form = form_of(section_of(client.get("/settings").text))
+
+    client.post(
+        "/settings/kennis",
+        data=sent_from(form, **{"corpus.keep_original": "true"}),
+        headers=HTMX,
+    )
+
+    assert load_settings().corpus.keep_original is True
+
+
+def test_clearing_a_box_writes_false(client: TestClient):
+    """An unticked box sends nothing, and nothing means "keep" here, so a
+    box could be ticked and never cleared without the hidden `false`."""
+    assert (
+        CliRunner()
+        .invoke(main, ["config", "set", "corpus.keep_original", "true"])
+        .exit_code
+        == 0
+    )
+    form = form_of(section_of(client.get("/settings").text))
+    box = form.find("input", attrs={"name": "corpus.keep_original", "type": "checkbox"})
+    assert isinstance(box, Tag) and box.has_attr("checked")
+    del box["checked"]
+
+    client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
+
+    assert load_settings().corpus.keep_original is False
+
+
+def test_a_number_field_takes_a_fraction(client: TestClient):
+    row = row_of(section_of(client.get("/settings").text), "literature.request_delay")
+    field = row.find("input", attrs={"name": "literature.request_delay"})
+    assert isinstance(field, Tag)
+    assert field["type"] == "number"
+    assert field["step"] == "any"
+
+    form = form_of(section_of(client.get("/settings").text))
+    client.post(
+        "/settings/kennis",
+        data=sent_from(form, **{"literature.request_delay": "1.5"}),
+        headers=HTMX,
+    )
+
+    assert load_settings().literature.request_delay == 1.5

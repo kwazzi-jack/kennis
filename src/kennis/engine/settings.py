@@ -148,12 +148,6 @@ class RetrievalSettings(BaseModel):
             "sweep can return this many times the number of scopes."
         ),
     )
-    rrf_k: int = Field(
-        default=60,
-        ge=1,
-        le=1000,
-        description="Reciprocal rank fusion constant: score = sum 1 / (k + rank).",
-    )
     corpus_method: Literal["hybrid", "bm25", "dense"] = Field(
         default="hybrid", description="Retrieval method for corpus collections."
     )

@@ -608,3 +608,122 @@ def test_a_truncated_credentials_file_is_named_and_nothing_is_half_written(
 
     config = isolated / "config.toml"
     assert not config.is_file() or "datalab" not in config.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Every setting, for the settings page
+# ---------------------------------------------------------------------------
+
+# Written by hand (#373): the keys the page leaves out, and why. Every other
+# setting the model has must be a question `every_question` asks.
+LEFT_OUT = {
+    # Moves the corpus from under an open window and every running job.
+    "corpus.root": "moves the corpus",
+    # Has its own section on the page, with a chooser and a test.
+    "backup.folder": "the Backup section",
+}
+# And the walk `config init` gives a new user, which this must not change.
+WALK = [
+    "embedding.backend",
+    "embedding.model",
+    "embedding.base_url",
+    "embedding.model",
+    "embedding.model",
+    "embedding.api_key",
+    "conversion.backend",
+    "conversion.mode",
+    "conversion.api_key",
+    "retrieval.corpus_method",
+    "retrieval.default_top_k",
+    "chunking.size",
+    "literature.unpaywall_email",
+    "corpus.root",
+]
+
+
+def test_the_walk_is_unchanged():
+    """`config init` asks what depends on the person, and nothing more."""
+    assert [question.key for question in setup_questions()] == WALK
+
+
+def test_every_setting_is_asked_or_named_as_left_out():
+    """Brian, 2026-10-17: the page offered only the walk, so 13 settings
+    could be changed only with `config set` or an editor. Derived from the
+    model, so a setting added later fails here until it is placed."""
+    from kennis.engine.settings import Settings
+    from kennis.engine.setup import every_question
+
+    model_keys = {
+        f"{section}.{name}"
+        for section, field in Settings.model_fields.items()
+        for name in getattr(field.annotation, "model_fields", {})
+    }
+    asked = {question.key for question in every_question() if question.kind != "secret"}
+
+    assert asked == model_keys - set(LEFT_OUT)
+    assert not asked & set(LEFT_OUT)
+
+
+def test_every_question_keeps_the_walks_conditions_and_secrets():
+    from kennis.engine.setup import every_question
+
+    walk = {(question.key, question.when) for question in setup_questions()}
+    every = {(question.key, question.when) for question in every_question()}
+
+    assert walk - {("corpus.root", ())} <= every
+
+
+def test_every_question_is_in_the_models_order():
+    """The page lays rows out under headings in this order, so a setting
+    sits beside its neighbours in the file rather than after the walk."""
+    from kennis.engine.setup import every_question
+
+    keys = [question.key for question in every_question() if question.kind != "secret"]
+    first = list(dict.fromkeys(keys))
+
+    assert first[:4] == [
+        "embedding.backend",
+        "embedding.model",
+        "embedding.normalise",
+        "embedding.batch_size",
+    ]
+    assert first.index("chunking.overlap") == first.index("chunking.size") + 1
+
+
+@pytest.mark.parametrize(
+    ("key", "kind"),
+    [
+        ("embedding.normalise", "boolean"),
+        ("corpus.keep_original", "boolean"),
+        ("literature.request_delay", "number"),
+        ("logging.level", "choice"),
+        ("logging.max_bytes", "integer"),
+        ("corpus.default_group", "text"),
+    ],
+)
+def test_a_questions_kind_is_its_fields(key: str, kind: str):
+    from kennis.engine.setup import every_question
+
+    kinds = {question.kind for question in every_question() if question.key == key}
+
+    assert kinds == {kind}
+
+
+def test_a_number_takes_a_fraction():
+    from kennis.engine.settings import load_settings
+    from kennis.engine.setup import every_question
+
+    (delay,) = [q for q in every_question() if q.key == "literature.request_delay"]
+
+    assert validate_answer(delay, "1.5") is None
+    assert validate_answer(delay, "soon") is not None
+    apply_answers({"literature.request_delay": "1.5"})
+    assert load_settings().literature.request_delay == 1.5
+
+
+def test_the_fusion_constant_is_not_a_setting():
+    """Nothing read it: search fuses with its own 60, and the invariant
+    that the best hit of a group scores exactly 1/61 depends on that."""
+    from kennis.engine.settings import RetrievalSettings
+
+    assert "rrf_k" not in RetrievalSettings.model_fields
