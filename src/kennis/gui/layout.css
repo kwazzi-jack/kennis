@@ -881,7 +881,6 @@ button.segment:hover, a.segment:hover { background: var(--ground); color: var(--
 }
 .recents button:hover { color: var(--ink); }
 
-#corpus-changed { margin: 0; padding: 0.6rem 1.5rem; font-size: 0.875rem; }
 
 /* ---------------------------------------------------------------- */
 /* The margin and the column                                        */
@@ -1053,7 +1052,6 @@ main.document {
   display: flex;
   flex-direction: column;
 }
-main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 
 /* Where the document is: back to the search, the collection, its
    group, and the handle it is cited by. */

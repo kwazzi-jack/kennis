@@ -27,6 +27,7 @@ from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import (
     KennisError,
 )
+from kennis.engine.history.history import HistoryEntry
 from kennis.gui import words
 from kennis.gui.icons import icon
 from kennis.gui.jobs import Job
@@ -39,6 +40,7 @@ from kennis.gui.preferences import (
     preferences_of,
 )
 from kennis.holdings import (
+    last_change,
     revision,
 )
 from kennis.retrieval import (
@@ -46,6 +48,23 @@ from kennis.retrieval import (
 )
 
 _HERE: Final = Path(__file__).parent
+
+
+def change_said(change: HistoryEntry) -> str:
+    """One commit as the strip says it, with how long ago."""
+    return words.last_change(
+        change.operation,
+        change.scope,
+        change.summary,
+        time.time() - change.when.timestamp(),
+    )
+
+
+def newest_change_said(context: Context) -> str:
+    """The corpus's newest commit in the strip's words, or nothing before
+    its first: what the corpus-changed dialog says changed."""
+    newest = last_change(context)
+    return "" if newest is None else change_said(newest)
 
 
 TEMPLATES: Final = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -200,6 +219,9 @@ TEMPLATES.env.globals.update(
         "key_order": words.KEY_ORDER,
         "key_models": words.key_models,
         "corpus_changed": words.CORPUS_CHANGED,
+        "corpus_changed_heading": words.CORPUS_CHANGED_HEADING,
+        "corpus_changed_reload": words.CORPUS_CHANGED_RELOAD,
+        "corpus_changed_later": words.CORPUS_CHANGED_LATER,
         "quit_label": words.QUIT,
         "quit_title": words.QUIT_TITLE,
         "activity_heading": words.ACTIVITY_HEADING,
@@ -301,6 +323,9 @@ def frame(context: Context) -> dict[str, object]:
     return {
         "revision": revision(context) or "",
         "corpus_changed": words.CORPUS_CHANGED,
+        "corpus_changed_heading": words.CORPUS_CHANGED_HEADING,
+        "corpus_changed_reload": words.CORPUS_CHANGED_RELOAD,
+        "corpus_changed_later": words.CORPUS_CHANGED_LATER,
     }
 
 
@@ -400,12 +425,7 @@ def _strip_status(pane: Pane) -> list[StatusItem]:
     items: list[StatusItem] = []
     change = pane.last_change
     if change is not None:
-        said = words.last_change(
-            change.operation,
-            change.scope,
-            change.summary,
-            time.time() - change.when.timestamp(),
-        )
+        said = change_said(change)
         items.append(
             StatusItem(
                 "change",

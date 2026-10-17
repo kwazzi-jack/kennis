@@ -217,12 +217,13 @@ def test_a_note_written_here_is_not_announced_as_someone_else_s(
     page.wait_for_selector("#dialog textarea[name=text]", timeout=_WAIT_MS)
     page.fill("#dialog textarea[name=text]", "Deconvolution needs a clean beam.")
 
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog button[type=submit]")
     page.wait_for_selector("#dialog .role-operation", timeout=_WAIT_MS)
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     page.wait_for_timeout(500)
 
-    assert page.is_hidden("#corpus-changed")
+    assert not page.evaluate("document.getElementById('corpus-changed').open")
 
 
 def test_after_a_note_focus_is_back_in_the_box(page: playwright.Page) -> None:
@@ -232,6 +233,7 @@ def test_after_a_note_focus_is_back_in_the_box(page: playwright.Page) -> None:
     page.wait_for_selector("#dialog textarea[name=text]", timeout=_WAIT_MS)
     page.fill("#dialog textarea[name=text]", "Phase closure holds per triangle.")
 
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog button[type=submit]")
     page.wait_for_selector("#dialog .role-operation", timeout=_WAIT_MS)
     page.wait_for_timeout(200)
@@ -259,8 +261,47 @@ def test_a_write_from_a_terminal_is_announced(page: playwright.Page) -> None:
 
     page.evaluate("window.dispatchEvent(new Event('focus'))")
 
-    page.wait_for_selector("#corpus-changed:not([hidden])", timeout=_WAIT_MS)
-    assert page.inner_text("#corpus-changed") == words.CORPUS_CHANGED
+    page.wait_for_selector("#corpus-changed[open]", timeout=_WAIT_MS)
+    said = page.inner_text("#corpus-changed")
+    assert words.CORPUS_CHANGED in said
+    # What changed, in the strip's words: the terminal's add.
+    assert page.inner_text("#corpus-changed [data-change]").strip()
+
+
+def _a_terminal_writes(name: str) -> None:
+    source = Path(os.environ["KENNIS_CORPUS_ROOT"]).parent / "sources" / f"{name}.md"
+    source.write_text(f"# {name}\n\nWritten elsewhere.\n", encoding="utf-8")
+    assert CliRunner().invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+
+def test_not_now_closes_and_is_not_asked_again_for_the_same_change(
+    page: playwright.Page,
+) -> None:
+    _a_terminal_writes("first")
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    page.wait_for_selector("#corpus-changed[open]", timeout=_WAIT_MS)
+
+    page.click("#corpus-changed button[data-later]")
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    page.wait_for_timeout(500)
+    assert not page.evaluate("document.getElementById('corpus-changed').open")
+
+    _a_terminal_writes("second")
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    page.wait_for_selector("#corpus-changed[open]", timeout=_WAIT_MS)
+
+
+def test_reload_draws_the_page_at_the_new_revision(page: playwright.Page) -> None:
+    _a_terminal_writes("third")
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    page.wait_for_selector("#corpus-changed[open]", timeout=_WAIT_MS)
+    current = page.evaluate("fetch('/revision').then(r => r.json())")["revision"]
+
+    with page.expect_navigation(timeout=_WAIT_MS):
+        page.click("#corpus-changed button[data-reload]")
+
+    assert page.get_attribute("#corpus-changed", "data-revision") == current
+    assert not page.evaluate("document.getElementById('corpus-changed').open")
 
 
 def test_an_index_started_here_reports_its_outcome(page: playwright.Page) -> None:
@@ -275,7 +316,10 @@ def test_an_index_started_here_reports_its_outcome(page: playwright.Page) -> Non
 def _wait_for_htmx(page: playwright.Page, selector: str) -> None:
     """Until htmx has processed a swapped-in element, so its triggers are
     listening. The element existing is not enough: a field filled in the
-    gap sent nothing, and a test that ran after another failed for it."""
+    gap sent nothing, and a test that ran after another failed for it.
+    A form submitted in the gap is posted by the browser itself, and the
+    window navigates to the answer's page (2026-10-17): every submit in a
+    dialog waits for its form first."""
     page.wait_for_function(
         "selector => { const element = document.querySelector(selector);"
         " return Boolean(element && element['htmx-internal-data']); }",
@@ -316,6 +360,7 @@ def test_an_add_here_redraws_the_open_branch_and_is_not_news(
     page.set_input_files("#dialog input[name=upload][multiple]", str(chosen))
     page.click("#dialog .choices label:has(input[value=notes])")
     page.fill("#dialog input[name=group]", "earth / rivers ")
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog form[action='/add'] button[type=submit]")
 
     page.wait_for_selector(
@@ -325,7 +370,7 @@ def test_an_add_here_redraws_the_open_branch_and_is_not_news(
     assert committed != drawn_at, "the add should have committed"
     page.evaluate("window.dispatchEvent(new Event('focus'))")
     page.wait_for_timeout(500)
-    assert page.is_hidden("#corpus-changed")
+    assert not page.evaluate("document.getElementById('corpus-changed').open")
 
 
 def test_a_note_in_a_new_group_appears_in_the_open_branch(
@@ -337,6 +382,7 @@ def test_a_note_in_a_new_group_appears_in_the_open_branch(
     page.fill("#dialog textarea[name=text]", "Rivers carry sediment.")
     page.fill("#dialog input[name=group]", "earth / rivers ")
 
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog button[type=submit]")
 
     page.wait_for_selector(
@@ -426,6 +472,7 @@ def test_a_pack_file_that_is_not_there_keeps_the_dialog_and_says_so_in_it(
     page.wait_for_selector("#dialog input[name=path]", timeout=_WAIT_MS)
     page.fill("#dialog input[name=path]", "/nowhere/pack.ken.yml")
 
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog button[type=submit]")
 
     page.wait_for_selector("#pack-problem p", timeout=_WAIT_MS)
@@ -653,6 +700,7 @@ def test_a_refused_add_keeps_the_dialog_and_what_was_typed(
     page.fill("#dialog input[name=group-1]", "instruments")
     page.fill("#dialog textarea[name=lines-1]", "a-note.md")
 
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog form[action='/add'] button[type=submit]")
     page.wait_for_selector("#add-problem p", timeout=_WAIT_MS)
 
@@ -782,6 +830,7 @@ def test_a_file_chosen_in_the_browsers_picker_is_added(
 
     page.set_input_files("#dialog input[name=upload][multiple]", str(chosen))
     page.click("#dialog .choices label:has(input[value=notes])")
+    _wait_for_htmx(page, "#dialog form")
     page.click("#dialog form[action='/add'] button[type=submit]")
 
     added: list[Path] = []

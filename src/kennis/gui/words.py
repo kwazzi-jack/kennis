@@ -1257,7 +1257,14 @@ NEEDS_INDEXING = "Needs indexing"
 # The corpus page's table, by column.
 HOLDINGS_COLUMNS: Final[tuple[str, str, str]] = ("Collection", "Documents", "Search")
 
-CORPUS_CHANGED = "The corpus changed elsewhere. Reload to see the latest."
+# A dialog rather than a line at the top of the page (Brian, 2026-10-17).
+CORPUS_CHANGED_HEADING = "The corpus changed"
+CORPUS_CHANGED = (
+    "Something other than this window wrote to it: the command line, an "
+    "agent, or another window. Reload to see what it holds now."
+)
+CORPUS_CHANGED_RELOAD = "Reload"
+CORPUS_CHANGED_LATER = "Not now"
 
 NOTHING_HELD = "No documents yet. Use Add to bring some in."
 
@@ -1631,6 +1638,9 @@ __all__ = [
     "CORPUS_BUSY",
     "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
+    "CORPUS_CHANGED_HEADING",
+    "CORPUS_CHANGED_LATER",
+    "CORPUS_CHANGED_RELOAD",
     "CORPUS_HEADING",
     "CORPUS_OVERVIEW",
     "CORPUS_UNREADABLE",

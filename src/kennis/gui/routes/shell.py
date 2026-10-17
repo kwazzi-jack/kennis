@@ -18,7 +18,7 @@ from kennis.gui.pages import (
     palette_typed,
 )
 from kennis.gui.pane import pane_now
-from kennis.gui.responses import TEMPLATES, action_page
+from kennis.gui.responses import TEMPLATES, action_page, newest_change_said
 from kennis.gui.theme import stylesheet
 from kennis.holdings import (
     revision,
@@ -89,7 +89,10 @@ def serve_revision() -> JSONResponse:
     # Answered on demand, never pushed. One `git rev-parse`, which
     # is cheap enough to ask when a window regains focus and far
     # too expensive to poll. Concern #311.
-    return JSONResponse({"revision": revision(existing_corpus())})
+    context = existing_corpus()
+    return JSONResponse(
+        {"revision": revision(context), "change": newest_change_said(context)}
+    )
 
 
 @router.get("/palette")

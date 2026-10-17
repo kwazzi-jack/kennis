@@ -629,6 +629,59 @@ def test_the_revision_changes_when_a_terminal_writes(corpus: Path, client: TestC
     assert client.get("/revision").json()["revision"] != before
 
 
+def test_the_revision_says_what_the_newest_change_was(corpus: Path, client: TestClient):
+    """The dialog says what changed, in the strip's own words, so the
+    script copies a sentence rather than composing one."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+
+    answered = client.get("/revision").json()
+
+    assert set(answered) == {"revision", "change"}
+    # Written by hand (#373): `a_note` adds and then indexes.
+    assert answered["change"] == "indexed corpus (1 document, 1 chunk), just now"
+
+
+def test_a_page_draws_the_corpus_changed_dialog_closed(
+    corpus: Path, client: TestClient
+):
+    """Brian, 2026-10-17: the line at the top of the page should be "a
+    dialog popup or something". Drawn by the server, every word in it."""
+    a_note(corpus, "calibration", "Antenna gains.")
+    admitted(client)
+    page = BeautifulSoup(client.get("/corpus").text, "html.parser")
+    dialog = page.find("dialog", id="corpus-changed")
+
+    assert dialog is not None
+    assert not dialog.has_attr("open")
+    assert dialog["data-revision"] == client.get("/revision").json()["revision"]
+    assert words.CORPUS_CHANGED_HEADING in dialog.get_text()
+    assert words.CORPUS_CHANGED in dialog.get_text()
+    assert dialog.select_one("button[data-reload]").get_text(strip=True) == (
+        words.CORPUS_CHANGED_RELOAD
+    )
+    assert dialog.select_one("button[data-later]").get_text(strip=True) == (
+        words.CORPUS_CHANGED_LATER
+    )
+    assert dialog.select_one("[data-change]") is not None
+
+
+def test_the_revision_script_composes_no_words():
+    script = (STATIC_SCRIPTS / "revision.js").read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("//")
+    )
+
+    for sentence in (
+        words.CORPUS_CHANGED,
+        words.CORPUS_CHANGED_HEADING,
+        words.CORPUS_CHANGED_RELOAD,
+        words.CORPUS_CHANGED_LATER,
+    ):
+        assert sentence not in code
+    assert "showModal()" in code
+
+
 def test_this_window_s_own_note_answers_with_the_revision_it_left(
     corpus: Path, client: TestClient
 ):
@@ -688,8 +741,8 @@ def test_the_script_takes_the_revision_from_a_write_and_reads_it_on_each_check()
     )
 
     assert f'getResponseHeader("{REVISION_HEADER}")' in script
-    assert "banner.dataset.revision = " in script
-    assert "body.revision === banner.dataset.revision" in script
+    assert "dialog.dataset.revision = " in script
+    assert "body.revision === dialog.dataset.revision" in script
 
 
 def a_hand_deletion(corpus: Path) -> str:
