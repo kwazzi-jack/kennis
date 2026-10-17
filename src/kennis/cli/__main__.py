@@ -33,8 +33,9 @@ from kennis.cli.commands import (
 )
 from kennis.cli.group import KennisGroup
 from kennis.engine.errors import SettingsError
-from kennis.engine.settings import load_settings
+from kennis.engine.settings import config_path, load_settings, unknown_settings
 from kennis.logs import start_logging
+from kennis.render.settings import describe_unknown_settings
 
 
 def _logging_settings() -> dict[str, int]:
@@ -55,6 +56,21 @@ def _logging_settings() -> dict[str, int]:
     }
 
 
+def _say_unknown_settings() -> None:
+    """Name the file's settings that kennis does not read (#480).
+
+    On stderr always, so no report's bytes change: `search` stands for
+    what an agent sees, `config show` is a TOML payload, and under `serve`
+    stdout is the wire.
+    """
+    keys = unknown_settings()
+    if not keys:
+        return
+    sentence = describe_unknown_settings(keys, str(config_path()))
+    logging.getLogger("kennis.cli").warning("%s", sentence)
+    display.note(sentence, stderr=True)
+
+
 @click.group(cls=KennisGroup, context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version", prog_name="kennis")
 @click.option("-q", "--quiet", is_flag=True, help="Print nothing but failures.")
@@ -69,6 +85,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
     # wrong and it has to already exist by then.
     start_logging(**_logging_settings())
     logging.getLogger("kennis.cli").info("kennis %s", __version__)
+    _say_unknown_settings()
     # Which command, with which parameters, is logged by `KennisCommand` -
     # after this callback, so the handler above already exists. Click 8.5
     # exposes no useful remainder at the group level, and each command

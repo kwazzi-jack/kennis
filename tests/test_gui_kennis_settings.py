@@ -690,3 +690,32 @@ def test_a_number_field_takes_a_fraction(client: TestClient):
     )
 
     assert load_settings().literature.request_delay == 1.5
+
+
+# ---------------------------------------------------------------------------
+# A setting kennis does not read (#480)
+# ---------------------------------------------------------------------------
+
+
+def test_the_section_names_a_setting_kennis_does_not_read(client: TestClient):
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[chunking]\nsise = 900\n", encoding="utf-8")
+
+    section = section_of(client.get("/settings").text)
+
+    notice = section.select_one("p.notice.role-warning#unknown-settings")
+    assert isinstance(notice, Tag)
+    assert "chunking.sise" in notice.get_text()
+
+
+def test_saving_removes_it_and_the_notice_with_it(client: TestClient):
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[chunking]\nsise = 900\n", encoding="utf-8")
+    form = form_of(section_of(client.get("/settings").text))
+
+    answer = client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
+
+    assert "sise" not in saved()["chunking"]
+    assert section_of(answer.text).select_one("#unknown-settings") is None

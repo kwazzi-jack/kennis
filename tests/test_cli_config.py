@@ -437,3 +437,51 @@ def test_the_warning_comes_after_the_settings_it_is_about(run: CliRunner):
     combined = result.output
     assert "no configuration file" in combined
     assert combined.index("[embedding]") < combined.index("no configuration file")
+
+
+# ---------------------------------------------------------------------------
+# A setting kennis does not read (#480)
+# ---------------------------------------------------------------------------
+
+
+def stray_setting(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.toml").write_text("[chunking]\nsise = 900\n", encoding="utf-8")
+
+
+def test_every_command_names_a_setting_kennis_does_not_read_on_stderr(
+    isolated: Path, run: CliRunner
+):
+    stray_setting(isolated)
+
+    result = run.invoke(main, ["config", "path"])
+
+    stdout, stderr = streams(result)
+    assert result.exit_code == 0
+    assert "chunking.sise" in stderr
+    assert "chunking.sise" not in stdout
+
+
+def test_quiet_leaves_the_stray_setting_unsaid(isolated: Path, run: CliRunner):
+    stray_setting(isolated)
+
+    result = run.invoke(main, ["--quiet", "config", "path"])
+
+    assert "chunking.sise" not in streams(result)[1]
+
+
+def test_a_file_of_known_keys_says_nothing_extra(isolated: Path, run: CliRunner):
+    assert run.invoke(main, ["config", "init", "--defaults"]).exit_code == 0
+
+    result = run.invoke(main, ["config", "path"])
+
+    assert streams(result)[1] == ""
+
+
+def test_the_next_write_removes_the_stray_setting(isolated: Path, run: CliRunner):
+    stray_setting(isolated)
+
+    assert run.invoke(main, ["config", "set", "chunking.size", "900"]).exit_code == 0
+
+    assert "sise" not in (isolated / "config.toml").read_text(encoding="utf-8")
+    assert streams(run.invoke(main, ["config", "path"]))[1] == ""

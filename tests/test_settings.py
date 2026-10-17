@@ -30,6 +30,7 @@ from kennis.engine.settings import (
     credential,
     credentials_kept,
     load_settings,
+    unknown_settings,
 )
 
 
@@ -551,3 +552,37 @@ def test_the_credentials_file_is_not_called_private_where_modes_do_nothing():
     assert "only by you" not in credentials_kept("win32")
     assert credentials_kept("linux") == "readable only by you"
     assert CREDENTIALS_KEPT in config_document()
+
+
+# ---------------------------------------------------------------------------
+# A setting kennis does not read (#480)
+# ---------------------------------------------------------------------------
+
+
+def test_a_key_no_section_declares_is_named(isolated: Path):
+    write_config(
+        isolated,
+        "[chunking]\nsise = 900\nsize = 900\n\n[retrieval]\nrrf_k = 60\n",
+    )
+
+    assert unknown_settings() == ("chunking.sise", "retrieval.rrf_k")
+
+
+def test_an_unknown_section_and_a_bare_name_are_named_whole(isolated: Path):
+    write_config(isolated, "stray = 1\n\n[searching]\ntop = 3\n")
+
+    assert unknown_settings() == ("searching", "stray")
+
+
+def test_a_file_of_known_keys_names_nothing(isolated: Path):
+    write_config(isolated, config_document())
+
+    assert unknown_settings() == ()
+
+
+def test_no_file_or_an_unreadable_one_names_nothing(isolated: Path):
+    """The loader refuses a file that is not TOML with its own message."""
+    assert unknown_settings() == ()
+    write_config(isolated, "[chunking\n")
+
+    assert unknown_settings() == ()

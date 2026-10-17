@@ -648,6 +648,33 @@ def section_models() -> dict[str, type[BaseModel]]:
     return models
 
 
+def unknown_settings() -> tuple[str, ...]:
+    """Every name in the file that no section declares, sorted (#480).
+
+    A section's name when the section is unknown, `section.key` when only
+    the key is. The models ignore such a name, so a misspelt key leaves
+    the default in force; this is how a front end can say so. A file that
+    is missing names nothing, and so does one that will not read: the
+    loader refuses that with its own message.
+    """
+    path = config_path()
+    try:
+        stored = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ()
+    models = section_models()
+    unknown: list[str] = []
+    for section_name, section in stored.items():
+        model = models.get(section_name)
+        if model is None or not isinstance(section, dict):
+            unknown.append(section_name)
+            continue
+        unknown.extend(
+            f"{section_name}.{key}" for key in section if key not in model.model_fields
+        )
+    return tuple(sorted(unknown))
+
+
 def _described(key: str, field: FieldInfo, value: object) -> str:
     """One key: what it is for, what it accepts, and its value."""
     lines = [f"# {field.description}" if field.description else f"# {key}"]
