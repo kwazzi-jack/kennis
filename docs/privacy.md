@@ -62,9 +62,10 @@ both run on your machine.
 ### Links you follow
 
 The window links a paper to its pages on `arxiv.org`, `doi.org` and
-`ui.adsabs.harvard.edu`. Nothing is requested until you click one, and the
-page opens without a referrer, so the site is not told that kennis sent
-you. A pack file's first line names its schema on
+`ui.adsabs.harvard.edu`, and the backup's caution to this documentation
+on `kwazzi-jack.github.io`. Nothing is requested until you click one, and
+the page opens without a referrer, so the site is not told that kennis
+sent you. A pack file's first line names its schema on
 `raw.githubusercontent.com`; kennis does not fetch it, but an editor with
 a YAML language server may.
 
