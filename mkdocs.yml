@@ -98,6 +98,7 @@ nav:
       - Tutorial - your first corpus: getting-started/tutorial.md
   - How-to guides:
       - Add documents: how-to/add-documents.md
+      - Add a documentation site: how-to/add-a-documentation-site.md
       - Search and read: how-to/search-and-read.md
       - Project knowledge: how-to/project-context.md
       - Author a pack: how-to/author-a-pack.md

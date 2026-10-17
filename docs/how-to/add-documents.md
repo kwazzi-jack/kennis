@@ -50,21 +50,15 @@ adding a file, use [`kennis remember`](#write-a-note-directly).
 ## A documentation site
 
 ```
-kennis corpus add https://stimela.readthedocs.io/en/latest/ -d --project stimela
+kennis corpus add -d https://stimela.readthedocs.io/en/latest/
 ```
 
-kennis crawls from that page, converts each page to markdown, and files them
-all under the project's group. Two limits apply, both adjustable:
-
-```
---max-pages 300     # default
---max-depth 5       # default
-```
-
-`--project` is what the pages are grouped under, and is also what `--project`
-on a search filters by. A project is one folder: `stimela` is a project, and
-`stimela/cabs` is refused, because every page of a site is filed directly
-inside its project.
+kennis reads the site's own page list, or follows its links when it has
+none, and saves each page under a project named from the site, here
+`stimela`. The address decides which pages are taken: only those inside its
+folder. [Add a documentation site](add-a-documentation-site.md) explains
+choosing the address and the project, what is kept from each page, adding
+a site again, and what kennis does to stay within what a site permits.
 
 ## A directory
 

@@ -128,7 +128,8 @@ looks it up as you type; **PDF** takes a PDF, chosen, by web address or by
 path, with its identifier when the PDF does not show it or shows the wrong
 one. Only the fields of the way chosen show, and only they are added from.
 Documentation site takes the address of
-its first page; File takes a file or a folder and asks which collection;
+the site or of the section you want, whose folder decides which pages are
+taken (see [Add a documentation site](add-a-documentation-site.md)); File takes a file or a folder and asks which collection;
 Several by group takes a block per group, one item per line. Every field
 says whether it is required, and an optional one says what an empty field
 becomes. As you type, the dialog previews what the add would do: the
