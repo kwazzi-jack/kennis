@@ -18,7 +18,7 @@
    applies to, and the step that would change it. #}
 {% if keywords_only %}
 <p class="notice quiet">{{ icon("info") }}<span>{{ keywords_only.sentence }}
-  <a href="{{ keywords_only.href }}">{{ keywords_only.label }}</a></span></p>
+  <a class="button" href="{{ keywords_only.href }}"{% if keywords_only.target %} hx-get="{{ keywords_only.href }}" hx-target="{{ keywords_only.target }}" hx-swap="innerHTML"{% endif %}>{{ keywords_only.label }}</a></span></p>
 {% endif %}
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
@@ -104,5 +104,5 @@
   </li>
 {% endfor %}
 </ol>
-{% if more[group.collection] is defined %}<p class="more"><a href="{{ more[group.collection] }}">{{ more_from(group.collection) }}</a></p>{% endif %}
+{% if more[group.collection] is defined %}<p class="more"><a class="button" href="{{ more[group.collection] }}">{{ icon("chevron-down") }}<span>{{ more_from(group.collection) }}</span></a></p>{% endif %}
 {% endfor %}

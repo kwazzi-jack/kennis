@@ -97,6 +97,7 @@
   /* A cross to cut a control's own glyph from: an image used as a mask
      carries shape only, so the colour stays the theme's. */
   --cross: url("/static/vendor/icons/x.svg");
+  --outward: url("/static/vendor/icons/arrow-up-right.svg");
   /* Scrollbars in the theme: a thin thumb in the muted grey on no
      track. Inherited, so this one declaration reaches every scroller. */
   --scrollbar: color-mix(in srgb, var(--role-muted) 55%, transparent);
@@ -993,6 +994,8 @@ mark {
 .notice:has(> .icon) { display: flex; gap: 0.55rem; align-items: flex-start; }
 .notice > .icon { flex: none; margin-top: 0.15rem; color: var(--role-warning); }
 .notice > div { min-width: 0; }
+/* A way out under the sentence it answers, not inside it. */
+.notice .button { display: flex; width: fit-content; margin-top: 0.45rem; }
 /* A role on the notice colours its frame and icon, never the prose: the
    terminal's bold for a warning suits one short line, not a paragraph. */
 .notice:has(> .icon) > :not(.icon) { font-weight: 400; color: var(--ink); }
@@ -1183,6 +1186,15 @@ main.document > #corpus-changed { margin: 0.5rem 1.5rem 0; }
 .outline li[data-level="4"], .outline li[data-level="5"],
 .outline li[data-level="6"] { padding-left: 1.6rem; }
 .inspector a { color: var(--role-command); }
+/* A list of places is rows, as the tree is: the whole line is the link. */
+.matches a {
+  display: flex;
+  padding: 0.1rem 0.35rem;
+  margin-left: -0.35rem;
+  border-radius: 3px;
+  text-decoration: none;
+}
+.matches a:hover { background: var(--brand-wash); }
 .inspector details > p { margin: 0; padding: 0 0.9rem 0.8rem; }
 
 /* ---- search results ---- */
@@ -2302,7 +2314,31 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 }
 
 /* Under a collection's results, the way to more of them. */
-.more { margin: -0.25rem 0 1.5rem; font-family: var(--gutter); font-size: 0.875rem; }
+/* As wide as the cards it continues. */
+.more { max-width: var(--text); margin: 0.6rem 0 1.5rem; font-family: var(--gutter); font-size: 0.875rem; }
+/* More of a group continues the list, so it is a control across the
+   column at the list's foot rather than a sentence under it. */
+.more .button {
+  width: 100%;
+  justify-content: center;
+  gap: 0.4rem;
+  border-style: dashed;
+  color: var(--role-muted);
+}
+.more .button:hover { color: var(--ink); border-style: solid; }
+/* A link that leaves kennis says so: every one opens a new tab, and one
+   rule marks them all, so no template has to remember to. A button that
+   leaves carries its own icon. */
+a[target="_blank"]:not(.button)::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-left: 0.15em;
+  vertical-align: 0.05em;
+  background: currentColor;
+  mask: var(--outward) center / contain no-repeat;
+}
 
 /* An empty corpus's home: centred in the column, a sentence of what
    kennis is, and the first things to do as buttons. */

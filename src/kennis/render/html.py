@@ -512,6 +512,7 @@ def _parser(*, load_remote_images: bool) -> MarkdownIt:
         "image",
         _image_rule(load_remote_images=load_remote_images),
     )
+    parser.add_render_rule("link_open", _render_link_open)
     return parser
 
 
@@ -616,6 +617,33 @@ def _render_fence(
         # language, so it is not silently guessed at either.
         return f"<pre><code>{_escaped(token.content)}</code></pre>\n"
     return str(highlight(token.content, lexer, HtmlFormatter(nowrap=False)))
+
+
+def _render_link_open(
+    renderer: RendererProtocol,
+    tokens: Sequence[Token],
+    index: int,
+    options: OptionsDict,
+    env: EnvType,
+) -> str:
+    """A link out of kennis opens a new tab that cannot reach back.
+
+    Followed in place, it replaced the window with the outside site. The
+    server's `Referrer-Policy: no-referrer` already keeps the site from
+    learning which document linked to it (#433); `noreferrer` says so on
+    the link as well. A link within the document is left as it was.
+    """
+    token = tokens[index]
+    if urlparse(str(token.attrGet("href") or "")).scheme in _REMOTE_SCHEMES:
+        token.attrSet("target", "_blank")
+        token.attrSet("rel", "noopener noreferrer")
+    # Composed here rather than by `renderToken`, which the renderer's
+    # protocol does not declare; the href is already normalised by the
+    # parser, and every value is escaped as the image's are.
+    attributes = "".join(
+        f' {name}="{_escaped(str(value))}"' for name, value in token.attrs.items()
+    )
+    return f"<a{attributes}>"
 
 
 def _image_rule(*, load_remote_images: bool) -> RenderRule:

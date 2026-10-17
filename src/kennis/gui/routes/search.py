@@ -201,13 +201,23 @@ def shown_keywords_only(degraded: Sequence[str]) -> dict[str, str]:
     """The keywords-only notice, and what would give the search meaning.
 
     With no meaning model configured, building again changes nothing, so
-    the way forward is Settings; with one, it is an index.
+    the way forward is Settings; with one, it is an index, opened in the
+    dialog as the bar's Index opens it (`target`).
     """
     if existing_corpus().settings.embedding.backend == "none":
-        label, href = words.KEYWORDS_ONLY_CHOOSE, "/settings#setting-embedding.backend"
+        label, href, target = (
+            words.KEYWORDS_ONLY_CHOOSE,
+            "/settings#setting-embedding.backend",
+            "",
+        )
     else:
-        label, href = words.KEYWORDS_ONLY_INDEX, "/index"
-    return {"sentence": words.keywords_only(degraded), "label": label, "href": href}
+        label, href, target = words.KEYWORDS_ONLY_INDEX, "/index", "#dialog"
+    return {
+        "sentence": words.keywords_only(degraded),
+        "label": label,
+        "href": href,
+        "target": target,
+    }
 
 
 @router.get("/")

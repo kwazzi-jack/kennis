@@ -485,7 +485,7 @@ def test_a_collection_with_more_to_give_offers_more(corpus: Path, client: TestCl
     admitted(client)
 
     first = client.get("/", params={"q": "sediment"}).text
-    link = re.search(r'<p class="more"><a href="([^"]+)">', first)
+    link = re.search(r'<p class="more"><a [^>]*href="([^"]+)"', first)
 
     assert link is not None, first
     assert words.more_from("notes") in first
