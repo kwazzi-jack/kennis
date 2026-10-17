@@ -27,6 +27,7 @@ from typing import Final, Protocol
 import uvicorn
 
 from kennis.gui.app import build_app, new_token
+from kennis.gui.instance import this_window
 from kennis.gui.jobs import Jobs
 
 # Loopback, spelled out. Not `localhost`, which resolves through the
@@ -64,11 +65,26 @@ def run(
     `www-browser`, `lynx` or `w3m` and runs a text browser in the
     terminal kennis is printing to.
 
+    **One window at a time** (#484): the window's lock is taken before
+    the server binds, so a second launch raises `AlreadyOpen` rather than
+    serving, and the address is recorded as soon as the port is known.
+
     This module is not a front end's voice, so it hands the address
     over and the command decides what is said about it - and the same
     for `on_busy`, handed the running job's kind when a Ctrl-C arrives
     during it (#422).
     """
+    with this_window() as record:
+        _serve(on_ready, record, open_browser=open_browser, on_busy=on_busy)
+
+
+def _serve(
+    on_ready: Callable[[str], None],
+    record: Callable[[str], None],
+    *,
+    open_browser: bool,
+    on_busy: Callable[[str], None],
+) -> None:
     token = new_token()
     quitting = threading.Event()
     app = build_app(token, on_quit=quitting.set)
@@ -87,18 +103,19 @@ def run(
     thread = threading.Thread(target=server.run, daemon=True, name="kennis-gui")
     thread.start()
     url = f"http://{HOST}:{_port_of(server)}/?token={token}"
+    record(url)
     on_ready(url)
 
     try:
         if open_browser:
-            _open_quietly(url)
+            open_quietly(url)
         _wait_for_quit(quitting, app.state.jobs, on_busy)
     finally:
         server.should_exit = True
         thread.join(timeout=5)
 
 
-def _open_quietly(url: str) -> None:
+def open_quietly(url: str) -> None:
     """Open the person's browser without lending it kennis's terminal.
 
     `webbrowser` starts the browser with no redirection, so it inherits
@@ -175,4 +192,4 @@ def _wait_for_quit(
         return
 
 
-__all__ = ["ANY_PORT", "HOST", "run"]
+__all__ = ["ANY_PORT", "HOST", "open_quietly", "run"]

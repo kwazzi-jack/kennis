@@ -269,7 +269,7 @@ def test_what_the_browser_prints_does_not_reach_kenniss_terminal(
     # goes to pytest's file directly and would pass with 1 and 2 left
     # pointing at the null device.
     os.write(1, b"kennis before\n")
-    serving._open_quietly("http://127.0.0.1:1/")
+    serving.open_quietly("http://127.0.0.1:1/")
     os.write(1, b"kennis after\n")
     os.write(2, b"kennis err after\n")
     captured = capfd.readouterr()
@@ -284,7 +284,7 @@ def test_run_opens_the_browser_quietly(corpus: Path, monkeypatch: pytest.MonkeyP
 
     quietly: list[str] = []
     loudly: list[str] = []
-    monkeypatch.setattr(serving, "_open_quietly", quietly.append)
+    monkeypatch.setattr(serving, "open_quietly", quietly.append)
     # Replaced too, so that opening loudly fails this test rather than
     # starting the real browser.
     monkeypatch.setattr(serving.webbrowser, "open", loudly.append)

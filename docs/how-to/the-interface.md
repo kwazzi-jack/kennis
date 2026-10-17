@@ -29,6 +29,22 @@ kennis gui --no-browser
 machine with no display may start a text browser such as `lynx` in the
 terminal instead.
 
+## One window at a time
+
+Only one `kennis gui` runs at a time. Running it again while one is open
+says when that one started and which version of kennis it is, and then:
+
+- in a terminal, asks **Open it, replace it, or cancel?** - open is the
+  default, and brings back the window that is already running, which is
+  also the way back in after the browser has been closed;
+- with `--replace`, stops the open one and starts a new one, which is what
+  to do after upgrading kennis;
+- from a script or a pipe, opens the one that is already running, or with
+  `--no-browser` prints its address.
+
+A window running an add, an index or a sync is not replaced, for the same
+reason Quit refuses then.
+
 ## The address and the token
 
 The command prints something like this and then blocks until you close it:
@@ -48,12 +64,16 @@ never `0.0.0.0`. Your corpus is not on the network.
 else is on 8000, and - more to the point - makes the interface predictable
 to find for anything else running on the same machine.
 
-**The token is minted for this run and is not stored.** Loopback is *not*
-private on a shared machine: any other process, and any other account on
-the same host, can reach 127.0.0.1. Cluster login nodes have other people
-on them. The token arrives once in the address and is then held in a
-cookie, so it is not on every request line and not sitting in the address
-bar to be copied into a chat window by accident.
+**The token is minted for this run.** Loopback is *not* private on a
+shared machine: any other process, and any other account on the same host,
+can reach 127.0.0.1. Cluster login nodes have other people on them. The
+token arrives once in the address and is then held in a cookie, so it is
+not on every request line and not sitting in the address bar to be copied
+into a chat window by accident. It is also written, with the address, to
+`gui.json` in kennis's state directory, readable by your account alone, so
+that a second `kennis gui` can open this window or stop it. Other accounts
+cannot read that file, and a program running as you could read the corpus
+itself.
 
 Every request is checked, including one for a stylesheet and one for a
 route that does not exist.

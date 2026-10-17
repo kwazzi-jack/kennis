@@ -12,7 +12,10 @@ process, and any other user account on the same host, can reach
 127.0.0.1. A corpus is personal knowledge and cluster login nodes have
 other users on them. Concern #309.
 
-The token is minted per launch and never stored. It arrives once as a
+The token is minted per launch. It is stored in one place only: the
+window's record in the state directory, readable by this account alone,
+so a second `kennis gui` can open this window or stop it
+(`gui/instance.py`, #484). It arrives once as a
 query parameter, because that is what can be put in a URL handed to a
 browser, and is then held in a cookie so it is not on every subsequent
 request line and not in the address bar to be copied into a chat

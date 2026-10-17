@@ -422,3 +422,19 @@ def still_running_on_interrupt(kind: str) -> str:
 # test holds the two together. A page's address is this, the page's path
 # under `docs/` without `.md`, and a heading's fragment.
 DOCS_SITE: Final = "https://kwazzi-jack.github.io/kennis/"
+
+
+# `kennis gui` when a window is already open (Brian, 2026-10-17, #484).
+OPEN_OR_REPLACE: Final = "Open it, replace it, or cancel?"
+OPEN_CHOICES: Final = ("open", "replace", "cancel")
+REPLACED_THE_WINDOW: Final = "the other kennis window"
+
+
+def window_already_open(started: str, version: str) -> str:
+    """Said before the choice; the time and version tell an old window
+    from one started a minute ago, and kennis before a reinstall from
+    kennis after it."""
+    return (
+        f"kennis is already open in another window, started {started} "
+        f"(kennis {version})"
+    )
