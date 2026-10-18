@@ -75,6 +75,48 @@ MAKE_CURRENT = "Search this version by default"
 MENU_REMOVE_VERSION = "Remove this version"
 REMOVE_VERSION_ACTION = "Remove"
 
+# Removing one document, from its menu in the tree.
+MENU_REMOVE = "Remove"
+
+REMOVE_DOCUMENT_ACTION = "Remove"
+
+
+def removing_document(title: str, collection: str) -> str:
+    """What the removal dialog says before the document goes."""
+    return (
+        f"'{title}' will be removed from {collection}. It stays in the "
+        "corpus history, and the Activity page can put it back."
+    )
+
+
+# Returning the corpus to a point in its history, from the Activity page.
+RETURN_HERE = "Return to this point"
+
+RETURN_ACTION = "Return the corpus to this point"
+
+RETURN_EXPLAINED = (
+    "Anything not yet recorded is recorded first, and the return is "
+    "recorded too, so returning to the point before it undoes it. The index "
+    "is left as it was built."
+)
+
+RETURNED_HEADING = "Return the corpus to a point"
+
+
+def returned(said: str) -> str:
+    """What a return did, as a sentence: `said` is `describe_returned`'s."""
+    return f"Returned {said}."
+
+
+RETURNED_INDEX = (
+    "Search still reads the index built before the return. Index the "
+    "collections to search what is held now."
+)
+
+INDEX_NOW = "Index now"
+
+PUT_BACK = "Put back"
+
 
 def removing_version(project: str, version: str, pages: int, *, current: bool) -> str:
     """What the removal dialog says before anything is removed."""
@@ -594,6 +636,8 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/pack": "Install a pack",
     "/palette": "Actions and places",
     "/docs/remove-version": "Remove a version",
+    "/document/remove": "Remove a document",
+    "/corpus/return": "Return the corpus to a point",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -795,6 +839,9 @@ CHANGE_KINDS: Final[dict[str, str]] = {
     "remember": "note saved in",
     "restore": "restored",
     "version": "chose the version searched in",
+    "remove": "removed from",
+    "return": "returned",
+    "record": "recorded edits in",
 }
 
 
@@ -1765,6 +1812,7 @@ __all__ = [
     "MENU_INDEX",
     "MENU_MOVE",
     "MENU_OPEN",
+    "MENU_REMOVE",
     "MENU_REMOVE_VERSION",
     "MODE_CHOICES",
     "MODE_DEFAULT",
@@ -1833,6 +1881,7 @@ __all__ = [
     "PROBLEM_HEADING",
     "PROGRESS_LABEL",
     "PROJECT_UNNAMED",
+    "PUT_BACK",
     "QUIT",
     "QUIT_TITLE",
     "QUIT_WHILE_RUNNING",
@@ -1848,10 +1897,16 @@ __all__ = [
     "REMEMBER_PREAMBLE",
     "REMEMBER_TARGETS",
     "REMEMBER_TIP",
+    "REMOVE_DOCUMENT_ACTION",
     "REMOVE_VERSION_ACTION",
     "REQUIRED",
     "RESIZE_LABELS",
     "RESULTS_HEADING",
+    "RETURNED_HEADING",
+    "RETURNED_INDEX",
+    "RETURN_ACTION",
+    "RETURN_EXPLAINED",
+    "RETURN_HERE",
     "SAVE",
     "SCOPE_LABEL",
     "SEARCHABLE",
@@ -1936,8 +1991,10 @@ __all__ = [
     "previewed_citekey",
     "previewed_project",
     "previewed_version",
+    "removing_document",
     "removing_version",
     "results_for",
+    "returned",
     "search_crumb",
     "search_hint_for",
     "searchable_short",

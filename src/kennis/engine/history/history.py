@@ -15,7 +15,8 @@ from typing import Final
 
 import yaml
 
-from kennis.engine.errors import DocumentNotFound
+from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.errors import DocumentNotFound, HistoryUnwritable, InputError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.git import git
@@ -54,6 +55,35 @@ class HistoryEntry:
     operation: str | None
     scope: str | None
     summary: str
+
+
+@dataclass(frozen=True, slots=True)
+class HeldDocument:
+    """A document named by what a reader recognises: its identifier and
+    title, and where it is (or was), relative to the corpus."""
+
+    document_id: str
+    title: str
+    path: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReturnChanges:
+    """What returning the corpus to a point would do, said before it is done.
+
+    `added` are documents the point held and the corpus does not: the
+    return puts them back. `removed` are documents held now that the point
+    did not hold. `changed` are held at both and differ.
+    """
+
+    commit: str
+    added: tuple[HeldDocument, ...]
+    removed: tuple[HeldDocument, ...]
+    changed: tuple[HeldDocument, ...]
+
+    @property
+    def nothing(self) -> bool:
+        return not (self.added or self.removed or self.changed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,3 +221,153 @@ def _states_identifier(content: str, document_id: str) -> bool:
     except (ValueError, yaml.YAMLError):
         return False
     return frontmatter.get("id") == document_id
+
+
+def point_in_history(repository: Repository, commit: str) -> str:
+    """The full commit `commit` names, or `InputError` naming the command
+    that lists the points there are."""
+    result = git(
+        ["rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"],
+        cwd=repository.root,
+    )
+    if not result.ok or not result.stdout.strip():
+        raise InputError(
+            f"'{commit}' is not a point in this corpus's history",
+            resolution="kennis corpus history",
+        )
+    return result.stdout.strip()
+
+
+def what_a_return_changes(repository: Repository, commit: str) -> ReturnChanges:
+    """What `return_to(commit)` would add, remove and change, by document.
+
+    Against the working tree rather than the last commit, because a
+    return replaces what is on disk, recorded or not; a file never
+    recorded is counted as held now. Documents only: an asset or a docs
+    project's `.current` goes with its document and is not counted.
+    """
+    point = point_in_history(repository, commit)
+    records = git(
+        ["diff", "--name-status", "-z", "--no-renames", point, "--", *COLLECTION_NAMES],
+        cwd=repository.root,
+    ).records()
+    added: list[HeldDocument] = []
+    removed: list[HeldDocument] = []
+    changed: list[HeldDocument] = []
+    for status, path in zip(records[::2], records[1::2], strict=False):
+        if not path.endswith(".md"):
+            continue
+        if status == "D":
+            # Gone from disk since the point: the return puts it back.
+            added.append(_held_at(repository, point, path))
+        elif status == "A":
+            removed.append(_held_on_disk(repository, path))
+        else:
+            changed.append(_held_on_disk(repository, path))
+    untracked = git(
+        ["ls-files", "--others", "--exclude-standard", "-z", "--", *COLLECTION_NAMES],
+        cwd=repository.root,
+    ).records()
+    removed.extend(
+        _held_on_disk(repository, path) for path in untracked if path.endswith(".md")
+    )
+    return ReturnChanges(
+        commit=point,
+        added=tuple(added),
+        removed=tuple(removed),
+        changed=tuple(changed),
+    )
+
+
+def return_to(repository: Repository, commit: str) -> None:
+    """Make the three collections exactly as they were at `commit`.
+
+    Changed files back, files added since removed, files removed since
+    back. **Nothing else**: `index/` holds only each index's pointer,
+    which can name a build that no longer exists, so it is left as built
+    and its freshness says what the return changed. The caller records
+    the working tree first and commits after; this only rewrites it.
+    """
+    point = point_in_history(repository, commit)
+    # `corpus init` records each collection's folder, so every point holds
+    # all three; a pathspec naming one a hand-made corpus lacks is skipped
+    # rather than refused by git.
+    present = _present_collections(repository, point)
+    if not present:
+        return
+    result = git(
+        ["restore", f"--source={point}", "--staged", "--worktree", "--", *present],
+        cwd=repository.root,
+    )
+    if not result.ok:
+        raise HistoryUnwritable(
+            f"the corpus could not be returned to {point[:8]}: {result.stderr.strip()}",
+            resolution=f"git -C {repository.root} status",
+        )
+
+
+def removed_in(repository: Repository, commit: str) -> list[HeldDocument]:
+    """The documents `commit` removed: held by its parent, not by it.
+
+    What the window's history offers to put back, each by the identifier
+    `restore_document` takes, read from the parent's tree.
+    """
+    point = point_in_history(repository, commit)
+    parent = git(
+        ["rev-parse", "--verify", "--quiet", f"{point}^"], cwd=repository.root
+    ).stdout.strip()
+    if not parent:
+        return []
+    records = git(
+        [
+            "diff",
+            "--name-status",
+            "-z",
+            "--no-renames",
+            "--diff-filter=D",
+            parent,
+            point,
+            "--",
+            *COLLECTION_NAMES,
+        ],
+        cwd=repository.root,
+    ).records()
+    return [
+        _held_at(repository, parent, path)
+        for path in records[1::2]
+        if path.endswith(".md")
+    ]
+
+
+def _present_collections(repository: Repository, commit: str) -> list[str]:
+    """The collections `commit`'s tree holds; a pathspec naming one it does
+    not is an error to `git restore`."""
+    listing = git(["ls-tree", "--name-only", commit], cwd=repository.root).lines()
+    return [name for name in COLLECTION_NAMES if name in listing]
+
+
+def _held_at(repository: Repository, commit: str, path: str) -> HeldDocument:
+    return _held_from(repository.show(commit, path) or "", path)
+
+
+def _held_on_disk(repository: Repository, path: str) -> HeldDocument:
+    try:
+        text = (repository.root / path).read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    return _held_from(text, path)
+
+
+def _held_from(content: str, path: str) -> HeldDocument:
+    """Identifier and title from a document's frontmatter, or its filename
+    when it has none kennis can read - a file someone dropped in by hand."""
+    try:
+        frontmatter, _ = split_frontmatter(content)
+    except (ValueError, yaml.YAMLError):
+        frontmatter = {}
+    stem = path.rsplit("/", 1)[-1].removesuffix(".md")
+    return HeldDocument(
+        document_id=str(frontmatter.get("id") or ""),
+        title=str(frontmatter.get("title") or stem),
+        path=path,
+    )

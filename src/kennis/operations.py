@@ -60,7 +60,15 @@ from kennis.engine.docs.versions import (
 )
 from kennis.engine.errors import CorpusBusy, IndexBusy, KennisError
 from kennis.engine.events import EventSink, Outcome
-from kennis.engine.history.history import commit_summary, outcome_summary
+from kennis.engine.history.history import (
+    RestoredDocument,
+    ReturnChanges,
+    commit_summary,
+    outcome_summary,
+    restore_document,
+    return_to,
+    what_a_return_changes,
+)
 from kennis.engine.history.outofband import (
     OutOfBandChange,
     detect_changes,
@@ -354,6 +362,104 @@ def remove_docs_version(context: Context, project: str, version: str) -> Removed
     )
 
 
+def remove_a_document(
+    context: Context, collection: Collection, document: Document
+) -> Document:
+    """Remove one document, and its assets when it has any: lock, restore,
+    remove, commit.
+
+    The sequence `corpus remove` ran inside the command line, here so the
+    window runs the same one. Recoverable: the removal is a commit, and
+    `restore_a_document` puts it back from the commit before it.
+    """
+    with corpus_lock(context.corpus_root):
+        restore_hand_deletions(context)
+        collection.remove(document)
+        Repository(context.corpus_root).commit(
+            "remove",
+            scope=collection.name,
+            summary=outcome_summary({Outcome.REMOVED: 1}),
+        )
+    return document
+
+
+def restore_a_document(
+    context: Context, document_id: str, *, commit: str = "HEAD"
+) -> RestoredDocument:
+    """Put one document back as it was at `commit`: lock, restore, commit.
+
+    Recorded under the collection it lands in, so `corpus history
+    --collection` finds it by the route that found its removal.
+    """
+    repository = Repository(context.corpus_root)
+    with corpus_lock(context.corpus_root):
+        restored = restore_document(repository, document_id, commit=commit)
+        head = restored.path.split("/", 1)[0]
+        repository.commit(
+            "restore",
+            scope=head if head in COLLECTION_NAMES else "corpus",
+            summary=outcome_summary({Outcome.ADDED: 1}),
+        )
+    return restored
+
+
+@dataclass(frozen=True, slots=True)
+class ReturnedCorpus:
+    """What returning the corpus to a point did."""
+
+    commit: str
+    added: int
+    removed: int
+    changed: int
+    # The commit recording what was on disk and not yet in history, when
+    # there was any: returning to it undoes the return without loss.
+    recorded: str | None
+
+
+def return_corpus_to(context: Context, commit: str) -> ReturnedCorpus:
+    """Make the corpus's documents as they were at `commit`, and record it.
+
+    Under the corpus lock: hand deletions put back as every write does;
+    **whatever else is not yet recorded is recorded first**, as
+    `record(corpus)`, because a return replaces the working tree and
+    kennis never discards an edit on its own initiative; then the three
+    collections are returned and the return committed as
+    `return(corpus): to <commit>, ...` - itself a point, so a return is
+    undone by returning to the point before it. The index is left as
+    built (see `history.return_to`).
+    """
+    repository = Repository(context.corpus_root)
+    with corpus_lock(context.corpus_root):
+        restore_hand_deletions(context)
+        recorded = repository.commit(
+            "record", scope="corpus", summary="what was not yet recorded"
+        )
+        changes = what_a_return_changes(repository, commit)
+        return_to(repository, changes.commit)
+        repository.commit(
+            "return",
+            scope="corpus",
+            summary=f"to {changes.commit[:8]}, "
+            + commit_summary(_return_counts(changes)),
+        )
+    counts = _return_counts(changes)
+    return ReturnedCorpus(
+        commit=changes.commit,
+        added=counts["added"],
+        removed=counts["removed"],
+        changed=counts["changed"],
+        recorded=recorded,
+    )
+
+
+def _return_counts(changes: ReturnChanges) -> dict[str, int]:
+    return {
+        "added": len(changes.added),
+        "removed": len(changes.removed),
+        "changed": len(changes.changed),
+    }
+
+
 def build_indexes(
     context: Context,
     collection: str | None = None,
@@ -519,6 +625,7 @@ __all__ = [
     "GroupBlock",
     "IndexBuild",
     "RemovedVersion",
+    "ReturnedCorpus",
     "add_documents",
     "add_in_groups",
     "back_up_corpus",
@@ -527,8 +634,11 @@ __all__ = [
     "install_a_pack",
     "make_docs_version_current",
     "move_a_document",
+    "remove_a_document",
     "remove_docs_version",
+    "restore_a_document",
     "restore_hand_deletions",
+    "return_corpus_to",
     "synchronise_bundle",
     "synchronise_corpus",
 ]

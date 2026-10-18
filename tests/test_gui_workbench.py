@@ -627,7 +627,9 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # Written by hand: how many routes the window answers. The walk below is
 # what both tests read, and an included router it failed to enter would
 # otherwise leave them asserting over nothing.
-EXPECTED_ROUTES = 49  # 48th and 49th: GET and POST /docs/remove-version (#489)
+# 48th and 49th: GET and POST /docs/remove-version (#489); 50th to 54th: GET
+# and POST /document/remove and /corpus/return, POST /corpus/restore
+EXPECTED_ROUTES = 54
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

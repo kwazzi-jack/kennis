@@ -45,9 +45,8 @@ from kennis.engine.errors import KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.history import (
-    outcome_summary,
     read_history,
-    restore_document,
+    what_a_return_changes,
 )
 from kennis.engine.history.outofband import OutOfBandChange, detect_changes
 from kennis.engine.history.repository import Repository, initialise_corpus
@@ -60,8 +59,11 @@ from kennis.operations import (
     build_indexes,
     make_docs_version_current,
     move_a_document,
+    remove_a_document,
     remove_docs_version,
+    restore_a_document,
     restore_hand_deletions,
+    return_corpus_to,
     synchronise_corpus,
 )
 from kennis.render.packs import (
@@ -80,6 +82,7 @@ from kennis.render.refusals import (
 )
 from kennis.render.words import (
     NO_DOCS_VERSIONS,
+    RETURN_NEEDS_AN_INDEX,
     conversion_cost,
     conversion_repairs,
     count_of,
@@ -88,6 +91,8 @@ from kennis.render.words import (
     describe_current_version,
     describe_freshness,
     describe_held_versions,
+    describe_return_changes,
+    describe_returned,
     describe_uncommitted_build,
     remedies_for,
 )
@@ -734,16 +739,7 @@ def remove_command(
             f"Remove '{document.frontmatter.title}' from {found.name}?", abort=True
         )
 
-    with corpus_lock(context.corpus_root):
-        _undo_hand_deletions(context)
-        found.remove(document)
-        _commit(
-            context,
-            "remove",
-            scope=found.name,
-            summary=outcome_summary({Outcome.REMOVED: 1}),
-        )
-
+    remove_a_document(context, found, document)
     display.operation("Removed", f"{document.id}  {document.frontmatter.title}")
 
 
@@ -927,28 +923,45 @@ def history_command(collection: str | None, limit: int) -> None:
 )
 def restore_command(document_id: str, commit: str) -> None:
     """Put a document back as it was at a commit."""
-    context = existing_corpus()
-    repository = Repository(context.corpus_root)
-    with corpus_lock(context.corpus_root):
-        restored = restore_document(repository, document_id, commit=commit)
-        _commit(
-            context,
-            "restore",
-            scope=_collection_of(restored.path),
-            summary=outcome_summary({Outcome.ADDED: 1}),
-        )
+    restored = restore_a_document(existing_corpus(), document_id, commit=commit)
     display.operation("Restored", f"{restored.document_id} from {restored.commit[:8]}")
 
 
-def _collection_of(path: str) -> str:
-    """Which collection a corpus-relative path belongs to.
+@corpus_group.command(name="return")
+@click.argument("commit")
+@click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
+def return_command(commit: str, yes: bool) -> None:
+    """Make the corpus's documents as they were at a point in its history.
 
-    The scope of the commit that records the restore, so `corpus history
-    --collection` finds it by the same route it finds the add that first put
-    the document there.
+    COMMIT is a point `kennis corpus history` lists. Anything not yet
+    recorded is recorded first, and the return is itself recorded, so
+    returning to the point before it undoes it. The index is left as built:
+    rebuild it to search what is held afterwards.
     """
-    head = path.split("/", 1)[0]
-    return head if head in COLLECTION_NAMES else "corpus"
+    context = existing_corpus()
+    changes = what_a_return_changes(Repository(context.corpus_root), commit)
+    lines = describe_return_changes(changes)
+    if changes.nothing:
+        display.note(lines[0])
+        return
+    for line in lines:
+        display.detail("~", line)
+    if not yes:
+        click.confirm(
+            f"Return the corpus to {changes.commit[:8]}?", abort=True, default=False
+        )
+    returned = return_corpus_to(context, changes.commit)
+    display.operation(
+        "Returned",
+        describe_returned(
+            returned.commit,
+            added=returned.added,
+            removed=returned.removed,
+            changed=returned.changed,
+        ),
+    )
+    if returned.added or returned.removed or returned.changed:
+        display.next_step("kennis corpus index", note=RETURN_NEEDS_AN_INDEX)
 
 
 # ---------------------------------------------------------------------------

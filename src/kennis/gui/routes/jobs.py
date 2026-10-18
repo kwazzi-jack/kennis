@@ -33,7 +33,7 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.engine.events import EventSink
-from kennis.engine.history.history import read_history
+from kennis.engine.history.history import read_history, removed_in
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
@@ -359,6 +359,8 @@ def serve_activity(request: Request) -> HTMLResponse:
             "changes": _changes(),
             "changes_heading": words.CHANGES_HEADING,
             "no_changes": words.NO_CHANGES,
+            "return_here": words.RETURN_HERE,
+            "put_back": words.PUT_BACK,
         },
     )
 
@@ -367,7 +369,7 @@ def serve_activity(request: Request) -> HTMLResponse:
 _CHANGES_SHOWN: Final = 30
 
 
-def _changes() -> list[dict[str, str]]:
+def _changes() -> list[dict[str, object]]:
     """The corpus's newest commits, whoever made them.
 
     The jobs above are only this window's, and only for an hour: an add
@@ -376,9 +378,8 @@ def _changes() -> list[dict[str, str]]:
     worth drawing - and the pane says what is wrong with the corpus.
     """
     try:
-        entries = read_history(
-            Repository(existing_corpus().corpus_root), limit=_CHANGES_SHOWN
-        )
+        repository = Repository(existing_corpus().corpus_root)
+        entries = read_history(repository, limit=_CHANGES_SHOWN)
     except KennisError:
         return []
     return [
@@ -386,8 +387,16 @@ def _changes() -> list[dict[str, str]]:
             "when": entry.when.astimezone().strftime("%Y-%m-%d %H:%M"),
             "what": words.change_line(entry.operation, entry.scope, entry.summary),
             "commit": entry.commit[:7],
+            # The newest is where the corpus is: nothing to return to.
+            "return_href": f"/corpus/return?commit={entry.commit}" if position else "",
+            "removed": (
+                removed_in(repository, entry.commit)
+                if entry.operation == "remove"
+                else []
+            ),
+            "parent": f"{entry.commit}^",
         }
-        for entry in entries
+        for position, entry in enumerate(entries)
     ]
 
 

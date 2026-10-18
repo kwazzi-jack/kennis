@@ -25,6 +25,7 @@ from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.docs.versions import ProjectVersions
 from kennis.engine.history.freshness import Freshness
+from kennis.engine.history.history import ReturnChanges
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.rag.search import DocumentSpan
 from kennis.engine.remember import IndexOutcome
@@ -456,3 +457,48 @@ def window_already_open(started: str, version: str) -> str:
         f"kennis is already open in another window, started {started} "
         f"(kennis {version})"
     )
+
+
+# How many titles a line about a return names before it counts the rest.
+_RETURN_TITLES_SHOWN: Final = 8
+
+
+def describe_return_changes(changes: ReturnChanges) -> list[str]:
+    """What returning to a point would do, one line per kind of change,
+    each naming its documents by title; nothing to say is said as such."""
+    if changes.nothing:
+        return [f"the documents are already as they were at {changes.commit[:8]}"]
+    lines: list[str] = []
+    for verb, held in (
+        ("puts back", changes.added),
+        ("removes", changes.removed),
+        ("changes back", changes.changed),
+    ):
+        if not held:
+            continue
+        named = [one.title for one in held[:_RETURN_TITLES_SHOWN]]
+        if len(held) > _RETURN_TITLES_SHOWN:
+            named.append(f"{len(held) - _RETURN_TITLES_SHOWN} more")
+        lines.append(f"{verb} {count_of(len(held), 'document')}: {joined(named)}")
+    return lines
+
+
+def describe_returned(commit: str, *, added: int, removed: int, changed: int) -> str:
+    """What a return did, in the words `describe_return_changes` used."""
+    if not (added or removed or changed):
+        return f"already as at {commit[:8]}, so nothing changed"
+    parts = [
+        f"{count_of(count, 'document')} {verb}"
+        for verb, count in (
+            ("put back", added),
+            ("removed", removed),
+            ("changed back", changed),
+        )
+        if count
+    ]
+    return f"to {commit[:8]}: {', '.join(parts)}"
+
+
+# After a return, search still reads the index built before it: the
+# command line's hint closes with this, after the command.
+RETURN_NEEDS_AN_INDEX: Final = "so search sees what the return changed"

@@ -24,8 +24,16 @@
   {% for change in changes %}
     <tr>
       <td class="started">{{ change.when }}</td>
-      <td>{{ change.what }}</td>
+      <td>{{ change.what }}
+      {#- What a removal took, each with the form that puts it back as it
+          was just before. -#}
+      {% for gone in change.removed %}<form class="put-back" action="/corpus/restore" method="post">
+        <input type="hidden" name="document" value="{{ gone.document_id }}">
+        <input type="hidden" name="commit" value="{{ change.parent }}">
+        <span class="role-muted">{{ gone.title }}</span> <button type="submit">{{ put_back }}</button>
+      </form>{% endfor %}</td>
       <td class="role-muted"><code>{{ change.commit }}</code></td>
+      <td>{% if change.return_href %}<a class="return-here" href="{{ change.return_href }}" hx-get="{{ change.return_href }}" hx-target="#dialog" hx-swap="innerHTML">{{ return_here }}</a>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

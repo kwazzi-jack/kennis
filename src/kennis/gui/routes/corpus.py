@@ -20,7 +20,9 @@ from kennis.engine.errors import (
     KennisError,
     UnknownCollection,
 )
+from kennis.engine.history.history import what_a_return_changes
 from kennis.engine.history.outofband import OutOfBandChange
+from kennis.engine.history.repository import Repository
 from kennis.gui import words
 from kennis.gui.pages import (
     shown_groups,
@@ -46,10 +48,17 @@ from kennis.holdings import (
 from kennis.operations import (
     make_docs_version_current,
     move_a_document,
+    remove_a_document,
     remove_docs_version,
+    restore_a_document,
+    return_corpus_to,
 )
 from kennis.render.packs import describe_holdings
-from kennis.render.words import describe_change
+from kennis.render.words import (
+    describe_change,
+    describe_return_changes,
+    describe_returned,
+)
 
 router = APIRouter()
 
@@ -77,6 +86,7 @@ def _tree(
             "menu_move": words.MENU_MOVE,
             "menu_add_here": words.MENU_ADD_HERE,
             "menu_index": words.MENU_INDEX,
+            "menu_remove": words.MENU_REMOVE,
             "move_group_label": words.MOVE_GROUP_LABEL,
             "move_group_empty": words.MOVE_GROUP_EMPTY,
             "menu_for": words.menu_for,
@@ -235,3 +245,125 @@ def move_from_the_tree(request: Request, form: PostedForm) -> Response:
         notes = tuple(describe_change(change) for change in restored)
         return written(_tree(request, collection, notes=notes, moved=True))
     return RedirectResponse(f"/collection/{collection}", status_code=303)
+
+
+@router.get("/document/remove")
+def ask_to_remove_a_document(
+    request: Request, collection: str = "", document: str = ""
+) -> HTMLResponse:
+    """What removing one document would remove, and the form that removes
+    it: reached from the document's menu in the tree, so nothing goes on
+    one click."""
+    if collection not in COLLECTION_NAMES:
+        return refused(request, words.unknown_collection(collection))
+    held = Collection(root=existing_corpus().corpus_root, name=collection)
+    try:
+        found = held.resolve(document)
+    except KennisError as error:
+        return problem_page(request, error)
+    return action_page(
+        request,
+        "/document/remove",
+        "forms/remove-document.html",
+        {
+            "collection": collection,
+            "document_id": found.id,
+            "removing": words.removing_document(found.frontmatter.title, collection),
+            "remove_document_action": words.REMOVE_DOCUMENT_ACTION,
+        },
+    )
+
+
+@router.post("/document/remove")
+def remove_from_the_tree(request: Request, form: PostedForm) -> Response:
+    """Remove one document by the sequence `corpus remove` runs, and redraw
+    its collection's branch, whose counts it changed."""
+    collection = str(form.get("collection") or "")
+    if collection not in COLLECTION_NAMES:
+        return refused_a_post(request, words.unknown_collection(collection))
+    context = existing_corpus()
+    held = Collection(root=context.corpus_root, name=collection)
+    try:
+        remove_a_document(context, held, held.resolve(str(form.get("document") or "")))
+    except KennisError as error:
+        if from_htmx(request):
+            return _tree(request, collection, problem=str(error))
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return written(_tree(request, collection, moved=True))
+    return RedirectResponse(f"/collection/{collection}", status_code=303)
+
+
+@router.get("/corpus/return")
+def ask_to_return(request: Request, commit: str = "") -> HTMLResponse:
+    """What returning the corpus to a point would put back, remove and
+    change, by document, and the form that does it - none when the
+    documents are already as they were there."""
+    try:
+        changes = what_a_return_changes(
+            Repository(existing_corpus().corpus_root), commit
+        )
+    except KennisError as error:
+        return problem_page(request, error)
+    return action_page(
+        request,
+        "/corpus/return",
+        "forms/return.html",
+        {
+            "commit": changes.commit,
+            "lines": describe_return_changes(changes),
+            "nothing": changes.nothing,
+            "return_explained": words.RETURN_EXPLAINED,
+            "return_action": words.RETURN_ACTION,
+        },
+    )
+
+
+@router.post("/corpus/return")
+def return_the_corpus(request: Request, form: PostedForm) -> Response:
+    """Return the corpus by the sequence `corpus return` runs, and say what
+    it did, offering the index, which still holds what was searched before.
+
+    A page whether htmx asked or not: the form is a plain one, because what
+    follows a return is a decision about the index, not a fragment."""
+    try:
+        returned = return_corpus_to(existing_corpus(), str(form.get("commit") or ""))
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    changed = bool(returned.added or returned.removed or returned.changed)
+    return written(
+        TEMPLATES.TemplateResponse(
+            request,
+            "returned.html",
+            {
+                "returned_heading": words.RETURNED_HEADING,
+                "returned": words.returned(
+                    describe_returned(
+                        returned.commit,
+                        added=returned.added,
+                        removed=returned.removed,
+                        changed=returned.changed,
+                    )
+                ),
+                "changed": changed,
+                "returned_index": words.RETURNED_INDEX,
+                "index_now": words.INDEX_NOW,
+                **frame(existing_corpus()),
+            },
+        )
+    )
+
+
+@router.post("/corpus/restore")
+def put_back(request: Request, form: PostedForm) -> Response:
+    """Put back one document a removal took, as it was just before, by the
+    sequence `corpus restore` runs; then the Activity page again."""
+    try:
+        restore_a_document(
+            existing_corpus(),
+            str(form.get("document") or ""),
+            commit=str(form.get("commit") or ""),
+        )
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    return written(RedirectResponse("/activity", status_code=303))

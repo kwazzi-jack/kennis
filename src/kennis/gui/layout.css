@@ -516,7 +516,11 @@ details.menu[open] > .menu-button { opacity: 1; }
 .menu-items form.index, .menu-items form.make-current { margin: 0; }
 /* Removing a version says what goes above the form, which holds only
    the foot. */
-form.remove-version { margin-top: 1rem; }
+form.remove-version, form.remove-document, form.return-corpus { margin-top: 1rem; }
+/* A removal's documents, each beside the button that puts it back. */
+form.put-back { display: flex; align-items: baseline; gap: 0.5rem; margin-top: 0.25rem; }
+/* The way back to a point, in the history's last column. */
+a.return-here { white-space: nowrap; }
 /* The version of a docs project a search uses by default (#489). */
 .current-version {
   margin-left: 0.4rem;
@@ -2147,8 +2151,8 @@ a.button {
   text-decoration: none;
 }
 a.button:hover { border-color: var(--role-muted); }
-/* The one action a form exists for. */
-button.primary {
+/* The one action a form exists for, and a link standing for one. */
+button.primary, a.button.primary {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;

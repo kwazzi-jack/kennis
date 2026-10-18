@@ -37,8 +37,14 @@ HTMX = {"HX-Request": "true"}
 STATIC = Path(__file__).parent.parent / "src" / "kennis" / "gui" / "static"
 
 # Written by hand: what each menu offers, in order (#373).
-EXPECTED_MENU = ["Open", "Move to group", "Add here", "Index this collection"]
-EXPECTED_DOCS_MENU = ["Open", "Add here", "Index this collection"]
+EXPECTED_MENU = [
+    "Open",
+    "Move to group",
+    "Add here",
+    "Index this collection",
+    "Remove",
+]
+EXPECTED_DOCS_MENU = ["Open", "Add here", "Index this collection", "Remove"]
 EXPECTED_GROUP_MENU = ["Add here", "Index this collection"]
 # And the letter for each state, which is what the reader learns to read.
 EXPECTED_LETTERS = {"unindexed": "U", "changed": "M", "unreadable": "!"}
@@ -391,6 +397,7 @@ def test_the_words_of_the_menu_are_the_ones_written_down():
         words.MENU_MOVE,
         words.MENU_ADD_HERE,
         words.MENU_INDEX,
+        words.MENU_REMOVE,
     ] == EXPECTED_MENU
 
 

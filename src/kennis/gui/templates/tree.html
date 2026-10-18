@@ -33,6 +33,7 @@
 <button type="submit" class="item">{{ make_current }}</button>
 </form>{% endif %}
 {% if branch and branch.version %}{% set removal = "/docs/remove-version?project=" ~ (branch.project | urlencode) ~ "&version=" ~ (branch.version | urlencode) %}<a class="item remove-version" href="{{ removal }}" hx-get="{{ removal }}" hx-target="#dialog" hx-swap="innerHTML">{{ menu_remove_version }}</a>{% endif %}
+{% if document_id %}{% set removal = "/document/remove?collection=" ~ (tree.collection | urlencode) ~ "&document=" ~ (document_id | urlencode) %}<a class="item remove-document" href="{{ removal }}" hx-get="{{ removal }}" hx-target="#dialog" hx-swap="innerHTML">{{ menu_remove }}</a>{% endif %}
 </div>
 </details>
 {% endmacro %}
