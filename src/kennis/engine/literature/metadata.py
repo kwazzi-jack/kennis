@@ -22,7 +22,7 @@ from typing import Final
 
 import httpx
 
-from kennis.engine.bounded import get_bounded
+from kennis.engine.courtesy import get_politely
 from kennis.engine.literature.identifiers import normalize_arxiv_id
 
 _ATOM_API: Final = "https://export.arxiv.org/api/query"
@@ -55,6 +55,10 @@ def lookup_arxiv_metadata(
     refused the same query, which left papers with no authors or year and
     no way to repair them (#283, #287). One extra request, and only on the
     path that has already failed.
+
+    **Both through `courtesy`, so each host's robots.txt decides** (#492).
+    On 2026-10-18 `export.arxiv.org` disallowed everything, so the API is
+    refused without being asked and the abs page is what answers.
     """
     owned = client is None
     active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
@@ -102,8 +106,11 @@ def _from_abs_page(arxiv_id: str, client: httpx.Client) -> ArxivMetadata | None:
     from bs4 import BeautifulSoup
 
     try:
-        response = get_bounded(
-            client, f"{_ABS_PAGE}{arxiv_id}", timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_politely(
+            client,
+            f"{_ABS_PAGE}{arxiv_id}",
+            user_agent=_USER_AGENT,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPError:
@@ -137,21 +144,6 @@ def _from_abs_page(arxiv_id: str, client: httpx.Client) -> ArxivMetadata | None:
     )
 
 
-def resolve_doi_to_arxiv(doi: str, *, client: httpx.Client | None = None) -> str | None:
-    """The arXiv identifier of the preprint behind `doi`, if there is one.
-
-    A miss is not an error: the paper may simply never have been preprinted,
-    which the caller reports as needing a document supplied by hand instead.
-    """
-    entry = _entry({"search_query": f'doi:"{doi}"', "max_results": "1"}, client=client)
-    if entry is None:
-        return None
-    identifier = entry.find("atom:id", _ATOM_NAMESPACE)
-    if identifier is None or not identifier.text:
-        return None
-    return normalize_arxiv_id(identifier.text)
-
-
 def _entry(
     params: dict[str, str], *, client: httpx.Client | None
 ) -> ElementTree.Element | None:
@@ -159,8 +151,12 @@ def _entry(
     owned = client is None
     active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
     try:
-        response = get_bounded(
-            active, _ATOM_API, params=params, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_politely(
+            active,
+            _ATOM_API,
+            user_agent=_USER_AGENT,
+            params=params,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPError:

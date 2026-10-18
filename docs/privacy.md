@@ -36,7 +36,7 @@ window's search page.
 
 | when | host | what that host receives |
 |---|---|---|
-| adding an arXiv paper | `export.arxiv.org`, `arxiv.org`, `ar5iv.labs.arxiv.org` | the arXiv identifier, and your IP address |
+| adding an arXiv paper | `arxiv.org`, `ar5iv.labs.arxiv.org`, and `export.arxiv.org` for its `robots.txt` alone | the arXiv identifier, and your IP address |
 | adding a paper by DOI, with an email set | `api.unpaywall.org` | the DOI and your email address |
 | adding a documentation site or a file by address | the site you name | the pages requested, with a User-Agent naming kennis |
 | `corpus sync` with a pack installed | the sources the pack names | the same as adding each one by hand |

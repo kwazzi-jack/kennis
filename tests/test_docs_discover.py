@@ -15,13 +15,13 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
+from kennis.engine.courtesy import robots_for
 from kennis.engine.docs.discover import (
     _in_scope,
     crawl_site,
     discover_pages,
     discovery_mode,
     page_key,
-    robots_for,
 )
 from kennis.engine.docs.http import USER_AGENT, TooLarge, get_within
 from kennis.engine.docs.sites import DocsSite

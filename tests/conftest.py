@@ -11,8 +11,10 @@ import stat
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
+from kennis.engine.courtesy import forget_hosts
 from platforms import NO_POSIX_SHELL
 
 # A fake MinerU. It parses the flags the converter passes, writes one markdown
@@ -151,6 +153,49 @@ def somewhere_else(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     chdirs itself, which runs after this and wins.
     """
     monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def hosts_forgotten() -> None:
+    """Each test starts with no host's robots.txt read and no request timed.
+
+    `engine/courtesy.py` keeps both for the process, so without this a test
+    inherits the rules a previous test's mock served, and waits on its clock.
+    """
+    forget_hosts()
+
+
+# Addresses a test may reach: the window's own server, on this machine.
+_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No test reaches a host unless it is marked `network`.
+
+    Patched where every real `httpx` request passes and an
+    `httpx.MockTransport` never does. `pytest.fail` rather than an `httpx`
+    error, because kennis reads a failed request as "the host is down" and
+    carries on - which is how a test that reached arXiv passed in silence.
+    Concern #495.
+    """
+    if request.node.get_closest_marker("network") is not None:
+        return
+    real = httpx.HTTPTransport.handle_request
+
+    def refused(
+        transport: httpx.HTTPTransport, outgoing: httpx.Request
+    ) -> httpx.Response:
+        if outgoing.url.host in _LOOPBACK:
+            return real(transport, outgoing)
+        pytest.fail(
+            f"a test reached {outgoing.url}: give it an httpx.MockTransport, "
+            "or mark it `network`"
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refused)
 
 
 @pytest.fixture

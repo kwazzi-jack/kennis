@@ -446,3 +446,20 @@ def test_a_test_does_not_write_to_the_real_log():
 
     assert log_dir() != Path(user_log_dir("kennis"))
     assert not log_dir().is_relative_to(Path.home() / ".local" / "state")
+
+
+def test_a_test_does_not_reach_a_host():
+    """A request a test did not mock fails the test, naming the address.
+
+    kennis catches `httpx.HTTPError` wherever a request may fail, so a test
+    reaching a real host whose answer did not matter passed - slowly, and
+    only while the host was up. The autouse `no_real_network` fixture
+    refuses every request outside loopback in a test not marked `network`,
+    with an exception no `except Exception` catches, and this is what fails
+    if it is removed. Concern #495.
+    """
+    import httpx
+
+    outcome = pytest.fail.Exception
+    with pytest.raises(outcome, match=r"example\.invalid"), httpx.Client() as client:
+        client.get("https://example.invalid/robots.txt")

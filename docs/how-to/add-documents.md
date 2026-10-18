@@ -38,6 +38,13 @@ kennis corpus add arxiv:1101.1764 -l
 Override a derived citekey with `--citekey`, and a detected title with
 `--title`.
 
+kennis asks arXiv only what its `robots.txt` files allow, as often as they
+ask. On 2026-10-18 `arxiv.org` asked for 15 seconds between requests and
+`export.arxiv.org`, arXiv's API, allowed none, so a paper's title, authors
+and year come from its abstract page and its text from arXiv's HTML
+rendering: two requests, about half a minute a paper. kennis reads the
+files rather than these figures, so it follows them when they change.
+
 ## A note
 
 ```

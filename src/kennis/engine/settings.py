@@ -236,7 +236,8 @@ class LiteratureSettings(BaseModel):
         default=3.0,
         ge=0.0,
         le=60.0,
-        description="Seconds between arXiv requests. arXiv states three.",
+        description="Least seconds between arXiv papers. A longer `Crawl-delay` "
+        "in a host's robots.txt applies instead: arxiv.org asks for 15.",
     )
     unpaywall_email: str = Field(
         default="",

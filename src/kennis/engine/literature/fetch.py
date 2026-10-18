@@ -27,7 +27,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from kennis.engine.bounded import get_bounded
+from kennis.engine.courtesy import Disallowed, get_politely
 from kennis.engine.errors import SourceUnreadable
 
 if TYPE_CHECKING:
@@ -215,8 +215,12 @@ def _rendering_at(client: httpx.Client, page_url: str) -> tuple[str | None, str 
     both.
     """
     try:
-        response = get_bounded(
-            client, page_url, follow_redirects=True, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_politely(
+            client,
+            page_url,
+            user_agent=_USER_AGENT,
+            follow_redirects=True,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as error:
@@ -224,6 +228,8 @@ def _rendering_at(client: httpx.Client, page_url: str) -> tuple[str | None, str 
         if status == 404:
             return None, None
         return None, f"answered HTTP {status}"
+    except Disallowed:
+        return None, "is not allowed by that host's robots.txt"
     except httpx.HTTPError as error:
         return None, f"could not be reached: {error}"
 

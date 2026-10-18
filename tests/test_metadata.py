@@ -15,7 +15,6 @@ import httpx
 from kennis.engine.literature.citekeys import derive_citekey
 from kennis.engine.literature.metadata import (
     lookup_arxiv_metadata,
-    resolve_doi_to_arxiv,
 )
 
 ENTRY = """<?xml version="1.0" encoding="UTF-8"?>
@@ -98,32 +97,6 @@ def test_a_response_that_is_not_xml_degrades_too():
 
 
 # ---------------------------------------------------------------------------
-# DOI to preprint
-# ---------------------------------------------------------------------------
-
-
-def test_a_doi_may_reach_a_preprint():
-    """Many arXiv records carry the published version's DOI, so a DOI is often
-    enough to reach a fetchable preprint."""
-    assert (
-        resolve_doi_to_arxiv("10.1088/0004-637X/1", client=client_returning(ENTRY))
-        == "2409.19750"
-    )
-
-
-def test_a_doi_with_no_preprint_is_a_miss_not_an_error():
-    """The paper may simply never have been preprinted, which the caller
-    reports as needing a document supplied by hand instead."""
-    assert (
-        resolve_doi_to_arxiv("10.1088/x", client=client_returning(EMPTY_FEED)) is None
-    )
-
-
-def test_an_unreachable_arxiv_is_a_miss_here_too():
-    assert resolve_doi_to_arxiv("10.1088/x", client=client_that_fails()) is None
-
-
-# ---------------------------------------------------------------------------
 # What is asked for
 # ---------------------------------------------------------------------------
 
@@ -143,15 +116,7 @@ def test_a_metadata_lookup_asks_for_one_identifier():
 
     lookup_arxiv_metadata("2409.19750", client=client)
 
-    assert "id_list=2409.19750" in str(seen[0])
-
-
-def test_a_doi_resolution_searches_rather_than_naming_an_identifier():
-    client, seen = recording_client()
-
-    resolve_doi_to_arxiv("10.1088/x", client=client)
-
-    assert "search_query" in str(seen[0])
+    assert any("id_list=2409.19750" in str(url) for url in seen)
 
 
 ERROR_FEED = """<?xml version="1.0" encoding="UTF-8"?>
@@ -208,11 +173,13 @@ def arxiv_with(
     *, atom_status: int, abs_page: str = ABS_PAGE, abs_status: int = 200
 ) -> tuple[httpx.Client, list[str]]:
     """The Atom API answering `atom_status`, and arxiv.org serving
-    `abs_page`; with every request's host and path recorded."""
+    `abs_page`; with every request's host and path recorded but the
+    robots files, which `test_courtesy.py` is about."""
     asked: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        asked.append(f"{request.url.host}{request.url.path}")
+        if request.url.path != "/robots.txt":
+            asked.append(f"{request.url.host}{request.url.path}")
         if request.url.host == "export.arxiv.org":
             return httpx.Response(atom_status, text=ENTRY)
         return httpx.Response(
