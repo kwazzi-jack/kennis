@@ -160,6 +160,16 @@ def _included(relative: str, source: ContentSource) -> bool:
     )
 
 
+def selects(relative: str, source: ContentSource) -> bool:
+    """Whether this declaration takes the file at `relative` inside its folder.
+
+    One folder may be declared twice - by notes and by context - with
+    different patterns, so the store holds what either selects and each
+    declaration takes only its own from it.
+    """
+    return _included(relative, source) and not _excluded(relative, source)
+
+
 def _excluded(relative: str, source: ContentSource) -> bool:
     """Whether any `exclude` pattern drops this file."""
     return any(
@@ -173,4 +183,5 @@ __all__ = [
     "content_digest",
     "read_source",
     "resolves_inside",
+    "selects",
 ]

@@ -41,6 +41,7 @@ from kennis.render.packs import (
     describe_recorded,
     describe_refusal,
     describe_removal,
+    describe_undescribed,
     describe_unreadable,
     describe_unselected,
     describe_update_needed,
@@ -158,6 +159,11 @@ def init_command(
 def update_command(path: Path) -> None:
     """Recompute a pack's generated block from the content it names.
 
+    A paper declared without a `citekey` is described here, as `corpus add`
+    would describe it - looked up on arXiv when its identifier is one - and
+    the citekey recorded, so every machine files it alike. A paper already
+    described is not looked up again.
+
     **Run this after changing any file the pack ships**, and before
     `pack validate`. A pack whose digests disagree with its files is
     believed on kennis's fast path, so the block is what makes the pack
@@ -187,6 +193,8 @@ def _say_what_was_left(result: PackUpdate) -> None:
     """
     if result.unselected:
         display.detail(">", describe_unselected(result.unselected))
+    if result.undescribed:
+        display.detail(">", describe_undescribed(result.undescribed))
 
 
 @pack_group.command(name="validate", cls=KennisCommand)

@@ -68,6 +68,18 @@ _PACK_ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _FORBID: Final = ConfigDict(extra="forbid")
 
 
+def _checked_group(value: str | None) -> str | None:
+    """A group as every writer applies the rule, so a pack is refused when
+    it is read rather than part way through a sync (#435)."""
+    if value is None:
+        return None
+    trimmed = spaces_trimmed(value)
+    problem = group_problem(trimmed)
+    if problem is not None:
+        raise ValueError(f"the group '{value}' {problem}")
+    return tidied(trimmed)
+
+
 class KennisHeader(BaseModel):
     """The two fields that decide whether this kennis may read the file."""
 
@@ -108,9 +120,15 @@ class LiteratureEntry(BaseModel):
     """A paper the pack declares, fetched over the network rather than copied.
 
     The citekey is a handle for humans - it goes in a `.bib`, in prose and in
-    a read call. The **identifier** is the identity, which is why it is
+    a read call. The **identifier** is the identity, which is why one is
     required and why section 5 keys the diff on it: correcting a citekey
     against an unchanged identifier is a rename, not a delete and a refetch.
+    It may be left out when `url` names the paper, as an arXiv address does.
+
+    **Only the identifier is required**, as `corpus add 1101.1764` needs
+    nothing else (#459). `kennis pack update` derives what an entry leaves
+    out - citekey, title, authors, year - as the add would, and records it
+    in the generated block; a field the entry gives is never overridden.
 
     **One identifier field**, which takes an arXiv identifier, a DOI or an
     ADS bibcode and is read as whichever it is. Three fields, one per kind,
@@ -126,9 +144,9 @@ class LiteratureEntry(BaseModel):
 
     model_config = _FORBID
 
-    citekey: str
-    title: str
-    identifier: str
+    citekey: str | None = None
+    title: str | None = None
+    identifier: str | None = None
     url: str | None = None
     group: str | None = None
     authors: str | None = None
@@ -155,7 +173,9 @@ class LiteratureEntry(BaseModel):
 
     @field_validator("identifier")
     @classmethod
-    def _an_identifier(cls, value: str) -> str:
+    def _an_identifier(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if identifier_if_reference(value) is None:
             raise ValueError(
                 f"'{value}' is not an arXiv identifier, a DOI or an ADS bibcode"
@@ -165,13 +185,7 @@ class LiteratureEntry(BaseModel):
     @field_validator("group")
     @classmethod
     def _stays_inside_the_packs_folder(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        trimmed = spaces_trimmed(value)
-        problem = group_problem(trimmed)
-        if problem is not None:
-            raise ValueError(f"the group '{value}' {problem}")
-        return tidied(trimmed)
+        return _checked_group(value)
 
     @field_validator("url")
     @classmethod
@@ -180,10 +194,22 @@ class LiteratureEntry(BaseModel):
             raise ValueError(f"'{value}' is not an http or https address")
         return value
 
+    @model_validator(mode="after")
+    def _names_a_paper(self) -> LiteratureEntry:
+        if self.identifier is None and (
+            self.url is None or identifier_if_reference(self.url) is None
+        ):
+            named = f"'{self.url}' names no paper" if self.url else "nothing names it"
+            raise ValueError(
+                f"{named}: give `identifier`, an arXiv identifier, a DOI or an "
+                "ADS bibcode"
+            )
+        return self
+
     @property
     def paper(self) -> PaperIdentifier:
-        """The identifier, read as the kind it is."""
-        parsed = identifier_if_reference(self.identifier)
+        """The identifier, read as the kind it is, or the one `url` names."""
+        parsed = identifier_if_reference(self.identifier or self.url or "")
         # Checked when the entry was made, so there is always one.
         assert parsed is not None
         return parsed
@@ -281,13 +307,45 @@ class ContentSource(BaseModel):
     def _stays_inside_its_collection(cls, value: str | None) -> str | None:
         # The same rule every writer applies, so a pack is refused when it
         # is read rather than part way through a sync.
-        if value is None:
-            return None
-        trimmed = spaces_trimmed(value)
-        problem = group_problem(trimmed)
-        if problem is not None:
-            raise ValueError(f"the group '{value}' {problem}")
-        return tidied(trimmed)
+        return _checked_group(value)
+
+
+class NoteLink(BaseModel):
+    """A note the pack declares by its address, fetched at `corpus sync`.
+
+    Converted as `corpus add -n <url>` converts it, so a pack can declare
+    whatever a person can add (#459). Told apart from a `ContentSource` by
+    its required key: each forbids the other's, so an entry naming both is
+    neither.
+
+    `title` names the note when given; otherwise the page's own title does.
+    `group` is a folder inside the pack's own, `notes/<pack id>/`.
+    """
+
+    model_config = _FORBID
+
+    url: str
+    title: str | None = None
+    group: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _an_address(cls, value: str) -> str:
+        if not value.startswith(("https://", "http://")):
+            raise ValueError(f"'{value}' is not an http or https address")
+        return value
+
+    @field_validator("group")
+    @classmethod
+    def _stays_inside_the_packs_folder(cls, value: str | None) -> str | None:
+        return _checked_group(value)
+
+    @property
+    def key(self) -> str:
+        """What a sync diffs this declaration on, and the address recorded in
+        the note's `source.from`: the address, marked as one so it cannot
+        collide with a file's path in the store."""
+        return f"url:{self.url}"
 
 
 class CorpusSection(BaseModel):
@@ -297,7 +355,17 @@ class CorpusSection(BaseModel):
 
     literature: list[LiteratureEntry] = Field(default_factory=list)
     docs: list[DocsEntry] = Field(default_factory=list)
-    notes: list[ContentSource] = Field(default_factory=list)
+    notes: list[ContentSource | NoteLink] = Field(default_factory=list)
+
+    @property
+    def note_sources(self) -> list[ContentSource]:
+        """The folders of notes the pack ships, copied into the store."""
+        return [entry for entry in self.notes if isinstance(entry, ContentSource)]
+
+    @property
+    def note_links(self) -> list[NoteLink]:
+        """The notes the pack declares by address, fetched at sync."""
+        return [entry for entry in self.notes if isinstance(entry, NoteLink)]
 
 
 class GeneratedSource(BaseModel):
@@ -324,6 +392,19 @@ class GeneratedContent(BaseModel):
     notes: list[GeneratedSource] = Field(default_factory=list)
 
 
+class GeneratedPaper(BaseModel):
+    """What `pack update` derived for a paper, in the fields its entry left
+    out. Every machine reads the same record, so a paper is filed under the
+    same citekey wherever the pack is installed."""
+
+    model_config = _FORBID
+
+    citekey: str | None = None
+    title: str | None = None
+    authors: str | None = None
+    year: int | None = None
+
+
 class GeneratedBlock(BaseModel):
     """Written by `pack update`; never hand-edited.
 
@@ -337,6 +418,8 @@ class GeneratedBlock(BaseModel):
     at: str
     by: str
     content: GeneratedContent = Field(default_factory=GeneratedContent)
+    # Keyed by the entry's key, `arxiv:1101.1764` (#459).
+    literature: dict[str, GeneratedPaper] = Field(default_factory=dict)
 
 
 class Pack(BaseModel):
@@ -405,10 +488,12 @@ __all__ = [
     "DocsEntry",
     "GeneratedBlock",
     "GeneratedContent",
+    "GeneratedPaper",
     "GeneratedSource",
     "JsonSchema",
     "KennisHeader",
     "LiteratureEntry",
+    "NoteLink",
     "Pack",
     "PackIdentity",
     "load_pack",

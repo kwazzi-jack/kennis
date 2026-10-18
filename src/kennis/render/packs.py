@@ -88,9 +88,24 @@ def describe_verdict(report: PackReport) -> str:
 def describe_recorded(result: PackUpdate) -> str:
     """What an update wrote, or found it did not need to write."""
     counted = count_of(result.files, "file")
+    if result.papers:
+        counted = f"{counted} and {count_of(result.papers, 'paper')}"
     if result.outcome == "unchanged":
         return f"{counted} already recorded, so the file is untouched"
     return f"{counted} recorded"
+
+
+def describe_undescribed(keys: Sequence[str]) -> str:
+    """Papers `pack update` could make no citekey for (#459).
+
+    Said because the consequence is not visible here: each machine's sync
+    then makes its own, against its own corpus, and two machines can file
+    the paper under different citekeys.
+    """
+    return (
+        f"no citekey could be made for {joined(list(keys))}, so each corpus "
+        "makes its own when it adds the paper; give `citekey:` to fix one"
+    )
 
 
 def describe_problem(problem: PackProblem) -> str:
@@ -545,6 +560,7 @@ __all__ = [
     "describe_removal",
     "describe_sync",
     "describe_sync_summary",
+    "describe_undescribed",
     "describe_unfetched",
     "describe_unreadable",
     "describe_unselected",

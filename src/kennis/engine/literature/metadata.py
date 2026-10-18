@@ -26,6 +26,8 @@ from kennis.engine.bounded import get_bounded
 from kennis.engine.literature.identifiers import normalize_arxiv_id
 
 _ATOM_API: Final = "https://export.arxiv.org/api/query"
+# A paper's own page, which carries its metadata in `citation_*` meta tags.
+_ABS_PAGE: Final = "https://arxiv.org/abs/"
 _ATOM_NAMESPACE: Final = {"atom": "http://www.w3.org/2005/Atom"}
 _USER_AGENT: Final = "kennis-literature"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
@@ -47,7 +49,23 @@ def lookup_arxiv_metadata(
 
     `client` is supplied by the caller so a test hands over a transport that
     never touches the network; left out, one is built and closed here.
+
+    The Atom API is asked first. When it fails for any reason, the paper's
+    abs page is asked instead (#288): arxiv.org has served it while the API
+    refused the same query, which left papers with no authors or year and
+    no way to repair them (#283, #287). One extra request, and only on the
+    path that has already failed.
     """
+    owned = client is None
+    active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
+    try:
+        return _from_atom(arxiv_id, active) or _from_abs_page(arxiv_id, active)
+    finally:
+        if owned:
+            active.close()
+
+
+def _from_atom(arxiv_id: str, client: httpx.Client) -> ArxivMetadata | None:
     entry = _entry({"id_list": arxiv_id, "max_results": "1"}, client=client)
     if entry is None:
         return None
@@ -70,6 +88,52 @@ def lookup_arxiv_metadata(
         title=" ".join(title_element.text.split()),
         authors=" and ".join(_author_names(entry)),
         year=published.text[:4] if published is not None and published.text else "",
+    )
+
+
+def _from_abs_page(arxiv_id: str, client: httpx.Client) -> ArxivMetadata | None:
+    """Title, authors and year from the `citation_*` meta tags of the
+    paper's abs page, or None.
+
+    The Highwire convention, which Google Scholar indexes, so arXiv keeps
+    it. Authors are kept as arXiv writes them there, `Surname, Given`:
+    BibTeX reads that form, and a citekey takes the part before the comma.
+    """
+    from bs4 import BeautifulSoup
+
+    try:
+        response = get_bounded(
+            client, f"{_ABS_PAGE}{arxiv_id}", timeout=_REQUEST_TIMEOUT_SECONDS
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return None
+    # Anything but a page is not the paper's page, whatever it holds.
+    if "html" not in response.headers.get("content-type", ""):
+        return None
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    def tagged(name: str) -> list[str]:
+        return [
+            " ".join(str(tag.get("content", "")).split())
+            for tag in soup.find_all("meta", attrs={"name": name})
+        ]
+
+    # The page must be the paper asked for, as the feed's entry must.
+    answered = tagged("citation_arxiv_id")
+    if not answered or normalize_arxiv_id(answered[0]) != (
+        normalize_arxiv_id(arxiv_id) or arxiv_id
+    ):
+        return None
+    titles = [title for title in tagged("citation_title") if title]
+    if not titles:
+        return None
+    dates = tagged("citation_date")
+    return ArxivMetadata(
+        title=titles[0],
+        authors=" and ".join(name for name in tagged("citation_author") if name),
+        year=dates[0][:4] if dates and dates[0][:4].isdigit() else "",
     )
 
 

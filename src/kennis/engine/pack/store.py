@@ -273,41 +273,47 @@ def _installed(
     files: dict[str, str] = {}
     with replacing_directory(root) as staging:
         shutil.copy2(path, staging / DECLARATION_FILENAME)
-        for source in _declared(pack):
-            files.update(_copied(path.parent, staging, source))
+        for folder, declarations in _declared(pack).items():
+            files.update(_copied(path.parent, staging, folder, declarations))
     _write_state(root, pack, digest, files, path, previous)
     return files
 
 
-def _declared(pack: Pack) -> list[str]:
-    """Every source directory the pack declares, deduplicated.
+def _declared(pack: Pack) -> dict[str, list[ContentSource]]:
+    """Every source directory the pack declares, with each declaration of it.
 
     One tree may be declared by both sections; it is copied once, because
     the store holds the pack's files and the *destination* is what
     `corpus sync` and `context sync` differ on, not the copy.
     """
-    seen: list[str] = []
-    for source in [*pack.corpus.notes, *pack.context]:
-        if source.source not in seen:
-            seen.append(source.source)
-    return seen
+    folders: dict[str, list[ContentSource]] = {}
+    for source in [*pack.corpus.note_sources, *pack.context]:
+        folders.setdefault(source.source, []).append(source)
+    return folders
 
 
-def _copied(origin: Path, staging: Path, source: str) -> dict[str, str]:
+def _copied(
+    origin: Path, staging: Path, folder: str, declarations: list[ContentSource]
+) -> dict[str, str]:
     """One declared tree into the staging directory, with its digests.
 
     Walked with `read_source`'s own rules rather than `shutil.copytree`, so
     the files copied are exactly the files `validate` judged - symlinks
-    excluded, `include` and `exclude` honoured. `validate_pack` has already
-    refused anything that escapes the pack root.
+    excluded, and each declaration's own `include` and `exclude` honoured:
+    walking with the defaults copied markdown only, so a PDF the author
+    included was digested by `pack update` and never reached the store
+    (#459). `validate_pack` has already refused anything that escapes the
+    pack root.
     """
-    found = read_source(origin, ContentSource(source=source))
+    found: dict[str, str] = {}
+    for declaration in declarations:
+        found.update(read_source(origin, declaration).digests)
     digests: dict[str, str] = {}
-    for relative in sorted(found.digests):
-        target = staging / source.strip("/") / relative
+    for relative in sorted(found):
+        target = staging / folder.strip("/") / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(origin / source / relative, target)
-        digests[f"{source.strip('/')}/{relative}"] = found.digests[relative]
+        shutil.copy2(origin / folder / relative, target)
+        digests[f"{folder.strip('/')}/{relative}"] = found[relative]
     return digests
 
 

@@ -30,7 +30,7 @@ from typing import Final, Literal
 
 from kennis.engine.errors import PackInvalid, PackNotInstalled
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
-from kennis.engine.pack.content import content_digest
+from kennis.engine.pack.content import content_digest, selects
 from kennis.engine.pack.resolve import Declaration
 from kennis.engine.pack.schema import ContentSource, Pack, load_pack
 from kennis.engine.pack.store import (
@@ -235,9 +235,11 @@ def _declared_items(one: InstalledPack) -> set[ItemKey]:
         items.add(("literature", entry.key))
     for docs in declaration.corpus.docs:
         items.add(("docs", docs.project))
-    for source in declaration.corpus.notes:
+    for source in declaration.corpus.note_sources:
         for address, _ in _destinations(one.state, source):
             items.add(("notes", address))
+    for note in declaration.corpus.note_links:
+        items.add(("notes", note.key))
     for source in declaration.context:
         for address, _ in _destinations(one.state, source):
             items.add(("context", address))
@@ -263,6 +265,8 @@ def _destinations(state: PackState, source: ContentSource) -> list[tuple[str, st
         if not recorded.startswith(f"{prefix}/"):
             continue
         relative = recorded[len(prefix) + 1 :]
+        if not selects(relative, source):
+            continue
         addresses.append((f"{group}/{relative}" if group else relative, recorded))
     return addresses
 
@@ -335,7 +339,7 @@ def declared_content(
             # corruption; a sync must not guess at what it wanted.
             continue
         sources = (
-            one.declaration.corpus.notes
+            one.declaration.corpus.note_sources
             if section == "notes"
             else one.declaration.context
         )

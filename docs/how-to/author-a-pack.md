@@ -46,9 +46,8 @@ network when the pack is installed:
 ```yaml
 corpus:
   literature:
-    - citekey: smirnovRevisitingRIMEI2011
-      title: "Revisiting the radio interferometer measurement equation I"
-      identifier: "1101.1764"
+    - identifier: "1101.1764"
+    - url: "https://arxiv.org/abs/1502.06974"
     - citekey: welmanCalibration2021
       title: "A paper published in a journal"
       identifier: "10.1093/mnras/stab1234"
@@ -59,11 +58,18 @@ corpus:
       base_url: "https://stimela.readthedocs.io/en/latest/"
 ```
 
-Every literature entry needs a real `identifier` - an arXiv id, a DOI or
-an ADS bibcode, in one field, read as whichever it is - and `validate`
-refuses without one. The citekey is a handle for humans; the identifier is
-the identity, and it is what kennis uses to tell a renamed citekey from a
-different paper.
+A literature entry needs one thing: what the paper **is**. That is its
+`identifier` - an arXiv id, a DOI or an ADS bibcode, in one field, read as
+whichever it is - or a `url` that names one, as an arXiv address does.
+`validate` refuses an entry with neither. The identifier is the identity,
+and it is what kennis uses to tell a renamed citekey from a different paper.
+
+Everything else is optional, as it is for `kennis corpus add 1101.1764`.
+An entry without a `citekey` is described by `kennis pack update` (see
+[Record the digests](#record-the-digests)): the citekey, title, authors and
+year `corpus add` would derive are recorded in the pack, so the paper has
+the same citekey on every machine that installs it. Give `citekey:` when
+your own prose already cites the paper by one.
 
 Where a paper's text comes from:
 
@@ -79,15 +85,18 @@ Where a paper's text comes from:
 - **Anything else** has no copy kennis can reach. Nothing is written, and
   the sync says where to download the paper and how to add it.
 
-Two are **content**, copied verbatim:
+Two are **content**, shipped with the pack:
 
 ```yaml
 corpus:
   notes:
     - source: notes/
       group: stimela
-      include: ["**/*.md"]
+      include: ["**/*.md", "**/*.pdf"]
       exclude: []
+    - url: "https://archive.example.org/reports/time-smearing.pdf"
+      title: "MeerKAT time smearing simulation"
+      group: reports
 
 context:
   - source: content/
@@ -95,6 +104,21 @@ context:
 
 `notes` goes into the machine-global corpus; `context` goes into each
 project's `.context/` bundle.
+
+A notes entry is one of two shapes, whatever `kennis corpus add --notes`
+can add:
+
+- **`source:`**, a folder relative to the pack file. Markdown in it is
+  copied as it is. Any other file `include` selects - a PDF, a `.docx`, an
+  HTML page - is converted when the pack is synced, the way `corpus add`
+  converts a file, and named by its filename.
+- **`url:`**, an address fetched and converted when the pack is synced,
+  as `corpus add --notes <url>` would. `title` names the note, or the
+  page's own heading does; `group` is a folder inside the pack's own. An
+  unchanged entry is not fetched again.
+
+The default `include` is `**/*.md`, so name any other kind you ship;
+`pack update` counts the files no pattern took.
 
 ## Where it lands
 
@@ -104,7 +128,7 @@ a reader can see at once what came from which pack:
 | section | lands in |
 |---|---|
 | `corpus.literature` | `literature/<pack id>/`, then the entry's `group` if it has one |
-| `corpus.notes` | `notes/<pack id>/`, then the source's `group`, then the folders inside the source |
+| `corpus.notes` | `notes/<pack id>/`, then the entry's `group`, then, for a `source:`, the folders inside it |
 | `corpus.docs` | `docs/<project>/` - a project is one folder, with no groups inside it |
 
 So the paper above with `group: calibration` lands in
@@ -130,7 +154,8 @@ kennis pack update boepie.ken.yml
 ```
 
 This walks each source, honouring `include` and `exclude`, and writes the
-`generated:` block at the end of the file - a digest per shipped file.
+`generated:` block at the end of the file - a digest per shipped file, and
+a description of each paper declared without a `citekey`.
 
 A digest is the sha256 of the file with every CRLF line ending read as LF.
 Line endings are not content: Git for Windows checks files out with CRLF by
@@ -149,7 +174,29 @@ generated:
           "conventions.md": "0b692334cb36..."
 ```
 
-Two things about it:
+A paper is described the way `corpus add` describes one. An arXiv paper is
+looked up on arXiv, and its citekey is made from the first author's
+surname, the title's leading words and the year; a DOI or a bibcode has no
+lookup, so its citekey is made from what the entry says. Only the fields
+the entry left out are recorded:
+
+```yaml
+  literature:
+    "arxiv:1101.1764":
+      citekey: "smirnovRevisitingRadioInterferometer2011"
+      title: "Revisiting the radio interferometer measurement equation. I. A full-sky Jones formalism"
+      authors: "Oleg M. Smirnov"
+      year: 2011
+```
+
+A paper already described is not looked up again, and its citekey never
+changes once recorded: a second paper that would derive the same one is
+given a letter instead. A paper arXiv cannot describe is named, and
+nothing is recorded for it, so each corpus makes its own citekey when it
+adds the paper. An entry that gives its `citekey` is never looked up, so
+a pack whose entries all do never reaches the network from `update`.
+
+Two things about the block:
 
 - **The block must be the last section.** `update` replaces from the marker
   comment to the end of the file, which is how everything above it -
@@ -264,7 +311,7 @@ It also resolves the two things a pack **declares** rather than ships:
 
 | section | what sync does | key |
 |---|---|---|
-| `corpus.notes` | copies from the store | the destination address |
+| `corpus.notes` | copies from the store, converts, or fetches | the destination address, or `url:<address>` |
 | `corpus.literature` | fetches each paper | `identifier`, with its kind |
 | `corpus.docs` | crawls each site | `project` |
 

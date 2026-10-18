@@ -55,6 +55,7 @@ from kennis.render.packs import (
     describe_removal,
     describe_sync,
     describe_sync_summary,
+    describe_undescribed,
     describe_unfetched,
     describe_unreadable,
     describe_unselected,
@@ -288,6 +289,21 @@ def test_a_changed_update_says_what_it_recorded():
     )
 
     assert describe_recorded(result) == "2 files recorded"
+
+
+def test_an_update_counts_the_papers_it_described():
+    result = PackUpdate(
+        path=Path("p.ken.yml"), outcome="written", files=2, unselected=0, papers=1
+    )
+
+    assert describe_recorded(result) == "2 files and 1 paper recorded"
+
+
+def test_a_paper_left_without_a_citekey_is_named_with_the_way_out():
+    said = describe_undescribed(["arxiv:1101.1764", "doi:10.1/x"])
+
+    assert "arxiv:1101.1764 and doi:10.1/x" in said
+    assert "`citekey:`" in said
 
 
 def test_unselected_files_are_counted_without_a_pronoun():

@@ -44,7 +44,7 @@ from kennis.engine.corpus.add import (
 )
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, move_document, write_document
-from kennis.engine.corpus.intake import Converted
+from kennis.engine.corpus.intake import Converted, convert_local_file, convert_url
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.moving import holding, move_target
 from kennis.engine.corpus.schema import (
@@ -53,8 +53,9 @@ from kennis.engine.corpus.schema import (
     LiteratureFrontmatter,
     NoteFrontmatter,
     Source,
+    SourceFormat,
 )
-from kennis.engine.errors import DocumentInvalid
+from kennis.engine.errors import DocumentInvalid, KennisError
 from kennis.engine.events import (
     Event,
     EventSink,
@@ -73,7 +74,7 @@ from kennis.engine.pack.installed import (
     refuse_damaged_packs,
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
-from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, Pack
+from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, NoteLink, Pack
 from kennis.engine.refusals import Quoted, Refusal
 from kennis.engine.remember import title_for
 
@@ -224,6 +225,10 @@ def _places(
     return places
 
 
+# A declaration whose content is the entry itself rather than a file.
+type Entry = LiteratureEntry | DocsEntry | NoteLink
+
+
 @dataclass(frozen=True, slots=True)
 class _Plan:
     """One section's resolution, with what it was resolved against.
@@ -244,8 +249,9 @@ class _Plan:
     # The declaration entries themselves, for the two sections whose
     # content is the entry rather than a file: a fetch needs the base
     # url and a rename needs the bib fields, and a digest carries
-    # neither. Empty for notes, whose content is in the store.
-    entries: dict[str, LiteratureEntry | DocsEntry] = field(default_factory=dict)
+    # neither. For notes, only the ones declared by address (#459): the
+    # rest are in the store.
+    entries: dict[str, Entry] = field(default_factory=dict)
     deferred: tuple[tuple[str, str], ...] = ()
 
 
@@ -339,6 +345,8 @@ def _declared_group(plan: _Plan, declaration: Declaration) -> str:
     entry = plan.entries.get(declaration.address)
     if isinstance(entry, LiteratureEntry):
         return _paper_group(declaration, entry)
+    if isinstance(entry, NoteLink):
+        return "/".join(part for part in (declaration.pack_id, entry.group) if part)
     return _note_group(declaration)
 
 
@@ -355,15 +363,43 @@ def _unreadable_in(collection: Collection) -> tuple[str, ...]:
 
 
 def _notes_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
+    """The store's notes and the ones declared by address, resolved together.
+
+    One table for both, because both are notes a pack owns and `_held`
+    finds either by the address in its `source.from`. A link's address is
+    marked `url:`, so it cannot be a file's path in the store.
+    """
     union = declared_content(corpus_root, packs, "notes")
+    declarations = dict(union.declarations)
+    deferred = list(union.deferred)
+    entries: dict[str, Entry] = {}
+    ordered = sorted(
+        packs, key=lambda one: (one.state.first_applied_at, one.state.pack_id)
+    )
+    for one in ordered:
+        if one.declaration is None:
+            continue
+        for note in one.declaration.corpus.note_links:
+            if note.key in declarations:
+                if declarations[note.key].pack_id != one.state.pack_id:
+                    deferred.append((note.key, one.state.pack_id))
+                continue
+            declarations[note.key] = Declaration(
+                address=note.key,
+                pack_id=one.state.pack_id,
+                digest=_link_digest(note),
+                store_path=None,
+            )
+            entries[note.key] = note
     collection = Collection(root=corpus_root, name="notes")
     held = _held(collection)
     return _Plan(
-        actions=resolve(union.declarations, {one: held[one][0] for one in held}),
+        actions=resolve(declarations, {one: held[one][0] for one in held}),
         held=held,
-        declarations=union.declarations,
+        declarations=declarations,
         unreadable=_unreadable_in(collection),
-        deferred=union.deferred,
+        entries=entries,
+        deferred=tuple(sorted(deferred)),
     )
 
 
@@ -382,23 +418,29 @@ def _carried_out(
 ) -> tuple[str, ...]:
     """Do what the three plans decided, and report what would not happen.
 
-    Notes first, because they are the part that cannot fail: copying out
-    of a verified store either works or the store was damaged, and that
-    was refused before this was called. The two that reach a host go
-    afterwards, so an unreachable one leaves a corpus that is otherwise
-    converged.
+    Notes first, because most of them cannot fail: copying out of a
+    verified store either works or the store was damaged, and that was
+    refused before this was called. A note declared by address, or a
+    shipped file kennis converts, can fail (#459), and fails alone. The
+    two that reach a host go afterwards, so an unreachable one leaves a
+    corpus that is otherwise converged.
     """
     collection = Collection(root=corpus_root, name="notes")
     record = Uniqueness.of(collection)
+    failed_notes: list[str] = []
     for action in notes.actions:
-        _applied(collection, record, action, notes.held)
+        try:
+            _applied(collection, record, action, notes, client)
+        except KennisError as error:
+            failed_notes.append(action.address)
+            why[action.address] = Quoted(str(error))
 
     progress = _Progress(
         events,
         total=sum(1 for action in papers.actions if action.verdict == "write")
         + sum(1 for action in projects.actions if action.verdict in _CRAWLED),
     )
-    failed = list(
+    failed = failed_notes + list(
         _fetched_literature(
             corpus_root,
             papers,
@@ -656,7 +698,7 @@ def _removed_project(collection: Collection, project: str) -> None:
 def _rewrote_bibliography(
     document: Document,
     declaration: Declaration,
-    entries: dict[str, LiteratureEntry | DocsEntry],
+    entries: dict[str, Entry],
 ) -> None:
     """Apply a changed declaration to a paper already held.
 
@@ -680,7 +722,9 @@ def _rewrote_bibliography(
         update={
             "owner": f"pack:{declaration.pack_id}",
             "bib": Bibliography(
-                citekey=entry.citekey,
+                # A citekey neither the pack nor its record gave stays the
+                # one the add derived.
+                citekey=entry.citekey or frontmatter.bib.citekey,
                 authors=frontmatter.bib.authors or entry.authors,
                 year=frontmatter.bib.year or (str(entry.year) if entry.year else None),
                 doi=frontmatter.bib.doi or declared.get("doi"),
@@ -712,7 +756,7 @@ def _literature_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Pl
         packs,
         listed=lambda pack: [
             (literature_key(entry), _literature_digest(entry), entry)
-            for entry in pack.corpus.literature
+            for entry in map(completed_entry(pack), pack.corpus.literature)
         ],
     )
     collection = Collection(root=corpus_root, name="literature")
@@ -775,7 +819,7 @@ def _declared(
     packs: tuple[InstalledPack, ...],
     *,
     listed: Callable[[Pack], list[tuple[str, str, LiteratureEntry | DocsEntry]]],
-) -> tuple[dict[str, Declaration], dict[str, LiteratureEntry | DocsEntry]]:
+) -> tuple[dict[str, Declaration], dict[str, Entry]]:
     """The union of one declaration section, incumbent first.
 
     The same rule the content union follows: earliest `first_applied_at`
@@ -786,7 +830,7 @@ def _declared(
         packs, key=lambda one: (one.state.first_applied_at, one.state.pack_id)
     )
     declarations: dict[str, Declaration] = {}
-    entries: dict[str, LiteratureEntry | DocsEntry] = {}
+    entries: dict[str, Entry] = {}
     for one in ordered:
         if one.declaration is None:
             continue
@@ -821,6 +865,30 @@ def _declared_existing(key: str, document: Document) -> Existing:
     )
 
 
+def completed_entry(pack: Pack) -> Callable[[LiteratureEntry], LiteratureEntry]:
+    """Each of this pack's papers with what `pack update` recorded for it.
+
+    The entry's own fields first; the record holds only what the entry
+    left out (#459). Completed before digesting, so the digest, the add
+    and a rename all see one entry.
+    """
+    recorded = pack.generated.literature if pack.generated is not None else {}
+
+    def completed(entry: LiteratureEntry) -> LiteratureEntry:
+        record = recorded.get(entry.key)
+        if record is None:
+            return entry
+        return entry.model_copy(
+            update={
+                name: getattr(record, name)
+                for name in ("citekey", "title", "authors", "year")
+                if getattr(entry, name) is None and getattr(record, name) is not None
+            }
+        )
+
+    return completed
+
+
 def literature_key(entry: LiteratureEntry) -> str:
     """`<kind>:<identifier>`, the key a declaration is diffed on."""
     return entry.key
@@ -853,8 +921,8 @@ def _literature_digest(entry: LiteratureEntry) -> str:
     return content_digest(
         "\n".join(
             [
-                entry.citekey,
-                entry.title,
+                entry.citekey or "",
+                entry.title or "",
                 entry.authors or "",
                 str(entry.year or ""),
                 # Where the text is fetched from is part of what was
@@ -862,6 +930,14 @@ def _literature_digest(entry: LiteratureEntry) -> str:
                 entry.url or "",
             ]
         ).encode("utf-8")
+    )
+
+
+def _link_digest(note: NoteLink) -> str:
+    """The fields of a note declared by address, digested: a corrected
+    title or group is a declaration that moved, and is fetched again."""
+    return content_digest(
+        "\n".join([note.url, note.title or "", note.group or ""]).encode("utf-8")
     )
 
 
@@ -906,49 +982,89 @@ def _applied(
     collection: Collection,
     record: Uniqueness,
     action: Action,
-    held: dict[str, tuple[Existing, Document]],
+    plan: _Plan,
+    client: httpx.Client | None,
 ) -> None:
     """Carry out one action. `keep`, `yours` and `edited` write nothing."""
     if action.verdict == "delete":
-        collection.remove(held[action.address][1])
+        collection.remove(plan.held[action.address][1])
         return
     if action.verdict not in {"write", "rewrite", "adopt"}:
         return
     declaration = action.declaration
     assert declaration is not None
-    title, body = _content_of(declaration)
+    content = _content_of(declaration, plan.entries.get(action.address), client)
+    group = _declared_group(plan, declaration)
     if action.verdict == "write":
-        _written(collection, record, declaration, title=title, body=body)
+        _written(collection, record, declaration, content, group=group)
         return
-    _rewritten(held[action.address][1], declaration, title=title, body=body)
+    _rewritten(plan.held[action.address][1], declaration, content)
 
 
-def _content_of(declaration: Declaration) -> tuple[str, str]:
-    """The title and body for one declared note.
+@dataclass(frozen=True, slots=True)
+class _NoteContent:
+    title: str
+    body: str
+    format: SourceFormat
 
-    A pack ships plain markdown. When its file carries its own
+
+# A shipped file read as it is, frontmatter and all. Anything else a pack
+# ships is converted, as `corpus add -n` would convert it.
+_MARKDOWN_SUFFIXES: Final = frozenset({".md", ".markdown"})
+
+
+def _content_of(
+    declaration: Declaration, entry: Entry | None, client: httpx.Client | None
+) -> _NoteContent:
+    """The title, body and format for one declared note.
+
+    A shipped markdown file is read as it is. When it carries its own
     frontmatter that block supplies the title and the rest is the body -
     never nested, never two blocks in one document. Otherwise the title
     comes from the prose the way `remember` derives one, so a pack note
     and a remembered one are named by the same rule.
+
+    A note declared by address is fetched, and a shipped file of another
+    kind converted, by the functions `corpus add -n` uses, and named in
+    `add_notes`'s order: the declared title, the source's own name, the
+    title the source suggests (#459).
     """
-    # A content declaration always has one; only a paper or a
-    # documentation project, which a fetch resolves, does not.
+    if isinstance(entry, NoteLink):
+        converted = convert_url(entry.url, client=client)
+        return _NoteContent(
+            title=entry.title
+            or converted.source_name
+            or converted.suggested_title
+            or entry.url,
+            body=converted.markdown,
+            format=converted.format,
+        )
+    # A content declaration always has one; only a paper, a documentation
+    # project or a note declared by address, which a fetch resolves, does not.
     assert declaration.store_path is not None
+    if declaration.store_path.suffix.lower() not in _MARKDOWN_SUFFIXES:
+        converted = convert_local_file(declaration.store_path)
+        return _NoteContent(
+            title=converted.source_name
+            or converted.suggested_title
+            or title_for(converted.markdown),
+            body=converted.markdown,
+            format=converted.format,
+        )
     content = declaration.store_path.read_text(encoding="utf-8")
     shipped, body = split_frontmatter(content)
     declared_title = shipped.get("title")
     title = str(declared_title) if declared_title else title_for(body)
-    return title, body
+    return _NoteContent(title=title, body=body, format="markdown")
 
 
 def _written(
     collection: Collection,
     record: Uniqueness,
     declaration: Declaration,
+    content: _NoteContent,
     *,
-    title: str,
-    body: str,
+    group: str,
 ) -> None:
     """A note this corpus has not held before, with a minted identifier.
 
@@ -964,14 +1080,14 @@ def _written(
         collection,
         record,
         converted=Converted(
-            markdown=body,
+            markdown=content.body,
             via="pack",
-            format="markdown",
+            format=content.format,
             origin=f"{ORIGIN_SCHEME}{declaration.pack_id}/{declaration.address}",
-            sha256=content_digest(body.encode("utf-8")),
+            sha256=content_digest(content.body.encode("utf-8")),
         ),
-        title=title,
-        group=_note_group(declaration),
+        title=content.title,
+        group=group,
         owner=f"pack:{declaration.pack_id}",
         pack_sha256=declaration.digest,
     )
@@ -984,7 +1100,7 @@ def _note_group(declaration: Declaration) -> str:
 
 
 def _rewritten(
-    document: Document, declaration: Declaration, *, title: str, body: str
+    document: Document, declaration: Declaration, content: _NoteContent
 ) -> None:
     """A note this corpus already holds, kept at its own identifier.
 
@@ -995,18 +1111,18 @@ def _rewritten(
     """
     frontmatter = NoteFrontmatter(
         id=document.id,
-        title=title,
+        title=content.title,
         owner=f"pack:{declaration.pack_id}",
         source=Source(
             origin=f"{ORIGIN_SCHEME}{declaration.pack_id}/{declaration.address}",
             via="pack",
-            format="markdown",
-            sha256=content_digest(body.encode("utf-8")),
+            format=content.format,
+            sha256=content_digest(content.body.encode("utf-8")),
             pack_sha256=declaration.digest,
         ),
         id_from=document.frontmatter.id_from,
     )
-    write_document(document.md_path, frontmatter=frontmatter, body=body)
+    write_document(document.md_path, frontmatter=frontmatter, body=content.body)
 
 
 def claim_document(corpus_root: Path, handle: str) -> Document:

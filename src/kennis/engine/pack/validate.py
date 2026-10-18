@@ -232,7 +232,7 @@ def version_refusal(pack: Pack) -> VersionRefusal | None:
 
 def _content_sources(pack: Pack) -> list[tuple[str, ContentSource]]:
     """Every source whose files are copied, with the section it belongs to."""
-    return [("notes", source) for source in pack.corpus.notes] + [
+    return [("notes", source) for source in pack.corpus.note_sources] + [
         ("context", source) for source in pack.context
     ]
 
