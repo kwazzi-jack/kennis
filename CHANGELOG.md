@@ -1,3 +1,14 @@
+## v0.10.0 (2026-10-20)
+
+### Feat
+
+- **context**: search every project with the packs it declares in place, and keep what kennis obtained read-only with copies as the person's own
+- **service**: run one kennis service per corpus with the command line, the window and the MCP server as its clients
+- **corpus**: remove, put back and return the corpus to a point in its history from the command line and the window alike
+- **literature**: ask arxiv only what its robots.txt allows, as often as it asks, and refuse a test's request to a real host
+- **pack**: declare notes by address or in any format kennis converts, papers by identifier alone, and read arxiv metadata from the abs page
+- **docs**: file documentation by version, choose, refresh and remove versions, and keep each code block's language
+
 ## v0.9.0 (2026-10-17)
 
 ### Feat
