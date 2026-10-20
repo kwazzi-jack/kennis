@@ -5,6 +5,7 @@ was asked.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Annotated, Final
 from urllib.parse import quote
 
@@ -29,6 +30,7 @@ from kennis.gui.pages import (
     shown_skips,
     versions_query,
 )
+from kennis.gui.project import bundle_of
 from kennis.gui.responses import SCOPES, TEMPLATES, frame, from_htmx
 from kennis.retrieval import (
     EVERY_SCOPE,
@@ -71,6 +73,7 @@ def _hits_context(
     k: int = 0,
     record: bool = True,
     versions: Sequence[str] = (),
+    bundle: Path | None,
 ) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -152,6 +155,7 @@ def _hits_context(
             # lexical by design.
             mode=mode or None,
             versions=chosen,
+            bundle=bundle,
         )
         context["groups"] = shown_groups_of(found, question, order)
         found_count = sum(len(hits) for hits in found.groups.values())
@@ -261,6 +265,7 @@ def serve_search(
         k=k,
         record=not _prefetched(request),
         versions=version or (),
+        bundle=bundle_of(request),
     )
     # Only with no query. With one, the results have that space -
     # a page showing both would put what was looked for before
@@ -280,7 +285,7 @@ def clear_history(request: Request) -> Response:
     history.clear()
     if not from_htmx(request):
         return RedirectResponse("/", status_code=303)
-    context = _hits_context("", EVERY_SCOPE, words.MODE_DEFAULT)
+    context = _hits_context("", EVERY_SCOPE, words.MODE_DEFAULT, bundle=None)
     context["recents"] = []
     context["recents_heading"] = words.RECENTS_HEADING
     context["recents_clear"] = words.RECENTS_CLEAR
@@ -308,6 +313,7 @@ def serve_hits(
         k=k,
         record=not _prefetched(request),
         versions=version or (),
+        bundle=bundle_of(request),
     )
     answer = TEMPLATES.TemplateResponse(request, "hits.html", context)
     # **The address the reader should end up at, not the one that

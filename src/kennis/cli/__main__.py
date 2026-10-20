@@ -30,6 +30,7 @@ from kennis.cli.commands import (
     remember_command,
     search_command,
     serve_command,
+    service_group,
 )
 from kennis.cli.group import KennisGroup
 from kennis.engine.errors import SettingsError
@@ -103,6 +104,7 @@ main.add_command(read_command)
 main.add_command(remember_command)
 main.add_command(gui_command)
 main.add_command(serve_command)
+main.add_command(service_group)
 
 
 if __name__ == "__main__":

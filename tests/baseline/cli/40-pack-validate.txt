@@ -1,0 +1,6 @@
+$ kennis pack validate provider.ken.yml
+--- exit 0
+--- stdout
+Checked provider 0.1.0
+  + valid, and the digests agree with the content
+--- stderr

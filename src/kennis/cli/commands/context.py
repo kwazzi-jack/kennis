@@ -14,7 +14,8 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand, KennisGroup
-from kennis.cli.sink import reporting
+from kennis.cli.sink import DisplaySink, reporting, say_waiting
+from kennis.client import api
 from kennis.context import existing_corpus
 from kennis.engine.context import (
     CONTEXT_COLLECTION,
@@ -35,7 +36,6 @@ from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from, chunk_parameters
 from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.settings import Settings, load_settings
-from kennis.operations import synchronise_bundle
 from kennis.render.packs import (
     describe_action,
     describe_claim_needed,
@@ -69,7 +69,7 @@ def init_command(here: bool) -> None:
     file that was deleted is written again, and anything you added is left
     alone.
     """
-    created = init_bundle(Path.cwd() if here else workspace_root())
+    created = init_bundle(Path.cwd() if here else workspace_root(Path.cwd()))
     _report_init(created)
 
 
@@ -160,9 +160,11 @@ def sync_command_for_context() -> None:
     **kennis does not commit.** The bundle is in your repository.
     """
     bundle = require_bundle()
-    context = existing_corpus()
-    with reporting() as events:
-        result = synchronise_bundle(bundle, context, events=events)
+    corpus_root = existing_corpus().corpus_root
+    with DisplaySink() as shown:
+        result = api.sync_bundle(
+            corpus_root, bundle, events=shown, on_waiting=say_waiting
+        ).result
     display.operation("Synchronised", describe_sync(result.counts))
     for action in result.actions:
         display.detail(display.sync_marker(action.verdict), describe_action(action))
@@ -336,7 +338,7 @@ def require_bundle() -> Path:
 
     Every context command but `init` starts here.
     """
-    bundle = find_bundle()
+    bundle = find_bundle(Path.cwd())
     if bundle is None:
         raise ContextNotFound
     return bundle

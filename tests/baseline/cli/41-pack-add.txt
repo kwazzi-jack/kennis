@@ -1,0 +1,9 @@
+$ kennis pack add provider/provider.ken.yml
+--- exit 0
+--- stdout
+Installed provider
+  + 1 file installed
+nothing is materialised yet: a sync converges each scope with what every installed pack declares
+  hint: run `kennis corpus sync`
+  hint: run `kennis context sync` in each project that wants it
+--- stderr

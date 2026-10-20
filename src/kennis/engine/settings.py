@@ -277,6 +277,20 @@ class BackupSettings(BaseModel):
     )
 
 
+class ServiceSettings(BaseModel):
+    """How the process that owns the corpus behaves (milestone 14)."""
+
+    idle_minutes: float = Field(
+        default=30.0,
+        gt=0,
+        le=1440,
+        description=(
+            "Minutes the kennis service waits with no task, request or open "
+            "window before it exits. The next command starts it again."
+        ),
+    )
+
+
 class Settings(BaseSettings):
     """Every setting kennis honours."""
 
@@ -290,6 +304,7 @@ class Settings(BaseSettings):
     literature: LiteratureSettings = LiteratureSettings()
     logging: LoggingSettings = LoggingSettings()
     backup: BackupSettings = BackupSettings()
+    service: ServiceSettings = ServiceSettings()
 
     @classmethod
     def settings_customise_sources(

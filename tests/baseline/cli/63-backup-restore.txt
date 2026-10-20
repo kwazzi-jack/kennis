@@ -1,0 +1,7 @@
+$ kennis backup restore backups/kennis-corpus.7z --to restored
+--- exit 0
+--- stdout
+Backup password: 
+Restored restored (<count> entries)
+  hint: run `kennis corpus index` before searching it
+--- stderr

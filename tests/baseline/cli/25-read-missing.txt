@@ -1,0 +1,7 @@
+$ kennis read no-such-document
+--- exit 1
+--- stdout
+error: no document 'no-such-document' in literature, docs or notes
+  hint: run `kennis corpus list`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

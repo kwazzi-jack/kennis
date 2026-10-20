@@ -133,6 +133,7 @@ _ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     ("logging.level", ()),
     ("logging.max_bytes", ()),
     ("logging.backup_count", ()),
+    ("service.idle_minutes", ()),
 )
 # What a front end offering every setting leaves out. `corpus.root` moves
 # the corpus from under whatever is open; `backup.folder` is chosen where

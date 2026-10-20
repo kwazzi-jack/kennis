@@ -57,6 +57,8 @@ from kennis.gui.repairs import (
 )
 from kennis.gui.responses import TEMPLATES
 from kennis.render.refusals import describe_refusal, refusal_fact
+from kennis.render.words import waiting_for
+from kennis.service.jobs import INDEX_LANE
 
 TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
@@ -182,11 +184,13 @@ def test_a_task_drawn_on_a_page_load_does_not_open_itself(
     assert not job.has_attr("data-open")
 
 
-def test_a_second_task_is_answered_by_the_running_one_with_its_panel_open(
+def test_a_second_task_in_the_same_lane_is_answered_by_itself_waiting(
     app: FastAPI, client: TestClient
 ):
+    """It was answered by the running task with a refusal in its panel; in
+    the service it is its own job, queued, saying what it waits for (14b)."""
     holding = threading.Event()
-    running = app.state.jobs.start("index", lambda events: holding.wait(20))
+    running = app.state.jobs.start("add", lambda events: holding.wait(20))
     try:
         answer = BeautifulSoup(client.post("/sync", headers=HTMX).text, "html.parser")
     finally:
@@ -194,14 +198,26 @@ def test_a_second_task_is_answered_by_the_running_one_with_its_panel_open(
 
     job = answer.find(class_="job")
     assert isinstance(job, Tag)
-    assert job["data-job"] == running.id
-    assert job["data-state"] == "running"
-    assert job.has_attr("data-open")
-    panel = job.find(attrs={"popover": True})
-    assert isinstance(panel, Tag)
-    assert words.BUSY_WITH_ANOTHER in panel.get_text()
+    assert job["data-job"] != running.id
+    assert job["data-state"] == "queued"
+    assert waiting_for("add", 1) in job.get_text()
     # Nothing outside the job: the bar is the job's.
     assert answer.find("p", class_="role-warning", recursive=False) is None
+
+
+def test_a_task_in_another_lane_does_not_wait(app: FastAPI, client: TestClient):
+    """A sync writes documents and a build writes an index: two lanes, so
+    neither is behind the other (#167)."""
+    holding = threading.Event()
+    app.state.jobs.start("index", lambda events: holding.wait(20), lane=INDEX_LANE)
+    try:
+        answer = BeautifulSoup(client.post("/sync", headers=HTMX).text, "html.parser")
+    finally:
+        holding.set()
+
+    job = answer.find(class_="job")
+    assert isinstance(job, Tag)
+    assert job["data-state"] == "running"
 
 
 def test_a_domain_error_aimed_at_the_bar_becomes_a_task(

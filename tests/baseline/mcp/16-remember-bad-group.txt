@@ -1,0 +1,3 @@
+$ remember {"group": "../outside", "text": "Escape."}
+--- error True
+Error calling tool 'remember': the group '../outside' climbs out of its collection; a group is a folder inside its collection

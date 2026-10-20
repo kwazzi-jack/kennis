@@ -44,7 +44,7 @@ def quit_interface(request: Request) -> HTMLResponse:
     request, so the page carries its stylesheet inline: a `<link>`
     would be fetched from a server that has gone.
     """
-    if request.app.state.jobs.running() is not None:
+    if request.app.state.jobs.unfinished():
         return TEMPLATES.TemplateResponse(
             request,
             "problem.html",
@@ -69,14 +69,14 @@ def serve_strip_status(request: Request) -> HTMLResponse:
 def serve_pane_documents(request: Request) -> HTMLResponse:
     """The pane's document count alone, for a finished job (#457)."""
     return TEMPLATES.TemplateResponse(
-        request, "pane-documents.html", {"pane": pane_now()}
+        request, "pane-documents.html", {"pane": pane_now(request)}
     )
 
 
 @router.get("/pane/row/{collection}")
 def serve_pane_row(request: Request, collection: str) -> HTMLResponse:
     """One collection's row in the pane, for a finished job (#457)."""
-    rows = {row.collection: row for row in pane_now().collections}
+    rows = {row.collection: row for row in pane_now(request).collections}
     if collection not in rows:
         return HTMLResponse("", status_code=404)
     return TEMPLATES.TemplateResponse(

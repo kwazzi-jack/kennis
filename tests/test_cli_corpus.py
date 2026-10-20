@@ -8,13 +8,14 @@ command-line half: what a person sees, and what the exit status says.
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from held import held_for_a_moment
 from kennis.cli.__main__ import main
-from kennis.engine.locking import corpus_lock
 
 
 @pytest.fixture(autouse=True)
@@ -653,15 +654,18 @@ def test_disowning_a_note_the_user_wrote_is_refused(run: CliRunner, isolated: Pa
     assert "did not come from a pack" in result.output
 
 
-def test_sync_refuses_while_another_command_holds_the_corpus(
+def test_sync_waits_while_another_writer_holds_the_corpus(
     run: CliRunner, isolated: Path, tmp_path: Path
 ):
+    """Waits rather than being refused (14b), and then does its work."""
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
 
-    with corpus_lock(isolated):
+    with held_for_a_moment(isolated) as hold:
         result = run.invoke(main, ["corpus", "sync"])
+        finished = time.monotonic()
 
-    assert result.exit_code != 0
-    assert "another kennis command is using the corpus" in result.output
+    assert result.exit_code == 0, result.output
+    assert finished >= hold.released, "the command did not wait for the holder"
+    assert "Synchronised" in result.output

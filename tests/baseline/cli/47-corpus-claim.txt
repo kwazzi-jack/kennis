@@ -1,0 +1,6 @@
+$ kennis corpus claim convention
+--- exit 0
+--- stdout
+Claimed Convention
+  ~ yours now; no sync will rewrite it or remove it
+--- stderr

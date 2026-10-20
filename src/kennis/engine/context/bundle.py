@@ -68,12 +68,15 @@ def is_bundle_dir(path: Path) -> bool:
     return (path / MANIFEST_FILENAME).is_file()
 
 
-def find_bundle(start: Path | None = None) -> Path | None:
+def find_bundle(start: Path) -> Path | None:
     """The bundle governing `start`, or None.
 
-    The working directory is read **at call time** rather than at import:
-    a long-lived server's working directory is wherever its client launched
-    it, and a project's bundle may be created after the server starts.
+    **`start` is always given** (#508): only a client knows where its
+    person is working. The service is shared by clients in every directory
+    and its own directory is whichever client started it, so a default of
+    the working directory would make "the project" an accident there. A
+    client passes `Path.cwd()` explicitly, and the service is handed the
+    bundle a client found.
 
     The override is honoured before the walk but is **still manifest-checked**,
     so a mistyped one fails as "no bundle" rather than silently serving a
@@ -83,7 +86,7 @@ def find_bundle(start: Path | None = None) -> Path | None:
     if override is not None:
         return override if is_bundle_dir(override) else None
 
-    here = (start if start is not None else Path.cwd()).resolve()
+    here = start.resolve()
     for directory in (here, *here.parents):
         candidate = directory / BUNDLE_DIRNAME
         if is_bundle_dir(candidate):
@@ -91,7 +94,7 @@ def find_bundle(start: Path | None = None) -> Path | None:
     return None
 
 
-def workspace_root(start: Path | None = None) -> Path:
+def workspace_root(start: Path) -> Path:
     """Where a new bundle belongs: the workspace's root, not the cwd.
 
     The nearest ancestor holding a `.git`, else `start` itself. Running
@@ -99,7 +102,7 @@ def workspace_root(start: Path | None = None) -> Path:
     bundle at the top of it rather than burying it where the command
     happened to be run - which is why the command reports the path it chose.
     """
-    here = (start if start is not None else Path.cwd()).resolve()
+    here = start.resolve()
     for directory in (here, *here.parents):
         if (directory / _GIT_DIRNAME).exists():
             return directory

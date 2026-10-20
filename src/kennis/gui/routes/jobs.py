@@ -22,7 +22,6 @@ from markupsafe import Markup
 
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
-from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddReport
 from kennis.engine.corpus.schema import COLLECTION_NAMES
@@ -38,7 +37,6 @@ from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
-from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
     ShownJob,
     shown_add,
@@ -48,6 +46,7 @@ from kennis.gui.pages import (
     shown_index,
     shown_install,
 )
+from kennis.gui.project import bundle_of
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -67,7 +66,15 @@ from kennis.operations import (
     synchronise_bundle,
     synchronise_corpus,
 )
-from kennis.render.words import describe_change
+from kennis.protocol.progress import Queued
+from kennis.render.words import JOB_KINDS, describe_change, waiting_for
+from kennis.service.jobs import (
+    CORPUS_LANE,
+    INDEX_LANE,
+    Job,
+    Jobs,
+    context_lane,
+)
 
 router = APIRouter()
 
@@ -127,7 +134,7 @@ class ActivityRow:
 def _activity_row(job: Job) -> ActivityRow:
     return ActivityRow(
         job_id=job.id,
-        kind=words.JOB_KINDS.get(job.kind, job.kind),
+        kind=JOB_KINDS.get(job.kind, job.kind),
         state=job_state(job),
         started=time.strftime("%H:%M", time.localtime(job.started_wall)),
     )
@@ -138,42 +145,36 @@ def started(
     kind: str,
     work: Callable[[EventSink], JobReport],
     *,
+    lane: str = CORPUS_LANE,
     restored: list[OutOfBandChange] | None = None,
 ) -> Response:
-    """Hand the work to a thread and answer with the panel watching it.
+    """Hand the work to its lane and answer with the panel watching it.
 
-    A second operation is refused rather than queued, and says so:
-    the corpus lock would refuse it anyway with `timeout=0`, so the
-    limit is honest, and dropping a click in silence is not.
+    A task asked for while another runs in the same lane waits its turn
+    and says what it waits for (14b); it was refused until the service,
+    because the corpus lock refused it anyway.
     """
     jobs: Jobs = request.app.state.jobs
-    try:
-        job = jobs.start(kind, work, restored=restored)
-    except AlreadyRunning as busy:
-        if not from_htmx(request):
-            return RedirectResponse(f"/job/{busy.running}", status_code=303)
-        # The running job answers, its panel open and saying why this one
-        # did not start: the bar holds one job, and replacing the running
-        # one with a sentence lost its progress until a reload (#475).
-        running = jobs.get(busy.running)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "job.html",
-            {
-                "job_id": busy.running,
-                "kind": running.kind if running is not None else kind,
-                "problem": words.BUSY_WITH_ANOTHER,
-                "open_panel": True,
-            },
-        )
+    job = jobs.start(kind, work, lane=lane, restored=restored)
     if not from_htmx(request):
         # 303: the answer to a POST that tells the browser to GET,
         # so a reload shows the job rather than starting it again
         # (#412).
         return RedirectResponse(f"/job/{job.id}", status_code=303)
-    return TEMPLATES.TemplateResponse(
-        request, "job.html", {"job_id": job.id, "kind": job.kind}
-    )
+    return TEMPLATES.TemplateResponse(request, "job.html", _shown_unfinished(job))
+
+
+def _shown_unfinished(job: Job) -> dict[str, object]:
+    """What a job's panel is drawn with before it ends: a queued one says
+    what it is waiting for, from its first recorded event."""
+    shown: dict[str, object] = {"job_id": job.id, "kind": job.kind}
+    if job.state == "queued" and job.history and isinstance(job.history[0], Queued):
+        queued = job.history[0]
+        shown |= {
+            "state": "queued",
+            "headline": waiting_for(queued.behind, queued.ahead),
+        }
+    return shown
 
 
 # Every route that starts a task, and the task it starts: a domain error
@@ -241,6 +242,7 @@ def start_index(request: Request, form: PostedForm) -> Response:
         lambda events: build_indexes(
             context, collection, events=events, restored=restored
         ),
+        lane=INDEX_LANE,
         restored=restored,
     )
 
@@ -275,7 +277,7 @@ def start_corpus_sync(request: Request) -> Response:
 @router.post("/context-sync")
 def start_bundle_sync(request: Request) -> Response:
     context = existing_corpus()
-    bundle = find_bundle()
+    bundle = bundle_of(request)
     if bundle is None:
         # `ContextNotFound` carries the command that makes one,
         # which is the whole point of the errors carrying their
@@ -286,6 +288,7 @@ def start_bundle_sync(request: Request) -> Response:
         request,
         "context-sync",
         lambda events: synchronise_bundle(bundle, context, events=events),
+        lane=context_lane(str(bundle)),
     )
 
 
@@ -326,7 +329,7 @@ def serve_job(request: Request, job_id: str) -> HTMLResponse:
     job = request.app.state.jobs.get(job_id)
     if job is None:
         return refused_a_post(request, words.NO_SUCH_JOB)
-    shown: dict[str, object] = {"job_id": job.id, "kind": job.kind}
+    shown = _shown_unfinished(job)
     if job.done.is_set():
         outcome = _outcome(request, job)
         shown |= {
@@ -339,7 +342,7 @@ def serve_job(request: Request, job_id: str) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(
         request,
         "job-page.html",
-        {**shown, "inline": True, "title": words.JOB_KINDS.get(job.kind, job.kind)},
+        {**shown, "inline": True, "title": JOB_KINDS.get(job.kind, job.kind)},
     )
 
 
@@ -491,9 +494,18 @@ class ShownBarJob:
 def shown_bar_job(request: Request) -> ShownBarJob | None:
     """The running job, else the newest that ended, for the bar."""
     jobs: Jobs = request.app.state.jobs
-    running = jobs.running()
-    if running is not None:
-        return ShownBarJob(running.id, running.kind, "running")
+    unfinished = jobs.unfinished()
+    if unfinished:
+        # The newest asked for: what the reader just did, or what a page
+        # loaded later finds still going.
+        newest = unfinished[-1]
+        shown = _shown_unfinished(newest)
+        return ShownBarJob(
+            newest.id,
+            newest.kind,
+            newest.state,
+            str(shown.get("headline", "")),
+        )
     for job in jobs.recent():
         if job.done.is_set():
             outcome = _outcome(request, job)

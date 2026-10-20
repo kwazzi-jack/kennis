@@ -6,15 +6,23 @@ stays in that file, where its reason for existing sits next to its use.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
+import signal
 import stat
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
 import pytest
 
+from in_process import InProcessServices
+from kennis.client import connection
 from kennis.engine.courtesy import forget_hosts
+from kennis.engine.settings import state_dir
+from kennis.protocol.record import find_service
 from platforms import NO_POSIX_SHELL
 
 # A fake MinerU. It parses the flags the converter passes, writes one markdown
@@ -239,3 +247,53 @@ def no_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     interpreter = empty / "python"
     interpreter.write_text("", encoding="utf-8")
     monkeypatch.setattr(sys, "executable", str(interpreter))
+
+
+@pytest.fixture(autouse=True)
+def service_in_this_process(monkeypatch: pytest.MonkeyPatch) -> InProcessServices:
+    """Every command reaches a service built in this process (14c).
+
+    Autouse for the reason the others are: a test that forgot would start
+    a real service, outside every monkeypatch and guard here (#503), and
+    `test_architecture.py` fails if this is removed. The `service` suite
+    starts processes on purpose and calls `ensure_service` itself.
+    """
+    services = InProcessServices()
+    monkeypatch.setattr(connection, "connect", services.connect)
+    return services
+
+
+@pytest.fixture(autouse=True)
+def no_service_left_running(request: pytest.FixtureRequest) -> Iterator[None]:
+    """A test not marked `service` that started a real service fails, and
+    the service is ended (14c).
+
+    A command run as a real process - the installed `kennis` in a
+    subprocess - starts a real service for its corpus, outside every guard
+    here, and that service stays for its idle timeout. One test did this
+    and left a process waiting on a lock for every run of the suite. The
+    records are under the test's own state directory, so only this test's
+    services are seen.
+    """
+    yield
+    if request.node.get_closest_marker("service") is not None:
+        return
+    # A record is a service only while its corpus lock is held, which is
+    # what `find_service` asks: a test of the records writes records with
+    # made-up process ids, and signalling one of those would signal
+    # whatever process happens to have that id.
+    running = []
+    for path in sorted(state_dir().glob("service-*.json")):
+        with contextlib.suppress(ValueError, OSError, KeyError):
+            corpus = Path(json.loads(path.read_text(encoding="utf-8"))["corpus"])
+            found = find_service(corpus)
+            if found is not None and found.pid != os.getpid():
+                running.append(found.pid)
+    for pid in running:
+        with contextlib.suppress(OSError):
+            os.kill(pid, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
+    if running:
+        pytest.fail(
+            "a test not marked `service` started a real kennis service; "
+            "mark it, or drive the command in this process with CliRunner"
+        )

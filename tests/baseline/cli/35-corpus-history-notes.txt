@@ -1,0 +1,9 @@
+$ kennis corpus history --collection notes --limit 5
+--- exit 0
+--- stdout
+  <commit>  <date>  return(corpus): to <commit>, 1 added, 1 removed
+  <commit>  <date>  restore(notes): 1 added
+  <commit>  <date>  remove(notes): 1 removed
+  <commit>  <date>  move(notes): 1 changed
+  <commit>  <date>  remember(notes): 1 documents
+--- stderr

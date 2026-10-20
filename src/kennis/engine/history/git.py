@@ -174,6 +174,12 @@ def _environment() -> dict[str, str]:
             # git. Hooks and signing, which a person's own file sets, are
             # `_OVERRIDES`.
             "GIT_CONFIG_NOSYSTEM": "1",
+            # A read never takes git's own lock. `git status` refreshes the
+            # index when a timestamp has moved, taking `index.lock` to do
+            # it, and in the service a search's status runs beside a
+            # write's commit, which fails if the lock exists at that
+            # moment. Off, status reports and writes nothing (14b).
+            "GIT_OPTIONAL_LOCKS": "0",
         }
     )
     return environment

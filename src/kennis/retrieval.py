@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Final, cast, get_args
 
 from kennis.context import Context, existing_corpus, resolve_context
-from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION, load_bundle_index
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
@@ -63,7 +62,12 @@ def context_for(collection: str) -> Context:
 
 
 def search_scope(
-    collection: str, question: str, top_k: int = 5, versions: Sequence[str] = ()
+    collection: str,
+    question: str,
+    top_k: int = 5,
+    versions: Sequence[str] = (),
+    *,
+    bundle: Path | None,
 ) -> list[Hit]:
     """The best hits for `question` in exactly one scope.
 
@@ -75,7 +79,7 @@ def search_scope(
     something false.
     """
     context = context_for(collection)
-    index = index_for(context, collection)
+    index = index_for(context, collection, bundle=bundle)
     model = index.binding.model.model if index.binding.model else None
     running = mode_for(context, index, collection)
     wanted = max(1, min(top_k, MAX_TOP_K))
@@ -103,9 +107,13 @@ def search_scope(
     return merged_across_versions(hits)[:wanted] if collection == "docs" else hits
 
 
-def index_for(context: Context, collection: str) -> LoadedIndex:
+def index_for(context: Context, collection: str, *, bundle: Path | None) -> LoadedIndex:
+    """The collection's index, or the bundle's for the context scope.
+
+    `bundle` is the one the client found (#508); None is outside a
+    project, where the context scope has no index to give.
+    """
     if collection == CONTEXT_COLLECTION:
-        bundle = find_bundle()
         if bundle is None:
             raise ContextNotFound
         return load_bundle_index(bundle)
@@ -131,7 +139,12 @@ def mode_for(context: Context, index: LoadedIndex, collection: str) -> Mode:
 
 
 def chunk_range(
-    context: Context, collection: str, document_id: str, chunk_index: int
+    context: Context,
+    collection: str,
+    document_id: str,
+    chunk_index: int,
+    *,
+    bundle: Path | None,
 ) -> tuple[int, int] | None:
     """Where one chunk of one document starts and ends, in characters.
 
@@ -149,13 +162,15 @@ def chunk_range(
     #292's other two were: every front end that shows a document
     beside a search result will ask it, and none of them owns it.
     """
-    for chunk in document_chunks(context, collection, document_id):
+    for chunk in document_chunks(context, collection, document_id, bundle=bundle):
         if chunk.chunk_index == chunk_index:
             return (chunk.char_start, chunk.char_end)
     return None
 
 
-def document_chunks(context: Context, collection: str, document_id: str) -> list[Chunk]:
+def document_chunks(
+    context: Context, collection: str, document_id: str, *, bundle: Path | None
+) -> list[Chunk]:
     """One document's chunks in the index, in order, or none.
 
     None for the same reasons `chunk_range` finds nothing: no index, or
@@ -164,7 +179,7 @@ def document_chunks(context: Context, collection: str, document_id: str) -> list
     freshness and this reads only the index.
     """
     try:
-        index = index_for(context, collection)
+        index = index_for(context, collection, bundle=bundle)
     except KennisError:
         return []
     return sorted(
@@ -228,6 +243,7 @@ def sweep(
     filters: list[Filter] | None = None,
     mode: str | None = None,
     versions: Sequence[str] = (),
+    bundle: Path | None,
 ) -> Sweep:
     """Search every scope in `scopes` that can be searched.
 
@@ -248,6 +264,9 @@ def sweep(
     `versions` is the reader's choice of docs versions, as
     `excluded_versions` reads it; nothing chosen searches each project's
     current one, so an ordinary search holds one copy of a page (#489).
+
+    `bundle` is the project's bundle as the client found it, or None
+    outside a project (#508).
     """
     wants_corpus = any(scope != CONTEXT_COLLECTION for scope in scopes)
     # Required only when a corpus scope was *named*. Under a sweep a
@@ -257,12 +276,6 @@ def sweep(
     context = existing_corpus() if wants_corpus and named else resolve_context()
     corpus_exists = (context.corpus_root / ".git").is_dir()
     wanted = top_k or context.settings.retrieval.default_top_k
-    # Resolved once rather than per scope: the walk gives the same
-    # answer every time within one search, and the caller needs to
-    # know whether there was a bundle at all to say anything sensible
-    # about a skipped context.
-    bundle = find_bundle()
-
     searched: list[str] = []
     skipped: list[Skipped] = []
     degraded: list[str] = []

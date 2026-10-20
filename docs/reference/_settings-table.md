@@ -80,3 +80,11 @@ Where the encrypted backup of the corpus is written.
 | key | type | default | what it does |
 |---|---|---|---|
 | `folder` | `str` | `""` | Folder the encrypted backup is written to, often one a cloud client synchronises. The backup holds the full text of every document. |
+
+### `[service]`
+
+How the process that owns the corpus behaves (milestone 14).
+
+| key | type | default | what it does |
+|---|---|---|---|
+| `idle_minutes` | `float` | `30.0` | Minutes the kennis service waits with no task, request or open window before it exits. The next command starts it again. |

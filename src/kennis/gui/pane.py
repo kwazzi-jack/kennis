@@ -19,11 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from starlette.requests import Request
+
 from kennis.context import existing_corpus
-from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.errors import KennisError
 from kennis.engine.history.history import HistoryEntry
+from kennis.gui.project import bundle_of
 from kennis.holdings import Holding, holdings, installed_packs, last_change
 
 type PaneState = Literal["empty", "none", "behind", "current"]
@@ -101,15 +103,17 @@ def waiting_in(holding: Holding) -> int:
     return holding.freshness.added + holding.freshness.changed
 
 
-def pane_now() -> Pane:
-    """The pane as it is at this request."""
+def pane_now(request: Request) -> Pane:
+    """The pane as it is at this request, for this tab's project."""
     try:
         context = existing_corpus()
         held = holdings(context)
         packs = len(installed_packs(context))
         newest = last_change(context)
     except KennisError:
-        return Pane(collections=(), project=project_name(), readable=False)
+        return Pane(
+            collections=(), project=project_name(bundle_of(request)), readable=False
+        )
     return Pane(
         collections=tuple(
             PaneCollection(
@@ -120,20 +124,19 @@ def pane_now() -> Pane:
             )
             for holding in held
         ),
-        project=project_name(),
+        project=project_name(bundle_of(request)),
         packs=packs,
         last_change=newest,
     )
 
 
-def project_name() -> str | None:
-    """The name of the project whose bundle governs here, or None.
+def project_name(bundle: Path | None) -> str | None:
+    """The name of the project whose bundle this is, or None.
 
     The bundle's manifest carries no name and `.context` is the same in
     every project, so the directory holding it is what tells one project
     from another (#407).
     """
-    bundle = find_bundle()
     return None if bundle is None else bundle.parent.name
 
 

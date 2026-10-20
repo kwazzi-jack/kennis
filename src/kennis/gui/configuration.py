@@ -191,6 +191,7 @@ _GROUP_OF_SECTION: Final[dict[str, str]] = {
     "corpus": "adding",
     "literature": "adding",
     "logging": "logging",
+    "service": "service",
 }
 
 

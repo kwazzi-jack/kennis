@@ -14,10 +14,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.docs.versions import project_versions
 from kennis.render.words import describe_held_versions
 
 type Detail = Literal["summary", "documents"]
@@ -38,7 +37,7 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
     The `context` bundle is not listed: it lives in the project's
     repository and its files are read with native file tools.
     """
-    context = existing_corpus()
+    corpus_root = existing_corpus().corpus_root
     wanted = [collection] if collection else list(COLLECTION_NAMES)
     unknown = [name for name in wanted if name not in COLLECTION_NAMES]
     if unknown:
@@ -52,7 +51,7 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
 
     lines: list[str] = []
     for name in wanted:
-        contents = Collection(root=context.corpus_root, name=name).contents()
+        contents = api.contents(corpus_root, name)
         held = contents.documents
         lines.append(f"{name}: {len(held)} document{'' if len(held) == 1 else 's'}")
         if name == "docs":
@@ -60,9 +59,7 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
             # version` says it: a line per project, not per page.
             lines.extend(
                 f"  {project}: {describe_held_versions(versions)}"
-                for project, versions in project_versions(
-                    Collection(root=context.corpus_root, name=name).path
-                ).items()
+                for project, versions in api.docs_versions(corpus_root).items()
             )
         if detail == "documents":
             lines.extend(

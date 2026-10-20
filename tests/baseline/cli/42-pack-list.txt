@@ -1,0 +1,6 @@
+$ kennis pack list
+--- exit 0
+--- stdout
+  provider  0.1.0, 1 file
+            a provider
+--- stderr

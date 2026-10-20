@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import (
@@ -21,6 +22,7 @@ from kennis.gui.pages import (
     ShownOutcome,
     known_groups,
 )
+from kennis.gui.project import bundle_of
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -51,7 +53,12 @@ def _remember_context(outcome: ShownOutcome | None) -> dict[str, object]:
 
 
 def _remembered(
-    text: str, *, title: str | None, group: str | None, to_context: bool
+    text: str,
+    *,
+    title: str | None,
+    group: str | None,
+    to_context: bool,
+    bundle: Path | None,
 ) -> ShownOutcome:
     """Write, and turn whatever happened into something to show.
 
@@ -65,12 +72,15 @@ def _remembered(
         return ShownOutcome(message=words.NOTHING_TO_REMEMBER, role="role-warning")
     try:
         if to_context:
-            note, bundle_name = write_context_note(text, title=title, group=group)
+            note, bundle_name = write_context_note(
+                text, title=title, group=group, bundle=bundle
+            )
             return words.describe_written_to_bundle(note, bundle_name)
         restored: list[OutOfBandChange] = []
-        report = write_note(text, title=title, group=group, restored=restored)
+        context = existing_corpus()
+        report = write_note(context, text, title=title, group=group, restored=restored)
         written = words.describe_written(
-            report, relative_to_corpus(report.path, existing_corpus().corpus_root)
+            report, relative_to_corpus(report.path, context.corpus_root)
         )
         return replace(
             written, notes=tuple(describe_change(change) for change in restored)
@@ -108,7 +118,13 @@ def accept_remembered(request: Request, form: PostedForm) -> HTMLResponse:
     title = str(form.get("title") or "") or None
     group = str(form.get("group") or "") or None
     to_context = str(form.get("target") or "notes") == "context"
-    outcome = _remembered(text_given, title=title, group=group, to_context=to_context)
+    outcome = _remembered(
+        text_given,
+        title=title,
+        group=group,
+        to_context=to_context,
+        bundle=bundle_of(request),
+    )
     if not from_htmx(request):
         return action_page(
             request, "/remember", "forms/remember.html", _remember_context(outcome)

@@ -1,4 +1,4 @@
-{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
+{% set pane_open = pane_state(request) %}{% set pane = pane_now(request) %}{% set sized = sizes(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
 <html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
 <head>
 <meta charset="utf-8">

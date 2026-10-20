@@ -13,7 +13,6 @@ from fastapi.responses import (
 )
 
 from kennis.context import Context, existing_corpus, resolve_context
-from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.status import bundle_freshness
 from kennis.engine.errors import (
@@ -29,6 +28,7 @@ from kennis.gui.pages import (
     shown_document,
     shown_matches,
 )
+from kennis.gui.project import bundle_of
 from kennis.gui.responses import TEMPLATES, problem_page
 from kennis.holdings import (
     document_marks,
@@ -132,7 +132,7 @@ def _marked(
     if freshness.state != "in step":
         return None, True
 
-    found = chunk_range(context, collection, document_id, index)
+    found = chunk_range(context, collection, document_id, index, bundle=None)
     if found is None:
         return None, False
     start, end = found
@@ -165,7 +165,9 @@ def _marked_in_bundle(
     if freshness.state != "in step":
         return None, True
 
-    found = chunk_range(resolve_context(), CONTEXT_COLLECTION, relative_path, index)
+    found = chunk_range(
+        resolve_context(), CONTEXT_COLLECTION, relative_path, index, bundle=bundle
+    )
     if found is None:
         return None, False
     start, end = found
@@ -210,7 +212,9 @@ def serve_document(
             load_remote=load_remote,
             withheld=withheld,
             placeable=None if freshness is None else freshness.state == "in step",
-            chunks=lambda: document_chunks(context, collection, document.document_id),
+            chunks=lambda: document_chunks(
+                context, collection, document.document_id, bundle=None
+            ),
         ),
     )
 
@@ -231,7 +235,7 @@ def serve_bundle_document(
     the corpus route is what answered a quarter of all searches
     with "unknown collection". Concern #332.
     """
-    bundle = find_bundle()
+    bundle = bundle_of(request)
     if bundle is None:
         return problem_page(request, ContextNotFound())
     marked, withheld = _marked_in_bundle(bundle, relative_path, chunk)
@@ -257,7 +261,7 @@ def serve_bundle_document(
             withheld=withheld,
             placeable=None if freshness is None else freshness.state == "in step",
             chunks=lambda: document_chunks(
-                resolve_context(), CONTEXT_COLLECTION, relative_path
+                resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
             ),
         ),
     )

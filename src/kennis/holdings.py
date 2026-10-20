@@ -23,8 +23,14 @@ from typing import Literal
 
 from kennis.context import Context
 from kennis.engine.corpus.collection import Collection, CollectionContents
+from kennis.engine.corpus.document import DocumentFacts
 from kennis.engine.corpus.layout import index_root, relative_to_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import (
+    ProjectVersions,
+    pages_of_version,
+    project_versions,
+)
 from kennis.engine.history.freshness import (
     DocumentStates,
     Freshness,
@@ -32,7 +38,13 @@ from kennis.engine.history.freshness import (
     index_freshness,
 )
 from kennis.engine.history.git import git
-from kennis.engine.history.history import HistoryEntry, read_history
+from kennis.engine.history.history import (
+    HistoryEntry,
+    ReturnChanges,
+    read_history,
+    what_a_return_changes,
+)
+from kennis.engine.history.outofband import OutOfBandChange, detect_changes
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.installed import InstalledPack, list_installed
 from kennis.engine.rag.index import published_files, read_manifest
@@ -273,17 +285,160 @@ def last_change(context: Context) -> HistoryEntry | None:
     return newest[0] if newest else None
 
 
+# ---------------------------------------------------------------------------
+# What the command line's corpus reports show (14c)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionStatus:
+    """One collection as `corpus status` reports it.
+
+    `facts` are read through `survey`, the lenient reader, on purpose:
+    `DocumentInvalid` names `corpus status` as its resolution, so a status
+    that used the strict reader would die on exactly the corpus it exists
+    to diagnose (#21). `freshness` is None when there is no index.
+    """
+
+    collection: str
+    facts: list[DocumentFacts]
+    freshness: Freshness | None
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusStatus:
+    """What the corpus holds, and what changed outside kennis."""
+
+    collections: list[CollectionStatus]
+    changes: list[OutOfBandChange]
+
+
+def corpus_status(context: Context) -> CorpusStatus:
+    repository = Repository(context.corpus_root)
+    return CorpusStatus(
+        collections=[
+            CollectionStatus(
+                collection=name,
+                facts=Collection(root=context.corpus_root, name=name).survey(),
+                freshness=freshness_of(context, repository, name),
+            )
+            for name in COLLECTION_NAMES
+        ],
+        changes=detect_changes(repository),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class TreeEntry:
+    """One line of a collection's tree: a group, or a document.
+
+    `identifier` is a document's handle, or None for a document whose
+    frontmatter carries none to read - one kennis cannot validate rather
+    than one it cannot find.
+    """
+
+    name: str
+    depth: int
+    group: bool
+    identifier: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionTree:
+    collection: str
+    entries: list[TreeEntry]
+
+
+def corpus_tree(context: Context, collection: str | None) -> list[CollectionTree]:
+    """The corpus as the directories it really is, each document with its
+    handle; a collection with no folder is left out.
+
+    The identifiers come from `survey`, so a document that fails validation
+    still has one: a tree is a picture of what is on disk, and a document
+    kennis cannot read is exactly the one a reader needs to be shown. A
+    wrapped document - `Foo/content.md` with its `images/` - is one entry,
+    its wrapper, and nothing inside it is walked.
+    """
+    trees: list[CollectionTree] = []
+    for name in [collection] if collection else list(COLLECTION_NAMES):
+        found = Collection(root=context.corpus_root, name=name)
+        root = found.path
+        if not root.is_dir():
+            continue
+        identifiers = {
+            (facts.wrapper_dir or facts.md_path).name: facts.identifier
+            for facts in found.survey()
+        }
+        entries: list[TreeEntry] = []
+        for path in sorted(root.rglob("*")):
+            if path.name.startswith(".") or any(
+                part in identifiers for part in path.parts[:-1]
+            ):
+                continue
+            depth = len(path.relative_to(root).parts) - 1
+            group = path.is_dir() and path.name not in identifiers
+            entries.append(
+                TreeEntry(
+                    name=path.name,
+                    depth=depth,
+                    group=group,
+                    identifier=None if group else identifiers.get(path.name),
+                )
+            )
+        trees.append(CollectionTree(collection=name, entries=entries))
+    return trees
+
+
+def history_of(
+    context: Context, collection: str | None, limit: int
+) -> list[HistoryEntry]:
+    """What kennis did to the corpus, newest first."""
+    return read_history(
+        Repository(context.corpus_root), collection=collection, limit=limit
+    )
+
+
+def docs_versions(context: Context) -> dict[str, ProjectVersions]:
+    """Every docs project that has versions, with the versions held and the
+    current one."""
+    return project_versions(Collection(root=context.corpus_root, name="docs").path)
+
+
+def version_pages(context: Context, project: str, version: str) -> int:
+    """How many pages removing one docs version would remove, or the refusal
+    naming the versions held: said before anything is removed."""
+    return pages_of_version(
+        Collection(root=context.corpus_root, name="docs").path, project, version
+    )
+
+
+def return_preview(context: Context, commit: str) -> ReturnChanges:
+    """What returning the corpus to `commit` would put back, remove and
+    change, said before it is done."""
+    return what_a_return_changes(Repository(context.corpus_root), commit)
+
+
 __all__ = [
+    "CollectionStatus",
+    "CollectionTree",
     "CorpusState",
+    "CorpusStatus",
     "DocumentMarks",
     "DocumentState",
     "Holding",
+    "TreeEntry",
     "contents_of",
     "corpus_state",
+    "corpus_status",
+    "corpus_tree",
+    "docs_versions",
     "document_marks",
     "freshness_of",
+    "history_of",
     "holdings",
     "installed_packs",
     "last_change",
+    "return_preview",
     "revision",
+    "version_pages",
 ]

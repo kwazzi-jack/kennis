@@ -13,7 +13,7 @@ chromium`, then `uv run pytest -m browser`. `KENNIS_TEST_CHROMIUM` names a
 Chromium to use instead of Playwright's own.
 
 Each test is one thing a person does, with the server and the browser as
-they would run them: `serve.run` on a thread, on loopback, with its token.
+they would run them: the service, started as `kennis gui` starts it.
 """
 
 from __future__ import annotations
@@ -23,12 +23,17 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-import httpx
 import pytest
+import uvicorn
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
-from kennis.gui import serve, words
+from kennis.context import existing_corpus
+from kennis.gui import words
+from kennis.gui.app import new_token
+from kennis.render.words import JOB_KINDS
+from kennis.service.app import build_service_app
+from kennis.service.serve import ANY_PORT, HOST, port_of
 
 playwright = pytest.importorskip("playwright.sync_api")
 
@@ -62,22 +67,25 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def address(corpus: Path) -> Iterator[str]:
-    """The address `kennis gui` prints, token and all, for a running server."""
-    ready = threading.Event()
-    given: list[str] = []
+    """The address `kennis gui` prints, token and all, for the service's
+    application served on a thread of this process.
 
-    def note(url: str) -> None:
-        given.append(url)
-        ready.set()
-
-    runner = threading.Thread(
-        target=serve.run, args=(note,), kwargs={"open_browser": False}, daemon=True
+    In this process rather than a real service's, so a test's stand-in for
+    a lookup reaches the server and the network guard (#495) holds there:
+    a service process has neither, and a preview test reached arXiv. The
+    process itself is the `service` suite's (`test_service_process.py`).
+    """
+    token = new_token()
+    stopping = threading.Event()
+    app = build_service_app(token, existing_corpus().corpus_root, on_stop=stopping.set)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=HOST, port=ANY_PORT, log_level="warning")
     )
+    runner = threading.Thread(target=server.run, daemon=True)
     runner.start()
-    assert ready.wait(10)
-    yield given[0]
-    with httpx.Client(timeout=10) as http:
-        http.post(given[0].replace("/?", "/quit?"))
+    port = port_of(server)
+    yield f"http://{HOST}:{port}/?token={token}"
+    server.should_exit = True
     runner.join(timeout=10)
 
 
@@ -309,7 +317,7 @@ def test_an_index_started_here_reports_its_outcome(page: playwright.Page) -> Non
 
     page.click("form[action='/index'] button[type=submit]")
 
-    page.wait_for_selector(f"text={words.JOB_KINDS['index']}", timeout=_WAIT_MS)
+    page.wait_for_selector(f"text={JOB_KINDS['index']}", timeout=_WAIT_MS)
     page.wait_for_selector("#job .job[data-state='done']", timeout=_WAIT_MS)
 
 

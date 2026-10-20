@@ -1,0 +1,6 @@
+$ kennis context init
+--- exit 0
+--- stdout
+Created context bundle at <scratch>/project/.context
+start at .context/LANDING.md
+--- stderr

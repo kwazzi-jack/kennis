@@ -1,0 +1,6 @@
+$ kennis corpus disown convention
+--- exit 0
+--- stdout
+Disowned Convention
+  ~ provider's again; the next sync may rewrite it or remove it
+--- stderr

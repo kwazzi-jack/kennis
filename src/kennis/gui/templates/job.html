@@ -5,9 +5,10 @@
    elsewhere, and gives focus back, with no script. On the job's own page
    the panel is drawn in place.
 
-   A running job is watched by `progress.js`, which writes the server's
-   words into every place that shows them; a finished one arrives drawn,
-   its outcome rendered by the server.
+   A running or queued job is watched by `progress.js`, which writes the
+   server's words into every place that shows them; a finished one arrives
+   drawn, its outcome rendered by the server. A queued one says what it
+   waits for until its lane takes it (14b).
 
    `open_panel` is set only on an answer to the reader's own action - a
    task refused before it began, or a second task asked for while this one
@@ -43,4 +44,4 @@
     </div>
   </div>
 </div>
-{% if state == "running" %}<script defer src="/static/progress.js"></script>{% endif %}
+{% if state in ("running", "queued") %}<script defer src="/static/progress.js"></script>{% endif %}

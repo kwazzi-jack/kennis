@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Final
 
@@ -51,17 +52,42 @@ def lock_path(root: Path | str) -> Path:
     return Path(root) / _LOCK_FILE
 
 
+# Whether a corpus lock taken here waits for its holder. Context-local
+# rather than an argument, because the choice belongs to where the work runs
+# - a service job in its lane - and not to each of the dozen places an
+# operation takes the lock, nor to the request that built its context.
+_WAITING: Final[ContextVar[bool]] = ContextVar("waiting_for_the_corpus", default=False)
+
+
+@contextmanager
+def waiting_for_the_corpus() -> Iterator[None]:
+    """Inside this block, a corpus lock waits for its holder to let go.
+
+    **Waiting is the service's** (14b): it runs every write in a lane, in
+    the order they were asked for, so a write that finds the corpus held
+    was asked for after the holder and should follow it rather than be
+    lost. A command run on its own, and a request answered on its own
+    thread, have nobody to queue behind and are told at once.
+    """
+    token = _WAITING.set(True)
+    try:
+        yield
+    finally:
+        _WAITING.reset(token)
+
+
 @contextmanager
 def corpus_lock(root: Path | str) -> Iterator[None]:
     """Hold the corpus at `root` for the duration of the block.
 
-    Raises `CorpusBusy` immediately if another process holds it. The lock is
-    released when the block ends, including when it ends by raising - a
-    command that failed must not leave the corpus locked.
+    Raises `CorpusBusy` immediately if another process holds it, unless
+    inside `waiting_for_the_corpus`, when it blocks until the holder lets
+    go. The lock is released when the block ends, including when it ends
+    by raising - a command that failed must not leave the corpus locked.
     """
     path = lock_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(str(path), timeout=0)
+    lock = FileLock(str(path), timeout=-1 if _WAITING.get() else 0)
     try:
         lock.acquire()
     except Timeout as timed_out:
@@ -106,4 +132,10 @@ def index_lock(index_root: Path | str, collection: str) -> Iterator[None]:
         lock.release()
 
 
-__all__ = ["corpus_lock", "index_lock", "index_lock_path", "lock_path"]
+__all__ = [
+    "corpus_lock",
+    "index_lock",
+    "index_lock_path",
+    "lock_path",
+    "waiting_for_the_corpus",
+]

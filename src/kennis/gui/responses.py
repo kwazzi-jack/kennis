@@ -32,7 +32,6 @@ from kennis.engine.errors import (
 from kennis.engine.history.history import HistoryEntry
 from kennis.gui import words
 from kennis.gui.icons import icon
-from kennis.gui.jobs import Job
 from kennis.gui.layout import SIZES, sizes_of
 from kennis.gui.pages import (
     ShownOutcome,
@@ -47,9 +46,11 @@ from kennis.holdings import (
     last_change,
     revision,
 )
+from kennis.render.words import JOB_KINDS
 from kennis.retrieval import (
     EVERY_SCOPE,
 )
+from kennis.service.jobs import Job
 
 _HERE: Final = Path(__file__).parent
 
@@ -167,7 +168,7 @@ TEMPLATES.env.globals.update(
         "size_bounds": SIZES,
         "resize_labels": words.RESIZE_LABELS,
         "job_doing": words.JOB_DOING,
-        "job_kinds": words.JOB_KINDS,
+        "job_kinds": JOB_KINDS,
         "job_details": words.JOB_DETAILS,
         "open_as_page": words.OPEN_AS_PAGE,
         "pane_now": pane_now,
@@ -413,6 +414,8 @@ def refused_in_the_form(request: Request, place: str, problem: str) -> HTMLRespo
 
 
 def job_state(job: Job) -> str:
+    if job.state == "queued":
+        return words.JOB_QUEUED
     if not job.done.is_set():
         return words.JOB_RUNNING
     return words.JOB_FAILED if job.failed else words.JOB_FINISHED

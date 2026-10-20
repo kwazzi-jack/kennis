@@ -400,6 +400,36 @@ def fetching_model(model: str) -> str:
     return f"the embedding model {model}"
 
 
+# What each kind of job is called where a person reads it: the window's
+# strip and Activity page, and a terminal waiting its turn. The keys are
+# the kinds the service starts jobs under.
+JOB_KINDS: Final[dict[str, str]] = {
+    "add": "Add",
+    "index": "Index",
+    "sync": "Corpus sync",
+    "context-sync": "Project context sync",
+    "pack": "Pack install",
+    "backup": "Backup",
+    "remember": "Note",
+    "claim": "Change of owner",
+    "move": "Move",
+    "remove": "Removal",
+    "restore": "Putting back",
+    "return": "Return",
+    "version": "Docs version change",
+}
+
+
+def waiting_for(behind: str, ahead: int) -> str:
+    """What a job asked for behind others in its lane says until its turn
+    (14b): the nearest by name, and how many more."""
+    name = JOB_KINDS.get(behind, behind).lower()
+    more = ahead - 1
+    return f"Waiting for the {name} to finish" + (
+        f", and {count_of(more, 'task')} before it" if more else ""
+    )
+
+
 def running_for(seconds: float) -> str:
     """How long a job has been running, for a clock that ticks once a second.
 
@@ -429,33 +459,34 @@ def progress_label(operation: str) -> str:
     return _PARTICIPLES.get(operation, operation.capitalize())
 
 
-def still_running_on_interrupt(kind: str) -> str:
-    """What `kennis gui` says to a Ctrl-C that arrives during a job (#422)."""
-    return (
-        f"A {kind} job is still running, and stopping now would end it "
-        "wherever it is. Wait for it, or press Ctrl-C again to stop anyway."
-    )
-
-
 # The published documentation, as `mkdocs.yml`'s `site_url` names it; a
 # test holds the two together. A page's address is this, the page's path
 # under `docs/` without `.md`, and a heading's fragment.
 DOCS_SITE: Final = "https://kwazzi-jack.github.io/kennis/"
 
 
-# `kennis gui` when a window is already open (Brian, 2026-10-17, #484).
-OPEN_OR_REPLACE: Final = "Open it, replace it, or cancel?"
-OPEN_CHOICES: Final = ("open", "replace", "cancel")
-REPLACED_THE_WINDOW: Final = "the other kennis window"
+# The service that owns the corpus (milestone 14), as `kennis gui` and
+# `kennis service` speak of it.
+SERVICE_NOT_RUNNING: Final = "no kennis service is running for this corpus"
+TOKEN_IN_THE_ADDRESS: Final = (
+    "The token is in the address, and lasts as long as the service runs."
+)
+SERVICE_STOPS_ITSELF: Final = (
+    "It stops by itself when idle, and the next command starts it again."
+)
 
 
-def window_already_open(started: str, version: str) -> str:
-    """Said before the choice; the time and version tell an old window
-    from one started a minute ago, and kennis before a reinstall from
-    kennis after it."""
+def service_running(pid: int, started: str, version: str) -> str:
+    """One service, as `kennis service status` reports it."""
+    return f"process {pid}, started {started}, kennis {version}"
+
+
+def waiting_for_another_version(version: str) -> str:
+    """Said once while a busy service of another kennis version finishes
+    its task before it is replaced."""
     return (
-        f"kennis is already open in another window, started {started} "
-        f"(kennis {version})"
+        f"the kennis service running is version {version} and busy; "
+        "waiting for its task to finish before replacing it"
     )
 
 

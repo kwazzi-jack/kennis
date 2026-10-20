@@ -61,6 +61,7 @@ EXPECTED_GROUPS = {
         "logging.max_bytes",
         "logging.backup_count",
     ],
+    "Background service": ["service.idle_minutes"],
 }
 EXPECTED_ROWS = [key for keys in EXPECTED_GROUPS.values() for key in keys]
 

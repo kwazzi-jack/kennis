@@ -1,0 +1,23 @@
+$ read_notes {"requests": [{"document_id": "doc0000001"}, {"before": 0, "chunk_index": 2, "document_id": "doc0000001"}, {"document_id": "no-such-document"}, {"chunk_index": -1, "document_id": "doc0000001"}]}
+--- error False
+[notes] calibration  (doc0000001)  notes/calibration.md
+# Calibration
+
+Calibration solves for antenna gains and phase.
+
+## Gains
+
+The gain of each antenna is solved per interval.
+
+## Phase
+
+Phase calibration follows the bandpass.
+
+[notes] calibration  (doc0000001)  notes/calibration.md  (chunk 2)
+## Phase
+
+Phase calibration follows the bandpass.
+
+no-such-document: no document 'no-such-document' in the notes collection. Run `kennis corpus list`.
+
+doc0000001: chunk_index -1 is negative. Pass the `chunk` of a search hit, which counts from 0.

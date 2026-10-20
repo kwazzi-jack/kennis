@@ -14,20 +14,17 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand, KennisGroup
-from kennis.cli.sink import reporting
+from kennis.cli.sink import DisplaySink, reporting, say_waiting
+from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.installed import (
     InstalledPack,
     PackListing,
-    list_installed,
     overlaps_between,
-    remove_pack,
 )
 from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
 from kennis.engine.pack.update import PackUpdate, update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
-from kennis.operations import install_a_pack
 from kennis.render.machine_readable import pack_list_document
 from kennis.render.packs import (
     describe_damage,
@@ -83,9 +80,11 @@ def add_command(path: Path) -> None:
     records what the provider declared. `corpus sync` and `context sync`
     converge the documents with it, and neither is built.
     """
-    context = existing_corpus()
-    with reporting() as events:
-        install = install_a_pack(context, path, events=events)
+    corpus_root = existing_corpus().corpus_root
+    with DisplaySink() as shown:
+        install = api.install_pack(
+            corpus_root, path, events=shown, on_waiting=say_waiting
+        ).result
     display.operation(_INSTALL_VERBS[install.outcome], install.pack_id)
     display.detail(_INSTALL_MARKERS[install.outcome], describe_install(install))
     declared = describe_declarations(install)
@@ -281,8 +280,7 @@ def list_command(*, as_json: bool) -> None:
     """
     if as_json:
         display.declare_stdout_a_payload()
-    context = existing_corpus()
-    listing = list_installed(context.corpus_root)
+    listing = api.pack_listing(existing_corpus().corpus_root)
     if as_json:
         display.plain(pack_list_document(listing).model_dump_json(indent=2))
         return
@@ -333,8 +331,7 @@ def status_command() -> None:
     told about is one nobody can correct. Reported here every run rather
     than once, inside an automated provider run nobody reads.
     """
-    context = existing_corpus()
-    listing = list_installed(context.corpus_root)
+    listing = api.pack_listing(existing_corpus().corpus_root)
     for installed in listing.packs:
         display.operation(installed.state.pack_id, describe_installed(installed))
         display.detail("=", describe_when(installed))
@@ -391,9 +388,11 @@ def remove_command(pack_id: str) -> None:
     checked out - kennis keeps no registry of your projects, so it cannot
     reach them. They converge when each one is next synchronised.
     """
-    context = existing_corpus()
-    with corpus_lock(context.corpus_root), reporting() as events:
-        removal = remove_pack(context.corpus_root, pack_id, events=events)
+    corpus_root = existing_corpus().corpus_root
+    with DisplaySink() as shown:
+        removal = api.remove_pack(
+            corpus_root, pack_id, events=shown, on_waiting=say_waiting
+        ).result
     display.operation("Removed", removal.pack_id)
     display.detail("-", describe_removal(removal))
     display.guidance(describe_what_remove_cannot_reach())

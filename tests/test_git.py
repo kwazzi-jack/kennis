@@ -8,6 +8,7 @@ closed it fails instead, which is something a caller can report.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -194,3 +195,27 @@ def test_the_result_is_a_value_rather_than_a_process(repository: Path):
 
     assert isinstance(result, GitResult)
     assert not isinstance(result, subprocess.CompletedProcess)
+
+
+def test_a_status_never_rewrites_the_index(repository: Path):
+    """A read does not take git's own lock (14b).
+
+    In the service a search's `git status` runs beside a write's commit, in
+    one process. Status refreshes `.git/index` when a file's timestamp has
+    moved, taking `index.lock` to do it, and a commit that starts in that
+    moment fails because the lock exists. `GIT_OPTIONAL_LOCKS=0` stops
+    status from taking it, which is visible as the index left unwritten.
+    """
+    tracked = repository / "note.md"
+    tracked.write_text("text\n", encoding="utf-8")
+    assert git(["add", "note.md"], cwd=repository).ok
+    assert git(["commit", "-q", "-m", "first"], cwd=repository).ok
+    # The same content with a new timestamp: the index's cached stat is
+    # stale, which is exactly what a refresh would rewrite.
+    stamp = tracked.stat().st_mtime_ns + 5_000_000_000
+    os.utime(tracked, ns=(stamp, stamp))
+    before = (repository / ".git" / "index").read_bytes()
+
+    assert git(["status", "--porcelain"], cwd=repository).ok
+
+    assert (repository / ".git" / "index").read_bytes() == before

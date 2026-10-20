@@ -31,9 +31,9 @@ from kennis.engine.history.repository import Repository
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.responses import REVISION_HEADER
-from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
 from kennis.render.theme import ANSI_COLOURS, ROLES
+from kennis.service.serve import ANY_PORT, HOST
 
 TOKEN = "a-test-token"
 STATIC_SCRIPTS = Path(__file__).parents[1] / "src" / "kennis" / "gui" / "static"

@@ -1,0 +1,5 @@
+$ kennis context sync
+--- exit 0
+--- stdout
+Synchronised nothing declared by any installed pack
+--- stderr

@@ -1,0 +1,4 @@
+$ kennis -q corpus index
+--- exit 0
+--- stdout
+--- stderr

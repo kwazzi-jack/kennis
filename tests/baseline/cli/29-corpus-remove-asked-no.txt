@@ -1,0 +1,6 @@
+$ kennis corpus remove beams
+--- exit 130
+--- stdout
+Remove 'beams' from notes? [y/N]: n
+--- stderr
+Cancelled: nothing was changed

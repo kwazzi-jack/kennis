@@ -72,7 +72,7 @@
   <button type="submit">{{ index_now_label }}</button>
 </form>
 {% endif %}
-{% if shown.sync_after %}{% set pane = pane_now() %}
+{% if shown.sync_after %}{% set pane = pane_now(request) %}
 <form class="index-now" action="/sync" method="post" hx-post="/sync" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
   <button type="submit">{{ sync_corpus_label }}</button>
   {% if pane.project %}<button type="submit" formaction="/context-sync" hx-post="/context-sync" hx-disabled-elt="this">{{ sync_context_label }}</button>{% endif %}

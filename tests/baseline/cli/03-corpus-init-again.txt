@@ -1,0 +1,7 @@
+$ kennis corpus init
+--- exit 1
+--- stdout
+error: <scratch>/corpus is already a kennis corpus
+  hint: run `kennis corpus status`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

@@ -2252,12 +2252,16 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
 .job-state { display: inline-flex; flex: none; }
 .job-state > * { display: none; }
 .job[data-state="running"] .job-state .ring,
+.job[data-state="queued"] .job-state .ring,
 .job[data-state="done"] .job-state .icon:nth-child(2),
 .job[data-state="failed"] .job-state .icon:nth-child(3),
 .job[data-state="attention"] .job-state .icon:nth-child(4) { display: inline-block; }
 /* The shared ring rule draws it inline, and is the more specific. */
-.job:not([data-state="running"]) .job-state .ring { display: none; }
+.job:not([data-state="running"], [data-state="queued"]) .job-state .ring { display: none; }
 .job[data-state="running"] .job-state { color: var(--role-command); }
+/* Waiting its turn in its lane (14b): the ring, still, in the muted ink. */
+.job[data-state="queued"] .job-state { color: var(--role-muted); }
+.job[data-state="queued"] .job-state .ring { animation: none; }
 .job[data-state="done"] .job-state { color: var(--role-operation); }
 .job[data-state="failed"] .job-state { color: var(--role-error); }
 .job[data-state="attention"] .job-state { color: var(--role-warning); }

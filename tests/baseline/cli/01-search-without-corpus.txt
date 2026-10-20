@@ -1,0 +1,7 @@
+$ kennis search anything
+--- exit 1
+--- stdout
+error: there is nothing to search: no corpus on this machine, and no context bundle in this directory
+  hint: run `kennis corpus init`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

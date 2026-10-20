@@ -10,13 +10,14 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from held import held_for_a_moment
 from kennis.cli.__main__ import main
-from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.store import STATE_FILENAME, pack_root
 from kennis.engine.pack.validate import content_digest
 from kennis.render.machine_readable import PackListDocument
@@ -345,19 +346,20 @@ def test_a_pack_whose_digests_are_stale_installs_nothing(
     assert not (corpus / "packs" / "boepie").exists()
 
 
-def test_add_is_refused_while_the_corpus_is_locked(
+def test_add_waits_while_the_corpus_is_held_and_then_installs(
     run: CliRunner, corpus: Path, tmp_path: Path
 ):
-    """`timeout=0`, so a second caller is told the corpus is busy rather
-    than blocking - which for an automated provider run means a failure it
-    can retry, not a hang nobody sees."""
+    """A provider's run asked for during another write waits for it (14b)
+    rather than failing, so the provider does not have to retry."""
     path = a_provider(tmp_path / "provider", run)
 
-    with corpus_lock(corpus):
+    with held_for_a_moment(corpus) as hold:
         result = run.invoke(main, ["pack", "add", str(path)])
+        finished = time.monotonic()
 
-    assert result.exit_code != 0
-    assert "another kennis command is using the corpus" in result.output
+    assert result.exit_code == 0, result.output
+    assert finished >= hold.released, "the command did not wait for the holder"
+    assert (corpus / "packs" / "boepie").is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -468,18 +470,21 @@ def test_removing_a_pack_that_is_not_there_fails_with_the_command_to_run(
     assert "kennis pack list" in result.output
 
 
-def test_remove_refuses_while_another_command_holds_the_corpus(
+def test_remove_waits_while_another_command_holds_the_corpus(
     run: CliRunner, corpus: Path, isolated: Path
 ):
-    """A mutation, so it takes the lock every other mutation takes."""
+    """A mutation, so it takes the lock every other mutation takes - and
+    waits for it through the service rather than being refused (14b)."""
     path = a_provider(isolated / "provider", run)
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
 
-    with corpus_lock(corpus):
+    with held_for_a_moment(corpus) as hold:
         result = run.invoke(main, ["pack", "remove", "boepie"])
+        finished = time.monotonic()
 
-    assert result.exit_code != 0
-    assert "another kennis command is using the corpus" in result.output
+    assert result.exit_code == 0, result.output
+    assert finished >= hold.released, "the command did not wait for the holder"
+    assert not (corpus / "packs" / "boepie").exists()
 
 
 def test_list_prints_the_same_holdings_line_the_mcp_block_does(
@@ -665,6 +670,7 @@ def test_the_human_listing_still_prints_failures_on_stdout(
     assert "there is no kennis corpus" in result.stdout
 
 
+@pytest.mark.service
 def test_list_as_json_from_a_real_process_is_parseable(
     run: CliRunner, corpus: Path, isolated: Path
 ):
@@ -687,16 +693,27 @@ def test_list_as_json_from_a_real_process_is_parseable(
     assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
 
-    completed = subprocess.run(
-        [sys.executable, "-m", "kennis.cli", "pack", "list", "--json"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-        env={**os.environ, "COLUMNS": "20"},
-        check=False,
-    )
+    # A real command reaches a real service (14c), so the service is
+    # stopped here whatever the assertions say.
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "kennis.cli", "pack", "list", "--json"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            env={**os.environ, "COLUMNS": "20"},
+            check=False,
+        )
+    finally:
+        subprocess.run(
+            [sys.executable, "-m", "kennis.cli", "service", "stop"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
 
     assert completed.returncode == 0, completed.stderr
     [listed] = json.loads(completed.stdout)["packs"]

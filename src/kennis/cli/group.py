@@ -12,6 +12,7 @@ import logging
 import click
 
 from kennis.cli import display
+from kennis.client.calls import JobDetached
 from kennis.engine.errors import KennisError
 from kennis.logs import log_path
 
@@ -60,6 +61,14 @@ class KennisGroup(click.Group):
             # kennis's wording and exits 130, which is what a caller
             # checking `$?` in a loop expects of an interrupted command.
             raise display.Cancelled("nothing was changed") from aborted
+        except JobDetached as detached:
+            # Ctrl-C while a task ran: the watching stopped and the task did
+            # not (Brian's default 3, 14c). Not a failure, so not `failure`;
+            # 130, as any interrupted command exits, because the caller's
+            # command did not run to its end here.
+            display.note(detached.message)
+            display.next_step(f"kennis service watch {detached.job}")
+            raise SystemExit(130) from detached
         except KennisError as error:
             display.failure(str(error))
             for note in getattr(error, "__notes__", []):

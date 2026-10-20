@@ -1,5 +1,5 @@
 {% from "tip.html" import tip %}
-{% set pane = pane_now() %}
+{% set pane = pane_now(request) %}
 <p class="role-muted">{{ sync_preamble }} {{ tip("sync", title, sync_tip) }}</p>
 {# One form and every dialog's foot: Cancel, then the usual action at the
    right. The project context's sync is the other button's own address,

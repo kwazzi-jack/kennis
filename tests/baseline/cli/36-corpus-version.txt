@@ -1,0 +1,5 @@
+$ kennis corpus version
+--- exit 0
+--- stdout
+  tool  1.0 (current)
+--- stderr

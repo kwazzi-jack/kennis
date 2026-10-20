@@ -18,15 +18,17 @@
 //
 // **Every panel, not the first.** A job's own page and the strip both
 // draw one for the same job, and a page drawn while a job runs carries
-// it in the strip. Each panel holds its own connection. Only a running
-// job is watched: one that has ended arrives drawn by the server.
+// it in the strip. Each panel holds its own connection. Only a running or
+// queued job is watched: one that has ended arrives drawn by the server.
 //
 // **A value is shown in more than one place.** On the bar the job is a
 // segment with its step and a thin bar; its panel has them again with
 // the count, the clock and the lines. Each is written to every element
 // of its class within the job.
 (function () {
-  document.querySelectorAll('.job[data-job][data-state="running"]').forEach(watch);
+  document
+    .querySelectorAll('.job[data-job][data-state="running"], .job[data-job][data-state="queued"]')
+    .forEach(watch);
 
   function watch(panel) {
     if (panel.dataset.watching) { return; }
@@ -148,6 +150,11 @@
         return;
       }
       if (message.kind === "elapsed") { setText(".job-clock", message.text); return; }
+      if (message.kind === "began") {
+        panel.dataset.state = "running";
+        setText(".job-step", message.text);
+        return;
+      }
       if (message.kind === "progress") {
         Array.prototype.forEach.call(bars, function (bar) {
           bar.hidden = false;

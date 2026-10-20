@@ -1,0 +1,14 @@
+$ kennis search --group topics/* beam
+--- exit 0
+--- stdout
+warning: the docs index has no meaning leg, so this matched keywords only
+warning: the notes index has no meaning leg, so this matched keywords only
+Found 1 in notes
+
+Notes keywords as a fraction of the best match here
+  [1] beams
+      keywords: very high  id=doc0000003 chunk=0
+      # Beams The primary beam attenuates sources far from the centre.
+
+  hint: run `kennis read doc0000003 --chunks 0:2` to read one in context
+--- stderr

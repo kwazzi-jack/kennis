@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import contextlib
 import shutil
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -51,7 +51,12 @@ from kennis.engine.corpus.document import Document, move_document
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.corpus.sync import CorpusSync, sync_corpus
+from kennis.engine.corpus.sync import (
+    CorpusSync,
+    claim_document,
+    disown_document,
+    sync_corpus,
+)
 from kennis.engine.docs.versions import (
     current_version_file,
     make_current,
@@ -76,6 +81,7 @@ from kennis.engine.history.outofband import (
 )
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
+from kennis.engine.pack.installed import PackRemoval, remove_pack
 from kennis.engine.pack.store import PackInstall, install_pack
 from kennis.engine.rag.binding import binding_from
 from kennis.engine.rag.index import build_index
@@ -295,6 +301,43 @@ def move_a_document(
             summary=outcome_summary({Outcome.CHANGED: 1}),
         )
     return moved
+
+
+def claim_a_document(
+    context: Context, handle: str, *, restored: list[OutOfBandChange] | None = None
+) -> Document:
+    """Take a pack's document for the user: lock, restore, claim, commit.
+
+    The sequence `corpus claim` ran inside the command line, here so the
+    service runs it for every client (14c).
+    """
+    return _owned(context, handle, claim_document, "claim", "claimed", restored)
+
+
+def disown_a_document(
+    context: Context, handle: str, *, restored: list[OutOfBandChange] | None = None
+) -> Document:
+    """Hand a document back to its pack: lock, restore, disown, commit."""
+    return _owned(context, handle, disown_document, "disown", "disowned", restored)
+
+
+def _owned(
+    context: Context,
+    handle: str,
+    change: Callable[[Path, str], Document],
+    operation: str,
+    done: str,
+    restored: list[OutOfBandChange] | None,
+) -> Document:
+    with corpus_lock(context.corpus_root):
+        put_back = restore_hand_deletions(context)
+        if restored is not None:
+            restored.extend(put_back)
+        document = change(context.corpus_root, handle)
+        Repository(context.corpus_root).commit(
+            operation, scope="notes", summary=f"{done} {document.id}"
+        )
+    return document
 
 
 def make_docs_version_current(context: Context, project: str, version: str) -> None:
@@ -601,6 +644,19 @@ def install_a_pack(
         return install_pack(context.corpus_root, path, events=events)
 
 
+def remove_a_pack(
+    context: Context, pack_id: str, *, events: EventSink | None = None
+) -> PackRemoval:
+    """Drop a pack from the store: lock, remove.
+
+    No commit, as for an install: the store is not tracked content, and
+    the documents the pack put in the corpus stay until a sync converges
+    them. The lock is taken because a sync reads the store while holding it.
+    """
+    with corpus_lock(context.corpus_root):
+        return remove_pack(context.corpus_root, pack_id, events=events)
+
+
 def back_up_corpus(
     context: Context,
     folder: Path,
@@ -630,11 +686,14 @@ __all__ = [
     "add_in_groups",
     "back_up_corpus",
     "build_indexes",
+    "claim_a_document",
     "committed_if_interrupted",
+    "disown_a_document",
     "install_a_pack",
     "make_docs_version_current",
     "move_a_document",
     "remove_a_document",
+    "remove_a_pack",
     "remove_docs_version",
     "restore_a_document",
     "restore_hand_deletions",

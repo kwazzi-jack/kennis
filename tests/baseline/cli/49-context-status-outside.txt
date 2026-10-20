@@ -1,0 +1,7 @@
+$ kennis context status
+--- exit 1
+--- stdout
+error: no context bundle found in this directory or any parent
+  hint: run `kennis context init`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

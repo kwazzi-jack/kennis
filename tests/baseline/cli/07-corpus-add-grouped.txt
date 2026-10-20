@@ -1,0 +1,6 @@
+$ kennis corpus add -n --group topics/radio sources/beams.md
+--- exit 0
+--- stdout
+Added 1 document in <elapsed>
+  + beams
+--- stderr

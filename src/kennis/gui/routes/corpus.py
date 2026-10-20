@@ -11,7 +11,6 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
-from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
@@ -30,6 +29,7 @@ from kennis.gui.pages import (
     shown_tree,
 )
 from kennis.gui.pane import bundle_folders
+from kennis.gui.project import bundle_of
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -206,7 +206,7 @@ def serve_tree(request: Request, collection: str) -> HTMLResponse:
     load would be most of a second at a thousand documents.
     """
     if collection == CONTEXT_COLLECTION:
-        bundle = find_bundle()
+        bundle = bundle_of(request)
         folders = [] if bundle is None else bundle_folders(bundle)
         return TEMPLATES.TemplateResponse(
             request, "tree-context.html", {"folders": folders}

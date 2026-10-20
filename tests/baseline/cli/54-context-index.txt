@@ -1,0 +1,7 @@
+$ kennis context index
+--- exit 0
+--- stdout
+Using lexical search only, which is what a bundle is indexed with
+Indexed 1 document as 1 chunk in this project in <elapsed>
+commit .context/ to share these notes with the project
+--- stderr

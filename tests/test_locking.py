@@ -6,16 +6,16 @@ terminal that has stopped, with nothing said and nothing to press.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
 from kennis.engine.errors import CorpusBusy
-from kennis.engine.locking import corpus_lock, lock_path
+from kennis.engine.locking import corpus_lock, lock_path, waiting_for_the_corpus
 
 
 def test_a_lock_can_be_taken_and_released(tmp_path: Path):
@@ -103,44 +103,6 @@ def test_two_corpora_do_not_contend(tmp_path: Path):
 # real - injecting a per-process lock file fails it. What it does not cover
 # is the case a user actually meets: two `kennis` commands, started at the
 # same moment, one of them losing. Concern #109 item 2.
-
-
-def test_a_real_command_is_refused_while_the_corpus_is_held(tmp_path: Path):
-    """The whole path, not the lock alone: the command must exit non-zero
-    and say which corpus is busy, rather than block or crash."""
-    corpus = tmp_path / "corpus"
-    subprocess.run(
-        [str(Path(sys.executable).parent / "kennis"), "corpus", "init"],
-        env={**os.environ, "KENNIS_CORPUS_ROOT": str(corpus)},
-        capture_output=True,
-        text=True,
-        timeout=120,
-        stdin=subprocess.DEVNULL,
-        check=True,
-    )
-    note = tmp_path / "a note.md"
-    note.write_text("# A note\n\nBody.\n", encoding="utf-8")
-
-    with corpus_lock(corpus):
-        completed = subprocess.run(
-            [
-                str(Path(sys.executable).parent / "kennis"),
-                "corpus",
-                "add",
-                "-n",
-                str(note),
-            ],
-            env={**os.environ, "KENNIS_CORPUS_ROOT": str(corpus)},
-            capture_output=True,
-            text=True,
-            timeout=120,
-            stdin=subprocess.DEVNULL,
-        )
-
-    output = completed.stdout + completed.stderr
-    assert completed.returncode != 0, output
-    assert "busy" in output.lower() or "another kennis command" in output.lower()
-    assert str(corpus) in output
 
 
 def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
@@ -259,3 +221,59 @@ def test_a_killed_process_does_not_leave_the_corpus_locked(tmp_path: Path):
     # The lock must now be free without anything having cleaned up.
     with corpus_lock(corpus):
         pass
+
+
+def test_a_waiting_holder_waits_and_then_holds(tmp_path: Path):
+    """The service's form (14b): a write asked for after another follows it.
+
+    Ordered by two events - the first holder letting go, the second taking
+    hold - and checked between them: the waiter must not hold the corpus
+    while the first does.
+    """
+    holding = threading.Event()
+    let_go = threading.Event()
+    taken = threading.Event()
+
+    def first() -> None:
+        with corpus_lock(tmp_path):
+            holding.set()
+            let_go.wait(timeout=30)
+
+    def second() -> None:
+        with waiting_for_the_corpus(), corpus_lock(tmp_path):
+            taken.set()
+
+    holder = threading.Thread(target=first)
+    holder.start()
+    assert holding.wait(timeout=30)
+    waiter = threading.Thread(target=second)
+    waiter.start()
+
+    assert not taken.wait(timeout=0.5), "the waiter held the corpus beside the holder"
+    let_go.set()
+    assert taken.wait(timeout=30), "the waiter never took the corpus"
+    holder.join(timeout=30)
+    waiter.join(timeout=30)
+
+
+def test_waiting_ends_with_its_block(tmp_path: Path):
+    """Outside the block a holder is refused again, on the same thread."""
+    holding = threading.Event()
+    let_go = threading.Event()
+
+    def first() -> None:
+        with corpus_lock(tmp_path):
+            holding.set()
+            let_go.wait(timeout=30)
+
+    holder = threading.Thread(target=first)
+    holder.start()
+    assert holding.wait(timeout=30)
+    try:
+        with waiting_for_the_corpus():
+            pass
+        with pytest.raises(CorpusBusy), corpus_lock(tmp_path):
+            pass
+    finally:
+        let_go.set()
+        holder.join(timeout=30)

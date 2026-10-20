@@ -353,3 +353,18 @@ class BackupUnreadable(KennisError):
 
     default_message = "the password is wrong or the archive is damaged"
     default_resolution = None
+
+
+class ServiceUnavailable(KennisError):
+    """The corpus's service could not be started or reached (milestone 14)."""
+
+    default_message = "the kennis service did not start"
+    default_resolution = None
+
+
+class ServiceBusy(KennisError):
+    """A stop asked of the service while a task is queued or running, which
+    would end the task wherever it was."""
+
+    default_message = "the kennis service is running a task and was left running"
+    default_resolution = "kennis service status"

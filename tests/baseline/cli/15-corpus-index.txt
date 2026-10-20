@@ -1,0 +1,7 @@
+$ kennis corpus index
+--- exit 0
+--- stdout
+Using lexical search only, with no embedding backend
+Indexed 1 document as 1 chunk in docs in <elapsed>
+Indexed 3 documents as 5 chunks in notes in <elapsed>
+--- stderr

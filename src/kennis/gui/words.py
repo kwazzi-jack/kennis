@@ -401,6 +401,7 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("converting", "Converting documents"),
     ("adding", "Adding documents"),
     ("logging", "Log file"),
+    ("service", "Background service"),
 )
 KENNIS_SAVED = "Saved."
 KENNIS_UNCHANGED = "Nothing changed."
@@ -433,6 +434,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "logging.level": "Detail",
     "logging.max_bytes": "Size before a new file (bytes)",
     "logging.backup_count": "Old files kept",
+    "service.idle_minutes": "Stop when idle (minutes)",
 }
 # What each setting is for, in an info tip beside its name. The engine's
 # own description, which `config init` prints and the config file
@@ -505,6 +507,10 @@ SETTING_TIPS: Final[dict[str, str]] = {
     "logging.level": "How much kennis writes to its log file.",
     "logging.max_bytes": "The size at which the log starts a new file.",
     "logging.backup_count": "How many earlier log files are kept.",
+    "service.idle_minutes": (
+        "How long kennis keeps running with nothing to do. The next command "
+        "or window starts it again."
+    ),
 }
 
 
@@ -723,17 +729,6 @@ CHANGES_HEADING = "Corpus history"
 
 NO_CHANGES = "No changes yet."
 
-# What each kind of job is called where a person reads it: the strip,
-# the Activity page. The keys are the kinds `app.py` starts jobs under.
-JOB_KINDS: Final[dict[str, str]] = {
-    "add": "Add",
-    "index": "Index",
-    "sync": "Corpus sync",
-    "context-sync": "Project context sync",
-    "pack": "Pack install",
-    "backup": "Backup",
-}
-
 # What the status bar says while each kind of job runs, before the job
 # has reported a step of its own.
 JOB_DOING: Final[dict[str, str]] = {
@@ -743,9 +738,18 @@ JOB_DOING: Final[dict[str, str]] = {
     "context-sync": "Syncing the project context",
     "pack": "Installing a pack",
     "backup": "Backing up",
+    "remember": "Writing a note",
+    "claim": "Changing a document's owner",
+    "move": "Moving a document",
+    "remove": "Removing a document",
+    "restore": "Putting a document back",
+    "return": "Returning the corpus to an earlier point",
+    "version": "Changing a docs version",
 }
 
 JOB_RUNNING = "running"
+
+JOB_QUEUED = "waiting"
 
 JOB_FINISHED = "finished"
 
@@ -919,8 +923,6 @@ BUNDLE_NOT_COMMITTED = (
 )
 
 NOTHING_MATERIALISED = "Installed. Run Sync to bring its documents in."
-
-BUSY_WITH_ANOTHER = "Another task is running. Try again when it finishes."
 
 CORPUS_BUSY_RETRY = "The corpus is busy. Nothing changed; try again in a moment."
 
@@ -1718,7 +1720,6 @@ __all__ = [
     "BLOCK_HEADING",
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
-    "BUSY_WITH_ANOTHER",
     "CANCEL",
     "CHANGES_HEADING",
     "CHANGE_KINDS",
@@ -1780,7 +1781,7 @@ __all__ = [
     "JOB_DOING",
     "JOB_FAILED",
     "JOB_FINISHED",
-    "JOB_KINDS",
+    "JOB_QUEUED",
     "JOB_RUNNING",
     "KENNIS_GROUPS",
     "KENNIS_HEADING",

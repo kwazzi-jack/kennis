@@ -1,0 +1,6 @@
+$ kennis pack init --id demo --name A demo
+--- exit 0
+--- stdout
+Created demo.ken.yml
+  + demo 0.1.0
+--- stderr

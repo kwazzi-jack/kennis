@@ -159,7 +159,9 @@ def test_a_note_is_written_even_while_its_index_is_being_rebuilt(isolated: Path)
     root = index_root(existing_corpus().corpus_root)
 
     with HoldingTheIndex(root, "notes"):
-        report = write_note("Solved per scan, not per field.", title="Solver")
+        report = write_note(
+            existing_corpus(), "Solved per scan, not per field.", title="Solver"
+        )
 
     assert report.index_outcome == "deferred"
     assert report.path.is_file()
@@ -175,7 +177,7 @@ def test_a_deferred_note_is_committed_like_any_other(isolated: Path):
     before = Repository(context.corpus_root).head()
 
     with HoldingTheIndex(root, "notes"):
-        write_note("Solved per scan, not per field.", title="Solver")
+        write_note(existing_corpus(), "Solved per scan, not per field.", title="Solver")
 
     assert Repository(context.corpus_root).head() != before
 
@@ -186,7 +188,9 @@ def test_a_note_written_with_no_contention_is_indexed(isolated: Path):
     pass for the wrong reason."""
     an_indexed_corpus(isolated)
 
-    report = write_note("Solved per scan, not per field.", title="Solver")
+    report = write_note(
+        existing_corpus(), "Solved per scan, not per field.", title="Solver"
+    )
 
     assert report.index_outcome == "indexed"
 
@@ -198,7 +202,7 @@ def test_a_write_is_still_refused_when_the_corpus_itself_is_busy(isolated: Path)
     context = existing_corpus()
 
     with corpus_lock(context.corpus_root), pytest.raises(CorpusBusy):
-        write_note("Solved per scan, not per field.", title="Solver")
+        write_note(existing_corpus(), "Solved per scan, not per field.", title="Solver")
 
 
 # ---------------------------------------------------------------------------

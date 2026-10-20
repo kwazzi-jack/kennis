@@ -19,8 +19,9 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from kennis.client import api
 from kennis.context import resolve_context
-from kennis.engine.pack.installed import InstalledPack, list_installed
+from kennis.engine.pack.installed import InstalledPack
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.tools.corpus import list_corpus
 from kennis.mcp.tools.read import read_docs, read_literature, read_notes
@@ -31,6 +32,7 @@ from kennis.mcp.tools.search import (
     search_literature,
     search_notes,
 )
+from kennis.protocol.spawn import holds_a_corpus
 
 SERVER_NAME = "kennis"
 
@@ -68,12 +70,14 @@ def _installed() -> tuple[InstalledPack, ...]:
 
     Deliberately forgiving. Starting the server is not the moment to
     refuse for want of a corpus - the tools say so when they are called,
-    and an unstartable server cannot even be registered.
+    and an unstartable server cannot even be registered. When there is a
+    corpus, asking its service is what starts the service, so the first
+    tool call finds it running (14d).
     """
-    context = resolve_context()
-    if not (context.corpus_root / ".git").is_dir():
+    corpus_root = resolve_context().corpus_root
+    if not holds_a_corpus(corpus_root):
         return ()
-    return tuple(list_installed(context.corpus_root).packs)
+    return api.pack_listing(corpus_root).packs
 
 
 def run() -> None:

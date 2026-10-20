@@ -1,0 +1,6 @@
+$ kennis backup check --to backups
+--- exit 0
+--- stdout
+backups is there and can be written to
+backups/kennis-corpus.7z, <size>, written <date>
+--- stderr

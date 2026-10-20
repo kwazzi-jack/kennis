@@ -22,7 +22,13 @@ an index that was never built tells the caller something false.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from kennis.client import api
+from kennis.context import resolve_context
+from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.protocol.spawn import holds_a_corpus
 from kennis.render.hits import (
     ScoreStyle,
     best_lexical,
@@ -107,15 +113,34 @@ def _searched(
 ) -> str:
     """One scope, searched and rendered.
 
-    The searching is `kennis.retrieval.search_scope`, shared with the
-    graphical front end - it answers "where is the index and which
-    mode can it run", which is not a question either front end owns.
+    The searching is the service's `search_scope`, which the window and
+    the command line reach too - it answers "where is the index and
+    which mode can it run", which is not a question any front end owns.
     What is left here is the rendering, which is.
 
     Its exceptions carry the command that resolves them, and fastmcp
     turns them into a tool error the agent can read.
     """
-    hits = search_scope(collection, question, top_k, versions=versions)
+    # The MCP server runs where its agent works, so its directory is the
+    # project's (#508); the service is sent the bundle, never asked to
+    # look for one.
+    bundle = find_bundle(Path.cwd())
+    corpus_root = resolve_context().corpus_root
+    if holds_a_corpus(corpus_root):
+        hits = api.search_scope(
+            corpus_root,
+            collection,
+            question,
+            top_k=top_k,
+            versions=versions,
+            bundle=bundle,
+        )
+    else:
+        # No corpus, so no service to own one; a bundle is the person's
+        # own and is searched here, as `kennis search` does (#510, 14g).
+        hits = search_scope(
+            collection, question, top_k, versions=versions, bundle=bundle
+        )
     if not hits:
         return _NOTHING
     # The degraded flag is dropped rather than printed. A command line

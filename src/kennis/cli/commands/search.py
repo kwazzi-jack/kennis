@@ -9,27 +9,25 @@ the truth is "never indexed" is the failure this exists to prevent.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Final, get_args
 
 import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand
-from kennis.cli.resolve import resolve_document
-from kennis.context import Context, existing_corpus
+from kennis.client import api
+from kennis.context import existing_corpus, resolve_context
 from kennis.engine.context import (
     CONTEXT_COLLECTION,
 )
-from kennis.engine.corpus.layout import index_root
+from kennis.engine.context.bundle import find_bundle
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.errors import SearchUnavailable
-from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Filter
 from kennis.engine.rag.search import (
     ChunkRange,
     Mode,
     parse_chunk_range,
-    read_span,
 )
 from kennis.render.hits import (
     SCORE_STYLES,
@@ -188,16 +186,36 @@ def search_command(
     # than all" and "asked for by name" are different facts that
     # happen to coincide here.
     named = len(selected) < len(SCOPE_NAMES)
+    bundle = find_bundle(Path.cwd())
+    filters = _filters(group if group is not None else project)
 
-    found = sweep(
-        question,
-        scopes=selected,
-        named=named,
-        top_k=top_k,
-        filters=_filters(group if group is not None else project),
-        mode=mode,
-        versions=versions,
-    )
+    corpus_root = resolve_context().corpus_root
+    if (corpus_root / ".git").is_dir():
+        found = api.sweep(
+            corpus_root,
+            question,
+            scopes=selected,
+            named=named,
+            top_k=top_k,
+            filters=filters,
+            mode=mode,
+            versions=versions,
+            bundle=bundle,
+        )
+    else:
+        # No corpus, so no service to own one: a search inside a project
+        # still works on a machine that never ran `corpus init`, and the
+        # bundle is the person's own, so it is read here (14c).
+        found = sweep(
+            question,
+            scopes=selected,
+            named=named,
+            top_k=top_k,
+            filters=filters,
+            mode=mode,
+            versions=versions,
+            bundle=bundle,
+        )
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))
 
@@ -418,9 +436,9 @@ def read_command(
             "there is no read for a context file - a search hit's `path=` is "
             "the file itself, in this project, so open it with your own tools."
         )
-    context = existing_corpus()
+    corpus_root = existing_corpus().corpus_root
     if chunk_range is None:
-        _read_document(context, handle, collection, frontmatter=frontmatter)
+        _read_document(corpus_root, handle, collection, frontmatter=frontmatter)
         return
     if frontmatter:
         # Silently ignoring it is how a person concludes the command did not
@@ -429,11 +447,11 @@ def read_command(
         raise display.CliError(
             "--frontmatter belongs to a whole-document read; drop --chunks to use it."
         )
-    _read_span(context, handle, collection, chunks=parse_chunk_range(chunk_range))
+    _read_span(corpus_root, handle, collection, chunks=parse_chunk_range(chunk_range))
 
 
 def _read_document(
-    context: Context, handle: str, collection: str | None, *, frontmatter: bool
+    corpus_root: Path, handle: str, collection: str | None, *, frontmatter: bool
 ) -> None:
     """The whole document, as markdown, on stdout.
 
@@ -442,55 +460,21 @@ def _read_document(
     a pipe must not be given a report line in the middle of their file. The
     same split `config show` makes.
     """
-    found, document = resolve_document(context, handle, collection)
+    read = api.read_document(corpus_root, handle, collection, frontmatter=frontmatter)
     display.operation(
         "Read",
-        describe_document(found.name, document, context.corpus_root),
+        describe_document(read.collection, read.document, corpus_root),
         stderr=True,
     )
-    text = (
-        document.md_path.read_text(encoding="utf-8") if frontmatter else document.body
-    )
-    display.body(text.rstrip("\n"))
+    display.body(read.text.rstrip("\n"))
 
 
 def _read_span(
-    context: Context, handle: str, collection: str | None, *, chunks: ChunkRange
+    corpus_root: Path, handle: str, collection: str | None, *, chunks: ChunkRange
 ) -> None:
-    """One range of a document's chunks, stitched out of the index.
-
-    The handle is resolved against the corpus first, so `--chunks` accepts
-    every name the whole-document read does rather than the identifier
-    alone. Only then is the index asked, and only the collection the
-    document was actually found in.
-    """
-    found, document = resolve_document(context, handle, collection)
-    # Not `_load`: that one answers "an index, or None where None is
-    # allowed", and here it is not allowed - the document is known to be in
-    # this one collection and there is nowhere else to look. Asking for a
-    # required index directly keeps the type honest instead of narrowing an
-    # optional that could never be None.
-    index = _index_of(context, found.name)
-    try:
-        span = read_span(index, document.id, chunks=chunks)
-    except SearchUnavailable as error:
-        # The document is in the corpus and not in the index, which is a
-        # stale index rather than a missing document - so the resolution is
-        # to rebuild, not to go looking for another name.
-        error.add_note("run `kennis corpus index`")
-        raise
+    """One range of a document's chunks, stitched out of the index."""
+    read = api.read_passage(corpus_root, handle, collection, chunks=chunks)
     display.operation(
-        "Read",
-        describe_span(found.name, span, document.frontmatter.title),
-        stderr=True,
+        "Read", describe_span(read.collection, read.span, read.title), stderr=True
     )
-    display.body(span.text)
-
-
-def _index_of(context: Context, name: str) -> LoadedIndex:
-    """One collection's index, or the error naming the command that builds it.
-
-    `NothingToIndex` already says which collection and carries
-    `kennis corpus index` as its resolution, so nothing is added here.
-    """
-    return load_index(index_root(context.corpus_root), name)
+    display.body(read.span.text)

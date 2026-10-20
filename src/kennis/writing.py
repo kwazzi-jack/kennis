@@ -17,8 +17,9 @@ a `RememberReport`; this returns the report.
 
 from __future__ import annotations
 
-from kennis.context import existing_corpus, resolve_context
-from kennis.engine.context.bundle import find_bundle
+from pathlib import Path
+
+from kennis.context import Context, resolve_context
 from kennis.engine.context.notes import BundleNote, remember_in_bundle
 from kennis.engine.errors import ContextNotFound
 from kennis.engine.events import EventSink, Outcome
@@ -37,6 +38,7 @@ from kennis.operations import committed_if_interrupted, restore_hand_deletions
 
 
 def write_note(
+    context: Context,
     text: str,
     *,
     title: str | None = None,
@@ -53,9 +55,9 @@ def write_note(
     and not put back first would be recorded as deleted, under
     `remember(notes)`, by whoever wrote a note - an agent included.
     Concern #128. `restored` is filled in place, as `add_documents`
-    fills it, for a caller that says what came back. The lock has `timeout=0`,
-    so a corpus another process is writing answers `CorpusBusy`
-    immediately rather than holding the caller open.
+    fills it, for a caller that says what came back. The lock refuses at
+    once with `CorpusBusy` when another process holds the corpus, unless
+    the caller is inside `waiting_for_the_corpus`, as a service job is.
 
     `origin`, `index` and `events` exist for the command line, which
     reads text from a file (so the origin is a path), offers
@@ -75,7 +77,6 @@ def write_note(
     `remember(notes)`, attributing it to something the user did not
     do.
     """
-    context = existing_corpus()
     binding = binding_from(context.settings.chunking, context.settings.embedding)
     with corpus_lock(context.corpus_root):
         put_back = restore_hand_deletions(context)
@@ -103,7 +104,11 @@ def write_note(
 
 
 def write_context_note(
-    text: str, *, title: str | None = None, group: str | None = None
+    text: str,
+    *,
+    title: str | None = None,
+    group: str | None = None,
+    bundle: Path | None,
 ) -> tuple[BundleNote, str]:
     """Write into this project's bundle, and say which bundle.
 
@@ -116,12 +121,10 @@ def write_context_note(
     project* and told it succeeded, when it went somewhere
     machine-global, has been told something false.
 
-    `find_bundle` reads the working directory at call time, which
-    matters for a long-lived front end: the directory is wherever the
-    process was started and a bundle may be created after it.
+    `bundle` is the one the client found where its person works, or None
+    outside a project (#508).
     """
     resolve_context()
-    bundle = find_bundle()
     if bundle is None:
         raise ContextNotFound
     return remember_in_bundle(bundle, text, title=title, group=group), bundle.name

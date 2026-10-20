@@ -1,0 +1,3 @@
+$ remember {"text": "A project note.", "to_context": true}
+--- error False
+remembered: A project note  .context/A project note.md

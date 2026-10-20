@@ -2,7 +2,8 @@
 
 kennis's window is a tab in the person's own browser (#420). Closing a
 tab does not end the process that serves it, so the bar carries **Quit**,
-a POST that stops the server; Ctrl-C at the terminal still does too.
+a POST that stops the service that serves it (14b); the next command
+starts another.
 
 Three things are worth holding here. Quit is a write in the sense that
 matters - it ends the process - so it is a POST behind the token like
@@ -17,9 +18,10 @@ from __future__ import annotations
 
 import re
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
-import httpx
 import pytest
 from click.testing import CliRunner
 from fastapi import FastAPI
@@ -28,9 +30,7 @@ from fastapi.testclient import TestClient
 from kennis.cli.__main__ import main
 from kennis.gui import words
 from kennis.gui.app import build_app
-from kennis.gui.jobs import Jobs
-from kennis.gui.serve import _wait_for_quit
-from kennis.render.words import still_running_on_interrupt
+from kennis.protocol.record import ServiceRecord
 
 TOKEN = "a-test-token"
 
@@ -165,74 +165,6 @@ def test_the_bar_carries_quit_as_a_plain_form(corpus: Path, client: TestClient):
 
 
 # ---------------------------------------------------------------------------
-# The launcher
-# ---------------------------------------------------------------------------
-
-
-def test_the_browser_is_opened_once_at_the_address_announced(
-    corpus: Path, monkeypatch: pytest.MonkeyPatch
-):
-    import kennis.gui.serve as serving
-
-    announced: list[str] = []
-    opened: list[str] = []
-    monkeypatch.setattr(serving.webbrowser, "open", opened.append)
-    monkeypatch.setattr(serving, "_wait_for_quit", lambda *_: None)
-
-    serving.run(announced.append)
-
-    assert len(announced) == 1
-    assert opened == announced
-
-
-def test_no_browser_opens_nothing(corpus: Path, monkeypatch: pytest.MonkeyPatch):
-    """Over `ssh -L` on a machine with no display, `webbrowser` does not
-    fail: with `TERM` set it finds `www-browser`, `lynx` or `w3m` and
-    runs a text browser in the terminal kennis is printing to."""
-    import kennis.gui.serve as serving
-
-    announced: list[str] = []
-    opened: list[str] = []
-    monkeypatch.setattr(serving.webbrowser, "open", opened.append)
-    monkeypatch.setattr(serving, "_wait_for_quit", lambda *_: None)
-
-    serving.run(announced.append, open_browser=False)
-
-    assert len(announced) == 1
-    assert opened == []
-
-
-def test_quit_from_the_page_stops_a_real_server(
-    corpus: Path, monkeypatch: pytest.MonkeyPatch
-):
-    """End to end on a real uvicorn: the stopped page arrives, and then
-    `run` returns. The order matters - stopping first would close the
-    connection the page was travelling on."""
-    import kennis.gui.serve as serving
-
-    monkeypatch.setattr(serving.webbrowser, "open", lambda url: True)
-    addresses: list[str] = []
-    ready = threading.Event()
-
-    def note(url: str) -> None:
-        addresses.append(url)
-        ready.set()
-
-    runner = threading.Thread(target=serving.run, args=(note,), daemon=True)
-    runner.start()
-    assert ready.wait(10)
-
-    with httpx.Client(timeout=10) as http:
-        assert http.get(addresses[0]).status_code == 200
-        answer = http.post(addresses[0].split("?")[0] + "quit")
-
-    assert answer.status_code == 200
-    assert words.STOPPED in answer.text
-    runner.join(10)
-    assert not runner.is_alive()
-
-
-# ---------------------------------------------------------------------------
 # The browser's own messages
 # ---------------------------------------------------------------------------
 
@@ -248,7 +180,7 @@ def test_what_the_browser_prints_does_not_reach_kenniss_terminal(
     import subprocess
     import sys
 
-    import kennis.gui.serve as serving
+    import kennis.gui.browser as serving
 
     def a_browser(url: str) -> bool:
         subprocess.run(
@@ -279,91 +211,80 @@ def test_what_the_browser_prints_does_not_reach_kenniss_terminal(
     assert "kennis err after" in captured.err
 
 
-def test_run_opens_the_browser_quietly(corpus: Path, monkeypatch: pytest.MonkeyPatch):
-    import kennis.gui.serve as serving
+# ---------------------------------------------------------------------------
+# `kennis gui`, a client of the service (14b)
+# ---------------------------------------------------------------------------
+
+RECORD = ServiceRecord(
+    address="http://127.0.0.1:4242/",
+    token="the-token",
+    pid=1,
+    started=datetime(2026, 1, 2, tzinfo=UTC),
+    version="0",
+    corpus="/a corpus",
+)
+
+
+def test_kennis_gui_opens_the_service_s_address_once_and_quietly(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import kennis.client.process as process
+    import kennis.gui.browser as browser
 
     quietly: list[str] = []
     loudly: list[str] = []
-    monkeypatch.setattr(serving, "open_quietly", quietly.append)
+    monkeypatch.setattr(process, "ensure_service", lambda root, **_: RECORD)
+    monkeypatch.setattr(browser, "open_quietly", quietly.append)
     # Replaced too, so that opening loudly fails this test rather than
     # starting the real browser.
-    monkeypatch.setattr(serving.webbrowser, "open", loudly.append)
-    monkeypatch.setattr(serving, "_wait_for_quit", lambda *_: None)
+    monkeypatch.setattr(browser.webbrowser, "open", loudly.append)
 
-    serving.run(lambda url: None)
+    result = CliRunner().invoke(main, ["gui"])
 
-    assert len(quietly) == 1
+    assert result.exit_code == 0, result.output
+    assert quietly == ["http://127.0.0.1:4242/?token=the-token&bundle="]
+    assert quietly[0] in result.output
     assert loudly == []
 
 
-# ---------------------------------------------------------------------------
-# Ctrl-C with a job running (#422)
-# ---------------------------------------------------------------------------
+def test_kennis_gui_without_a_browser_only_prints_the_address(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import kennis.client.process as process
+    import kennis.gui.browser as browser
+
+    opened: list[str] = []
+    monkeypatch.setattr(process, "ensure_service", lambda root, **_: RECORD)
+    monkeypatch.setattr(browser, "open_quietly", opened.append)
+
+    result = CliRunner().invoke(main, ["gui", "--no-browser"])
+
+    assert result.exit_code == 0, result.output
+    assert opened == []
+    assert "http://127.0.0.1:4242/?token=the-token&bundle=" in result.output
 
 
-class Interrupted:
-    """An event whose waits are interrupted `times` times, then end."""
+def test_kennis_gui_names_the_project_it_was_run_in(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The service is shared by every directory, so the tab is told which
+    project it was opened from (#508); outside one it is told none, which
+    the empty value says."""
+    import kennis.client.process as process
+    import kennis.gui.browser as browser
 
-    def __init__(self, times: int) -> None:
-        self.left = times
-        self.waits = 0
+    opened: list[str] = []
+    monkeypatch.setattr(process, "ensure_service", lambda root, **_: RECORD)
+    monkeypatch.setattr(browser, "open_quietly", opened.append)
+    project = tmp_path / "a project"
+    (project / "deeper").mkdir(parents=True)
+    monkeypatch.chdir(project)
+    assert CliRunner().invoke(main, ["context", "init", "--here"]).exit_code == 0
+    monkeypatch.chdir(project / "deeper")
 
-    def wait(self, timeout: float | None = None) -> bool:
-        self.waits += 1
-        if self.left:
-            self.left -= 1
-            raise KeyboardInterrupt
-        return True
+    result = CliRunner().invoke(main, ["gui"])
 
-
-def jobs_with(running: bool) -> Jobs:
-    jobs = Jobs()
-    if running:
-        holding = threading.Event()
-        jobs.start("index", lambda events: holding.wait(2))
-    return jobs
-
-
-def test_ctrl_c_with_no_job_running_stops_at_once():
-    told: list[str] = []
-    quitting = Interrupted(times=1)
-
-    _wait_for_quit(quitting, jobs_with(running=False), told.append)
-
-    assert quitting.waits == 1
-    assert told == []
-
-
-def test_ctrl_c_with_a_job_running_says_so_and_waits_for_a_second():
-    """Quit refuses while a job runs, because the job is a daemon thread
-    that may be inside the corpus lock; Ctrl-C ended it wherever it was."""
-    told: list[str] = []
-    quitting = Interrupted(times=2)
-
-    # Caught here, because an interrupt escaping a test stops pytest's
-    # whole run rather than failing the test, and the run then reads as
-    # passing. `run` returns cleanly on the second, as on the first
-    # with no job.
-    try:
-        _wait_for_quit(quitting, jobs_with(running=True), told.append)
-    except KeyboardInterrupt:
-        pytest.fail("the second Ctrl-C escaped instead of ending the wait")
-
-    assert told == ["index"]
-    assert quitting.waits == 2, "the second Ctrl-C stops it"
-
-
-def test_after_the_warning_a_quit_from_the_page_still_stops_it():
-    told: list[str] = []
-    quitting = Interrupted(times=1)
-
-    _wait_for_quit(quitting, jobs_with(running=True), told.append)
-
-    assert told == ["index"]
-    assert quitting.waits == 2
-
-
-def test_the_command_line_words_the_warning():
-    said = still_running_on_interrupt("index")
-
-    assert "index" in said and "Ctrl-C" in said
+    assert result.exit_code == 0, result.output
+    (address,) = opened
+    named = parse_qs(urlsplit(address).query, keep_blank_values=True)
+    assert named["bundle"] == [str((project / ".context").resolve())]

@@ -1,0 +1,3 @@
+$ remember {"text": "Gain solutions drift with temperature."}
+--- error False
+remembered: Gain solutions drift with temperature  (doc0000004)  notes/Gain solutions drift with temperature.md  [indexed, 1 chunk]

@@ -1,0 +1,15 @@
+$ kennis corpus tree
+--- exit 0
+--- stdout
+Literature
+Docs
+  tool/
+    1.0/
+      22k3nnp36k  Tool.md
+Notes
+  doc0000001  calibration.md
+  doc0000002  imaging.md
+  topics/
+    radio/
+      doc0000003  beams.md
+--- stderr

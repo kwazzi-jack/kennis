@@ -128,7 +128,7 @@ def test_writing_a_note_restores_a_hand_deletion_first(isolated: Path):
     deleted.unlink()
     restored: list[OutOfBandChange] = []
 
-    write_note("A second thought about trees.", restored=restored)
+    write_note(existing_corpus(), "A second thought about trees.", restored=restored)
 
     assert deleted.is_file()
     assert [change.path for change in restored] == [

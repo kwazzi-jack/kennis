@@ -1,0 +1,15 @@
+$ kennis read calibration
+--- exit 0
+--- stdout
+# Calibration
+
+Calibration solves for antenna gains and phase.
+
+## Gains
+
+The gain of each antenna is solved per interval.
+
+## Phase
+
+Phase calibration follows the bandpass.--- stderr
+Read [notes] calibration  (doc0000001)  notes/calibration.md

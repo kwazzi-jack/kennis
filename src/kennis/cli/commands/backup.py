@@ -9,13 +9,15 @@ shell's history.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisGroup
-from kennis.cli.sink import reporting
+from kennis.cli.sink import DisplaySink, say_waiting
+from kennis.client import api
 from kennis.context import existing_corpus, resolve_context
 from kennis.engine.backup import (
     SET_FOLDER_COMMAND,
@@ -24,7 +26,6 @@ from kennis.engine.backup import (
 )
 from kennis.engine.errors import BackupRefused, BackupUnreadable
 from kennis.engine.settings import load_settings
-from kennis.operations import back_up_corpus
 from kennis.render.backup import (
     BACKUP_PASSWORD_PROMPT,
     NO_BACKUP_FOLDER,
@@ -58,8 +59,13 @@ def create_command(folder: Path | None) -> None:
     password = click.prompt(
         BACKUP_PASSWORD_PROMPT, hide_input=True, confirmation_prompt=True
     )
-    with reporting() as events:
-        report = back_up_corpus(context, chosen, password, events=events)
+    with DisplaySink() as shown:
+        report = api.back_up(
+            context.corpus_root, chosen, password, events=shown, on_waiting=say_waiting
+        ).result
+    # The service was sent the folder made absolute; the report names it
+    # as the person did, which is what `backup check --to` will be given.
+    report = replace(report, path=chosen / report.path.name)
     display.operation(
         "Backed up", describe_written(report), elapsed=report.elapsed_seconds
     )

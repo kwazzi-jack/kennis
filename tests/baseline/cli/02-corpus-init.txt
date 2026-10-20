@@ -1,0 +1,5 @@
+$ kennis corpus init
+--- exit 0
+--- stdout
+Created corpus at <scratch>/corpus
+--- stderr

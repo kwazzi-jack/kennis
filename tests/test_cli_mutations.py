@@ -11,11 +11,13 @@ sees.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from held import held_for_a_moment
 from kennis.cli.__main__ import main
 from kennis.engine.history.git import git
 from kennis.engine.history.repository import Repository
@@ -590,17 +592,20 @@ def test_restore_brings_back_a_removed_document(
 # ---------------------------------------------------------------------------
 
 
-def test_a_second_writer_is_told_the_corpus_is_busy(
+def test_a_second_writer_waits_for_the_corpus_and_then_writes(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):
-    """`timeout=0`, so this reports rather than waits. Written so that a
-    regression is a failure and not a hung suite: if the lock ever blocks,
-    this test stops rather than passing late - concern #86."""
+    """Through the service a write waits its turn rather than being refused
+    (14b). The holder always lets go, so a wait that never ends fails here
+    rather than hanging the suite - concern #86's rule, kept."""
     source = a_source(tmp_path, "trees.md")
-    with corpus_lock(corpus):
+    with held_for_a_moment(corpus) as hold:
         result = run.invoke(main, ["corpus", "add", "-n", str(source)])
-    assert result.exit_code != 0
-    assert "busy" in result.output.lower() or "using the corpus" in result.output
+        finished = time.monotonic()
+
+    assert result.exit_code == 0, result.output
+    assert finished >= hold.released, "the command did not wait for the holder"
+    assert len(sorted((corpus / "notes").rglob("*.md"))) == 1
 
 
 def test_a_reader_is_not_blocked_by_a_held_lock(corpus: Path, run: CliRunner):
@@ -794,9 +799,13 @@ def test_adding_restores_a_document_deleted_outside_kennis(
     document = only_document(corpus)
     document.unlink()
 
-    added(run, a_source(tmp_path, "Rivers.md"))
+    said = added(run, a_source(tmp_path, "Rivers.md"))
 
     assert document.exists()
+    # And says so, above the add's own lines: the restore is the service's
+    # to do and the report the command's to give.
+    assert "Restored" in said
+    assert said.index("Restored") < said.index("Added")
     # A note is titled by its filename now, so a source called `Trees.md`
     # lands as `Trees.md`. It used to be titled by its `# Trees.md` heading
     # and land as `Trees.md.md`, which is the wart #189 removed.

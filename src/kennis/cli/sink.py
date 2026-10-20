@@ -39,8 +39,9 @@ from kennis.engine.events import (
 )
 from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.logs import FanOut, LogSink
+from kennis.protocol.progress import Began, Queued
 from kennis.render.diagnostics import describe_diagnostic
-from kennis.render.words import fetching_model, progress_label
+from kennis.render.words import fetching_model, progress_label, waiting_for
 
 # The column glyph each outcome prints under. Layout rather than wording, so
 # it lives here and not in `render/`: `display.detail` colours by the marker,
@@ -145,3 +146,11 @@ def reporting() -> Iterator[FanOut]:
     """The sink a command hands to the engine, for as long as it runs."""
     with DisplaySink() as shown:
         yield FanOut(shown, LogSink())
+
+
+def say_waiting(news: Queued | Began) -> None:
+    """A task asked for behind others says so before it begins (14b): the
+    service runs one write at a time in a lane, and silence while one waits
+    reads as a hang."""
+    if isinstance(news, Queued):
+        display.note(waiting_for(news.behind, news.ahead))

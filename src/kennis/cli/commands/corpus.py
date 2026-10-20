@@ -21,9 +21,10 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisGroup
-from kennis.cli.resolve import resolve_document
-from kennis.cli.sink import marker_for, reporting
-from kennis.context import Context, existing_corpus, resolve_context
+from kennis.cli.paths import anchored
+from kennis.cli.sink import DisplaySink, marker_for, say_waiting
+from kennis.client import api
+from kennis.context import existing_corpus, resolve_context
 from kennis.engine.corpus.add import (
     AddOptions,
     AddOutcome,
@@ -32,40 +33,17 @@ from kennis.engine.corpus.add import (
     add_literature,
     add_notes,
 )
-from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import (
     CorpusSync,
-    claim_document,
-    disown_document,
 )
-from kennis.engine.docs.versions import pages_of_version, project_versions
 from kennis.engine.errors import KennisError
 from kennis.engine.events import Outcome
-from kennis.engine.history.freshness import index_freshness
-from kennis.engine.history.history import (
-    read_history,
-    what_a_return_changes,
-)
-from kennis.engine.history.outofband import OutOfBandChange, detect_changes
-from kennis.engine.history.repository import Repository, initialise_corpus
-from kennis.engine.locking import corpus_lock
+from kennis.engine.history.freshness import Freshness
+from kennis.engine.history.outofband import OutOfBandChange
+from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from
-from kennis.engine.rag.index import read_manifest
-from kennis.operations import (
-    add_documents,
-    build_indexes,
-    make_docs_version_current,
-    move_a_document,
-    remove_a_document,
-    remove_docs_version,
-    restore_a_document,
-    restore_hand_deletions,
-    return_corpus_to,
-    synchronise_corpus,
-)
 from kennis.render.packs import (
     describe_action,
     describe_corpus_claim_needed,
@@ -149,26 +127,26 @@ def init_command() -> None:
 @corpus_group.command(name="status")
 def status_command() -> None:
     """What the corpus holds, and what has changed since kennis last looked."""
-    context = existing_corpus()
-    repository = Repository(context.corpus_root)
+    status = api.status(existing_corpus().corpus_root)
 
     total = 0
     indexed = False
     current = True
-    for name in COLLECTION_NAMES:
-        facts = Collection(root=context.corpus_root, name=name).survey()
-        total += len(facts)
-        display.operation(name.capitalize(), count_of(len(facts), "document"))
-        for fact in facts:
+    for held in status.collections:
+        total += len(held.facts)
+        display.operation(
+            held.collection.capitalize(), count_of(len(held.facts), "document")
+        )
+        for fact in held.facts:
             # Read through `survey`, the lenient reader, on purpose:
             # `DocumentInvalid` names this command as its resolution, so a
             # status that used the strict reader would die on exactly the
             # corpus it exists to diagnose. Concern #21.
             if fact.problem:
                 display.detail("!", f"{fact.md_path.name}: {fact.problem}")
-        built, in_step = _report_freshness(context, repository, name)
-        indexed |= built
-        current &= in_step
+        if held.freshness is not None:
+            indexed = True
+            current &= _report_freshness(held.freshness, held.collection)
 
     if total == 0:
         display.note("the corpus has no documents yet")
@@ -186,7 +164,7 @@ def status_command() -> None:
         # Once, for the same reason as above. Concern #244.
         display.next_step("kennis corpus index")
 
-    for change in detect_changes(repository):
+    for change in status.changes:
         display.detail("~", describe_change(change))
         # design.md: every out-of-band change is reported *alongside the
         # command that would have done it properly*. The sentence without the
@@ -194,18 +172,6 @@ def status_command() -> None:
         # type. `remedies_for` produced them and nothing printed them (#128).
         for remedy in remedies_for(change):
             display.next_step(remedy)
-
-
-def _undo_hand_deletions(context: Context) -> None:
-    """Restore anything deleted outside kennis, and say what came back.
-
-    The sequence itself is `operations.restore_hand_deletions`, shared
-    with the graphical interface; this is the command line's voice over
-    it. Called **inside** the lock and **before** the operation, so that
-    the command's own commit carries a tree the deletion never touched.
-    Concern #128.
-    """
-    report_restored(restore_hand_deletions(context))
 
 
 def report_restored(restored: Sequence[OutOfBandChange]) -> None:
@@ -217,29 +183,10 @@ def report_restored(restored: Sequence[OutOfBandChange]) -> None:
         display.detail("+", describe_change(change))
 
 
-def _report_freshness(
-    context: Context, repository: Repository, name: str
-) -> tuple[bool, bool]:
-    """How far this collection's index has fallen behind it, if it has one.
-
-    Returns whether there was an index to report on, and whether it is
-    current - both so the caller can say once, rather than three times, what
-    is true of the corpus as a whole: that it has never been indexed, or
-    that something in it needs rebuilding.
-    """
-    manifest = read_manifest(index_root(context.corpus_root), name)
-    if manifest is None:
-        return False, True
-    freshness = index_freshness(
-        repository,
-        collection=name,
-        built_from=manifest.built_from,
-        # What the index actually holds. Without it the diff is the only
-        # witness, and `built_from` is the head *before* the indexing
-        # command's own commit - so every `kennis remember` reported the
-        # note it had just indexed as not yet indexed. Concern #245.
-        indexed=manifest.documents,
-    )
+def _report_freshness(freshness: Freshness, name: str) -> bool:
+    """How far this collection's index has fallen behind it, and whether it
+    is current - so the caller can say once, rather than three times, what
+    is true of the corpus as a whole."""
     described = describe_freshness(freshness, name)
     current = freshness.state == "in step" and not freshness.added
     if current:
@@ -251,7 +198,7 @@ def _report_freshness(
         # act on, and a detail line in the same dim column as the good news
         # would not read as one.
         display.note(described)
-    return True, current
+    return current
 
 
 @corpus_group.command(name="list")
@@ -262,12 +209,10 @@ def _report_freshness(
 )
 def list_command(collection: str | None) -> None:
     """Every document in the corpus."""
-    context = existing_corpus()
+    corpus_root = existing_corpus().corpus_root
     shown = 0
     for name in [collection] if collection else list(COLLECTION_NAMES):
-        for document in (
-            Collection(root=context.corpus_root, name=name).contents().documents
-        ):
+        for document in api.contents(corpus_root, name).documents:
             shown += 1
             display.row(document.id, document.md_path.name)
     if shown == 0:
@@ -288,52 +233,13 @@ def tree_command(collection: str | None) -> None:
     deliberate: a tree is a picture of what is on disk, and a document kennis
     cannot read is exactly the one a reader needs to be shown.
     """
-    context = existing_corpus()
-    for name in [collection] if collection else list(COLLECTION_NAMES):
-        found = Collection(root=context.corpus_root, name=name)
-        root = found.path
-        if not root.is_dir():
-            continue
-        display.operation(name.capitalize())
-        identifiers = _identifiers_in(found)
-        for path in sorted(root.rglob("*")):
-            if path.name.startswith(".") or _inside_a_wrapper(path, identifiers):
-                continue
-            depth = len(path.relative_to(root).parts) - 1
-            if path.is_dir() and path.name not in identifiers:
-                display.tree_group(path.name, depth)
+    for held in api.tree(existing_corpus().corpus_root, collection):
+        display.operation(held.collection.capitalize())
+        for entry in held.entries:
+            if entry.group:
+                display.tree_group(entry.name, entry.depth)
             else:
-                display.tree_document(identifiers.get(path.name), path.name, depth)
-
-
-def _identifiers_in(collection: Collection) -> dict[str, str | None]:
-    """Every entry the walk will meet that is a document, by its name on disk.
-
-    Keyed by the name the directory really holds, which for a document with
-    assets is its **wrapper directory** - `Foo`, holding `Foo/content.md`.
-    Not `reserved_filename`, which is `Foo.md`: that is the name the wrapper
-    reserves against a future document's filename, and it is not a name the
-    walk will ever see.
-
-    A value of None is a document whose frontmatter carries no identifier to
-    read, which is a document kennis cannot validate rather than one it
-    cannot find.
-    """
-    return {
-        (facts.wrapper_dir or facts.md_path).name: facts.identifier
-        for facts in collection.survey()
-    }
-
-
-def _inside_a_wrapper(path: Path, identifiers: dict[str, str | None]) -> bool:
-    """True for a file that belongs to a wrapped document rather than to the
-    tree: its `content.md`, and anything under its `images/`.
-
-    The wrapper is one document and is printed as one line. Walking into it
-    would show a reader `content.md` under every title, which is an
-    implementation detail of how assets are stored.
-    """
-    return any(part in identifiers for part in path.parts[:-1])
+                display.tree_document(entry.identifier, entry.name, entry.depth)
 
 
 # ---------------------------------------------------------------------------
@@ -440,19 +346,18 @@ def add_command(
         extra_file_types=(),
     )
 
-    restored: list[OutOfBandChange] = []
-    with reporting() as events:
-        report = add_documents(
-            context,
+    with DisplaySink() as shown:
+        written = api.add(
+            context.corpus_root,
             destination,
-            identifiers,
+            anchored(identifiers),
             options,
-            events=events,
-            restored=restored,
+            events=shown,
+            on_waiting=say_waiting,
         )
 
-    report_restored(restored)
-    _report_add(report)
+    report_restored(written.restored)
+    _report_add(written.result)
 
 
 def _destination(
@@ -605,11 +510,11 @@ def sync_command() -> None:
     edited in place. A paper that cannot be fetched is reported and
     tried again next time, rather than stopping the run.
     """
-    context = existing_corpus()
-    restored: list[OutOfBandChange] = []
-    with reporting() as events:
-        result = synchronise_corpus(context, events=events, restored=restored)
-    report_restored(restored)
+    corpus_root = existing_corpus().corpus_root
+    with DisplaySink() as shown:
+        written = api.sync_corpus(corpus_root, events=shown, on_waiting=say_waiting)
+    result = written.result
+    report_restored(written.restored)
     display.operation("Synchronised", describe_sync(result.counts, noun="document"))
     for action in result.actions:
         display.detail(
@@ -654,11 +559,9 @@ def claim_command(handle: str) -> None:
     Its content, its identifier and every handle pointing at it are
     unchanged.
     """
-    context = existing_corpus()
-    with corpus_lock(context.corpus_root):
-        _undo_hand_deletions(context)
-        document = claim_document(context.corpus_root, handle)
-        _commit(context, "claim", scope="notes", summary=f"claimed {document.id}")
+    written = api.claim(existing_corpus().corpus_root, handle)
+    report_restored(written.restored)
+    document = written.result
     display.operation("Claimed", document.frontmatter.title)
     display.detail("~", describe_owner(document))
 
@@ -672,11 +575,9 @@ def disown_command(handle: str) -> None:
     pack supplied - there is nothing to hand a note you wrote back to.
     The next sync may rewrite or remove it.
     """
-    context = existing_corpus()
-    with corpus_lock(context.corpus_root):
-        _undo_hand_deletions(context)
-        document = disown_document(context.corpus_root, handle)
-        _commit(context, "disown", scope="notes", summary=f"disowned {document.id}")
+    written = api.disown(existing_corpus().corpus_root, handle)
+    report_restored(written.restored)
+    document = written.result
     display.operation("Disowned", document.frontmatter.title)
     display.detail("~", describe_owner(document))
 
@@ -712,7 +613,7 @@ def remove_command(
 ) -> None:
     """Delete a document, and its assets when it has any, or every page of
     one version of a docs project."""
-    context = existing_corpus()
+    corpus_root = existing_corpus().corpus_root
     if project is not None or docs_version is not None:
         if handle is not None:
             raise display.CliError(
@@ -722,38 +623,41 @@ def remove_command(
             raise display.CliError(
                 "--project and --version name a docs version together: pass both."
             )
-        _remove_docs_version(context, project, docs_version, yes=yes)
+        _remove_docs_version(corpus_root, project, docs_version, yes=yes)
         return
     if handle is None:
         raise display.CliError(
             "name the document to remove, or a docs version with --project "
             "and --version."
         )
-    found, document = resolve_document(context, handle, collection)
+    found = api.found(corpus_root, handle, collection)
+    document = found.document
 
     if not yes:
         # Recoverable through `corpus restore`, so this is a courtesy rather
         # than the last line of defence - but a wrapped document takes its
         # assets with it, and that is worth one keystroke.
         click.confirm(
-            f"Remove '{document.frontmatter.title}' from {found.name}?", abort=True
+            f"Remove '{document.frontmatter.title}' from {found.collection}?",
+            abort=True,
         )
 
-    remove_a_document(context, found, document)
+    # By identifier and in the collection it was found in: what was asked
+    # about is what is removed, even if a name changed meanwhile.
+    api.remove_document(corpus_root, document.id, found.collection)
     display.operation("Removed", f"{document.id}  {document.frontmatter.title}")
 
 
 def _remove_docs_version(
-    context: Context, project: str, version: str, *, yes: bool
+    corpus_root: Path, project: str, version: str, *, yes: bool
 ) -> None:
-    docs_root = Collection(root=context.corpus_root, name="docs").path
-    pages = pages_of_version(docs_root, project, version)
+    pages = api.version_pages(corpus_root, project, version)
     if not yes:
         click.confirm(
             f"Remove {project} {version}, {count_of(pages, 'document')}, from docs?",
             abort=True,
         )
-    removed = remove_docs_version(context, project, version)
+    removed = api.remove_version(corpus_root, project, version).result
     display.operation(
         "Removed", f"{project} {version}, {count_of(removed.pages, 'document')}"
     )
@@ -772,12 +676,12 @@ def version_command(project: str | None, version: str | None) -> None:
     project and a version, that version becomes the one searched unless a
     search names others with --version.
     """
-    context = existing_corpus()
+    corpus_root = existing_corpus().corpus_root
     if project is not None and version is not None:
-        make_docs_version_current(context, project, version)
+        api.make_version_current(corpus_root, project, version)
         display.operation("Current", f"{project} {version}")
         return
-    held = project_versions(Collection(root=context.corpus_root, name="docs").path)
+    held = api.docs_versions(corpus_root)
     if project is not None:
         if project not in held:
             raise display.CliError(
@@ -810,7 +714,7 @@ def move_command(
     to_collection: str | None,
 ) -> None:
     """Relocate or rename a document, keeping its identifier."""
-    context = existing_corpus()
+    corpus_root = existing_corpus().corpus_root
     if to_collection is not None:
         # The design allows a document to move between collections - to notes
         # drops the extra metadata, out of notes requires it to be
@@ -823,14 +727,13 @@ def move_command(
     if group is None and title is None:
         raise display.CliError("nothing to change: pass --group, --title, or both.")
 
-    found, document = resolve_document(context, handle, collection)
-    restored: list[OutOfBandChange] = []
-    moved = move_a_document(
-        context, found, document, group=group, title=title, restored=restored
+    written = api.move_document(
+        corpus_root, handle, group=group, title=title, collection=collection
     )
-    report_restored(restored)
-
-    display.operation("Moved", f"{moved.id}  {moved.md_path.relative_to(found.path)}")
+    report_restored(written.restored)
+    moved = written.result
+    within = moved.md_path.relative_to(corpus_root / moved.collection)
+    display.operation("Moved", f"{moved.id}  {within}")
 
 
 # ---------------------------------------------------------------------------
@@ -858,11 +761,13 @@ def index_command(collection: str | None) -> None:
         else "lexical search only, with no embedding backend"
     )
 
-    restored: list[OutOfBandChange] = []
-    with reporting() as events:
-        result = build_indexes(context, collection, events=events, restored=restored)
+    with DisplaySink() as shown:
+        written = api.index(
+            context.corpus_root, collection, events=shown, on_waiting=say_waiting
+        )
+    result = written.result
 
-    report_restored(restored)
+    report_restored(written.restored)
     for index in result.built:
         display.operation(
             "Indexed",
@@ -899,10 +804,7 @@ def index_command(collection: str | None) -> None:
 @click.option("--limit", type=int, default=20, show_default=True)
 def history_command(collection: str | None, limit: int) -> None:
     """What kennis did to this corpus, newest first."""
-    context = existing_corpus()
-    entries = read_history(
-        Repository(context.corpus_root), collection=collection, limit=limit
-    )
+    entries = api.history(existing_corpus().corpus_root, collection, limit)
     if not entries:
         display.note("nothing recorded yet")
         return
@@ -923,7 +825,9 @@ def history_command(collection: str | None, limit: int) -> None:
 )
 def restore_command(document_id: str, commit: str) -> None:
     """Put a document back as it was at a commit."""
-    restored = restore_a_document(existing_corpus(), document_id, commit=commit)
+    restored = api.restore_document(
+        existing_corpus().corpus_root, document_id, commit
+    ).result
     display.operation("Restored", f"{restored.document_id} from {restored.commit[:8]}")
 
 
@@ -938,8 +842,8 @@ def return_command(commit: str, yes: bool) -> None:
     returning to the point before it undoes it. The index is left as built:
     rebuild it to search what is held afterwards.
     """
-    context = existing_corpus()
-    changes = what_a_return_changes(Repository(context.corpus_root), commit)
+    corpus_root = existing_corpus().corpus_root
+    changes = api.return_preview(corpus_root, commit)
     lines = describe_return_changes(changes)
     if changes.nothing:
         display.note(lines[0])
@@ -950,7 +854,7 @@ def return_command(commit: str, yes: bool) -> None:
         click.confirm(
             f"Return the corpus to {changes.commit[:8]}?", abort=True, default=False
         )
-    returned = return_corpus_to(context, changes.commit)
+    returned = api.return_corpus(corpus_root, changes.commit).result
     display.operation(
         "Returned",
         describe_returned(
@@ -967,17 +871,6 @@ def return_command(commit: str, yes: bool) -> None:
 # ---------------------------------------------------------------------------
 # Shared
 # ---------------------------------------------------------------------------
-
-
-def _commit(context: Context, operation: str, *, scope: str, summary: str) -> None:
-    """Record what the command just did.
-
-    `commit` returns None when the tree was already clean, which is what
-    re-adding a document kennis already holds looks like. That is not a
-    failure and is not reported as one: an empty commit would fill history
-    with noise, and raising would fail a command that succeeded.
-    """
-    Repository(context.corpus_root).commit(operation, scope=scope, summary=summary)
 
 
 __all__ = ["KennisError", "corpus_group"]

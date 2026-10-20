@@ -1,0 +1,7 @@
+$ kennis search calibration
+--- exit 1
+--- stdout
+error: nothing that could be searched has an index yet
+  hint: run `kennis corpus index --collection docs`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

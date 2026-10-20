@@ -1,0 +1,12 @@
+$ kennis read calibration --chunks 0:2
+--- exit 0
+--- stdout
+# Calibration
+
+Calibration solves for antenna gains and phase.
+
+## Gains
+
+The gain of each antenna is solved per interval.
+--- stderr
+Read [notes] calibration  (doc0000001)  notes/calibration.md  (chunks 0 to 1)

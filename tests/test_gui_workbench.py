@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from starlette.routing import BaseRoute
 
 from kennis.cli.__main__ import main
+from kennis.context import existing_corpus
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.theme import stylesheet
@@ -341,7 +342,7 @@ def test_the_pane_says_how_much_is_held_and_what_its_dots_mean(
     corpus: Path, client: TestClient
 ):
     admitted(client)
-    write_note("Calibration converged after three rounds.")
+    write_note(existing_corpus(), "Calibration converged after three rounds.")
 
     pane = BeautifulSoup(pane_of(client.get("/").text), "html.parser")
     text = " ".join(pane.get_text(" ").split())
@@ -361,7 +362,7 @@ def test_the_pane_says_which_collections_need_indexing(
     apart: an empty collection has nothing to index, and a collection
     never indexed is not *stale* - concern #245's distinction."""
     admitted(client)
-    write_note("Calibration converged after three rounds.")
+    write_note(existing_corpus(), "Calibration converged after three rounds.")
     never = collection_states(client.get("/").text)
 
     # The first index of a collection is a deliberate act: `remember`
@@ -370,7 +371,7 @@ def test_the_pane_says_which_collections_need_indexing(
     assert CliRunner().invoke(main, indexing).exit_code == 0
     indexed = collection_states(client.get("/").text)
 
-    write_note("A second note, deliberately left out.", index=False)
+    write_note(existing_corpus(), "A second note, deliberately left out.", index=False)
     behind = collection_states(client.get("/").text)
 
     assert never["literature"] == "empty"
@@ -385,7 +386,7 @@ def test_the_documents_are_not_drawn_on_every_page(corpus: Path, client: TestCli
     every page. A collection's documents are fetched when it is
     opened; the page carries only the address to fetch them from."""
     admitted(client)
-    write_note("Calibration converged after three rounds.")
+    write_note(existing_corpus(), "Calibration converged after three rounds.")
 
     pane = pane_of(client.get("/").text)
 
@@ -397,7 +398,11 @@ def test_an_opened_collection_lists_its_groups_and_documents(
     corpus: Path, client: TestClient
 ):
     admitted(client)
-    write_note("Calibration converged after three rounds.", group="observing")
+    write_note(
+        existing_corpus(),
+        "Calibration converged after three rounds.",
+        group="observing",
+    )
 
     tree = client.get("/tree/notes").text
 
@@ -435,8 +440,13 @@ def test_the_context_is_named_after_its_project(
     assert CliRunner().invoke(main, ["context", "init"]).exit_code == 0
     # A fresh bundle holds only its landing page and hidden scaffolding,
     # neither of which `bundle_documents` counts.
-    write_context_note("Solution intervals are per scan.", title="Intervals")
+    bundle = project / ".context"
+    write_context_note(
+        "Solution intervals are per scan.", title="Intervals", bundle=bundle
+    )
     admitted(client)
+    # Opened from the project, as `kennis gui` opens it there (#508).
+    client.get("/", params={"bundle": str(bundle)})
 
     pane = pane_of(client.get("/").text)
 
@@ -659,3 +669,35 @@ def test_no_route_runs_on_the_event_loop():
     ]
 
     assert on_the_loop == []
+
+
+def test_a_tab_shows_the_project_it_was_opened_for_not_the_service_s(
+    corpus: Path, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The service's own directory is whichever client started it (#508):
+    standing in one project while the tab names another, the tab's wins,
+    and a tab opened outside any project names none."""
+    for name in ("here", "elsewhere"):
+        (tmp_path / name).mkdir()
+        monkeypatch.chdir(tmp_path / name)
+        assert CliRunner().invoke(main, ["context", "init"]).exit_code == 0
+    monkeypatch.chdir(tmp_path / "here")
+    admitted(client)
+
+    client.get("/", params={"bundle": str(tmp_path / "elsewhere" / ".context")})
+    named = pane_of(client.get("/").text)
+    client.get("/", params={"bundle": ""})
+    unnamed = pane_of(client.get("/").text)
+
+    assert re.search(r'class="project"[^>]*>elsewhere<', named), named
+    assert 'class="project"' not in unnamed
+
+
+def test_a_tab_given_something_that_is_not_a_bundle_has_no_project(
+    corpus: Path, client: TestClient, tmp_path: Path
+):
+    admitted(client)
+
+    client.get("/", params={"bundle": str(tmp_path)})
+
+    assert 'class="project"' not in pane_of(client.get("/").text)

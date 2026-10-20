@@ -322,14 +322,14 @@ def test_an_index_whose_commit_is_gone_cannot_say_a_document_is_searchable(
 def test_a_documents_chunks_are_its_own_in_order(corpus: Path):
     identifier = a_note(corpus)
 
-    chunks = document_chunks(existing_corpus(), "notes", identifier)
+    chunks = document_chunks(existing_corpus(), "notes", identifier, bundle=None)
 
     assert len(chunks) > 2, "the sample must chunk"
     assert [chunk.chunk_index for chunk in chunks] == list(range(len(chunks)))
     assert {chunk.document_id for chunk in chunks} == {identifier}
     for chunk in chunks:
         assert chunk_range(
-            existing_corpus(), "notes", identifier, chunk.chunk_index
+            existing_corpus(), "notes", identifier, chunk.chunk_index, bundle=None
         ) == (chunk.char_start, chunk.char_end)
 
 

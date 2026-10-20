@@ -1,0 +1,5 @@
+$ search_notes {"question": "phase", "top_k": 1}
+--- error False
+[1] calibration - Phase
+  keywords: very high  id=doc0000001 chunk=2
+  ## Phase Phase calibration follows the bandpass.

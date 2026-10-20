@@ -1,0 +1,5 @@
+$ kennis corpus remove beams -y
+--- exit 0
+--- stdout
+Removed doc0000003  beams
+--- stderr
