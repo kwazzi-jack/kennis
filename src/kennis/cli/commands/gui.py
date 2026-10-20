@@ -8,7 +8,6 @@ same window to every tab.
 
 from __future__ import annotations
 
-from pathlib import Path
 from urllib.parse import urlencode
 
 import click
@@ -44,7 +43,6 @@ def gui_command(no_browser: bool, replace: bool) -> None:
     """
     from kennis.client.process import ensure_service, stop_service
     from kennis.context import existing_corpus
-    from kennis.engine.context.bundle import find_bundle
     from kennis.gui.browser import open_quietly
     from kennis.protocol.record import find_service
 
@@ -58,13 +56,9 @@ def gui_command(no_browser: bool, replace: bool) -> None:
         display.warning(waiting_for_another_version(version))
 
     record = ensure_service(corpus_root, on_waiting=warn)
-    # The project is found here, where the person typed the command, and
-    # named in the address: the service serves every directory (#508).
-    # Empty outside a project, so the tab does not keep an earlier one.
-    bundle = find_bundle(Path.cwd())
-    address = f"{record.address}?" + urlencode(
-        {"token": record.token, "bundle": "" if bundle is None else str(bundle)}
-    )
+    # No project in the address: the window shows every project's
+    # context, whichever directory this was typed in (14g, #512).
+    address = f"{record.address}?" + urlencode({"token": record.token})
     # Said before the browser is asked: `webbrowser.open` can fail
     # silently, and then this line is the only way in.
     display.operation("Serving" if no_browser else "Opened", "the kennis window")

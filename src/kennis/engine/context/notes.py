@@ -29,6 +29,7 @@ import yaml
 
 from kennis.engine.atomic import replace_file
 from kennis.engine.context.bundle import INDEX_DIRNAME, LANDING_FILENAME
+from kennis.engine.context.projects import note_project
 from kennis.engine.corpus.intake import sha256_of
 from kennis.engine.corpus.layout import title_filename, unique_filename
 from kennis.engine.errors import InputError
@@ -66,6 +67,7 @@ def remember_in_bundle(
     Takes no lock and makes no commit. See the module docstring for why the
     second one is deliberate.
     """
+    note_project(bundle)
     started_at = time.monotonic()
     body = text.strip()
     if not body:

@@ -21,10 +21,10 @@ import pytest
 
 from kennis.engine.corpus.add import Uniqueness, write_note
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document
+from kennis.engine.corpus.document import Document, write_document
 from kennis.engine.corpus.intake import Converted
-from kennis.engine.corpus.sync import claim_document, disown_document, sync_corpus
-from kennis.engine.errors import DocumentInvalid, PackInvalid
+from kennis.engine.corpus.sync import sync_corpus
+from kennis.engine.errors import PackInvalid
 from kennis.engine.events import Outcome, Recorder
 from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.store import install_pack, pack_root
@@ -221,31 +221,44 @@ def test_a_note_the_user_wrote_is_never_touched(corpus: Path, tmp_path: Path):
     assert result.counts.get("yours") is None
 
 
-def test_a_pack_note_the_user_edited_is_not_rewritten(corpus: Path, tmp_path: Path):
+def claimed_by_an_earlier_kennis(document: Document) -> None:
+    """What `corpus claim` did before 14g: the owner became the person and
+    nothing else changed. Such documents are still on disk, and the sync's
+    `yours` row is what keeps them."""
+    write_document(
+        document.md_path,
+        frontmatter=document.frontmatter.model_copy(update={"owner": "user"}),
+        body=document.body,
+    )
+
+
+def test_a_pack_note_the_user_edited_is_kept_as_theirs(corpus: Path, tmp_path: Path):
+    """The whole of the copy is `test_obtained_content`'s; this is the
+    count the report reads (#514)."""
     installed(corpus, tmp_path, files={"notes/one.md": "First.\n"})
     sync_corpus(corpus)
     path = only_note(corpus).md_path
+    path.chmod(0o644)
     path.write_text(path.read_text().replace("First.", "Mine now."), encoding="utf-8")
 
     installed(corpus, tmp_path, files={"notes/one.md": "Second.\n"})
     result = sync_corpus(corpus)
 
-    assert "Mine now." in only_note(corpus).body
     assert result.counts.get("edited") == 1
-    # The identifier, because `corpus claim` is the only handle on a
-    # corpus document and the report has to be able to name it.
-    assert result.edited == (only_note(corpus).id,)
+    assert sorted(note.body for note in notes_in(corpus)) == [
+        "Mine now.\n",
+        "Second.\n",
+    ]
 
 
 def test_a_claimed_document_is_reported_under_yours_every_run(
     corpus: Path, tmp_path: Path
 ):
-    """The one way the `yours:` row is reachable in a corpus, and the
-    reason `claim` exists: without it section 5's protective rows can
-    never fire for a document that started life in a pack."""
+    """The one way the `yours:` row is reachable in a corpus: a document
+    an earlier kennis let the person claim."""
     installed(corpus, tmp_path)
     sync_corpus(corpus)
-    claim_document(corpus, only_note(corpus).id)
+    claimed_by_an_earlier_kennis(only_note(corpus))
 
     first = sync_corpus(corpus)
     second = sync_corpus(corpus)
@@ -259,7 +272,7 @@ def test_a_claimed_document_is_not_rewritten_when_the_pack_changes(
 ):
     installed(corpus, tmp_path, files={"notes/one.md": "First.\n"})
     sync_corpus(corpus)
-    claim_document(corpus, only_note(corpus).id)
+    claimed_by_an_earlier_kennis(only_note(corpus))
 
     installed(corpus, tmp_path, files={"notes/one.md": "Second.\n"})
     sync_corpus(corpus)
@@ -277,79 +290,12 @@ def test_a_claimed_document_is_not_deleted_when_the_pack_drops_it(
         for one in notes_in(corpus)
         if one.frontmatter.source.origin.endswith("two.md")
     )
-    claim_document(corpus, kept.id)
+    claimed_by_an_earlier_kennis(kept)
 
     installed(corpus, tmp_path, files={"notes/one.md": "1.\n"})
     sync_corpus(corpus)
 
     assert len(notes_in(corpus)) == 2
-
-
-# ---------------------------------------------------------------------------
-# claim and disown
-# ---------------------------------------------------------------------------
-
-
-def test_claim_moves_ownership_to_the_user(corpus: Path, tmp_path: Path):
-    installed(corpus, tmp_path)
-    sync_corpus(corpus)
-
-    claim_document(corpus, only_note(corpus).id)
-
-    assert only_note(corpus).frontmatter.owner == "user"
-
-
-def test_claim_leaves_the_source_alone(corpus: Path, tmp_path: Path):
-    """What keeps the document at its address. A claim that erased the
-    origin would make the next sync write a second copy of the same
-    note."""
-    installed(corpus, tmp_path)
-    sync_corpus(corpus)
-    before = only_note(corpus).frontmatter.source.origin
-
-    claim_document(corpus, only_note(corpus).id)
-
-    assert only_note(corpus).frontmatter.source.origin == before
-
-
-def test_disown_hands_it_back_to_the_pack_it_came_from(corpus: Path, tmp_path: Path):
-    installed(corpus, tmp_path)
-    sync_corpus(corpus)
-    claim_document(corpus, only_note(corpus).id)
-
-    disown_document(corpus, only_note(corpus).id)
-
-    assert only_note(corpus).frontmatter.owner == "pack:alpha"
-
-
-def test_disowning_a_note_the_user_wrote_is_refused(corpus: Path):
-    """There is no pack to hand it to, and inventing one would be a claim
-    about provenance that is not true."""
-    collection = Collection(root=corpus, name="notes")
-    document_id, _ = write_note(
-        collection,
-        Uniqueness.of(collection),
-        converted=Converted(
-            markdown="Mine.\n", via="remember", format="markdown", origin="inline:"
-        ),
-        title="Mine",
-        group=None,
-    )
-
-    with pytest.raises(DocumentInvalid):
-        disown_document(corpus, document_id)
-
-
-def test_claiming_a_document_the_user_already_owns_is_harmless(
-    corpus: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path)
-    sync_corpus(corpus)
-    claim_document(corpus, only_note(corpus).id)
-
-    claim_document(corpus, only_note(corpus).id)
-
-    assert only_note(corpus).frontmatter.owner == "user"
 
 
 # ---------------------------------------------------------------------------
@@ -472,13 +418,17 @@ def test_a_pack_note_the_user_edited_is_not_moved(corpus: Path, tmp_path: Path):
     installed(corpus, tmp_path)
     sync_corpus(corpus)
     edited = moved_to_the_top(only_note(corpus), corpus)
+    edited.md_path.chmod(0o644)
     edited.md_path.write_text(
         edited.md_path.read_text(encoding="utf-8") + "\nMine now.\n", encoding="utf-8"
     )
 
     result = sync_corpus(corpus)
 
-    assert folder_of(only_note(corpus), corpus) == "."
+    # Rewritten where it stands this run; the edit is a note of the
+    # person's beside it (#514).
+    (pack_s,) = [one for one in notes_in(corpus) if one.frontmatter.owner != "user"]
+    assert folder_of(pack_s, corpus) == "."
     assert result.counts.get("edited") == 1
 
 

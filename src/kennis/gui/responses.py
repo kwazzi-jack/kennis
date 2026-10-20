@@ -38,7 +38,7 @@ from kennis.gui.pages import (
     ShownVersionProject,
     shown_version_choices,
 )
-from kennis.gui.pane import Pane, pane_now
+from kennis.gui.pane import Pane, pane_now, present_projects
 from kennis.gui.preferences import (
     preferences_of,
 )
@@ -183,7 +183,6 @@ TEMPLATES.env.globals.update(
         "index_now": words.index_now,
         "index_now_label": words.INDEX_NOW,
         "sync_corpus_label": words.SYNC_CORPUS_ACTION,
-        "sync_context_label": words.SYNC_CONTEXT_ACTION,
         "copy_label": words.COPY_LABEL,
         "copied_label": words.COPIED_LABEL,
         "cancel_label": words.CANCEL,
@@ -197,6 +196,8 @@ TEMPLATES.env.globals.update(
         "title_label": words.TITLE_LABEL,
         "group_label": words.GROUP_LABEL,
         "target_label": words.TARGET_LABEL,
+        "project_label": words.PROJECT_LABEL,
+        "every_project": words.EVERY_PROJECT,
         "pack_path_label": words.PACK_PATH_LABEL,
         "index_which_label": words.INDEX_WHICH_LABEL,
         "problem_back": words.PROBLEM_BACK,
@@ -206,7 +207,8 @@ TEMPLATES.env.globals.update(
         "packs_heading": words.PACKS_HEADING,
         "documents_held": words.documents_held,
         "index_every": words.INDEX_EVERY,
-        "remember_targets": words.REMEMBER_TARGETS,
+        # A function, because the projects vary: a note may go to any.
+        "remember_targets": lambda: words.remember_targets(present_projects()),
         # Every job's outcome redraws these where the page has them (#457).
         "shell_redraws": (
             ("strip-status", "/strip/status"),

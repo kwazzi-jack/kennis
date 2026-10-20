@@ -113,6 +113,10 @@
 [data-collection="docs"] { --collection: var(--collection-docs); }
 [data-collection="notes"] { --collection: var(--collection-notes); }
 [data-collection="context"] { --collection: var(--collection-context); }
+/* Every project's notes, and a pack's context, which is advice for a
+   project as its own notes are (14g). */
+[data-collection^="context:"],
+[data-collection^="pack:"] { --collection: var(--collection-context); }
 
 /* `scrollbar-width` is not inherited, so it is set on everything. */
 * { box-sizing: border-box; scrollbar-width: thin; }

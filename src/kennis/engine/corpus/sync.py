@@ -43,6 +43,7 @@ from kennis.engine.corpus.add import (
     write_note,
 )
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.copying import copied_note
 from kennis.engine.corpus.document import Document, move_document, write_document
 from kennis.engine.corpus.intake import Converted, convert_local_file, convert_url
 from kennis.engine.corpus.layout import relative_to_corpus
@@ -91,7 +92,8 @@ _OUTCOMES: dict[Verdict, Outcome] = {
     "adopt": Outcome.CHANGED,
     "delete": Outcome.REMOVED,
     "keep": Outcome.UNCHANGED,
-    "edited": Outcome.SKIPPED,
+    # The original is the pack's again, and the edit is a new note.
+    "edited": Outcome.CHANGED,
     "yours": Outcome.SKIPPED,
 }
 
@@ -100,18 +102,16 @@ _OUTCOMES: dict[Verdict, Outcome] = {
 class CorpusSync:
     """What one `corpus sync` did, by verdict.
 
-    `edited` carries the surrogate identifier of each document kennis
-    declined to rewrite, which the bundle's equivalent has no use for: a
-    corpus document is addressed by that identifier and `corpus claim`
-    is the only handle on it, so the report cannot name the command to
-    run without it. Section 5 step 4a names that command for exactly
-    this case.
+    `copied` pairs each pack note the person had edited with the note of
+    theirs the edit now lives in, `(original, copy)` by identifier: the
+    original was put back from the pack, or removed if the pack no longer
+    declares it, and no edit is lost (14g, #514).
     """
 
     actions: tuple[Action, ...]
     counts: dict[Verdict, int]
     deferred: tuple[tuple[str, str], ...]
-    edited: tuple[str, ...]
+    copied: tuple[tuple[str, str], ...]
     # Declarations whose fetch did not succeed. Not a verdict: the
     # declaration still stands and the document is still absent, so the
     # next run tries again. One unreachable host must not stop the other
@@ -167,6 +167,7 @@ def sync_corpus(
     papers = _relocated(Collection(root=corpus_root, name="literature"), papers)
 
     why: dict[str, Refusal] = {}
+    copied: list[tuple[str, str]] = []
     failed = _carried_out(
         corpus_root,
         notes,
@@ -178,6 +179,7 @@ def sync_corpus(
         unpaywall_email=unpaywall_email,
         events=events,
         why=why,
+        copied=copied,
     )
 
     actions = notes.actions + papers.actions + projects.actions
@@ -188,11 +190,7 @@ def sync_corpus(
         actions=actions,
         counts=dict(counts),
         deferred=notes.deferred,
-        edited=tuple(
-            notes.held[action.address][1].id
-            for action in notes.actions
-            if action.verdict == "edited"
-        ),
+        copied=tuple(copied),
         failed=failed,
         why=tuple(why.items()),
         places=places,
@@ -293,7 +291,7 @@ def _refuse_what_cannot_be_classified(*plans: _Plan) -> None:
 
 
 # The verdicts that leave a pack's document standing as the pack's. Not
-# `edited`: the reader changed it, and the report asks them to claim it.
+# `edited`, which is rewritten in place this run and stands from the next.
 _STANDING: Final = frozenset({"keep", "rewrite", "adopt"})
 
 
@@ -415,6 +413,7 @@ def _carried_out(
     unpaywall_email: str,
     events: EventSink | None,
     why: dict[str, Refusal],
+    copied: list[tuple[str, str]],
 ) -> tuple[str, ...]:
     """Do what the three plans decided, and report what would not happen.
 
@@ -430,6 +429,11 @@ def _carried_out(
     failed_notes: list[str] = []
     for action in notes.actions:
         try:
+            if action.verdict == "edited":
+                copied.append(
+                    _kept_as_theirs(collection, record, action, notes, client)
+                )
+                continue
             _applied(collection, record, action, notes, client)
         except KennisError as error:
             failed_notes.append(action.address)
@@ -985,7 +989,8 @@ def _applied(
     plan: _Plan,
     client: httpx.Client | None,
 ) -> None:
-    """Carry out one action. `keep`, `yours` and `edited` write nothing."""
+    """Carry out one action. `keep` and `yours` write nothing; `edited` is
+    `_kept_as_theirs`'s."""
     if action.verdict == "delete":
         collection.remove(plan.held[action.address][1])
         return
@@ -999,6 +1004,28 @@ def _applied(
         _written(collection, record, declaration, content, group=group)
         return
     _rewritten(plan.held[action.address][1], declaration, content)
+
+
+def _kept_as_theirs(
+    collection: Collection,
+    record: Uniqueness,
+    action: Action,
+    plan: _Plan,
+    client: httpx.Client | None,
+) -> tuple[str, str]:
+    """A pack note the person edited: the edit becomes a note of theirs,
+    then the original is the pack's again - rewritten from what the pack
+    declares, or removed when it declares it no longer (#514). The copy
+    first, so an interrupt between the two loses nothing."""
+    held = plan.held[action.address][1]
+    mine = copied_note(collection, record, held)
+    declaration = action.declaration
+    if declaration is None:
+        collection.remove(held)
+    else:
+        content = _content_of(declaration, plan.entries.get(action.address), client)
+        _rewritten(held, declaration, content)
+    return held.id, mine.id
 
 
 @dataclass(frozen=True, slots=True)
@@ -1125,52 +1152,6 @@ def _rewritten(
     write_document(document.md_path, frontmatter=frontmatter, body=content.body)
 
 
-def claim_document(corpus_root: Path, handle: str) -> Document:
-    """Move a document from its pack to the user. Design section 6.
-
-    **`source` is left alone**, which is what keeps the document at its
-    address: the next sync still finds it, sees `owner: user`, and
-    reports it under `yours:` rather than rewriting it. A claim that
-    erased the origin would make the next sync write a second copy of the
-    same note.
-
-    Claiming a document the user already owns is harmless and does
-    nothing, because the end state is what was asked for.
-    """
-    collection = Collection(root=corpus_root, name="notes")
-    document = collection.resolve(handle)
-    if document.frontmatter.owner == "user":
-        return document
-    return _reowned(document, "user")
-
-
-def disown_document(corpus_root: Path, handle: str) -> Document:
-    """Hand a document back to the pack it came from. Design section 6.
-
-    Only a document that came from one: the pack is read back out of
-    `source.from`, and there is nothing to read for a note the user
-    wrote. Inventing a pack would be a claim about provenance that is not
-    true, and the next sync would then delete the document, because no
-    pack declares it.
-    """
-    collection = Collection(root=corpus_root, name="notes")
-    document = collection.resolve(handle)
-    source = document.frontmatter.source
-    if source.via != "pack" or not source.origin.startswith(ORIGIN_SCHEME):
-        raise DocumentInvalid(
-            f"'{handle}' did not come from a pack, so there is none to hand it back to",
-            resolution="kennis corpus list",
-        )
-    pack_id = source.origin[len(ORIGIN_SCHEME) :].split("/", 1)[0]
-    return _reowned(document, f"pack:{pack_id}")
-
-
-def _reowned(document: Document, owner: str) -> Document:
-    """Rewrite one document with a new `owner` and nothing else changed."""
-    frontmatter = document.frontmatter.model_copy(update={"owner": owner})
-    return write_document(document.md_path, frontmatter=frontmatter, body=document.body)
-
-
 def _reported(
     events: EventSink | None,
     actions: tuple[Action, ...],
@@ -1204,7 +1185,5 @@ __all__ = [
     "OPERATION",
     "ORIGIN_SCHEME",
     "CorpusSync",
-    "claim_document",
-    "disown_document",
     "sync_corpus",
 ]

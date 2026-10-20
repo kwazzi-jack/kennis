@@ -359,26 +359,28 @@ still works.
 The corpus is kennis's own repository, so a sync that changed anything
 makes one commit, visible in `kennis corpus history`.
 
-### Ownership can be moved, in both directions
+### A pack's text is read-only; your own version is a copy
+
+What a pack supplies is obtained text, like a fetched documentation page:
+kennis writes it without write permission, so an editor warns you before
+you change something the next sync will put back. Literature is the
+exception - a paper's converted text may be corrected in place.
 
 ```
-kennis corpus claim <id>      # the pack's -> yours
-kennis corpus disown <id>     # yours -> back to the pack it came from
+kennis corpus copy <id>       # a new note of yours, with the same text
 ```
 
-`claim` is how you keep a document a pack supplied. It stops every future
-sync from rewriting or removing it, and each run reports that a pack still
-declares it. The content, the identifier and every handle are unchanged,
-and so is the recorded address - that is what lets the sync recognise it
-and leave it alone rather than writing a second copy.
+`copy` is how you keep your own version of a document a pack supplied.
+It writes a note owned by you, with a new identifier, and records the
+document it came from as `copy:<id>` in its source. The pack's document
+is untouched and stays under the pack's control: a later release still
+updates it, and a sync still removes it when the pack stops declaring it.
 
-`disown` is the reverse, and only works on a document that came from a
-pack: there is no pack to hand a note you wrote back to.
-
-**An edit is a claim you have not made yet.** If you edit a pack's
+**An edit you make anyway is copied out, not lost.** If you edit a pack's
 document in place, the next sync notices - it compares the body against
-the digest recorded when kennis wrote it - leaves it alone, and names
-`kennis corpus claim <id>` with the real identifier.
+the digest recorded when kennis wrote it - copies your edited text into
+a new note of yours, and then puts the pack's text back. The report
+names both identifiers.
 
 ## See what is installed
 

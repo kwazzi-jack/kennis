@@ -22,6 +22,7 @@ from kennis.engine.context import (
     CONTEXT_COLLECTION,
 )
 from kennis.engine.context.bundle import find_bundle
+from kennis.engine.context.projects import present_bundles
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.rag.models import Filter
 from kennis.engine.rag.search import (
@@ -45,6 +46,7 @@ from kennis.render.words import (
     describe_lexical_fallback,
     describe_skipped,
     describe_span,
+    group_title,
 )
 from kennis.retrieval import (
     EVERY_SCOPE,
@@ -143,6 +145,12 @@ def _scopes(
     "'all'. Each project's current version without it.",
 )
 @click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Search every project's context that `kennis context list` knows, "
+    "not only this project's.",
+)
+@click.option(
     "--snippet",
     type=click.Choice(["none", "short", "full"]),
     default="short",
@@ -164,6 +172,7 @@ def search_command(
     group: str | None,
     project: str | None,
     versions: tuple[str, ...],
+    all_projects: bool,
     snippet: str,
     scores: str,
 ) -> None:
@@ -187,6 +196,7 @@ def search_command(
     # happen to coincide here.
     named = len(selected) < len(SCOPE_NAMES)
     bundle = find_bundle(Path.cwd())
+    others = present_bundles() if all_projects else ()
     filters = _filters(group if group is not None else project)
 
     corpus_root = resolve_context().corpus_root
@@ -201,6 +211,7 @@ def search_command(
             mode=mode,
             versions=versions,
             bundle=bundle,
+            others=others,
         )
     else:
         # No corpus, so no service to own one: a search inside a project
@@ -215,6 +226,7 @@ def search_command(
             mode=mode,
             versions=versions,
             bundle=bundle,
+            others=others,
         )
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))
@@ -236,8 +248,8 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     # thirds of the output before the answer, and the reader learns the
     # same thing from one - but two scopes needing different commands need
     # different lines, which is why the grouping is by resolution.
-    for resolution, names in _by_resolution(found.skipped).items():
-        display.note(describe_skipped(names))
+    for (resolution, installed), names in _by_resolution(found.skipped).items():
+        display.note(describe_skipped(names, installed=installed))
         display.next_step(resolution)
 
     groups = found.groups
@@ -251,7 +263,7 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     display.operation("Found", summary_of(groups))
     for name, hits in groups.items():
         display.info()
-        display.operation(name.capitalize(), basis_phrase(hits, style))
+        display.operation(group_title(name), basis_phrase(hits, style))
         # Per group, which is what it wanted to be: the objection its old
         # docstring recorded - that a per-collection best makes every
         # collection's top hit "very high" - only bit while one column
@@ -274,7 +286,7 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     _read_hint(everything)
 
 
-def _by_resolution(skipped: Sequence[Skipped]) -> dict[str, list[str]]:
+def _by_resolution(skipped: Sequence[Skipped]) -> dict[tuple[str, bool], list[str]]:
     """The skipped scopes grouped by one command that covers them all.
 
     Insertion-ordered, so the scopes appear in `SCOPE_NAMES` order and
@@ -292,14 +304,12 @@ def _by_resolution(skipped: Sequence[Skipped]) -> dict[str, list[str]]:
     the old fixture could not see, having only ever one scope to
     skip. Concern #341.
     """
-    corpus_scopes = [
-        scope.name for scope in skipped if scope.name != CONTEXT_COLLECTION
-    ]
-    grouped: dict[str, list[str]] = {}
+    corpus_scopes = [scope.name for scope in skipped if scope.name in COLLECTION_NAMES]
+    grouped: dict[tuple[str, bool], list[str]] = {}
     for scope in skipped:
-        shared = scope.name != CONTEXT_COLLECTION and len(corpus_scopes) > 1
+        shared = scope.name in COLLECTION_NAMES and len(corpus_scopes) > 1
         resolution = "kennis corpus index" if shared else scope.resolution
-        grouped.setdefault(resolution, []).append(scope.name)
+        grouped.setdefault((resolution, scope.installed), []).append(scope.name)
     return grouped
 
 
@@ -319,7 +329,7 @@ def _read_hint(hits: list[Hit]) -> None:
     line is already the path, and opening a file in your own project is not
     something kennis has a verb for.
     """
-    readable = next((hit for hit in hits if hit.collection != CONTEXT_COLLECTION), None)
+    readable = next((hit for hit in hits if hit.collection in COLLECTION_NAMES), None)
     if readable is None:
         return
     chunk = readable.result.chunk

@@ -61,6 +61,9 @@ type ConversionVia = Literal[
     # here", and "a pack put it there" is a different answer from "a
     # person typed it".
     "pack",
+    # A person's own version of a document kennis obtained, made by
+    # `corpus copy` or by a sync keeping an edit (14g, #514).
+    "copy",
 ]
 
 # The shape of the source bytes themselves, before conversion.

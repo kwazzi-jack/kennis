@@ -39,12 +39,19 @@ STATIC = Path(__file__).parent.parent / "src" / "kennis" / "gui" / "static"
 # Written by hand: what each menu offers, in order (#373).
 EXPECTED_MENU = [
     "Open",
+    "Copy into my notes",
     "Move to group",
     "Add here",
     "Index this collection",
     "Remove",
 ]
-EXPECTED_DOCS_MENU = ["Open", "Add here", "Index this collection", "Remove"]
+EXPECTED_DOCS_MENU = [
+    "Open",
+    "Copy into my notes",
+    "Add here",
+    "Index this collection",
+    "Remove",
+]
 EXPECTED_GROUP_MENU = ["Add here", "Index this collection"]
 # And the letter for each state, which is what the reader learns to read.
 EXPECTED_LETTERS = {"unindexed": "U", "changed": "M", "unreadable": "!"}
@@ -394,6 +401,7 @@ def test_a_group_menu_is_reachable_while_the_group_is_closed(
 def test_the_words_of_the_menu_are_the_ones_written_down():
     assert [
         words.MENU_OPEN,
+        words.MENU_COPY,
         words.MENU_MOVE,
         words.MENU_ADD_HERE,
         words.MENU_INDEX,
@@ -445,6 +453,57 @@ def move_form(row: Tag) -> Tag:
     form = own_menu(row).find("form", class_="move")
     assert isinstance(form, Tag), row
     return form
+
+
+def copy_form(row: Tag) -> Tag:
+    form = own_menu(row).find("form", class_="copy")
+    assert isinstance(form, Tag), row
+    return form
+
+
+def test_copying_as_drawn_makes_a_note_of_mine_and_opens_it(
+    client: TestClient, corpus: Path
+):
+    """What `kennis corpus copy` does (#514): a new note of the person's,
+    with a new id, recording the document it came from. The page the
+    reader lands on is the copy, because that is the one they can edit."""
+    del corpus
+    identifier = a_docs_page("numpy", "indexing")
+    form = copy_form(row_of(tree_of(client, "docs"), identifier))
+
+    answer = client.post(str(form["action"]), data=sent_by(form))
+
+    assert answer.status_code == 303, answer.text
+    location = answer.headers["location"]
+    assert location.startswith("/document/notes/")
+    copy_id = location.rsplit("/", 1)[-1]
+    assert copy_id != identifier
+    notes = Collection(root=existing_corpus().corpus_root, name="notes")
+    (copied,) = notes.contents().documents
+    assert copied.id == copy_id
+    assert copied.frontmatter.owner == "user"
+    assert copied.frontmatter.source.origin == f"copy:{identifier}"
+    assert client.get(location).status_code == 200
+    assert "copy" in CliRunner().invoke(main, ["corpus", "history"]).output
+
+
+def test_the_copy_form_is_a_plain_form(client: TestClient, states: dict[str, str]):
+    """It leaves the page for the copy's, which is a navigation, so htmx
+    has nothing to swap and the form works the same without a script."""
+    form = copy_form(row_of(tree_of(client), states["quiet"]))
+
+    assert form["action"] == "/copy"
+    assert form["method"] == "post"
+    assert not form.get("hx-post")
+    assert sorted(sent_by(form)) == ["collection", "document"]
+
+
+def test_copying_what_is_not_there_is_refused(client: TestClient, corpus: Path):
+    del corpus
+    answer = client.post("/copy", data={"collection": "notes", "document": "absent"})
+
+    assert answer.status_code != 303
+    assert "absent" in answer.text
 
 
 def test_moving_as_drawn_refiles_the_document_and_redraws_the_branch(

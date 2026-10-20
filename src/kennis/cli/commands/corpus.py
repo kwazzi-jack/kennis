@@ -46,9 +46,9 @@ from kennis.engine.pack.resolve import ACTING
 from kennis.engine.rag.binding import binding_from
 from kennis.render.packs import (
     describe_action,
-    describe_corpus_claim_needed,
     describe_deferred,
-    describe_owner,
+    describe_kept_copies,
+    describe_kept_copy,
     describe_sync,
     describe_unfetched,
     describe_why_unfetched,
@@ -505,10 +505,10 @@ def sync_command() -> None:
     **documentation sites** are crawled, so this command uses the
     network - which `kennis pack add` deliberately does not.
 
-    Nothing you own is touched. A document you have claimed is reported
-    and left alone on every run, and so is a pack's document you have
-    edited in place. A paper that cannot be fetched is reported and
-    tried again next time, rather than stopping the run.
+    Nothing you own is touched. A pack's note you edited is put back as
+    the pack has it, and your edit kept as a new note of yours, so none
+    is lost. A paper that cannot be fetched is reported and tried again
+    next time, rather than stopping the run.
     """
     corpus_root = existing_corpus().corpus_root
     with DisplaySink() as shown:
@@ -528,15 +528,12 @@ def sync_command() -> None:
 
 def _report_what_a_sync_left(result: CorpusSync) -> None:
     """The two things a sync did not do, each said once above nothing."""
-    if result.edited:
-        display.guidance(describe_corpus_claim_needed(len(result.edited)))
-        # Named per document rather than with a placeholder: the handle
-        # is the only way to address a corpus document, and a reader sent
-        # to `corpus list` to find it has been given half an answer.
-        for document_id in result.edited:
-            display.next_step(
-                f"kennis corpus claim {document_id}", note="to keep that edit"
-            )
+    if result.copied:
+        display.guidance(describe_kept_copies(len(result.copied)))
+        # Named per document: the handle is the only way to address a
+        # corpus document.
+        for original, copy in result.copied:
+            display.detail("+", describe_kept_copy(original, copy))
     if result.deferred:
         display.note(describe_deferred(result.deferred))
     if result.failed:
@@ -549,37 +546,25 @@ def _report_what_a_sync_left(result: CorpusSync) -> None:
             display.hint(describe_why_unfetched(address, refusal))
 
 
-@corpus_group.command(name="claim")
+@corpus_group.command(name="copy")
 @click.argument("handle")
-def claim_command(handle: str) -> None:
-    """Take ownership of a document a pack supplied.
+@click.option(
+    "--collection",
+    type=click.Choice(COLLECTION_NAMES),
+    help="Look only here. All three by default.",
+)
+def copy_command(handle: str, collection: str | None) -> None:
+    """Make your own version of a document: a new note of yours.
 
-    The document stops being the pack's: no sync will rewrite it or
-    remove it again, and every run reports that a pack still declares it.
-    Its content, its identifier and every handle pointing at it are
-    unchanged.
+    For what kennis obtained - a pack's note, a documentation page - which
+    is not edited in place: the copy has its own identifier, records what
+    it was copied from, and is yours to change. The original is untouched.
     """
-    written = api.claim(existing_corpus().corpus_root, handle)
+    written = api.copy_document(existing_corpus().corpus_root, handle, collection)
     report_restored(written.restored)
     document = written.result
-    display.operation("Claimed", document.frontmatter.title)
-    display.detail("~", describe_owner(document))
-
-
-@corpus_group.command(name="disown")
-@click.argument("handle")
-def disown_command(handle: str) -> None:
-    """Hand a document back to the pack it came from.
-
-    The reverse of `kennis corpus claim`, and only for a document that a
-    pack supplied - there is nothing to hand a note you wrote back to.
-    The next sync may rewrite or remove it.
-    """
-    written = api.disown(existing_corpus().corpus_root, handle)
-    report_restored(written.restored)
-    document = written.result
-    display.operation("Disowned", document.frontmatter.title)
-    display.detail("~", describe_owner(document))
+    display.operation("Copied", f"{document.frontmatter.title} as {document.id}")
+    display.next_step("kennis corpus index", note="to search it")
 
 
 # ---------------------------------------------------------------------------

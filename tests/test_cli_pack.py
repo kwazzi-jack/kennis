@@ -313,9 +313,10 @@ def test_add_does_not_name_a_command_that_does_not_exist(
 
     result = run.invoke(main, ["pack", "add", str(path)])
 
-    assert "nothing is materialised yet" in result.output
+    assert "arrive with a corpus sync" in result.output
     assert "kennis corpus sync" in result.output
-    assert "kennis context sync" in result.output
+    # The project's command adds this pack to its declaration (14g).
+    assert "kennis context packs boepie" in result.output
 
 
 def test_the_reminder_is_not_repeated_on_an_unchanged_add(
@@ -327,7 +328,8 @@ def test_the_reminder_is_not_repeated_on_an_unchanged_add(
 
     result = run.invoke(main, ["pack", "add", str(path)])
 
-    assert "not in the corpus yet" not in result.output
+    assert result.exit_code == 0, result.output
+    assert "arrive with a corpus sync" not in result.output
 
 
 def test_a_pack_whose_digests_are_stale_installs_nothing(

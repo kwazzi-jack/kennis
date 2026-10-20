@@ -20,7 +20,22 @@ from pathlib import Path
 from typing import Final, cast, get_args
 
 from kennis.context import Context, existing_corpus, resolve_context
-from kennis.engine.context.index import CONTEXT_COLLECTION, load_bundle_index
+from kennis.engine.context.bundle import BUNDLE_DIRNAME
+from kennis.engine.context.index import (
+    CONTEXT_COLLECTION,
+    is_bundle_group,
+    load_bundle_index,
+    project_group,
+)
+from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.packs import (
+    PACK_GROUP_PREFIX,
+    load_pack_context_index,
+    pack_group,
+    packs_of,
+    replaced_in,
+)
+from kennis.engine.context.projects import project_names
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
@@ -68,6 +83,7 @@ def search_scope(
     versions: Sequence[str] = (),
     *,
     bundle: Path | None,
+    others: Sequence[Path] = (),
 ) -> list[Hit]:
     """The best hits for `question` in exactly one scope.
 
@@ -79,6 +95,18 @@ def search_scope(
     something false.
     """
     context = context_for(collection)
+    if collection == CONTEXT_COLLECTION:
+        # The bundle and each pack it declares, one after the other: an
+        # agent's lines carry each hit's handle, which says which it is.
+        found = sweep(
+            question,
+            scopes=[CONTEXT_COLLECTION],
+            named=True,
+            top_k=max(1, min(top_k, MAX_TOP_K)),
+            bundle=bundle,
+            others=others,
+        )
+        return [hit for hits in found.groups.values() for hit in hits]
     index = index_for(context, collection, bundle=bundle)
     model = index.binding.model.model if index.binding.model else None
     running = mode_for(context, index, collection)
@@ -208,6 +236,9 @@ class Skipped:
 
     name: str
     resolution: str
+    # False for a pack the project declares and this machine has not
+    # installed, which no index would change.
+    installed: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +275,7 @@ def sweep(
     mode: str | None = None,
     versions: Sequence[str] = (),
     bundle: Path | None,
+    others: Sequence[Path] = (),
 ) -> Sweep:
     """Search every scope in `scopes` that can be searched.
 
@@ -266,7 +298,8 @@ def sweep(
     current one, so an ordinary search holds one copy of a page (#489).
 
     `bundle` is the project's bundle as the client found it, or None
-    outside a project (#508).
+    outside a project (#508). `others` are the other projects' bundles a
+    search across projects reads too, each its own group (14g).
     """
     wants_corpus = any(scope != CONTEXT_COLLECTION for scope in scopes)
     # Required only when a corpus scope was *named*. Under a sweep a
@@ -286,7 +319,22 @@ def sweep(
         else VersionChoice(left_out=(), breadth=1)
     )
 
+    found = _Gathered(groups, searched, skipped, degraded)
     for name in [scope for scope in SCOPE_NAMES if scope in scopes]:
+        if name == CONTEXT_COLLECTION:
+            _sweep_context(
+                context,
+                question,
+                home=bundle,
+                others=others,
+                named=named,
+                corpus_exists=corpus_exists,
+                into=found,
+                wanted=wanted,
+                filters=filters,
+                mode=mode,
+            )
+            continue
         index = _load(context, name, bundle=bundle, named=named)
         if index is None:
             unsearched = _why_skipped(
@@ -295,54 +343,19 @@ def sweep(
             if unsearched is not None:
                 skipped.append(unsearched)
             continue
-        searched.append(name)
-        # Per scope, not once for the sweep. A bundle's method is its
-        # own setting with its own default, because a dense bundle
-        # index costs what `retrieval.context_method` exists to avoid.
-        # An explicit mode overrides both.
-        asked = mode or (
-            context.settings.retrieval.context_method
-            if name == CONTEXT_COLLECTION
-            else context.settings.retrieval.corpus_method
-        )
-        running = _runnable(index, asked)
-        if running != asked and asked != "bm25":
-            degraded.append(name)
-        model = index.binding.model.model if index.binding.model else None
-        # Enough candidates that merging equal passages across versions
-        # still leaves `wanted`: asked for three over two versions, the
-        # unchanged passage came twice, merged to one, and the changed
-        # passage that ranked fourth - the one a reader comparing
-        # versions wants - went unshown.
-        breadth = choice.breadth if name == "docs" else 1
-        found = [
-            Hit(collection=name, result=result, model=model)
-            for result in search(
+        found.add(
+            name,
+            *_hits_in(
+                context,
                 index,
+                name,
                 question,
-                top_k=wanted * breadth,
-                # The docs scope alone: a notes group may be called
-                # `pydantic/2.12` as well.
-                filters=_with_versions(filters, choice.left_out)
-                if name == "docs"
-                else filters,
-                mode=running,
-                # The address, from the configuration in force now. It
-                # is not in the stored binding, because it is not part
-                # of what the vectors are. Concern #210.
-                host=resolve_host(
-                    index.binding.model.kind if index.binding.model else "",
-                    context.settings.embedding.base_url or None,
-                ),
-            )
-        ]
-        if name == "docs":
-            found = merged_across_versions(found)[:wanted]
-        # `top_k` per collection, not across them: each group is a
-        # complete answer from its source rather than a truncated
-        # share of a blend.
-        if found:
-            groups[name] = found
+                wanted=wanted,
+                filters=filters,
+                mode=mode,
+                choice=choice,
+            ),
+        )
 
     if not searched:
         raise nothing_to_search(skipped, corpus_exists=corpus_exists)
@@ -355,6 +368,209 @@ def sweep(
 
 
 @dataclass(frozen=True, slots=True)
+class _Gathered:
+    """What a sweep has found so far, appended to in `SCOPE_NAMES` order."""
+
+    groups: dict[str, list[Hit]]
+    searched: list[str]
+    skipped: list[Skipped]
+    degraded: list[str]
+
+    def add(self, name: str, found: list[Hit], fell_back: bool) -> None:
+        self.searched.append(name)
+        if fell_back:
+            self.degraded.append(name)
+        if found:
+            self.groups[name] = found
+
+
+def _sweep_context(
+    context: Context,
+    question: str,
+    *,
+    home: Path | None,
+    others: Sequence[Path],
+    named: bool,
+    corpus_exists: bool,
+    into: _Gathered,
+    wanted: int,
+    filters: list[Filter] | None,
+    mode: str | None,
+) -> None:
+    """The context scope: the project the search was run from, as
+    `context`; each other project asked for, as `context:<name>`; and each
+    pack any of them declares, once, as `pack:<id>` (14g).
+
+    **A pack's file is left out only when every searched project that
+    declares the pack has its own copy**, so one project's version does
+    not hide the pack's text from another project in the same search.
+    """
+    homes = [home] if home is not None else []
+    resolved_home = home.resolve() if home is not None else None
+    elsewhere = list(
+        dict.fromkeys(bundle for bundle in others if bundle.resolve() != resolved_home)
+    )
+    names = project_names(elsewhere)
+    declarations = {
+        bundle: packs_of(bundle, context.corpus_root) for bundle in homes + elsewhere
+    }
+    packs = {
+        pack.state.pack_id: pack
+        for found in declarations.values()
+        for pack in found.installed
+    }
+    # The project's own missing index is fatal only for a scope the
+    # reader named and with nothing else in it to search: a project that
+    # declares packs is still searched for their advice.
+    if home is None and not elsewhere and named:
+        raise ContextNotFound
+    lone = named and not packs and not elsewhere
+    for bundle in homes + elsewhere:
+        mine = bundle is home
+        group = CONTEXT_COLLECTION if mine else project_group(names[bundle])
+        index = _load(context, CONTEXT_COLLECTION, bundle=bundle, named=mine and lone)
+        if index is None:
+            if mine:
+                unsearched = _why_skipped(
+                    CONTEXT_COLLECTION,
+                    context=context,
+                    corpus_exists=corpus_exists,
+                    bundle=bundle,
+                )
+            else:
+                unsearched = (
+                    Skipped(group, f"kennis context index --project {names[bundle]}")
+                    if bundle_documents(bundle)
+                    else None
+                )
+            if unsearched is not None:
+                into.skipped.append(unsearched)
+            continue
+        hits, fell_back = _hits_in(
+            context,
+            index,
+            group,
+            question,
+            wanted=wanted,
+            filters=filters,
+            mode=mode,
+            choice=_NO_VERSIONS,
+        )
+        # Where the file is, as the reader is told: this project's from
+        # its own root, another project's whole.
+        place = BUNDLE_DIRNAME if mine else str(bundle)
+        into.add(group, [replace(hit, place=place) for hit in hits], fell_back)
+    for pack_id in sorted(packs):
+        group = pack_group(pack_id)
+        declarers = [
+            bundle
+            for bundle, found in declarations.items()
+            if pack_id in {pack.state.pack_id for pack in found.installed}
+        ]
+        replaced = frozenset.intersection(
+            *(replaced_in(bundle) for bundle in declarers)
+        )
+        into.add(
+            group,
+            *_hits_in(
+                context,
+                load_pack_context_index(context.corpus_root, packs[pack_id]),
+                group,
+                question,
+                wanted=wanted,
+                filters=_without_replaced(filters, group, replaced),
+                mode=mode,
+                choice=_NO_VERSIONS,
+            ),
+        )
+    missing = sorted(
+        {pack for found in declarations.values() for pack in found.missing} - set(packs)
+    )
+    into.skipped.extend(
+        Skipped(pack_group(pack), "kennis pack list", installed=False)
+        for pack in missing
+    )
+
+
+def _hits_in(
+    context: Context,
+    index: LoadedIndex,
+    name: str,
+    question: str,
+    *,
+    wanted: int,
+    filters: list[Filter] | None,
+    mode: str | None,
+    choice: VersionChoice,
+) -> tuple[list[Hit], bool]:
+    """One group's hits, and whether it ran lexically although more was
+    asked of it."""
+    # Per group, not once for the sweep. A bundle's method - and a pack's
+    # context, which is advice of the same kind - is its own setting with
+    # its own default, because a dense bundle index costs what
+    # `retrieval.context_method` exists to avoid. An explicit mode
+    # overrides both.
+    asked = mode or (
+        context.settings.retrieval.context_method
+        if _is_context_group(name)
+        else context.settings.retrieval.corpus_method
+    )
+    running = _runnable(index, asked)
+    model = index.binding.model.model if index.binding.model else None
+    # Enough candidates that merging equal passages across versions
+    # still leaves `wanted`: asked for three over two versions, the
+    # unchanged passage came twice, merged to one, and the changed
+    # passage that ranked fourth - the one a reader comparing versions
+    # wants - went unshown.
+    breadth = choice.breadth if name == "docs" else 1
+    found = [
+        Hit(collection=name, result=result, model=model)
+        for result in search(
+            index,
+            question,
+            top_k=wanted * breadth,
+            # The docs scope alone: a notes group may be called
+            # `pydantic/2.12` as well.
+            filters=_with_versions(filters, choice.left_out)
+            if name == "docs"
+            else filters,
+            mode=running,
+            # The address, from the configuration in force now. It is not
+            # in the stored binding, because it is not part of what the
+            # vectors are. Concern #210.
+            host=resolve_host(
+                index.binding.model.kind if index.binding.model else "",
+                context.settings.embedding.base_url or None,
+            ),
+        )
+    ]
+    if name == "docs":
+        found = merged_across_versions(found)[:wanted]
+    # `top_k` per group, not across them: each group is a complete answer
+    # from its source rather than a truncated share of a blend.
+    return found, running != asked and asked != "bm25"
+
+
+def _is_context_group(name: str) -> bool:
+    return is_bundle_group(name) or name.startswith(PACK_GROUP_PREFIX)
+
+
+def _without_replaced(
+    filters: list[Filter] | None, group: str, replaced: frozenset[str]
+) -> list[Filter] | None:
+    """`filters`, leaving out the pack's files this project has its own
+    copy of; the copy is found in the project's own group instead."""
+    addresses = sorted(
+        reference.removeprefix(f"{group}/")
+        for reference in replaced
+        if reference.startswith(f"{group}/")
+    )
+    if not addresses:
+        return filters
+    return [*(filters or []), Filter(field="address", op="not_in", value=addresses)]
+
+
+@dataclass(frozen=True, slots=True)
 class VersionChoice:
     """What a docs search leaves out, and how many versions of one page
     it may find at most - which is how many candidates it takes to still
@@ -362,6 +578,10 @@ class VersionChoice:
 
     left_out: tuple[str, ...]
     breadth: int
+
+
+# What every scope but docs searches: no version is left out.
+_NO_VERSIONS: Final = VersionChoice(left_out=(), breadth=1)
 
 
 def versions_left_out(context: Context, versions: Sequence[str]) -> VersionChoice:
@@ -505,7 +725,9 @@ def _why_skipped(
     Nobody believes a store they have never filled was searched.
     """
     if name == CONTEXT_COLLECTION:
-        if bundle is None:
+        # A bundle with no notes yet, which a project that only declares
+        # packs is, holds nothing an index would add.
+        if bundle is None or not bundle_documents(bundle):
             return None
         return Skipped(name, "kennis context index")
     if not corpus_exists:

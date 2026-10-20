@@ -27,9 +27,9 @@ from kennis.engine.corpus.add import AddReport
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import (
-    ContextNotFound,
     CorpusBusy,
     KennisError,
+    UnknownCollection,
 )
 from kennis.engine.events import EventSink
 from kennis.engine.history.history import read_history, removed_in
@@ -46,7 +46,6 @@ from kennis.gui.pages import (
     shown_index,
     shown_install,
 )
-from kennis.gui.project import bundle_of
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -63,7 +62,6 @@ from kennis.operations import (
     IndexBuild,
     build_indexes,
     install_a_pack,
-    synchronise_bundle,
     synchronise_corpus,
 )
 from kennis.protocol.progress import Queued
@@ -73,7 +71,6 @@ from kennis.service.jobs import (
     INDEX_LANE,
     Job,
     Jobs,
-    context_lane,
 )
 
 router = APIRouter()
@@ -233,7 +230,11 @@ def serve_index_form(request: Request, collection: str = "") -> HTMLResponse:
 @router.post("/index")
 def start_index(request: Request, form: PostedForm) -> Response:
     chosen = str(form.get("collection") or "")
-    collection = chosen if chosen in COLLECTION_NAMES else None
+    # Empty is every collection; anything else must be one. A name from
+    # an edited address read as "all" indexed what nobody asked for.
+    if chosen and chosen not in COLLECTION_NAMES:
+        raise UnknownCollection(words.unknown_collection(chosen))
+    collection = chosen or None
     context = existing_corpus()
     restored: list[OutOfBandChange] = []
     return started(
@@ -257,7 +258,6 @@ def serve_sync_form(request: Request) -> HTMLResponse:
             "sync_preamble": words.SYNC_PREAMBLE,
             "sync_tip": words.SYNC_TIP,
             "sync_corpus_action": words.SYNC_CORPUS_ACTION,
-            "sync_context_action": words.SYNC_CONTEXT_ACTION,
         },
     )
 
@@ -271,24 +271,6 @@ def start_corpus_sync(request: Request) -> Response:
         "sync",
         lambda events: synchronise_corpus(context, events=events, restored=restored),
         restored=restored,
-    )
-
-
-@router.post("/context-sync")
-def start_bundle_sync(request: Request) -> Response:
-    context = existing_corpus()
-    bundle = bundle_of(request)
-    if bundle is None:
-        # `ContextNotFound` carries the command that makes one,
-        # which is the whole point of the errors carrying their
-        # own resolution: the advice was chosen where the problem
-        # is known.
-        return refused_task(request, "context-sync", ContextNotFound())
-    return started(
-        request,
-        "context-sync",
-        lambda events: synchronise_bundle(bundle, context, events=events),
-        lane=context_lane(str(bundle)),
     )
 
 

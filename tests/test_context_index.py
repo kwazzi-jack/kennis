@@ -197,6 +197,22 @@ def test_an_empty_bundle_is_refused_with_something_to_do_about_it(bundle: Path):
     assert "kennis remember" in "".join(raised.value.__notes__)
 
 
+def test_indexing_a_bundle_emptied_of_notes_removes_the_old_index(bundle: Path):
+    """Otherwise a search still finds the notes that are gone, and status
+    names `kennis context index` for ever, because this refusal is what
+    that command answers. A project that only declares packs has no notes
+    of its own, so this is an ordinary state after 14g."""
+    note = remember_in_bundle(bundle, "Solve per scan.", title=None, group=None).path
+    index_bundle(bundle)
+    note.unlink()
+
+    with pytest.raises(NothingToIndex):
+        index_bundle(bundle)
+
+    with pytest.raises(NothingToIndex):
+        load_bundle_index(bundle)
+
+
 def test_an_index_moved_to_another_path_is_searchable_without_rebuilding(
     bundle: Path, tmp_path: Path
 ):

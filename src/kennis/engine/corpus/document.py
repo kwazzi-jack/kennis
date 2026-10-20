@@ -16,7 +16,6 @@ fifteen whole papers.
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,7 +23,12 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from kennis.engine.atomic import replace_file
+from kennis.engine.atomic import (
+    make_read_only,
+    remove_file,
+    remove_tree,
+    replace_file,
+)
 from kennis.engine.corpus.ids import natural_key_for_docs
 from kennis.engine.corpus.layout import WRAPPED_DOCUMENT_FILENAME
 from kennis.engine.corpus.schema import (
@@ -257,6 +261,38 @@ def _first_problem(error: ValidationError) -> str:
     return f"{location}: {first['msg']}"
 
 
+def is_obtained(frontmatter: DocumentFrontmatter) -> bool:
+    """Whether kennis obtained this document rather than the person writing
+    it, which is what makes it read-only on disk (14g, #514).
+
+    A fetched documentation page, or anything a pack owns - except a paper:
+    a paper's converted text may be corrected in place, keeps its citekey,
+    and git records the correction (Brian, 2026-10-18).
+    """
+    collection = collection_of(frontmatter)
+    if collection == "literature":
+        return False
+    return collection == "docs" or frontmatter.owner.startswith("pack:")
+
+
+def seal_if_obtained(md_path: Path, *, collection: str) -> None:
+    """Make a document git has just written read-only again, when kennis
+    obtained it: git records no write permission, so every file it checks
+    out is writable. A file that will not read is left as it is."""
+    try:
+        document = read_document(md_path, collection=collection)
+    except DocumentInvalid:
+        return
+    if not is_obtained(document.frontmatter):
+        return
+    if document.wrapper_dir is None:
+        make_read_only(md_path)
+        return
+    for path in document.wrapper_dir.iterdir():
+        if path.is_file():
+            make_read_only(path)
+
+
 def write_document(
     md_path: Path,
     *,
@@ -281,9 +317,12 @@ def write_document(
         leaf_path = wrapper_dir / WRAPPED_DOCUMENT_FILENAME
         _refuse_overwriting_another_document(leaf_path, frontmatter.id)
         wrapper_dir.mkdir(parents=True, exist_ok=True)
-        replace_file(leaf_path, text)
+        sealed = is_obtained(frontmatter)
+        replace_file(leaf_path, text, read_only=sealed)
         for asset_name, asset_bytes in assets.items():
-            replace_file(wrapper_dir / _asset_name(asset_name), asset_bytes)
+            replace_file(
+                wrapper_dir / _asset_name(asset_name), asset_bytes, read_only=sealed
+            )
         return Document(
             id=frontmatter.id,
             collection=collection,
@@ -294,7 +333,7 @@ def write_document(
         )
 
     _refuse_overwriting_another_document(md_path, frontmatter.id)
-    replace_file(md_path, text)
+    replace_file(md_path, text, read_only=is_obtained(frontmatter))
     return Document(
         id=frontmatter.id,
         collection=collection,
@@ -337,7 +376,7 @@ def move_document(
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             document.wrapper_dir.rename(target_dir)
         leaf_path = target_dir / WRAPPED_DOCUMENT_FILENAME
-        replace_file(leaf_path, text)
+        replace_file(leaf_path, text, read_only=is_obtained(frontmatter))
         return Document(
             id=document.id,
             collection=document.collection,
@@ -347,9 +386,9 @@ def move_document(
             body=document.body,
         )
 
-    replace_file(target_md_path, text)
+    replace_file(target_md_path, text, read_only=is_obtained(frontmatter))
     if target_md_path.resolve() != document.md_path.resolve():
-        document.md_path.unlink()
+        remove_file(document.md_path)
     return Document(
         id=document.id,
         collection=document.collection,
@@ -368,9 +407,9 @@ def remove_document(document: Document) -> None:
     directory that classifies as a group holding nothing.
     """
     if document.wrapper_dir is not None:
-        shutil.rmtree(document.wrapper_dir)
+        remove_tree(document.wrapper_dir)
         return
-    document.md_path.unlink(missing_ok=True)
+    remove_file(document.md_path, missing_ok=True)
 
 
 def _asset_name(name: str) -> str:

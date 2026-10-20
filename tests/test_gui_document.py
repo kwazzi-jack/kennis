@@ -193,6 +193,40 @@ def test_a_notes_details_say_where_it_is_and_whether_it_is_searchable(
     assert details[words.DETAIL_LABELS["index"]] == words.INDEX_STATES[""]
 
 
+def test_a_copy_says_what_it_was_copied_from_and_leads_there(
+    corpus: Path, client: TestClient
+):
+    """`copy:<id>` is the record (#514); the reader is shown the original's
+    identifier and a way to it, in this window rather than a new tab, and
+    not "Converted from copy", which is the record read aloud."""
+    original = a_note(corpus, index=False)
+    copied = CliRunner().invoke(main, ["corpus", "copy", original])
+    assert copied.exit_code == 0, copied.output
+    copy_id = copied.output.splitlines()[0].rsplit(" ", 1)[-1]
+
+    soup = page_of(client, copy_id)
+
+    details = details_in(soup)
+    assert details[words.DETAIL_LABELS["copied"]] == original
+    assert words.DETAIL_LABELS["converted"] not in details
+    assert words.DETAIL_LABELS["source"] not in details
+    link = found(soup, f".inspector .details a[href='/document/notes/{original}']")
+    assert not link.get("target")
+
+
+def test_a_copy_whose_original_is_gone_still_names_it(corpus: Path, client: TestClient):
+    original = a_note(corpus, index=False)
+    run = CliRunner()
+    copied = run.invoke(main, ["corpus", "copy", original])
+    copy_id = copied.output.splitlines()[0].rsplit(" ", 1)[-1]
+    assert run.invoke(main, ["corpus", "remove", "-y", original]).exit_code == 0
+
+    soup = page_of(client, copy_id)
+
+    assert details_in(soup)[words.DETAIL_LABELS["copied"]] == original
+    assert not soup.select(f".inspector .details a[href*='{original}']")
+
+
 def test_a_document_added_since_the_index_says_so(corpus: Path, client: TestClient):
     """The tree's own rule: a collection never indexed marks everything
     as not indexed."""

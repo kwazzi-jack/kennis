@@ -342,11 +342,6 @@ def test_a_document_in_a_collection_with_no_index_is_still_readable(
 # the sixth consecutive unit that has happened in. Concern #332.
 
 
-def opened_in(client: TestClient, bundle: Path) -> None:
-    """The tab opened from the project, as `kennis gui` opens it (#508)."""
-    assert client.get("/", params={"bundle": str(bundle)}).status_code == 200
-
-
 @pytest.fixture
 def bundle(corpus: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A project with a bundle, standing in it."""
@@ -371,7 +366,6 @@ def test_a_context_hit_links_to_a_page_that_exists(bundle: Path, client: TestCli
     rather than on the shape of the link: a link that is well formed
     and 404s is the thing that was shipped."""
     admitted(client)
-    opened_in(client, bundle)
 
     found = client.get("/hits", params={"q": "bandpass", "scope": "context"})
     links = re.findall(r'href="(/[^"]*)"', found.text)
@@ -389,7 +383,6 @@ def test_a_context_hit_marks_its_chunk_too(bundle: Path, client: TestClient):
     it: a bundle note long enough to chunk has the same problem a
     paper does."""
     admitted(client)
-    opened_in(client, bundle)
 
     found = client.get("/hits", params={"q": "bandpass", "scope": "context"})
     links = re.findall(r'href="(/bundle/[^"]*)"', found.text)
@@ -457,7 +450,6 @@ def test_the_bundle_mark_is_the_chunk_and_not_the_header(
     the word inside. What distinguishes a correct mark from a shifted
     one is where it *begins*."""
     admitted(client)
-    opened_in(client, bundle)
 
     found = client.get("/hits", params={"q": "deconvolution", "scope": "context"})
     links = re.findall(r'href="(/bundle/[^"]*)"', found.text)
@@ -505,7 +497,9 @@ def test_the_bundle_reader_refuses_a_path_outside_the_bundle(bundle: Path):
     outside.write_text("root:x:0:0:SECRET\n", encoding="utf-8")
 
     with pytest.raises(DocumentNotFound):
-        shown_bundle_document(bundle, "../secret.txt", load_remote_images=False)
+        shown_bundle_document(
+            bundle, "../secret.txt", project="workspace", load_remote_images=False
+        )
 
 
 def test_a_stale_bundle_index_withholds_the_mark_and_says_why(
@@ -517,7 +511,6 @@ def test_a_stale_bundle_index_withholds_the_mark_and_says_why(
     absent mark looks the same whatever caused it, so a test of the
     withholding alone would pass for a marking that never worked."""
     admitted(client)
-    opened_in(client, bundle)
 
     found = client.get("/hits", params={"q": "deconvolution", "scope": "context"})
     link = re.findall(r'href="(/bundle/[^"]*)"', found.text)[0].replace("&amp;", "&")

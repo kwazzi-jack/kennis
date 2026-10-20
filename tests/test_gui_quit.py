@@ -242,7 +242,7 @@ def test_kennis_gui_opens_the_service_s_address_once_and_quietly(
     result = CliRunner().invoke(main, ["gui"])
 
     assert result.exit_code == 0, result.output
-    assert quietly == ["http://127.0.0.1:4242/?token=the-token&bundle="]
+    assert quietly == ["http://127.0.0.1:4242/?token=the-token"]
     assert quietly[0] in result.output
     assert loudly == []
 
@@ -261,15 +261,14 @@ def test_kennis_gui_without_a_browser_only_prints_the_address(
 
     assert result.exit_code == 0, result.output
     assert opened == []
-    assert "http://127.0.0.1:4242/?token=the-token&bundle=" in result.output
+    assert "http://127.0.0.1:4242/?token=the-token" in result.output
 
 
-def test_kennis_gui_names_the_project_it_was_run_in(
+def test_kennis_gui_names_no_project_wherever_it_is_run(
     corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """The service is shared by every directory, so the tab is told which
-    project it was opened from (#508); outside one it is told none, which
-    the empty value says."""
+    """The window shows every project's context (14g, #512), so the
+    address is the same inside a project as outside one."""
     import kennis.client.process as process
     import kennis.gui.browser as browser
 
@@ -287,4 +286,4 @@ def test_kennis_gui_names_the_project_it_was_run_in(
     assert result.exit_code == 0, result.output
     (address,) = opened
     named = parse_qs(urlsplit(address).query, keep_blank_values=True)
-    assert named["bundle"] == [str((project / ".context").resolve())]
+    assert set(named) == {"token"}

@@ -57,7 +57,7 @@
    the search returned (#406). #}
 {% if orders and order %}<p class="limit role-muted">{{ order_limit }}</p>{% endif %}
 {% for group in groups %}
-<h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.collection }}</span><span class="count">{{ group.count }}</span></h2>
+<h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.name }}</span><span class="count">{{ group.count }}</span></h2>
 <ol class="results">
 {% for hit in group.hits %}
   <li class="hit" data-collection="{{ group.collection }}">

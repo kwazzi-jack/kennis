@@ -12,6 +12,7 @@ Nothing here reaches a host: every client is an `httpx.MockTransport`.
 from __future__ import annotations
 
 import shutil
+import stat
 from pathlib import Path
 
 import httpx
@@ -202,6 +203,19 @@ def test_the_fetched_paper_is_owned_by_the_pack(corpus: Path, tmp_path: Path):
     synced(corpus)
 
     assert papers_in(corpus)[0].frontmatter.owner == "pack:alpha"
+
+
+def test_a_pack_s_paper_stays_writable_so_its_text_can_be_corrected(
+    corpus: Path, tmp_path: Path
+):
+    """Everything else a pack supplies is written read-only (#514); a
+    paper's converted text may be corrected in place, keeping its citekey,
+    with git recording the correction (Brian, 2026-10-18)."""
+    installed(corpus, tmp_path, body=PAPER)
+
+    synced(corpus)
+
+    assert papers_in(corpus)[0].md_path.stat().st_mode & stat.S_IWRITE
 
 
 def test_a_second_sync_does_not_fetch_the_paper_again(corpus: Path, tmp_path: Path):

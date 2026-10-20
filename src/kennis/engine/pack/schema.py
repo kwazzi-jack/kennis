@@ -65,6 +65,12 @@ SCHEMA_VERSION: Final = 1
 # neither cares.
 _PACK_ID: Final = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
+
+def is_pack_id(value: str) -> bool:
+    """Whether `value` could name a pack: the rule a pack's own `id` obeys."""
+    return _PACK_ID.match(value) is not None
+
+
 _FORBID: Final = ConfigDict(extra="forbid")
 
 
@@ -108,7 +114,7 @@ class PackIdentity(BaseModel):
     @field_validator("id")
     @classmethod
     def _is_a_slug(cls, value: str) -> str:
-        if _PACK_ID.match(value) is None:
+        if not is_pack_id(value):
             raise ValueError(
                 f"'{value}' is not a pack id: lowercase letters, digits and "
                 "dashes, starting with a letter or a digit"
@@ -496,6 +502,7 @@ __all__ = [
     "NoteLink",
     "Pack",
     "PackIdentity",
+    "is_pack_id",
     "load_pack",
     "schema_document",
     "schema_path",

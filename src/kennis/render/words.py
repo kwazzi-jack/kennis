@@ -20,6 +20,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
+from kennis.engine.context.index import project_of_group
+from kennis.engine.context.packs import pack_of_group
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
@@ -136,11 +138,9 @@ def remedies_for(change: OutOfBandChange) -> tuple[str, ...]:
         return (f"kennis corpus restore {change.document_id or change.path}",)
     if change.owner is not None and pack_id_of(change.owner) is not None:
         handle = change.document_id or change.path
-        # `kennis corpus claim` is the second way forward and `design.md`
-        # describes it, but it is not built. Naming it here would print an
-        # instruction that fails - rules.md 4.4. It joins this tuple when the
-        # command lands.
-        return (f"kennis corpus restore {handle}",)
+        # Put the pack's text back, or keep the edit as a note of one's
+        # own first: a pack's note is not edited in place (#514).
+        return (f"kennis corpus copy {handle}", f"kennis corpus restore {handle}")
     return ("kennis corpus index",)
 
 
@@ -322,7 +322,23 @@ def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
             return "not indexed - another process is rebuilding it"
 
 
-def describe_skipped(names: Sequence[str]) -> str:
+def group_name(name: str) -> str:
+    """A search group's name: `notes`, `context`, `context thesis` for
+    another project's notes, or `pack alpha` for a pack's context, each
+    searched in its own group (14g)."""
+    pack = pack_of_group(name)
+    if pack is not None:
+        return f"pack {pack}"
+    project = project_of_group(name)
+    return f"context {project}" if project is not None else name
+
+
+def group_title(name: str) -> str:
+    """`group_name` as a heading: `Notes`, `Pack alpha`."""
+    return group_name(name).capitalize()
+
+
+def describe_skipped(names: Sequence[str], *, installed: bool = True) -> str:
     """Which scopes a search did not reach, and why.
 
     One line for every scope sharing a remedy, not one per scope: on
@@ -334,6 +350,8 @@ def describe_skipped(names: Sequence[str]) -> str:
     The sentence lives here and not on `retrieval.Skipped`, which
     carries the scope and the command as fields. Concern #81.
     """
+    if not installed:
+        return f"not searched, declared but not installed: {', '.join(names)}"
     return f"not searched, no index yet: {', '.join(names)}"
 
 
@@ -346,7 +364,10 @@ def describe_lexical_fallback(collection: str) -> str:
     """
     # In the words the mode control uses, "Keywords only", so the
     # warning names the choice it made for the reader (#417).
-    return f"the {collection} index has no meaning leg, so this matched keywords only"
+    return (
+        f"the {group_name(collection)} index has no meaning leg, so this "
+        "matched keywords only"
+    )
 
 
 def describe_busy_indexes(collections: Sequence[str]) -> str:
@@ -411,7 +432,7 @@ JOB_KINDS: Final[dict[str, str]] = {
     "pack": "Pack install",
     "backup": "Backup",
     "remember": "Note",
-    "claim": "Change of owner",
+    "copy": "Copy",
     "move": "Move",
     "remove": "Removal",
     "restore": "Putting back",

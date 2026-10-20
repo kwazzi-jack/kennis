@@ -41,7 +41,6 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.gui import words
-from kennis.gui.project import BUNDLE_COOKIE, BUNDLE_PARAMETER
 from kennis.gui.responses import TEMPLATES, from_htmx, refused
 from kennis.gui.routes import (
     add,
@@ -270,9 +269,6 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 # back, so the guard would refuse every request after
                 # the first.
             )
-        named = request.query_params.get(BUNDLE_PARAMETER)
-        if named is not None:
-            answer.set_cookie(BUNDLE_COOKIE, named, httponly=True, samesite="strict")
         return answer
 
     @app.exception_handler(KennisError)

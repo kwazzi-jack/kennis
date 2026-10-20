@@ -164,6 +164,24 @@ class UnknownCollection(KennisError):
     default_resolution = "kennis corpus status"
 
 
+class ProjectNotKnown(KennisError):
+    """A name that is not one of the machine's known projects (14g)."""
+
+    default_message = "no project by that name"
+    default_resolution = "kennis context list"
+
+
+class ProjectListUnreadable(KennisError):
+    """The list of the machine's projects could not be read (14g).
+
+    No command repairs it: it is a list of paths, rebuilt as kennis touches
+    each project again once the file is removed, so the message names the
+    file and the resolution is left out.
+    """
+
+    default_message = "the list of projects could not be read"
+
+
 class DocumentNotFound(KennisError):
     """No document answers to the handle given.
 

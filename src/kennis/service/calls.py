@@ -190,12 +190,12 @@ def remove_document(handle: str, collection: str | None = None) -> Document:
     return operations.remove_a_document(context, found, document)
 
 
-def claim(handle: str, *, restored: list[OutOfBandChange]) -> Document:
-    return operations.claim_a_document(existing_corpus(), handle, restored=restored)
-
-
-def disown(handle: str, *, restored: list[OutOfBandChange]) -> Document:
-    return operations.disown_a_document(existing_corpus(), handle, restored=restored)
+def copy_document(
+    handle: str, collection: str | None = None, *, restored: list[OutOfBandChange]
+) -> Document:
+    return operations.copy_a_document(
+        existing_corpus(), handle, collection, restored=restored
+    )
 
 
 def remove_version(project: str, version: str) -> RemovedVersion:
@@ -298,8 +298,11 @@ def search_scope(
     versions: Sequence[str] = (),
     *,
     bundle: Path | None,
+    others: Sequence[Path] = (),
 ) -> list[Hit]:
-    return retrieval.search_scope(collection, question, top_k, versions, bundle=bundle)
+    return retrieval.search_scope(
+        collection, question, top_k, versions, bundle=bundle, others=others
+    )
 
 
 def sweep(
@@ -312,6 +315,7 @@ def sweep(
     versions: Sequence[str] = (),
     *,
     bundle: Path | None,
+    others: Sequence[Path] = (),
 ) -> Sweep:
     return retrieval.sweep(
         question,
@@ -322,6 +326,7 @@ def sweep(
         mode=mode,
         versions=versions,
         bundle=bundle,
+        others=others,
     )
 
 
@@ -331,8 +336,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(add, kind="add"),
         Operation(add_in_groups, kind="add"),
         Operation(back_up, kind="backup"),
-        Operation(claim, kind="claim"),
-        Operation(disown, kind="claim"),
+        Operation(copy_document, kind="copy"),
         Operation(index, kind="index", lane=_in_the_index_lane),
         Operation(install_pack, kind="pack"),
         Operation(make_version_current, kind="version"),

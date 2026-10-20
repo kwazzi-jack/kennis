@@ -176,7 +176,7 @@ def test_a_sync_s_headline_begins_with_a_capital():
     from kennis.engine.corpus.sync import CorpusSync
     from kennis.gui.pages import shown_corpus_sync
 
-    shown = shown_corpus_sync(CorpusSync(actions=(), counts={}, deferred=(), edited=()))
+    shown = shown_corpus_sync(CorpusSync(actions=(), counts={}, deferred=(), copied=()))
 
     assert shown.headline[:1].isupper(), shown.headline
 

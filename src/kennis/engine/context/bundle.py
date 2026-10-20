@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,8 @@ from typing import Final
 
 from kennis import __version__
 from kennis.engine.atomic import replace_file
+from kennis.engine.errors import ContextNotFound, DocumentInvalid, InputError
+from kennis.engine.pack.schema import is_pack_id
 
 BUNDLE_DIRNAME: Final = ".context"
 MANIFEST_FILENAME: Final = "bundle.json"
@@ -144,7 +147,64 @@ def init_bundle(root: Path) -> BundleCreated:
         replace_file(path, content)
         if existed:
             restored.append(name)
+    # Imported here: the list of projects reads the manifest this module
+    # defines, so a module-level import would be circular.
+    from kennis.engine.context.projects import note_project
+
+    note_project(bundle)
     return BundleCreated(path=bundle, created=not existed, restored=tuple(restored))
+
+
+def declared_packs(bundle: Path) -> tuple[str, ...]:
+    """The packs this project declares, from its manifest; none when the
+    manifest names none (14g)."""
+    manifest = _read_manifest(bundle)
+    packs = manifest.get("packs", [])
+    if not isinstance(packs, list):
+        raise DocumentInvalid(
+            f"{bundle / MANIFEST_FILENAME} has a `packs` that is not a list",
+            resolution="kennis context packs --help",
+        )
+    return tuple(sorted({str(pack) for pack in packs}))
+
+
+def declare_packs(bundle: Path, packs: Sequence[str]) -> tuple[str, ...]:
+    """Make `packs` what this project declares, keeping the rest of the
+    manifest. An empty sequence declares none.
+
+    The manifest is committed with the project, so this is the project's
+    decision and a collaborator's clone shares it (#513).
+    """
+    refused = [pack for pack in packs if not is_pack_id(pack)]
+    if refused:
+        raise InputError(
+            f"'{refused[0]}' is not a pack id: lowercase letters, digits and "
+            "dashes, starting with a letter or a digit",
+            resolution="kennis pack list",
+        )
+    declared = tuple(sorted(set(packs)))
+    manifest = _read_manifest(bundle)
+    if declared:
+        manifest["packs"] = list(declared)
+    else:
+        manifest.pop("packs", None)
+    replace_file(bundle / MANIFEST_FILENAME, json.dumps(manifest, indent=2) + "\n")
+    return declared
+
+
+def _read_manifest(bundle: Path) -> dict[str, object]:
+    path = bundle / MANIFEST_FILENAME
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise ContextNotFound(f"{bundle} is not a context bundle") from error
+    except ValueError as error:
+        raise DocumentInvalid(
+            f"{path} could not be read ({error})", resolution=None
+        ) from error
+    if not isinstance(document, dict):
+        raise DocumentInvalid(f"{path} is not a JSON object", resolution=None)
+    return document
 
 
 def _gitignore() -> str:
@@ -292,6 +352,8 @@ __all__ = [
     "SKELETON_FILENAME",
     "BundleCreated",
     "bundle_override",
+    "declare_packs",
+    "declared_packs",
     "find_bundle",
     "index_root_for",
     "init_bundle",

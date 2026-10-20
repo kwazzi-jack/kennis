@@ -18,6 +18,7 @@ from click.testing import CliRunner
 from kennis.cli.__main__ import main
 from kennis.cli.commands.context import context_model
 from kennis.engine.context import BUNDLE_DIRNAME, load_bundle_index
+from kennis.engine.pack.content import content_digest
 from kennis.engine.rag.search import search
 from kennis.engine.settings import load_settings
 
@@ -794,52 +795,54 @@ def synced(
     return workspace
 
 
-def test_sync_writes_the_packs_content_into_the_bundle(
+def test_sync_writes_nothing_of_a_pack_and_says_what_the_project_uses(
     synced: Path, run: CliRunner, tmp_path: Path
 ):
+    """A pack's context is searched in the store (14g, #513)."""
     path = a_context_pack(tmp_path / "provider", run)
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert (synced / BUNDLE_DIRNAME / "one.md").is_file()
-    assert "added by boepie" in result.output
-
-
-def test_sync_names_the_index_command_when_something_changed(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    """The index is derived from these documents and sync did not rebuild
-    it, so a reader is told what to type. Concern #244."""
-    path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-
-    result = run.invoke(main, ["context", "sync"])
-
-    assert "kennis context index" in result.output
-
-
-def test_a_sync_that_changed_nothing_does_not_ask_for_an_index(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    """Advice to rebuild an index that is already current is advice to do
-    nothing, and it teaches a reader to ignore the line."""
-    del synced
-    path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    assert run.invoke(main, ["context", "sync"]).exit_code == 0
-
-    result = run.invoke(main, ["context", "sync"])
-
+    assert not (synced / BUNDLE_DIRNAME / "one.md").exists()
+    assert "this project uses boepie" in result.output
     assert "kennis context index" not in result.output
 
 
-def test_the_synced_content_is_searchable_after_indexing(
+def an_old_copy(bundle: Path, body: str = "One.\n") -> Path:
+    """A file as the copying sync of earlier versions wrote it."""
+    digest = content_digest(b"One.\n")
+    path = bundle / "one.md"
+    path.write_text(
+        "---\ntitle: one\nowner: pack:boepie\nsource:\n  via: pack\n"
+        f"  pack: boepie\n  address: one.md\n  sha256: {digest}\n---\n{body}",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_sync_removes_an_old_copy_and_names_the_index_command(
+    synced: Path, run: CliRunner
+):
+    """The index is derived from these documents and sync did not rebuild
+    it, so a reader is told what to type. Concern #244."""
+    copy = an_old_copy(synced / BUNDLE_DIRNAME)
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert not copy.exists()
+    assert "1 copy of a pack's file removed" in result.output
+    assert "kennis context index" in result.output
+
+
+def test_a_declared_pack_s_content_is_searchable_with_no_copy(
     synced: Path, run: CliRunner, tmp_path: Path
 ):
-    """The crossing test: a document written by one path must be visible
-    to the indexer, which is the failure mode the plan singles out."""
+    """The crossing test, again: content one path stored is what another
+    path searches."""
     del synced
     path = a_context_pack(
         tmp_path / "provider",
@@ -847,58 +850,51 @@ def test_the_synced_content_is_searchable_after_indexing(
         files={"content/one.md": "Calibration runs in four-minute chunks.\n"},
     )
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    assert run.invoke(main, ["context", "sync"]).exit_code == 0
-    assert run.invoke(main, ["context", "index"]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     result = run.invoke(main, ["search", "four-minute chunks"])
 
     assert result.exit_code == 0, result.output
-    assert ".context/one.md" in result.output
+    assert "Pack boepie" in result.output
+    assert "pack=boepie/one.md" in result.output
 
 
-def test_sync_reports_a_file_the_user_edited_without_changing_it(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    provider = tmp_path / "provider"
-    path = a_context_pack(provider, run, files={"content/one.md": "First.\n"})
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    assert run.invoke(main, ["context", "sync"]).exit_code == 0
-    written = synced / BUNDLE_DIRNAME / "one.md"
-    written.write_text(
-        written.read_text().replace("First.", "Mine now."), encoding="utf-8"
-    )
-
-    path = a_context_pack(provider, run, files={"content/one.md": "Second.\n"})
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    result = run.invoke(main, ["context", "sync"])
-
-    assert "Mine now." in written.read_text()
-    assert "you edited this" in result.output
-    assert "owner: user" in result.output
-
-
-def test_sync_refuses_a_pack_that_declares_a_hidden_destination(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    del synced
-    path = a_context_pack(
-        tmp_path / "provider", run, files={"content/.hidden.md": "No.\n"}
-    )
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-
-    result = run.invoke(main, ["context", "sync"])
-
-    assert result.exit_code != 0
-    assert ".hidden.md" in result.output
-
-
-def test_sync_with_no_packs_installed_says_so(synced: Path, run: CliRunner):
-    del synced
+def test_sync_makes_an_edited_old_copy_yours_and_says_so(synced: Path, run: CliRunner):
+    copy = an_old_copy(synced / BUNDLE_DIRNAME, body="Mine now.\n")
 
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert "nothing declared" in result.output
+    assert "Mine now." in copy.read_text(encoding="utf-8")
+    assert "owner: user" in copy.read_text(encoding="utf-8")
+    assert "1 edited copy made yours" in result.output
+
+
+def test_sync_in_a_project_declaring_nothing_offers_each_installed_pack(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    del synced
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "declares no packs" in result.output
+    assert "kennis context packs boepie" in result.output
+
+
+def test_sync_names_a_declared_pack_this_machine_has_not_got(
+    synced: Path, run: CliRunner
+):
+    del synced
+    assert run.invoke(main, ["context", "packs", "gamma"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "not installed here: gamma" in result.output
+    assert "kennis pack list" in result.output
 
 
 def test_sync_needs_a_corpus_to_read_the_store_from(
@@ -921,8 +917,8 @@ def test_sync_makes_no_commit_in_the_users_repository(
 ):
     """The invariant every context command is held to: the bundle lives
     in a repository kennis does not own."""
-    path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    del tmp_path
+    an_old_copy(synced / BUNDLE_DIRNAME)
 
     assert run.invoke(main, ["context", "sync"]).exit_code == 0
 

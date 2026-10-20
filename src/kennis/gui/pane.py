@@ -1,4 +1,4 @@
-"""What the left pane shows: the collections, and this project's bundle.
+"""What the left pane shows: the collections, and every project's bundle.
 
 **Rows on every page, documents on request.** Every page draws the
 collections with their counts and states - one `holdings` call, about
@@ -23,9 +23,9 @@ from starlette.requests import Request
 
 from kennis.context import existing_corpus
 from kennis.engine.context.notes import bundle_documents
-from kennis.engine.errors import KennisError
+from kennis.engine.context.projects import known_projects
+from kennis.engine.errors import KennisError, ProjectListUnreadable
 from kennis.engine.history.history import HistoryEntry
-from kennis.gui.project import bundle_of
 from kennis.holdings import Holding, holdings, installed_packs, last_change
 
 type PaneState = Literal["empty", "none", "behind", "current"]
@@ -60,7 +60,9 @@ class Pane:
     """
 
     collections: tuple[PaneCollection, ...]
-    project: str | None
+    # Every project whose bundle is where the list says, by name: the
+    # window belongs to no one project (14g, #512).
+    projects: tuple[str, ...]
     readable: bool = True
     packs: int = 0
     last_change: HistoryEntry | None = None
@@ -104,16 +106,16 @@ def waiting_in(holding: Holding) -> int:
 
 
 def pane_now(request: Request) -> Pane:
-    """The pane as it is at this request, for this tab's project."""
+    """The pane as it is at this request."""
+    del request
+    projects = present_projects()
     try:
         context = existing_corpus()
         held = holdings(context)
         packs = len(installed_packs(context))
         newest = last_change(context)
     except KennisError:
-        return Pane(
-            collections=(), project=project_name(bundle_of(request)), readable=False
-        )
+        return Pane(collections=(), projects=projects, readable=False)
     return Pane(
         collections=tuple(
             PaneCollection(
@@ -124,20 +126,22 @@ def pane_now(request: Request) -> Pane:
             )
             for holding in held
         ),
-        project=project_name(bundle_of(request)),
+        projects=projects,
         packs=packs,
         last_change=newest,
     )
 
 
-def project_name(bundle: Path | None) -> str | None:
-    """The name of the project whose bundle this is, or None.
+def present_projects() -> tuple[str, ...]:
+    """The name of every known project whose bundle is where the list says.
 
-    The bundle's manifest carries no name and `.context` is the same in
-    every project, so the directory holding it is what tells one project
-    from another (#407).
+    A list that cannot be read lists none rather than failing the page,
+    for the reason `Pane.readable` gives; `kennis context list` says why.
     """
-    return None if bundle is None else bundle.parent.name
+    try:
+        return tuple(project.name for project in known_projects() if project.present)
+    except ProjectListUnreadable:
+        return ()
 
 
 def bundle_folders(bundle: Path) -> list[BundleFolder]:
@@ -166,7 +170,7 @@ __all__ = [
     "PaneState",
     "bundle_folders",
     "pane_now",
-    "project_name",
+    "present_projects",
     "state_of",
     "waiting_in",
 ]

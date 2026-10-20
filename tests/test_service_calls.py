@@ -59,8 +59,7 @@ EXPECTED_OPERATIONS = frozenset(
         "add",
         "add_in_groups",
         "back_up",
-        "claim",
-        "disown",
+        "copy_document",
         "index",
         "install_pack",
         "make_version_current",
@@ -157,8 +156,9 @@ def client(app: FastAPI) -> TestClient:
     return TestClient(app)
 
 
-def claimable(scene: Scene) -> Mapping[str, object]:
-    """A pack's note, installed and synced, to take for the user."""
+def a_pack_s_note(scene: Scene) -> Mapping[str, object]:
+    """A pack's note, installed and synced: the document a person copies
+    to have a version of their own (#514)."""
     runner = CliRunner()
     for arguments in (
         ["pack", "add", str(scene.scratch / "provider/provider.ken.yml")],
@@ -167,13 +167,6 @@ def claimable(scene: Scene) -> Mapping[str, object]:
         answered = runner.invoke(main, arguments)
         assert answered.exit_code == 0, answered.output
     return {"handle": "convention"}
-
-
-def disownable(scene: Scene) -> Mapping[str, object]:
-    claimed = claimable(scene)
-    answered = CliRunner().invoke(main, ["corpus", "claim", "convention"])
-    assert answered.exit_code == 0, answered.output
-    return claimed
 
 
 def installed(scene: Scene) -> Mapping[str, object]:
@@ -212,8 +205,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
         "folder": scene.scratch / "backups",
         "password": "a password",
     },
-    "claim": claimable,
-    "disown": disownable,
+    "copy_document": a_pack_s_note,
     "index": lambda scene: {"collection": "notes"},
     "install_pack": lambda scene: {"path": scene.scratch / "provider/provider.ken.yml"},
     "make_version_current": lambda scene: {"project": "tool", "version": "1.0"},

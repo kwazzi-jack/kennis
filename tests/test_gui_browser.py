@@ -517,7 +517,8 @@ def test_a_pack_file_is_chosen_from_the_chooser(
 
 def test_a_task_that_could_not_begin_opens_its_panel(page: playwright.Page) -> None:
     page.evaluate(
-        "htmx.ajax('POST', '/context-sync', {target: '#job', swap: 'innerHTML'})"
+        "htmx.ajax('POST', '/index', {target: '#job', swap: 'innerHTML',"
+        " values: {collection: 'notse'}})"
     )
 
     page.wait_for_selector(".strip .job[data-state='failed']", timeout=_WAIT_MS)

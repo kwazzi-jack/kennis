@@ -147,6 +147,7 @@ def sweep(
     mode: str | None,
     versions: Sequence[str],
     bundle: Path | None,
+    others: Sequence[Path] = (),
 ) -> Sweep:
     return _read(
         corpus_root,
@@ -160,6 +161,7 @@ def sweep(
             "mode": mode,
             "versions": list(versions),
             "bundle": bundle,
+            "others": list(others),
         },
         Sweep,
     )
@@ -173,6 +175,7 @@ def search_scope(
     top_k: int,
     versions: Sequence[str],
     bundle: Path | None,
+    others: Sequence[Path] = (),
 ) -> list[Hit]:
     return cast(
         list[Hit],
@@ -185,6 +188,7 @@ def search_scope(
                 "top_k": top_k,
                 "versions": list(versions),
                 "bundle": bundle,
+                "others": list(others),
             },
             list[Hit],
         ),
@@ -263,22 +267,13 @@ def return_preview(corpus_root: Path, commit: str) -> ReturnChanges:
     return _read(corpus_root, "return_preview", {"commit": commit}, ReturnChanges)
 
 
-def claim(corpus_root: Path, handle: str) -> Written[Document]:
+def copy_document(
+    corpus_root: Path, handle: str, collection: str | None
+) -> Written[Document]:
     return _write(
         corpus_root,
-        "claim",
-        {"handle": handle},
-        Document,
-        events=None,
-        on_waiting=None,
-    )
-
-
-def disown(corpus_root: Path, handle: str) -> Written[Document]:
-    return _write(
-        corpus_root,
-        "disown",
-        {"handle": handle},
+        "copy_document",
+        {"handle": handle, "collection": collection},
         Document,
         events=None,
         on_waiting=None,
@@ -468,9 +463,8 @@ __all__ = [
     "Written",
     "add",
     "back_up",
-    "claim",
     "contents",
-    "disown",
+    "copy_document",
     "docs_versions",
     "found",
     "history",

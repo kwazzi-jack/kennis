@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.preview import PaperPreview
@@ -150,12 +151,16 @@ def test_a_pack_file_that_is_not_there_is_refused_in_the_form(client: TestClient
 # ---------------------------------------------------------------------------
 
 
-def test_a_context_sync_with_no_context_is_a_task_that_failed(
+def a_task_that_cannot_start(client: TestClient) -> Response:
+    """An index of a collection there is not, which is refused before its
+    job begins."""
+    return client.post("/index", data={"collection": "notse"}, headers=HTMX)
+
+
+def test_a_task_that_could_not_start_is_a_task_that_failed(
     app: FastAPI, client: TestClient
 ):
-    answer = BeautifulSoup(
-        client.post("/context-sync", headers=HTMX).text, "html.parser"
-    )
+    answer = BeautifulSoup(a_task_that_cannot_start(client).text, "html.parser")
 
     job = answer.find(class_="job")
     assert isinstance(job, Tag)
@@ -163,7 +168,7 @@ def test_a_context_sync_with_no_context_is_a_task_that_failed(
     assert job.has_attr("data-open"), "the reader's own action: its panel opens"
     assert job.find(attrs={"popover": True}) is not None
     recorded = app.state.jobs.get(job["data-job"])
-    assert recorded is not None and recorded.kind == "context-sync"
+    assert recorded is not None and recorded.kind == "index"
     assert recorded.failed and recorded.done.is_set()
     activity = client.get("/activity").text
     assert f"/job/{job['data-job']}" in activity
@@ -175,7 +180,7 @@ def test_a_task_drawn_on_a_page_load_does_not_open_itself(
 ):
     """Only an answer to the reader's own action opens a panel: one that
     opened on every page would hide the page behind it."""
-    client.post("/context-sync", headers=HTMX)
+    a_task_that_cannot_start(client)
 
     bar = bar_of(client.get("/").text)
 
@@ -494,3 +499,17 @@ def test_a_form_holding_its_own_htmx_control_passes_nothing_down(
         ]
         if inner:
             assert form.get("hx-disinherit") == "*", (route, form.get("action"))
+
+
+def test_an_index_of_a_collection_there_is_not_is_refused_not_widened(
+    app: FastAPI, client: TestClient
+):
+    """It indexed every collection: a value from an edited address read
+    as "all" rather than as a mistake."""
+    answer = BeautifulSoup(a_task_that_cannot_start(client).text, "html.parser")
+
+    job = answer.find(class_="job")
+    assert isinstance(job, Tag) and job["data-state"] == "failed"
+    recorded = app.state.jobs.get(job["data-job"])
+    assert recorded is not None and recorded.kind == "index"
+    assert "notse" in answer.get_text()

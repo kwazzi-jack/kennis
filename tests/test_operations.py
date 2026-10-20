@@ -20,6 +20,7 @@ from click.testing import CliRunner
 from kennis import operations
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
+from kennis.engine.context.bundle import init_bundle
 from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.errors import CorpusBusy
@@ -276,8 +277,7 @@ def test_a_bundle_sync_makes_no_commit_in_the_users_repository(
     project = tmp_path / "project"
     project.mkdir()
     git(["init"], cwd=project)
-    bundle = project / ".context"
-    bundle.mkdir()
+    bundle = init_bundle(project).path
 
     synchronise_bundle(bundle, existing_corpus())
 

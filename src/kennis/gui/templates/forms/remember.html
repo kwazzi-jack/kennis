@@ -11,7 +11,7 @@
     <label class="labelled"><span class="name">{{ group_label }}</span><input type="text" name="group" list="note-groups" placeholder="{{ group_hint }}"></label>
     <datalist id="note-groups">{% for name in known_groups %}<option value="{{ name }}">{% endfor %}</datalist>
     <div class="labelled"><span class="name" id="remember-target-name">{{ target_label }}</span>
-    <span class="segmented" role="radiogroup" aria-labelledby="remember-target-name">{% for value, label in remember_targets %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span></div>
+    <span class="segmented" role="radiogroup" aria-labelledby="remember-target-name">{% for value, label in remember_targets() %}<label><input type="radio" name="target" value="{{ value }}"{% if loop.first %} checked{% endif %}>{{ label }}</label>{% endfor %}</span></div>
   </div>
   {# Every dialog's foot, as Add's is: Cancel, then the one action the
      form exists for, at the right. #}

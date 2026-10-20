@@ -28,6 +28,7 @@ from kennis.client import api
 from kennis.context import resolve_context
 from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.projects import present_bundles, project_named
 from kennis.protocol.spawn import holds_a_corpus
 from kennis.render.hits import (
     ScoreStyle,
@@ -94,7 +95,9 @@ def search_docs(question: str, top_k: int = 5, version: list[str] | None = None)
     return _searched("docs", question, top_k, versions=tuple(version or ()))
 
 
-def search_context(question: str, top_k: int = 5) -> str:
+def search_context(
+    question: str, top_k: int = 5, projects: str | list[str] = ""
+) -> str:
     """Search this project's `.context/` bundle - its own conventions.
 
     Reach for this for decisions and conventions specific to the
@@ -103,13 +106,24 @@ def search_context(question: str, top_k: int = 5) -> str:
 
     **Returns file locations, not content.** A bundle lives in the
     user's own repository, so each hit's handle is a path: open it with
-    your native file tools. There is no `read_context`.
+    your native file tools. There is no `read_context`. Advice from a
+    pack the project uses comes after, with a `pack=` handle and the
+    passage itself.
+
+    `projects` widens the search: `"all"` for every project on this
+    machine, or a list of project names. Each other project's hits name
+    its folder in full. Outside any project every project is searched.
     """
-    return _searched(CONTEXT_COLLECTION, question, top_k)
+    return _searched(CONTEXT_COLLECTION, question, top_k, projects=projects)
 
 
 def _searched(
-    collection: str, question: str, top_k: int, *, versions: tuple[str, ...] = ()
+    collection: str,
+    question: str,
+    top_k: int,
+    *,
+    versions: tuple[str, ...] = (),
+    projects: str | list[str] = "",
 ) -> str:
     """One scope, searched and rendered.
 
@@ -125,6 +139,7 @@ def _searched(
     # project's (#508); the service is sent the bundle, never asked to
     # look for one.
     bundle = find_bundle(Path.cwd())
+    others = _other_projects(projects, here=bundle)
     corpus_root = resolve_context().corpus_root
     if holds_a_corpus(corpus_root):
         hits = api.search_scope(
@@ -134,12 +149,18 @@ def _searched(
             top_k=top_k,
             versions=versions,
             bundle=bundle,
+            others=others,
         )
     else:
         # No corpus, so no service to own one; a bundle is the person's
         # own and is searched here, as `kennis search` does (#510, 14g).
         hits = search_scope(
-            collection, question, top_k, versions=versions, bundle=bundle
+            collection,
+            question,
+            top_k,
+            versions=versions,
+            bundle=bundle,
+            others=others,
         )
     if not hits:
         return _NOTHING
@@ -149,18 +170,33 @@ def _searched(
     # a sentence about calibration would cost tokens to say so twice.
     style, _ = score_style_for(hits, _STYLE)
     best = best_lexical(hits)
-    # A context hit's body is left out: the handle is a path and the
-    # agent opens the file, so a snippet would be a second copy of text
-    # it is about to read in full.
-    snippet = "none" if collection == CONTEXT_COLLECTION else "short"
     blocks: list[str] = []
     for rank, hit in enumerate(hits, start=1):
+        # A bundle hit's body is left out: the handle is a path and the
+        # agent opens the file, so a snippet would be a second copy of
+        # text it is about to read in full. A pack's file is in kennis's
+        # store, which the agent has no path to, so it gets the passage.
+        snippet = "none" if hit.collection == CONTEXT_COLLECTION else "short"
         shown = rendered_hit(hit, rank=rank, style=style, best=best, snippet=snippet)
         lines = [shown.headline, f"  {shown.detail}"]
         if shown.body is not None:
             lines.append(f"  {shown.body}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
+
+
+def _other_projects(projects: str | list[str], *, here: Path | None) -> list[Path]:
+    """The bundles a context search reads besides this project's.
+
+    Every known project when asked for `"all"`, or when the agent works
+    outside any project, where "this project" names nothing; the named
+    ones otherwise, refused by name when unknown.
+    """
+    if projects == "all" or (here is None and not projects):
+        return list(present_bundles())
+    if isinstance(projects, str):
+        return [project_named(projects).bundle] if projects else []
+    return [project_named(name).bundle for name in projects]
 
 
 __all__ = [

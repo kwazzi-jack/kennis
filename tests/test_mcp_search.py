@@ -216,3 +216,33 @@ def test_search_context_answers_with_a_path_and_no_snippet(
     # itself; counting lines is what actually says "no body".
     lines = [line for line in answered.splitlines() if line.strip()]
     assert len(lines) == 2, lines
+
+
+def test_search_context_gives_a_declared_pack_s_hit_with_its_passage(
+    corpus: Path, isolated: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """A pack's file is in kennis's store, which the agent has no path to,
+    so its hit carries a `pack=` handle and the passage itself (14g)."""
+    provider = isolated / "provider"
+    (provider / "content").mkdir(parents=True)
+    (provider / "content" / "imaging.md").write_text(
+        "Image in 2 GHz sub-bands and join them afterwards.\n", encoding="utf-8"
+    )
+    manifest = provider / "alpha.ken.yml"
+    manifest.write_text(
+        "kennis:\n  schema_version: 1\n"
+        'pack:\n  id: alpha\n  name: n\n  version: "1.0.0"\n'
+        "context:\n  - source: content/\n",
+        encoding="utf-8",
+    )
+    assert run.invoke(main, ["pack", "update", str(manifest)]).exit_code == 0
+    assert run.invoke(main, ["pack", "add", str(manifest)]).exit_code == 0
+    project = isolated / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    assert run.invoke(main, ["context", "init", "--pack", "alpha"]).exit_code == 0
+
+    answered = search_context("sub-bands")
+
+    assert "pack=alpha/imaging.md" in answered
+    assert "join them afterwards" in answered

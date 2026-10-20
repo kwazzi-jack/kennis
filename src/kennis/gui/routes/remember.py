@@ -1,9 +1,8 @@
-"""Writing a note, into the corpus or into this project's bundle."""
+"""Writing a note, into the corpus or into a known project's bundle."""
 
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import (
@@ -11,8 +10,10 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
+from kennis.engine.context.projects import project_named
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.errors import (
+    ContextNotFound,
     CorpusBusy,
     KennisError,
 )
@@ -22,7 +23,6 @@ from kennis.gui.pages import (
     ShownOutcome,
     known_groups,
 )
-from kennis.gui.project import bundle_of
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -57,8 +57,7 @@ def _remembered(
     *,
     title: str | None,
     group: str | None,
-    to_context: bool,
-    bundle: Path | None,
+    target: str,
 ) -> ShownOutcome:
     """Write, and turn whatever happened into something to show.
 
@@ -71,11 +70,18 @@ def _remembered(
     if not text.strip():
         return ShownOutcome(message=words.NOTHING_TO_REMEMBER, role="role-warning")
     try:
-        if to_context:
+        # `notes`, or `context:<project>`. Anything else - a plain
+        # `context` from an older form or an edited address - is refused:
+        # filed into the corpus's notes it would be a project decision
+        # recorded machine-wide and reported as saved.
+        if target != "notes":
+            project = target.removeprefix("context:")
+            if project == target or not project:
+                raise ContextNotFound
             note, bundle_name = write_context_note(
-                text, title=title, group=group, bundle=bundle
+                text, title=title, group=group, bundle=project_named(project).bundle
             )
-            return words.describe_written_to_bundle(note, bundle_name)
+            return words.describe_written_to_bundle(note, f"{project}/{bundle_name}")
         restored: list[OutOfBandChange] = []
         context = existing_corpus()
         report = write_note(context, text, title=title, group=group, restored=restored)
@@ -117,13 +123,11 @@ def accept_remembered(request: Request, form: PostedForm) -> HTMLResponse:
     text_given = str(form.get("text") or "")
     title = str(form.get("title") or "") or None
     group = str(form.get("group") or "") or None
-    to_context = str(form.get("target") or "notes") == "context"
     outcome = _remembered(
         text_given,
         title=title,
         group=group,
-        to_context=to_context,
-        bundle=bundle_of(request),
+        target=str(form.get("target") or "notes"),
     )
     if not from_htmx(request):
         return action_page(

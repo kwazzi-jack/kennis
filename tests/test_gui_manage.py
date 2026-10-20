@@ -508,16 +508,6 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
     assert "role-added" not in shown
 
 
-def test_a_project_sync_outside_a_bundle_is_a_task_naming_what_makes_one(
-    client: TestClient,
-):
-    """A task that could not begin, on the bar like any other (#475)."""
-    answer = posted(client, "/context-sync", data={})
-
-    assert 'data-state="failed"' in answer.text
-    assert "kennis context init" in answer.text
-
-
 def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     client: TestClient,
 ):
@@ -548,22 +538,18 @@ def test_the_pack_field_browses_the_computer_kennis_runs_on(client: TestClient):
     assert client.get(address, headers={"HX-Request": "true"}).status_code == 200
 
 
-def test_the_sync_dialog_offers_the_project_context_only_where_there_is_one(
+def test_the_sync_dialog_syncs_the_corpus_and_no_project(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
-    """The one dialog with two operations in it. Every other action's
-    dialog posts to its own path, which `test_gui_workbench` asserts; this
-    one also posts to `/context-sync` - offered only where there is a
-    project context, since with none it would refuse."""
-    alone = client.get("/sync", headers={"HX-Request": "true"}).text
-    monkeypatch.setattr("kennis.gui.pane.project_name", lambda bundle: "kennis")
-    with_context = client.get("/sync", headers={"HX-Request": "true"}).text
+    """A project's context is read from the store, so there is nothing of
+    a pack for the window to copy into one (14g); its sync stays on the
+    command line, run in the project concerned."""
+    monkeypatch.setattr("kennis.gui.pane.present_projects", lambda: ("kennis",))
+    dialog = client.get("/sync", headers={"HX-Request": "true"}).text
 
-    assert 'hx-post="/sync"' in alone
-    assert 'hx-post="/context-sync"' not in alone
-    assert 'hx-post="/context-sync"' in with_context
-    assert 'hx-disabled-elt="this"' in with_context
-    foot = BeautifulSoup(with_context, "html.parser").select_one(".form-foot")
+    assert 'hx-post="/sync"' in dialog
+    assert "/context-sync" not in dialog
+    foot = BeautifulSoup(dialog, "html.parser").select_one(".form-foot")
     assert foot is not None
     submits = foot.select("button[type=submit]")
     assert "primary" in (submits[0].get("class") or [])
@@ -618,7 +604,7 @@ def test_an_installed_pack_offers_the_sync_as_a_button_not_a_command(
         )
     )
     drawn = TEMPLATES.get_template("job-outcome.html").render(
-        shown=shown, pane_now=lambda request: Pane(collections=(), project=None)
+        shown=shown, pane_now=lambda request: Pane(collections=(), projects=())
     )
 
     assert shown.next_steps == ()

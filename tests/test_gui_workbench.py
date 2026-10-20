@@ -445,14 +445,14 @@ def test_the_context_is_named_after_its_project(
         "Solution intervals are per scan.", title="Intervals", bundle=bundle
     )
     admitted(client)
-    # Opened from the project, as `kennis gui` opens it there (#508).
-    client.get("/", params={"bundle": str(bundle)})
 
     pane = pane_of(client.get("/").text)
 
-    assert re.search(r'class="project"[^>]*>boepie<', pane), pane
-    assert 'hx-get="/tree/context"' in pane
-    assert re.search(r'href="/bundle/[^"]+\.md"', client.get("/tree/context").text)
+    # Every known project, wherever the window was started (14g, #512).
+    assert re.search(r'class="name">boepie<', pane), pane
+    assert 'hx-get="/tree/context?project=boepie"' in pane
+    tree = client.get("/tree/context", params={"project": "boepie"}).text
+    assert re.search(r'href="/bundle/[^"]+\.md\?project=boepie"', tree), tree
 
 
 def test_without_a_bundle_the_context_section_says_so(corpus: Path, client: TestClient):
@@ -638,8 +638,11 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # what both tests read, and an included router it failed to enter would
 # otherwise leave them asserting over nothing.
 # 48th and 49th: GET and POST /docs/remove-version (#489); 50th to 54th: GET
-# and POST /document/remove and /corpus/return, POST /corpus/restore
-EXPECTED_ROUTES = 54
+# and POST /document/remove and /corpus/return, POST /corpus/restore; 55th:
+# GET /pack/{id}/{address}, a pack's context file (14g); and POST
+# /context-sync gone, because the window copies no pack into a project (14g);
+# and POST /copy, a document copied into a note of the person's (14g, #514)
+EXPECTED_ROUTES = 55
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:
@@ -669,35 +672,3 @@ def test_no_route_runs_on_the_event_loop():
     ]
 
     assert on_the_loop == []
-
-
-def test_a_tab_shows_the_project_it_was_opened_for_not_the_service_s(
-    corpus: Path, client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    """The service's own directory is whichever client started it (#508):
-    standing in one project while the tab names another, the tab's wins,
-    and a tab opened outside any project names none."""
-    for name in ("here", "elsewhere"):
-        (tmp_path / name).mkdir()
-        monkeypatch.chdir(tmp_path / name)
-        assert CliRunner().invoke(main, ["context", "init"]).exit_code == 0
-    monkeypatch.chdir(tmp_path / "here")
-    admitted(client)
-
-    client.get("/", params={"bundle": str(tmp_path / "elsewhere" / ".context")})
-    named = pane_of(client.get("/").text)
-    client.get("/", params={"bundle": ""})
-    unnamed = pane_of(client.get("/").text)
-
-    assert re.search(r'class="project"[^>]*>elsewhere<', named), named
-    assert 'class="project"' not in unnamed
-
-
-def test_a_tab_given_something_that_is_not_a_bundle_has_no_project(
-    corpus: Path, client: TestClient, tmp_path: Path
-):
-    admitted(client)
-
-    client.get("/", params={"bundle": str(tmp_path)})
-
-    assert 'class="project"' not in pane_of(client.get("/").text)

@@ -151,10 +151,24 @@
     }
   },
   {
-    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`.",
+    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses comes after, with a `pack=` handle and the\npassage itself.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.",
     "input": {
       "additionalProperties": false,
       "properties": {
+        "projects": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": ""
+        },
         "question": {
           "type": "string"
         },

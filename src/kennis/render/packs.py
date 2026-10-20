@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from kennis.engine.corpus.document import Document
-from kennis.engine.corpus.schema import pack_id_of
 from kennis.engine.pack.installed import InstalledPack, Overlap, PackRemoval
 from kennis.engine.pack.resolve import Action, Verdict
 from kennis.engine.pack.store import PackInstall
@@ -330,7 +328,7 @@ _VERDICT_WORDS: dict[Verdict, str] = {
     "adopt": "taken over",
     "delete": "removed: no pack declares it now",
     "keep": "unchanged",
-    "edited": "you edited this, so it has been left as it is",
+    "edited": "you edited this: the pack's text is back, your edit a note of yours",
     "yours": "yours; a pack declares it and will not touch it",
 }
 
@@ -372,7 +370,8 @@ _COUNT_WORDS: tuple[tuple[tuple[Verdict, ...], str], ...] = (
     (("adopt",), "taken over"),
     (("delete",), "removed"),
     (("keep",), "unchanged"),
-    (("edited", "yours"), "left as yours"),
+    (("edited",), "copied as yours"),
+    (("yours",), "left as yours"),
 )
 
 
@@ -414,41 +413,73 @@ def describe_sync(counts: dict[Verdict, int], *, noun: str = "file") -> str:
     )
 
 
-def describe_claim_needed(count: int) -> str:
-    """Why an edited file was left alone, said once above the list.
-
-    Every edited file has the same cause and the same two answers - keep
-    the edit and take the file, or discard it and let the pack own it
-    again - so saying it once is better than repeating it per line.
-    """
+def describe_after_install() -> str:
+    """What an install has not done yet, said once after one."""
     return (
-        f"{count_of(count, 'file')} kennis would have written carries your "
-        "own edits, so none of them was changed; set `owner: user` in a "
-        "file to keep it and stop it being reported"
+        "its papers, documentation and notes arrive with a corpus sync, and "
+        "a project reads its context once the project declares it"
     )
 
 
-def describe_corpus_claim_needed(count: int) -> str:
-    """Why an edited corpus document was left alone.
+def describe_bundle_sync(removed: int, made_yours: int) -> str:
+    """The line above a context sync's detail: what it changed, counted.
 
-    Names `kennis corpus claim`, which the bundle's wording cannot: a
-    corpus document is addressed by an identifier and a command is the
-    only handle on it, where a bundle file is open in the user's editor
-    and one line of its frontmatter is the whole transfer. Section 5
-    step 4a names this command for exactly this case.
+    A sync writes nothing new any more (14g), so a project whose bundle
+    no earlier kennis copied into is told that nothing changed.
+    """
+    parts = [
+        *(
+            [f"{count_of(removed, 'copy', 'copies')} of a pack's file removed"]
+            if removed
+            else []
+        ),
+        *(
+            [f"{count_of(made_yours, 'edited copy', 'edited copies')} made yours"]
+            if made_yours
+            else []
+        ),
+    ]
+    return ", ".join(parts) if parts else "nothing to change"
+
+
+def describe_made_yours() -> str:
+    """Why a pack's file in the bundle is now the person's.
+
+    Said once above the list, because every such file has the one cause:
+    an earlier kennis copied it, the person edited it, and an edit is
+    kept rather than replaced by the pack's text.
     """
     return (
-        f"{count_of(count, 'document')} kennis would have written carries "
-        "your own edits, so none of them was changed"
+        "an edited copy of a pack's file is yours now and replaces the "
+        "pack's in this project's search"
     )
 
 
-def describe_owner(document: Document) -> str:
-    """Who may overwrite or delete this document, after a transfer."""
-    pack_id = pack_id_of(document.frontmatter.owner)
-    if pack_id is None:
-        return "yours now; no sync will rewrite it or remove it"
-    return f"{pack_id}'s again; the next sync may rewrite it or remove it"
+def describe_declared(declared: Sequence[str]) -> str:
+    return f"this project uses {', '.join(declared)}"
+
+
+def describe_not_installed(missing: Sequence[str]) -> str:
+    """Packs a project declares that this machine has not got: its search
+    leaves them out until they are added."""
+    return f"declared but not installed here: {', '.join(missing)}"
+
+
+def describe_no_declaration() -> str:
+    return "this project declares no packs, so its search reads none"
+
+
+def describe_kept_copies(count: int) -> str:
+    """Why a pack's note was put back although the person had edited it:
+    the edit is a note of theirs now (14g, #514)."""
+    return (
+        f"{count_of(count, 'note')} a pack owns had your edits; each edit is "
+        "kept as a note of yours, and the pack's text is back"
+    )
+
+
+def describe_kept_copy(original: str, copy: str) -> str:
+    return f"{original}: your edit is now {copy}"
 
 
 def describe_sync_summary(counts: dict[Verdict, int]) -> str:
@@ -459,7 +490,9 @@ def describe_sync_summary(counts: dict[Verdict, int]) -> str:
     """
     named = [
         f"{count} {verdict}"
-        for verdict in ("write", "rewrite", "adopt", "delete")
+        # `edited` writes too: a note of the person's, and the pack's text
+        # back (#514).
+        for verdict in ("write", "rewrite", "adopt", "delete", "edited")
         if (count := counts.get(verdict, 0))
     ]
     return ", ".join(named) if named else "nothing to change"
@@ -499,31 +532,6 @@ def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     )
 
 
-def describe_moved(moved: tuple[tuple[str, str], ...]) -> str:
-    """Files found somewhere other than where their pack declares them.
-
-    Said because a sync follows such a file instead of writing the
-    declared address again, which is quiet: the reader asked for
-    `conventions/naming.md` and it is not there. Naming both paths is
-    what lets them see that nothing is missing.
-
-    **Phrased for the standing arrangement, not for this run.** A moved
-    file is reported on every sync, including the runs where nothing was
-    written, so a sentence saying it *was updated* would be false on most
-    of them.
-    """
-    where = "; ".join(f"{address} is at {path}" for address, path in moved)
-    kept = (
-        "is kept up to date where it is"
-        if len(moved) == 1
-        else "are kept up to date where they are"
-    )
-    return (
-        f"{count_of(len(moved), 'file')} is not at the address its pack "
-        f"declares and {kept}: {where}"
-    )
-
-
 def describe_what_remove_cannot_reach() -> str:
     """The sentence `pack remove` closes with.
 
@@ -541,19 +549,23 @@ def describe_what_remove_cannot_reach() -> str:
 
 __all__ = [
     "describe_action",
-    "describe_claim_needed",
-    "describe_corpus_claim_needed",
+    "describe_after_install",
+    "describe_bundle_sync",
     "describe_damage",
     "describe_declarations",
+    "describe_declared",
     "describe_deferred",
     "describe_holdings",
     "describe_install",
     "describe_installed",
+    "describe_kept_copies",
+    "describe_kept_copy",
     "describe_lost_source",
-    "describe_moved",
+    "describe_made_yours",
+    "describe_no_declaration",
+    "describe_not_installed",
     "describe_outcome_of",
     "describe_overlap",
-    "describe_owner",
     "describe_problem",
     "describe_recorded",
     "describe_refusal",

@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from kennis import __version__
-from kennis.engine.atomic import replace_file, replacing_directory
+from kennis.engine.atomic import make_read_only, replace_file, replacing_directory
 from kennis.engine.errors import PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.content import content_digest, read_source
@@ -273,6 +273,7 @@ def _installed(
     files: dict[str, str] = {}
     with replacing_directory(root) as staging:
         shutil.copy2(path, staging / DECLARATION_FILENAME)
+        make_read_only(staging / DECLARATION_FILENAME)
         for folder, declarations in _declared(pack).items():
             files.update(_copied(path.parent, staging, folder, declarations))
     _write_state(root, pack, digest, files, path, previous)
@@ -313,6 +314,10 @@ def _copied(
         target = staging / folder.strip("/") / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(origin / folder / relative, target)
+        # What the provider shipped: read-only, as everything kennis
+        # obtained is (#514); a changed one is damage, refused at the next
+        # sync until the pack is added again.
+        make_read_only(target)
         digests[f"{folder.strip('/')}/{relative}"] = found[relative]
     return digests
 

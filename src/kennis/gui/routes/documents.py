@@ -14,12 +14,14 @@ from fastapi.responses import (
 
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.packs import load_pack_context_index
+from kennis.engine.context.projects import project_named
 from kennis.engine.context.status import bundle_freshness
 from kennis.engine.errors import (
-    ContextNotFound,
     KennisError,
 )
 from kennis.engine.history.repository import Repository
+from kennis.engine.pack.installed import list_installed
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
 from kennis.gui.pages import (
@@ -27,8 +29,8 @@ from kennis.gui.pages import (
     shown_bundle_document,
     shown_document,
     shown_matches,
+    shown_pack_document,
 )
-from kennis.gui.project import bundle_of
 from kennis.gui.responses import TEMPLATES, problem_page
 from kennis.holdings import (
     document_marks,
@@ -219,10 +221,80 @@ def serve_document(
     )
 
 
+@router.get("/pack/{pack_id}/{address:path}")
+def serve_pack_document(
+    request: Request,
+    pack_id: str,
+    address: str,
+    images: str = "",
+    chunk: str = "",
+    q: str = "",
+) -> HTMLResponse:
+    """One of a pack's context files, read from the store (14g).
+
+    Its index is the pack's own, rebuilt with every install of the pack,
+    so a mark is placed whenever the chunk is found.
+    """
+    corpus_root = existing_corpus().corpus_root
+    load_remote = images == "on"
+    try:
+        chunks = _pack_chunks(corpus_root, pack_id, address)
+        marked = _marked_in(chunks, chunk)
+        document = shown_pack_document(
+            corpus_root,
+            pack_id,
+            address,
+            load_remote_images=load_remote,
+            marked=marked,
+            question=q,
+        )
+    except KennisError as error:
+        return problem_page(request, error)
+    return TEMPLATES.TemplateResponse(
+        request,
+        "document.html",
+        _document_context(
+            document,
+            question=q,
+            load_remote=load_remote,
+            withheld=False,
+            placeable=True if q else None,
+            chunks=lambda: chunks,
+        ),
+    )
+
+
+def _pack_chunks(corpus_root: Path, pack_id: str, address: str) -> list[Chunk]:
+    """The file's chunks in the pack's index, in order; none when the pack
+    is not installed, which the page then says."""
+    held = {one.state.pack_id: one for one in list_installed(corpus_root).packs}
+    if pack_id not in held:
+        return []
+    index = load_pack_context_index(corpus_root, held[pack_id])
+    return sorted(
+        (chunk for chunk in index.chunks if chunk.document_id == address),
+        key=lambda chunk: chunk.chunk_index,
+    )
+
+
+def _marked_in(chunks: list[Chunk], chunk: str) -> MarkedRange | None:
+    try:
+        wanted = int(chunk)
+    except ValueError:
+        return None
+    for found in chunks:
+        if found.chunk_index == wanted:
+            return MarkedRange(
+                start=found.char_start, end=found.char_end, anchor=f"chunk-{wanted}"
+            )
+    return None
+
+
 @router.get("/bundle/{relative_path:path}")
 def serve_bundle_document(
     request: Request,
     relative_path: str,
+    project: str = "",
     images: str = "",
     chunk: str = "",
     q: str = "",
@@ -234,16 +306,21 @@ def serve_bundle_document(
     not a collection of the corpus. Linking a context hit into
     the corpus route is what answered a quarter of all searches
     with "unknown collection". Concern #332.
+
+    The project is named in the query, because the window belongs to no
+    project and a name may hold a `/` (14g, #512).
     """
-    bundle = bundle_of(request)
-    if bundle is None:
-        return problem_page(request, ContextNotFound())
+    try:
+        bundle = project_named(project).bundle
+    except KennisError as error:
+        return problem_page(request, error)
     marked, withheld = _marked_in_bundle(bundle, relative_path, chunk)
     load_remote = images == "on"
     try:
         document = shown_bundle_document(
             bundle,
             relative_path,
+            project=project,
             load_remote_images=load_remote,
             marked=marked,
             question=q,

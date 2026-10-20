@@ -168,6 +168,19 @@ the window does not load images from other sites, because loading one tells
 that site which page you are reading. It shows a placeholder naming the host
 instead.
 
+**A saved page is read-only.** It is the site's text, and `--refresh`
+replaces it with the site's text again, so kennis saves it without write
+permission and an editor warns before you change it. To keep a version
+with your own changes, copy it into a note of yours:
+
+```
+kennis corpus copy <id>
+```
+
+The copy has a new identifier, records the page it came from, and is yours
+to edit; the window offers the same as "Copy into my notes" in the page's
+menu in the tree.
+
 ## Which version a search uses
 
 **Each project has a current version, and a search uses it.** The current

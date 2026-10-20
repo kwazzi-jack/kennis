@@ -220,8 +220,12 @@ DETAIL_LABELS: Final[dict[str, str]] = {
     "release": "Release",
     "source": "Source",
     "converted": "Converted from",
+    # A note of the person's made from another document (#514).
+    "copied": "Copied from",
     "added": "Added",
     "index": "Search status",
+    # A pack's context file, which the project makes its own by copying.
+    "copy": "To make it this project's own",
 }
 
 # Whether the index holds a document, by `holdings.DocumentState`: the
@@ -739,7 +743,7 @@ JOB_DOING: Final[dict[str, str]] = {
     "pack": "Installing a pack",
     "backup": "Backing up",
     "remember": "Writing a note",
-    "claim": "Changing a document's owner",
+    "copy": "Copying a document",
     "move": "Moving a document",
     "remove": "Removing a document",
     "restore": "Putting a document back",
@@ -1260,12 +1264,20 @@ def index_waiting(count: int) -> str:
     return f"{count} to index"
 
 
-# Where a note goes, by the form's value: the corpus's notes, or the
-# context bundle of the project the window was started in.
-REMEMBER_TARGETS: Final[tuple[tuple[str, str], ...]] = (
-    ("notes", "Notes"),
-    ("context", "Project context"),
-)
+# The search box's choice of whose context to search (14g).
+PROJECT_LABEL = "Which project's context"
+EVERY_PROJECT = "Every project"
+
+
+def remember_targets(projects: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """Where a note may go, by the form's value: the corpus's notes, or
+    one known project's context (14g)."""
+    return (
+        ("notes", "Notes"),
+        *((f"context:{project}", f"{project} context") for project in projects),
+    )
+
+
 INDEX_PREAMBLE = "Make new and changed documents searchable."
 
 INDEX_TIP = (
@@ -1586,6 +1598,9 @@ STATE_WORDS: Final[dict[str, str]] = {
 ATTENTION_ONLY = "Show only what needs attention"
 
 MENU_OPEN = "Open"
+# A new note of the person's with the same text (#514): what a pack or a
+# site supplied is read-only, and the copy is the version they can edit.
+MENU_COPY = "Copy into my notes"
 MENU_MOVE = "Move to group"
 MENU_ADD_HERE = "Add here"
 MENU_INDEX = "Index this collection"
@@ -1758,6 +1773,7 @@ __all__ = [
     "EMPTY_MEANS",
     "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",
+    "EVERY_PROJECT",
     "FIELD_LABELS",
     "FIELD_TIPS",
     "GROUP_HINT",
@@ -1810,6 +1826,7 @@ __all__ = [
     "MATCHES_WITHHELD",
     "MEASURE_ICONS",
     "MENU_ADD_HERE",
+    "MENU_COPY",
     "MENU_INDEX",
     "MENU_MOVE",
     "MENU_OPEN",
@@ -1881,6 +1898,7 @@ __all__ = [
     "PROBLEM_CORPUS",
     "PROBLEM_HEADING",
     "PROGRESS_LABEL",
+    "PROJECT_LABEL",
     "PROJECT_UNNAMED",
     "PUT_BACK",
     "QUIT",
@@ -1896,7 +1914,6 @@ __all__ = [
     "REMEMBER_ACTION",
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
-    "REMEMBER_TARGETS",
     "REMEMBER_TIP",
     "REMOVE_DOCUMENT_ACTION",
     "REMOVE_VERSION_ACTION",
@@ -1992,6 +2009,7 @@ __all__ = [
     "previewed_citekey",
     "previewed_project",
     "previewed_version",
+    "remember_targets",
     "removing_document",
     "removing_version",
     "results_for",

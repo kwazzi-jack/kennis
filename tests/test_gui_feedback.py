@@ -235,7 +235,7 @@ def test_the_outcome_line_does_not_repeat_its_name():
     """It read "= c.md - c.md: unchanged"; the name is first already."""
     action = Action(address="c.md", verdict="keep", declaration=None, existing=None)
     shown = shown_corpus_sync(
-        CorpusSync(actions=(action,), counts={"keep": 1}, deferred=(), edited=())
+        CorpusSync(actions=(action,), counts={"keep": 1}, deferred=(), copied=())
     )
 
     assert shown.items[0].detail == "unchanged"
@@ -251,7 +251,7 @@ def test_a_sync_outcome_names_each_document_where_it_is():
             actions=(action,),
             counts={"keep": 1},
             deferred=(),
-            edited=(),
+            copied=(),
             places={"c.md": "notes/boepie/Recipes.md"},
         )
     )
@@ -453,7 +453,7 @@ JOB_DOING = {
     "pack": "Installing a pack",
     "backup": "Backing up",
     "remember": "Writing a note",
-    "claim": "Changing a document's owner",
+    "copy": "Copying a document",
     "move": "Moving a document",
     "remove": "Removing a document",
     "restore": "Putting a document back",

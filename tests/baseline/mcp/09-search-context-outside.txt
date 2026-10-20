@@ -1,3 +1,5 @@
 $ search_context {"question": "CASA"}
---- error True
-Error calling tool 'search_context': no context bundle found in this directory or any parent
+--- error False
+[1] CASA is used here
+  keywords: very high  path=<scratch>/project/.context/CASA is used here.md
+  CASA is used here.

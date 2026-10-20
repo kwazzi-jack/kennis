@@ -27,6 +27,7 @@ from kennis.engine.pack.update import PackUpdate, update_pack
 from kennis.engine.pack.validate import PackReport, validate_pack
 from kennis.render.machine_readable import pack_list_document
 from kennis.render.packs import (
+    describe_after_install,
     describe_damage,
     describe_declarations,
     describe_holdings,
@@ -91,17 +92,17 @@ def add_command(path: Path) -> None:
     if declared is not None:
         display.detail(">", declared)
     if install.outcome != "unchanged":
-        # Said at all because "Installed" otherwise implies the content is
-        # searchable, and it is not: this records what the provider
-        # declared and a sync materialises it. Only when something
-        # changed - a provider calling this on every run does not need the
-        # same sentence each time.
-        display.guidance(
-            "nothing is materialised yet: a sync converges each scope with "
-            "what every installed pack declares"
-        )
+        # Said at all because "Installed" otherwise implies everything is
+        # searchable, and it is not: the corpus's share arrives with a
+        # sync, and a project reads the pack's context once it declares
+        # the pack (14g). Only when something changed - a provider calling
+        # this on every run does not need the same sentence each time.
+        display.guidance(describe_after_install())
         display.next_step("kennis corpus sync")
-        display.next_step("kennis context sync", note="in each project that wants it")
+        display.next_step(
+            f"kennis context packs {install.pack_id}",
+            note="in each project that uses it",
+        )
 
 
 @pack_group.command(name="init", cls=KennisCommand)

@@ -46,10 +46,11 @@ from dataclasses import dataclass
 from typing import Final, Literal
 
 from kennis.engine.context.bundle import BUNDLE_DIRNAME
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.index import is_bundle_group
+from kennis.engine.context.packs import pack_of_group
 from kennis.engine.docs.versions import version_order
 from kennis.engine.rag.models import SearchResult
-from kennis.render.words import snippet_of
+from kennis.render.words import group_name, snippet_of
 
 type Relevance = Literal["very high", "high", "medium", "low", "very low"]
 
@@ -253,6 +254,16 @@ def bundle_hit_handle(result: SearchResult, *, bundle_name: str) -> str:
     return f"path={bundle_name}/{result.chunk.document_id}"
 
 
+def pack_hit_handle(result: SearchResult, *, pack_id: str) -> str:
+    """Where a pack's context hit is: the pack and the file's address, which
+    is what `kennis context copy` takes to make the file the project's own.
+
+    Not a path, because the file is in kennis's store and is not to be
+    edited there (14g).
+    """
+    return f"pack={pack_id}/{result.chunk.document_id}"
+
+
 def raw_scores(result: SearchResult) -> str:
     """Every leg that ran, at the precision that distinguishes hits.
 
@@ -316,6 +327,10 @@ class Hit:
     # The other versions of the same docs page whose passage is this one,
     # word for word, merged into it when a search ran over several (#489).
     merged_versions: tuple[str, ...] = ()
+    # Where a project's note is, as the reader is told: `.context` for
+    # the project the search ran from, the bundle's whole path for
+    # another (14g). Empty for every other hit.
+    place: str = ""
 
 
 def docs_versions_of(hit: Hit) -> str | None:
@@ -385,9 +400,12 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     arrived and split `meaning:` from `medium`. The join is still what
     the command line prints, byte for byte. Concern #380.
     """
+    pack = pack_of_group(hit.collection)
     handle = (
-        bundle_hit_handle(hit.result, bundle_name=BUNDLE_DIRNAME)
-        if hit.collection == CONTEXT_COLLECTION
+        bundle_hit_handle(hit.result, bundle_name=hit.place or BUNDLE_DIRNAME)
+        if is_bundle_group(hit.collection)
+        else pack_hit_handle(hit.result, pack_id=pack)
+        if pack is not None
         else hit_handle(hit.result)
     )
     # Which version a docs passage is from travels with its handle, so the
@@ -494,7 +512,9 @@ def summary_of(groups: Mapping[str, Sequence[Hit]]) -> str:
     The basis is not here. It belongs to a group, and this line spans
     them.
     """
-    return ", ".join(f"{len(hits)} in {name}" for name, hits in groups.items())
+    return ", ".join(
+        f"{len(hits)} in {group_name(name)}" for name, hits in groups.items()
+    )
 
 
 def around(chunk_index: int) -> str:

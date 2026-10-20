@@ -22,12 +22,12 @@ converging the documents with what is left is a sync's job.
 
 from __future__ import annotations
 
-import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
 
+from kennis.engine.atomic import remove_tree
 from kennis.engine.errors import PackInvalid, PackNotInstalled
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.content import content_digest, selects
@@ -375,7 +375,7 @@ def remove_pack(
         raise PackNotInstalled(f"no pack called '{pack_id}' is installed")
 
     state = read_state(corpus_root, pack_id)
-    shutil.rmtree(root)
+    remove_tree(root)
     _reported(events, pack_id, started)
     return PackRemoval(
         pack_id=pack_id,

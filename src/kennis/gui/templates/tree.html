@@ -16,6 +16,11 @@
 <summary class="menu-button" aria-label="{{ menu_for(name) }}">{{ icon("ellipsis") }}</summary>
 <div class="menu-items">
 {% if document_id %}<a class="item" href="/document/{{ tree.collection }}/{{ document_id }}">{{ menu_open }}</a>{% endif %}
+{% if document_id %}<form class="copy" action="/copy" method="post">
+<input type="hidden" name="collection" value="{{ tree.collection }}">
+<input type="hidden" name="document" value="{{ document_id }}">
+<button type="submit" class="item">{{ menu_copy }}</button>
+</form>{% endif %}
 {% if document_id and tree.movable %}<form class="move" action="/move" method="post" hx-post="/move" hx-target="closest .branch" hx-swap="innerHTML">
 <input type="hidden" name="collection" value="{{ tree.collection }}">
 <input type="hidden" name="document" value="{{ document_id }}">

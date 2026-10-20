@@ -462,7 +462,7 @@ def test_a_command_writes_its_events_to_the_log(run: CliRunner, tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# `corpus sync`, `claim` and `disown`. Milestone 7 unit 7.
+# `corpus sync` and `copy`. Milestone 7 unit 7, and 14g (#514).
 # ---------------------------------------------------------------------------
 
 
@@ -598,12 +598,13 @@ def test_a_synced_note_is_searchable_after_indexing(
     assert "four-minute chunks" in result.output
 
 
-def test_an_edited_document_names_the_command_that_keeps_the_edit(
+def test_an_edited_document_is_kept_as_a_note_and_named_by_both_ids(
     run: CliRunner, isolated: Path, tmp_path: Path
 ):
-    """Section 5 step 4a says to name `kennis corpus claim <id>`, and the
-    handle is the only way to address a corpus document - so the report
-    names the identifier rather than sending the reader to look it up."""
+    """The edit becomes a note of the person's and the pack's text is put
+    back (#514). The handle is the only way to address a corpus document,
+    so the report names both identifiers rather than sending the reader to
+    look them up."""
     initialised(run)
     provider = tmp_path / "provider"
     path = a_notes_pack(provider, run, files={"notes/one.md": "First.\n"})
@@ -611,6 +612,7 @@ def test_an_edited_document_names_the_command_that_keeps_the_edit(
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     document_id = sole_id(run)
     written = next((isolated / "notes").rglob("*.md"))
+    written.chmod(0o644)
     written.write_text(
         written.read_text().replace("First.", "Mine now."), encoding="utf-8"
     )
@@ -619,13 +621,18 @@ def test_an_edited_document_names_the_command_that_keeps_the_edit(
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
     result = run.invoke(main, ["corpus", "sync"])
 
-    assert "you edited this" in result.output
-    assert f"kennis corpus claim {document_id}" in result.output
+    assert result.exit_code == 0, result.output
+    (copy_line,) = [
+        line for line in result.output.splitlines() if "your edit is now" in line
+    ]
+    assert document_id in copy_line
+    copy_id = copy_line.rsplit(" ", 1)[-1]
+    assert copy_id != document_id
+    shown = run.invoke(main, ["read", copy_id])
+    assert "Mine now." in shown.output
 
 
-def test_claim_then_disown_returns_the_document_to_the_pack(
-    run: CliRunner, isolated: Path, tmp_path: Path
-):
+def test_corpus_copy_names_the_new_note(run: CliRunner, isolated: Path, tmp_path: Path):
     del isolated
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
@@ -633,25 +640,12 @@ def test_claim_then_disown_returns_the_document_to_the_pack(
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     document_id = sole_id(run)
 
-    claimed = run.invoke(main, ["corpus", "claim", document_id])
-    disowned = run.invoke(main, ["corpus", "disown", document_id])
+    copied = run.invoke(main, ["corpus", "copy", document_id])
 
-    assert claimed.exit_code == 0, claimed.output
-    assert "yours now" in claimed.output
-    assert disowned.exit_code == 0, disowned.output
-    assert "boepie's again" in disowned.output
-
-
-def test_disowning_a_note_the_user_wrote_is_refused(run: CliRunner, isolated: Path):
-    del isolated
-    initialised(run)
-    assert run.invoke(main, ["remember", "Mine."]).exit_code == 0
-    document_id = sole_id(run)
-
-    result = run.invoke(main, ["corpus", "disown", document_id])
-
-    assert result.exit_code != 0
-    assert "did not come from a pack" in result.output
+    assert copied.exit_code == 0, copied.output
+    copy_id = copied.output.splitlines()[0].rsplit(" ", 1)[-1]
+    assert copy_id != document_id
+    assert run.invoke(main, ["read", copy_id]).exit_code == 0
 
 
 def test_sync_waits_while_another_writer_holds_the_corpus(

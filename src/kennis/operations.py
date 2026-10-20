@@ -30,31 +30,31 @@ printing it. Concern #324.
 from __future__ import annotations
 
 import contextlib
-import shutil
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
 from kennis.context import Context
+from kennis.engine.atomic import remove_tree
 from kennis.engine.backup import BackupReport, write_backup
 from kennis.engine.context.sync import BundleSync, sync_bundle
 from kennis.engine.corpus.add import (
     AddOptions,
     AddReport,
+    Uniqueness,
     add_docs,
     add_literature,
     add_notes,
 )
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.corpus.document import Document, move_document
+from kennis.engine.corpus.copying import copied_note
+from kennis.engine.corpus.document import Document, move_document, seal_if_obtained
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import (
     CorpusSync,
-    claim_document,
-    disown_document,
     sync_corpus,
 )
 from kennis.engine.docs.versions import (
@@ -86,6 +86,7 @@ from kennis.engine.pack.store import PackInstall, install_pack
 from kennis.engine.rag.binding import binding_from
 from kennis.engine.rag.index import build_index
 from kennis.engine.rag.loaders import CollectionLoader
+from kennis.finding import resolve_document
 from kennis.render.packs import describe_sync_summary
 
 _ADDERS = {"notes": add_notes, "literature": add_literature, "docs": add_docs}
@@ -183,11 +184,23 @@ def restore_hand_deletions(context: Context) -> list[OutOfBandChange]:
     stages it, and the accident becomes history. Concern #128.
     """
     repository = Repository(context.corpus_root)
-    return [
+    restored = [
         change
         for change in restore_deletions(repository, detect_changes(repository))
         if change.restored
     ]
+    sealed_again(context, [change.path for change in restored])
+    return restored
+
+
+def sealed_again(context: Context, paths: Sequence[str]) -> None:
+    """Make what git just wrote read-only again where kennis obtained it
+    (14g, #514). `paths` are relative to the corpus root."""
+    for relative in paths:
+        collection = relative.split("/", 1)[0]
+        path = context.corpus_root / relative
+        if collection in COLLECTION_NAMES and path.suffix == ".md" and path.is_file():
+            seal_if_obtained(path, collection=collection)
 
 
 def add_documents(
@@ -303,41 +316,26 @@ def move_a_document(
     return moved
 
 
-def claim_a_document(
-    context: Context, handle: str, *, restored: list[OutOfBandChange] | None = None
-) -> Document:
-    """Take a pack's document for the user: lock, restore, claim, commit.
-
-    The sequence `corpus claim` ran inside the command line, here so the
-    service runs it for every client (14c).
-    """
-    return _owned(context, handle, claim_document, "claim", "claimed", restored)
-
-
-def disown_a_document(
-    context: Context, handle: str, *, restored: list[OutOfBandChange] | None = None
-) -> Document:
-    """Hand a document back to its pack: lock, restore, disown, commit."""
-    return _owned(context, handle, disown_document, "disown", "disowned", restored)
-
-
-def _owned(
+def copy_a_document(
     context: Context,
     handle: str,
-    change: Callable[[Path, str], Document],
-    operation: str,
-    done: str,
-    restored: list[OutOfBandChange] | None,
+    collection: str | None = None,
+    *,
+    restored: list[OutOfBandChange] | None = None,
 ) -> Document:
+    """A new note of the person's from any document: lock, restore, copy,
+    commit (14g, #514). The original is not touched."""
     with corpus_lock(context.corpus_root):
         put_back = restore_hand_deletions(context)
         if restored is not None:
             restored.extend(put_back)
-        document = change(context.corpus_root, handle)
+        _, original = resolve_document(context, handle, collection)
+        notes = Collection(root=context.corpus_root, name="notes")
+        copy = copied_note(notes, Uniqueness.of(notes), original)
         Repository(context.corpus_root).commit(
-            operation, scope="notes", summary=f"{done} {document.id}"
+            "copy", scope="notes", summary=f"{original.id} as {copy.id}"
         )
-    return document
+    return copy
 
 
 def make_docs_version_current(context: Context, project: str, version: str) -> None:
@@ -384,13 +382,13 @@ def remove_docs_version(context: Context, project: str, version: str) -> Removed
         restore_hand_deletions(context)
         # Counted inside the lock, where nothing else can add to it.
         pages = pages_of_version(docs.path, project, version)
-        shutil.rmtree(project_dir / version)
+        remove_tree(project_dir / version)
         record = current_version_file(docs.path, project)
         if record.is_file() and record.read_text(encoding="utf-8").strip() == version:
             record.unlink()
         left = project_versions(docs.path).get(project)
         if left is None:
-            shutil.rmtree(project_dir)
+            remove_tree(project_dir)
         Repository(context.corpus_root).commit(
             "remove",
             scope="docs",
@@ -437,6 +435,7 @@ def restore_a_document(
     repository = Repository(context.corpus_root)
     with corpus_lock(context.corpus_root):
         restored = restore_document(repository, document_id, commit=commit)
+        sealed_again(context, [restored.path])
         head = restored.path.split("/", 1)[0]
         repository.commit(
             "restore",
@@ -479,6 +478,10 @@ def return_corpus_to(context: Context, commit: str) -> ReturnedCorpus:
         )
         changes = what_a_return_changes(repository, commit)
         return_to(repository, changes.commit)
+        sealed_again(
+            context,
+            [held.path for held in (*changes.added, *changes.changed)],
+        )
         repository.commit(
             "return",
             scope="corpus",
@@ -686,9 +689,8 @@ __all__ = [
     "add_in_groups",
     "back_up_corpus",
     "build_indexes",
-    "claim_a_document",
     "committed_if_interrupted",
-    "disown_a_document",
+    "copy_a_document",
     "install_a_pack",
     "make_docs_version_current",
     "move_a_document",

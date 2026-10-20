@@ -12,6 +12,7 @@ from fastapi.responses import (
 
 from kennis.context import existing_corpus
 from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.projects import project_named
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.docs.versions import pages_of_version, project_versions
@@ -29,7 +30,6 @@ from kennis.gui.pages import (
     shown_tree,
 )
 from kennis.gui.pane import bundle_folders
-from kennis.gui.project import bundle_of
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -46,6 +46,7 @@ from kennis.holdings import (
     installed_packs,
 )
 from kennis.operations import (
+    copy_a_document,
     make_docs_version_current,
     move_a_document,
     remove_a_document,
@@ -83,6 +84,7 @@ def _tree(
             "moved": moved,
             "attention_only": words.ATTENTION_ONLY,
             "menu_open": words.MENU_OPEN,
+            "menu_copy": words.MENU_COPY,
             "menu_move": words.MENU_MOVE,
             "menu_add_here": words.MENU_ADD_HERE,
             "menu_index": words.MENU_INDEX,
@@ -198,7 +200,7 @@ def serve_collection(request: Request, collection: str) -> HTMLResponse:
 
 
 @router.get("/tree/{collection}")
-def serve_tree(request: Request, collection: str) -> HTMLResponse:
+def serve_tree(request: Request, collection: str, project: str = "") -> HTMLResponse:
     """One collection's documents, or the bundle's, for the pane.
 
     Fetched when the reader opens it, never drawn with the page:
@@ -206,10 +208,14 @@ def serve_tree(request: Request, collection: str) -> HTMLResponse:
     load would be most of a second at a thousand documents.
     """
     if collection == CONTEXT_COLLECTION:
-        bundle = bundle_of(request)
-        folders = [] if bundle is None else bundle_folders(bundle)
+        try:
+            bundle = project_named(project).bundle
+        except KennisError as error:
+            return refused(request, str(error))
         return TEMPLATES.TemplateResponse(
-            request, "tree-context.html", {"folders": folders}
+            request,
+            "tree-context.html",
+            {"folders": bundle_folders(bundle), "project": project},
         )
     if collection not in COLLECTION_NAMES:
         return refused(request, words.unknown_collection(collection))
@@ -245,6 +251,24 @@ def move_from_the_tree(request: Request, form: PostedForm) -> Response:
         notes = tuple(describe_change(change) for change in restored)
         return written(_tree(request, collection, notes=notes, moved=True))
     return RedirectResponse(f"/collection/{collection}", status_code=303)
+
+
+@router.post("/copy")
+def copy_from_the_tree(request: Request, form: PostedForm) -> Response:
+    """Copy one document into a note of the person's, by the sequence
+    `corpus copy` runs, and open the copy - the version they can edit
+    (#514). A navigation whether or not htmx is there, so the form is a
+    plain one and a refusal is a page."""
+    collection = str(form.get("collection") or "")
+    if collection not in COLLECTION_NAMES:
+        return refused_a_post(request, words.unknown_collection(collection))
+    try:
+        copied = copy_a_document(
+            existing_corpus(), str(form.get("document") or ""), collection
+        )
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    return RedirectResponse(f"/document/notes/{copied.id}", status_code=303)
 
 
 @router.get("/document/remove")

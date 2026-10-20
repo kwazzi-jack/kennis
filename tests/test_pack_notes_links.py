@@ -250,7 +250,7 @@ def test_a_link_that_cannot_be_fetched_fails_alone(corpus: Path, tmp_path: Path)
     assert [note.frontmatter.title for note in notes_in(corpus)] == ["Kept"]
 
 
-def test_a_person_edit_to_a_link_note_is_kept(corpus: Path, tmp_path: Path):
+def test_a_person_edit_to_a_link_note_is_kept_as_theirs(corpus: Path, tmp_path: Path):
     installed(corpus, tmp_path, link(title="First"))
     sync_corpus(corpus, client=serving())
     note = only_note(corpus)
@@ -261,8 +261,13 @@ def test_a_person_edit_to_a_link_note_is_kept(corpus: Path, tmp_path: Path):
     installed(corpus, tmp_path, link(title="Second"))
     report = sync_corpus(corpus, client=serving())
 
-    assert report.edited == (note.id,)
-    assert "Mine." in only_note(corpus).body
+    # The pack's new text is put back and the edit is kept as a note of the
+    # person's (#514).
+    (mine,) = [one for one in notes_in(corpus) if one.frontmatter.owner == "user"]
+    assert report.copied == ((note.id, mine.id),)
+    assert "Mine." in mine.body
+    (pack_s,) = [one for one in notes_in(corpus) if one.frontmatter.owner != "user"]
+    assert "Mine." not in pack_s.body
 
 
 def test_a_link_two_packs_declare_belongs_to_the_first(corpus: Path, tmp_path: Path):
