@@ -18,6 +18,10 @@ Install the extra first, since the server is not part of the base package:
 uv tool install "kennis[mcp]"
 ```
 
+The agent keeps the server it started for as long as its session lasts, so
+after upgrading or reinstalling kennis, restart the agent's session. Until
+then, its server is still the earlier installation's code.
+
 ## Point an agent at it
 
 For Claude Code, add it to `~/.claude.json`:

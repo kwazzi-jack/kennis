@@ -174,6 +174,21 @@ def test_a_service_of_another_version_is_replaced_when_idle(
     assert hello(newer) is not None
 
 
+def test_a_service_of_another_build_is_replaced_when_idle(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The same version installed again over a running service (#537): the
+    client is made to be of another build, the service answers the build it
+    started with."""
+    older = ensure_service(corpus)
+    monkeypatch.setattr(client, "build_of_this_process", lambda: "another build")
+
+    newer = ensure_service(corpus)
+
+    assert newer.pid != older.pid
+    assert hello(newer) is not None
+
+
 def test_the_window_s_quit_ends_the_service(corpus: Path):
     record = ensure_service(corpus)
 

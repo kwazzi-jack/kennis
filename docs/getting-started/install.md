@@ -80,16 +80,21 @@ itself does not land on your PATH. kennis finds it in the environment it was
 installed into.
 
 !!! note "`uv tool install` ignores the lockfile"
-    It resolves fresh from `pyproject.toml`. A dependency can therefore land
-    on a different version from the one `uv.lock` pins, which has produced
-    real skew before. If something behaves differently between `uv run
-    kennis` and `kennis`, compare the two environments' versions first.
+    It resolves fresh from `pyproject.toml`, so a dependency can land on a
+    newer major version than the one `uv.lock` pins and the suite was run
+    against. To install the locked versions, export them as constraints
+    first:
 
-To upgrade after pulling:
+    ```
+    uv export --frozen --no-hashes --extra mcp --no-emit-project --no-dev > constraints.txt
+    uv tool install --reinstall --constraints constraints.txt "kennis[mcp] @ ."
+    ```
 
-```
-uv tool install --reinstall "kennis[mcp] @ ."
-```
+To upgrade after pulling, run the same two commands again. A kennis service
+started from the earlier installation is replaced by the next command that
+finds it idle, because its installed code differs from the client's. An
+agent's MCP server is a process of the earlier installation too, so restart
+the agent's session.
 
 ## Check it
 

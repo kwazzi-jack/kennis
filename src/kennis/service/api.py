@@ -34,6 +34,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from kennis import __version__
+from kennis.build import build_of_this_process
 from kennis.engine.errors import KennisError, ServiceBusy
 from kennis.engine.events import EventSink
 from kennis.engine.history.outofband import OutOfBandChange
@@ -49,11 +50,13 @@ router = APIRouter(prefix=PREFIX)
 @router.get("/hello")
 def hello(request: Request) -> JSONResponse:
     """What a client checks before it uses a service: whose corpus, which
-    kennis, which API. A client of another version replaces an idle
-    service rather than speaking to it."""
+    kennis, which build of it, which API. A client of another version or
+    build replaces an idle service rather than speaking to it."""
     return JSONResponse(
         {
             "kennis": __version__,
+            # The code this process loaded, taken at its start (#537).
+            "build": build_of_this_process(),
             "api": API_VERSION,
             "corpus": str(request.app.state.corpus_root),
             "pid": os.getpid(),

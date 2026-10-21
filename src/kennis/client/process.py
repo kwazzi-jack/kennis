@@ -7,22 +7,25 @@ through a launcher this client waits for (`service/launch.py`), so the
 service is never this process's child, and nothing is inherited
 (`protocol/spawn.py`).
 
-**One version at a time.** A service of another kennis version is asked to
-stop when it is idle and replaced; a busy one is waited for, because
-stopping it would end its job wherever it was.
+**One version at a time, and one build.** A service of another kennis
+version, or of another build of the same version - a reinstall from the
+checkout, a dependency replaced under it (#537) - is asked to stop when it
+is idle and replaced; a busy one is waited for, because stopping it would
+end its job wherever it was.
 """
 
 from __future__ import annotations
 
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Final
 
 import httpx
 
 from kennis import __version__
+from kennis.build import build_of_this_process
 from kennis.engine.errors import ServiceBusy, ServiceUnavailable
 from kennis.engine.settings import log_dir
 from kennis.protocol.record import ServiceRecord, find_service, is_held
@@ -79,6 +82,14 @@ def hello(record: ServiceRecord) -> dict[str, object] | None:
     return document
 
 
+def is_this_build(answered: Mapping[str, object]) -> bool:
+    """Whether a service's `hello` names this client's version and build."""
+    return (
+        answered.get("kennis") == __version__
+        and answered.get("build") == build_of_this_process()
+    )
+
+
 def ensure_service(
     corpus_root: Path, *, on_waiting: Callable[[str], None] | None = None
 ) -> ServiceRecord:
@@ -101,7 +112,7 @@ def ensure_service(
                 f"the kennis service (process {record.pid}) holds the corpus "
                 "and does not answer; end that process to start another"
             )
-        if answered.get("kennis") == __version__:
+        if is_this_build(answered):
             return record
         if answered.get("busy"):
             if on_waiting is not None and not told:

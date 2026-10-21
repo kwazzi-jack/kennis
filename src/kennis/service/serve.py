@@ -31,6 +31,7 @@ import uvicorn
 from filelock import Timeout
 
 from kennis import __version__
+from kennis.build import build_of_this_process
 from kennis.engine.settings import load_settings
 from kennis.engine.staging import recover
 from kennis.gui.app import new_token
@@ -110,6 +111,9 @@ def run_service(corpus_root: Path) -> int:
 
 
 def _serve(corpus_root: Path) -> int:
+    # Before anything else, so it names the code this process loaded: a
+    # reinstall after this point is what it exists to notice (#537).
+    build_of_this_process()
     start_logging()
     # Before anything can be asked of it: a publish a killed service left
     # half done is put back, and what such a process leaves behind cleared

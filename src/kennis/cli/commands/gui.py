@@ -40,6 +40,7 @@ def gui_command(no_browser: bool, replace: bool) -> None:
     token in the address. Loopback is not private on a shared machine, which
     is what the token is for. The service is started if it is not running.
     """
+    from kennis import __version__
     from kennis.client.process import ensure_service, stop_service
     from kennis.context import existing_corpus
     from kennis.gui.browser import open_quietly
@@ -57,7 +58,7 @@ def gui_command(no_browser: bool, replace: bool) -> None:
             stop_service(corpus_root, running)
 
     def warn(version: str) -> None:
-        display.warning(waiting_for_another_version(version))
+        display.warning(waiting_for_another_version(version, __version__))
 
     record = ensure_service(corpus_root, on_waiting=warn)
     # No project in the address: the window shows every project's

@@ -510,11 +510,17 @@ def service_running(pid: int, started: str, version: str) -> str:
     return f"process {pid}, started {started}, kennis {version}"
 
 
-def waiting_for_another_version(version: str) -> str:
-    """Said once while a busy service of another kennis version finishes
-    its task before it is replaced."""
+def waiting_for_another_version(version: str, own: str) -> str:
+    """Said once while a busy service of another kennis version, or of an
+    earlier installation of this one (#537), finishes its task before it is
+    replaced."""
+    running = (
+        "was started from an earlier installation of this version"
+        if version == own
+        else f"is version {version}"
+    )
     return (
-        f"the kennis service running is version {version} and busy; "
+        f"the kennis service running {running} and is busy; "
         "waiting for its task to finish before replacing it"
     )
 
