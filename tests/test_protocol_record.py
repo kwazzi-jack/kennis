@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from kennis.engine.settings import state_dir
 from kennis.protocol import record as records
 from kennis.protocol.record import (
     ServiceRecord,
@@ -63,6 +64,23 @@ def test_only_this_account_may_read_the_record(tmp_path: Path):
 
     mode = stat.S_IMODE(record_path(tmp_path).stat().st_mode)
     assert mode == 0o600
+
+
+def test_the_record_is_where_the_platform_protects_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The part of the record's protection that holds on every platform
+    (14f, as #389 for the credentials). Windows has no `0600`; the record is
+    kept from other accounts there by the profile's own permissions, which
+    is true only while it sits in the state directory and that directory is
+    in the profile. Both are asserted here, the second with the redirect
+    every test runs under taken away."""
+    assert record_path(tmp_path).parent == state_dir()
+
+    with monkeypatch.context() as unredirected:
+        unredirected.delenv("KENNIS_STATE_DIR", raising=False)
+        default = state_dir()
+    assert default.is_relative_to(Path.home()), default
 
 
 def test_a_record_with_nobody_behind_it_is_a_crash_s_and_is_removed(tmp_path: Path):

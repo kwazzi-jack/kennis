@@ -169,19 +169,20 @@ def _stop_on_terminate(stopping: threading.Event, busy: Callable[[], bool]) -> N
     are. Windows sends none; `kennis service stop` asks over HTTP there."""
     # Only the main thread may set a handler; a test that runs the service
     # on a thread stops it by request instead.
-    if (
-        sys.platform == "win32"
-        or threading.current_thread() is not threading.main_thread()
-    ):
+    if threading.current_thread() is not threading.main_thread():
         return
+    # The POSIX arm of a platform check, not a return before the handler:
+    # mypy checking for Windows calls a statement after such a return
+    # unreachable.
+    if sys.platform != "win32":
 
-    def terminated(number: int, frame: object) -> None:
-        if busy():
-            _LOG.warning("asked to stop while a task runs; left running")
-            return
-        stopping.set()
+        def terminated(number: int, frame: object) -> None:
+            if busy():
+                _LOG.warning("asked to stop while a task runs; left running")
+                return
+            stopping.set()
 
-    signal.signal(signal.SIGTERM, terminated)
+        signal.signal(signal.SIGTERM, terminated)
 
 
 __all__ = ["ANY_PORT", "HOST", "port_of", "run_service"]

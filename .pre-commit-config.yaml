@@ -33,6 +33,18 @@ repos:
         pass_filenames: false
         require_serial: true
 
+      # mypy judges a `sys.platform` branch by the platform it checks for,
+      # so code that is clean here can be unreachable on Windows. CI's
+      # Windows job was the first to say so (14f), after a push; this says
+      # it before the commit.
+      - id: mypy-windows
+        name: mypy as on Windows
+        entry: uv run --no-sync mypy --platform win32 src
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
+
       # The ASCII rule cannot be expressed as a ruff rule - RUF001 catches
       # ambiguous unicode, not all of it - so it stays the grep.
       #

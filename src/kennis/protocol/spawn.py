@@ -60,15 +60,19 @@ def spawned(command: list[str], *, cwd: Path) -> subprocess.Popen[bytes]:
             close_fds=True,
             cwd=cwd,
         )
-    return subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-        close_fds=True,
-        cwd=cwd,
-    )
+    # `else` rather than falling through: mypy checking for Windows calls a
+    # statement after the branch unreachable, and one inside the other arm
+    # of a platform check it leaves alone.
+    else:
+        return subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+            cwd=cwd,
+        )
 
 
 __all__ = [

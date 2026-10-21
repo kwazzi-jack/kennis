@@ -159,6 +159,17 @@ jobs:
       - name: tests
         run: uv run --no-sync --python ${{ matrix.python }} pytest
 
+      # The service's lifecycle in real processes (14f): the launcher that
+      # leaves no client as the service's parent, the lock and the record,
+      # the idle stop, replacement by another version, recovery after a
+      # kill, and `kennis serve` as a subprocess. Deselected from the run
+      # above because each test starts interpreters, and run on every
+      # combination because how a process is detached, signalled and killed
+      # is exactly what differs between the three systems. 34 seconds on
+      # Linux, measured 2026-10-21.
+      - name: tests of the service in real processes
+        run: uv run --no-sync --python ${{ matrix.python }} pytest -m service
+
   # The window in a real Chromium (`tests/test_gui_browser.py`). One job, on
   # Linux: what it checks - that htmx swaps the results in, that a script
   # reads the header it is meant to, that a plain form posts - is the
@@ -187,9 +198,11 @@ jobs:
 
       - run: uv python install 3.12
 
-      # The same exclusions as the job above, for the same reason.
+      # The same exclusions as the job above, for the same reason, and the
+      # `mcp` extra as there: pytest imports every test module to select by
+      # marker, and two import fastmcp at the top.
       - run: >-
-          uv sync --frozen --group browser --python 3.12
+          uv sync --frozen --group browser --extra mcp --python 3.12
           --no-install-package torch
           --no-install-package triton
           --no-install-package nvidia-cublas

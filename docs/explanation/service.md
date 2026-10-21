@@ -20,8 +20,13 @@ uses it.
 
 The service listens on `127.0.0.1` only, on a port the operating system
 chooses, and checks a token on every request. Its address, token and
-process id are in a record in kennis's state directory, readable by your
-account alone. That record is how a client finds it.
+process id are in a record in kennis's state directory. That record is how
+a client finds it, and the token in it is what lets a client in, so it is
+kept from other accounts on the machine: on Linux and macOS the file itself
+is readable by your account alone; on Windows, which has no such file
+setting, it is kept in your user profile, whose permissions do the same.
+On every system an administrator can read it, as they can read anything of
+yours.
 
 It stops after `service.idle_minutes` (30 by default) with no task queued
 or running, no request in progress and no window open. The next command
