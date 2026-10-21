@@ -77,6 +77,15 @@ def port_of(server: uvicorn.Server, timeout: float = 10.0) -> int:
     raise RuntimeError("the service did not start listening")
 
 
+# How long a starting service waits for the owner lock. `is_held` takes the
+# lock and lets go to ask whether a service owns the corpus, and the launcher
+# asks every 50 ms while this one starts: tried once, a probe's moment was
+# read as another service, this one exited, and the launcher reported a
+# failed start (#534). A probe lets go within microseconds; another service
+# holds the lock for its life, so this still turns away from one.
+OWNER_PATIENCE_SECONDS: Final = 2.0
+
+
 def run_service(corpus_root: Path) -> int:
     """Own the corpus at `corpus_root` until stopped. The exit status.
 
@@ -88,7 +97,7 @@ def run_service(corpus_root: Path) -> int:
         return NO_CORPUS
     lock = owner_lock(corpus_root)
     try:
-        lock.acquire()
+        lock.acquire(timeout=OWNER_PATIENCE_SECONDS)
     except Timeout:
         # Another service owns it; the client that started this one will
         # find that one through its record.
@@ -185,4 +194,4 @@ def _stop_on_terminate(stopping: threading.Event, busy: Callable[[], bool]) -> N
         signal.signal(signal.SIGTERM, terminated)
 
 
-__all__ = ["ANY_PORT", "HOST", "port_of", "run_service"]
+__all__ = ["ANY_PORT", "HOST", "OWNER_PATIENCE_SECONDS", "port_of", "run_service"]
