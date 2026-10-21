@@ -171,7 +171,10 @@ def test_each_theme_carries_its_own_book(scheme: str):
         DARK_GROUND if scheme == "dark" else None,
         scheme,
     )
-    assert brand_mark_in(emitted) == (BRAND / f"mark-{scheme}.svg").read_bytes()
+    # Read as the window reads it: git checks the file out with CRLF on
+    # Windows, and `read_text` gives LF wherever it runs.
+    expected = (BRAND / f"mark-{scheme}.svg").read_text(encoding="utf-8")
+    assert brand_mark_in(emitted) == expected.encode("utf-8")
 
 
 def test_the_layout_shows_the_mark_from_the_theme():

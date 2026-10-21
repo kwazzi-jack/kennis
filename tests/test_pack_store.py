@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from by_hand import deleted_by_hand
 from kennis.engine.errors import PackInvalid
 from kennis.engine.pack.store import (
     STATE_FILENAME,
@@ -189,7 +190,7 @@ def test_an_emptied_store_is_repaired_rather_than_believed(
     a pack declaring nothing and deletes every document it owns."""
     install_pack(corpus, provider / "p.ken.yml")
     for path in (pack_root(corpus, "boepie") / "notes").iterdir():
-        path.unlink()
+        deleted_by_hand(path)
 
     again = install_pack(corpus, provider / "p.ken.yml")
 

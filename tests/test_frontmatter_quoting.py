@@ -1,4 +1,4 @@
-"""A string holding a colon is written in double quotes (#523, Brian,
+"""A string holding a colon is written in single quotes (#523, Brian,
 2026-10-21).
 
 YAML reads `from: copy:0yldj2vkpy` as one string, because a colon starts a
@@ -19,16 +19,16 @@ def block_of(frontmatter: dict[str, object]) -> str:
     return join_frontmatter(frontmatter, "Body.\n").split("---\n")[1]
 
 
-def test_a_source_with_a_colon_is_written_in_double_quotes():
+def test_a_source_with_a_colon_is_written_in_single_quotes():
     block = block_of({"source": {"from": "copy:0yldj2vkpy", "via": "copy"}})
 
-    assert '  from: "copy:0yldj2vkpy"\n' in block
+    assert "  from: 'copy:0yldj2vkpy'\n" in block
     assert "  via: copy\n" in block
 
 
 def test_every_kind_of_source_is_quoted_alike():
     for value in ("pack:alpha/notes/a.md", "url:https://example.org/a", "inline:"):
-        assert f'from: "{value}"' in block_of({"source": {"from": value}})
+        assert f"from: '{value}'" in block_of({"source": {"from": value}})
 
 
 def test_a_string_without_a_colon_stays_bare():
@@ -47,6 +47,24 @@ def test_what_is_written_reads_back_as_it_was():
 
     assert read == frontmatter
     assert body == "Body.\n"
+
+
+def test_a_windows_path_is_written_as_it_is_spelled():
+    """No backslash doubled, so the path in the file is one that exists."""
+    path = "path:C:\\Users\\brian\\jottings.md"
+
+    block = block_of({"source": {"from": path}})
+
+    assert f"  from: '{path}'\n" in block
+    assert split_frontmatter(join_frontmatter({"from": path}, ""))[0] == {"from": path}
+
+
+def test_a_quote_inside_is_kept():
+    value = "url:https://example.org/it's"
+
+    read, _ = split_frontmatter(join_frontmatter({"from": value}, ""))
+
+    assert read == {"from": value}
 
 
 def test_the_bare_form_an_older_kennis_wrote_reads_the_same():

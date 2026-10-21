@@ -60,6 +60,43 @@ exit "${MINERU_FAKE_EXIT-0}"
 
 
 @pytest.fixture(autouse=True)
+def refusing_as_windows_does(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Windows refuses to replace or delete a read-only file; POSIX asks
+    only whether the directory is writable. So on Linux every step kennis
+    takes to make a file writable before replacing or removing it is inert,
+    and an injection removing one passes. Under this fixture the two calls
+    every such path ends in refuse as Windows would, here too.
+
+    For every test, not one file's (14f): five tests damaged a pack's store
+    by deleting a file kennis had made read-only, passed here, and failed
+    on Windows, which was the first place anything said so (#532)."""
+    real_replace = os.replace
+    real_unlink = os.unlink
+
+    def is_read_only_at(path: str | Path, dir_fd: int | None) -> bool:
+        try:
+            mode = os.stat(path, dir_fd=dir_fd, follow_symlinks=False).st_mode
+        except FileNotFoundError:
+            return False
+        return stat.S_ISREG(mode) and not mode & stat.S_IWRITE
+
+    def replace(source: str | Path, target: str | Path) -> None:
+        if is_read_only_at(target, None):
+            raise PermissionError(13, "read-only, as Windows refuses", str(target))
+        real_replace(source, target)
+
+    def unlink(path: str | Path, *, dir_fd: int | None = None) -> None:
+        if is_read_only_at(path, dir_fd):
+            raise PermissionError(13, "read-only, as Windows refuses", str(path))
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(os, "unlink", unlink)
+    monkeypatch.setattr(os, "remove", unlink)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test reaches Hugging Face unless it asks to.
 

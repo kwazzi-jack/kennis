@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from by_hand import deleted_by_hand
 from held import held_for_a_moment
 from kennis.cli.__main__ import main
 from kennis.engine.pack.store import STATE_FILENAME, pack_root
@@ -294,7 +295,7 @@ def test_a_damaged_store_is_repaired_and_says_so(
     seeing the second twice has something to investigate."""
     path = a_provider(tmp_path / "provider", run)
     run.invoke(main, ["pack", "add", str(path)])
-    (corpus / "packs" / "boepie" / "notes" / "conventions.md").unlink()
+    deleted_by_hand(corpus / "packs" / "boepie" / "notes" / "conventions.md")
 
     result = run.invoke(main, ["pack", "add", str(path)])
 
@@ -439,7 +440,7 @@ def test_status_reports_a_store_that_does_not_verify(
 ):
     path = a_provider(isolated / "provider", run)
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    (corpus / "packs" / "boepie" / "notes" / "conventions.md").unlink()
+    deleted_by_hand(corpus / "packs" / "boepie" / "notes" / "conventions.md")
 
     result = run.invoke(main, ["pack", "status"])
 

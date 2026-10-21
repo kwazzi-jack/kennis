@@ -716,7 +716,9 @@ def move_command(
     )
     report_restored(written.restored)
     moved = written.result
-    within = moved.md_path.relative_to(corpus_root / moved.collection)
+    # Forward slashes on every system, as a document is addressed everywhere
+    # else (`layout.relative_to_corpus`); Windows printed backslashes (#532).
+    within = moved.md_path.relative_to(corpus_root / moved.collection).as_posix()
     display.operation("Moved", f"{moved.id}  {within}")
 
 

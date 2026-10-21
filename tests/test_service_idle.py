@@ -55,20 +55,28 @@ def test_it_does_not_leave_while_a_request_is_open():
     assert gone.wait(WAIT)
 
 
+# Long beside the interval between touches, because the property is about
+# the timer and not about how promptly a loaded runner wakes a sleeper: at
+# 0.2 s against touches every 0.1 s, a macOS runner once woke more than
+# 0.1 s late and the timer rightly fired (#532).
+PATIENT = 2.0
+TOUCHED_EVERY = 0.25
+
+
 def test_activity_counts_the_quiet_period_from_now():
     """Touched at intervals shorter than its time, it stays; the quiet
     period after the last touch is a whole one."""
     gone = threading.Event()
-    timer = IdleTimer(QUIET, lambda: False, gone.set)
+    timer = IdleTimer(PATIENT, lambda: False, gone.set)
     timer.start()
     for _ in range(5):
-        threading.Event().wait(QUIET / 2)
+        threading.Event().wait(TOUCHED_EVERY)
         timer.touch()
         assert not gone.is_set(), "it left between touches"
     last = time.monotonic()
 
     assert gone.wait(WAIT)
-    assert time.monotonic() - last >= QUIET
+    assert time.monotonic() - last >= PATIENT
 
 
 def test_a_stopped_timer_never_fires():

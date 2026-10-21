@@ -17,6 +17,7 @@ from click.testing import CliRunner
 
 from held import held_for_a_moment
 from kennis.cli.__main__ import main
+from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.repository import Repository
 
 
@@ -71,7 +72,10 @@ def test_text_read_from_a_file_is_remembered(
     assert result.exit_code == 0, result.output
     stored = only_note(corpus).read_text(encoding="utf-8")
     assert "The pipeline runs on 16 cores." in stored
-    assert f"path:{path}" in stored
+    frontmatter, _ = split_frontmatter(stored)
+    source = frontmatter["source"]
+    assert isinstance(source, dict)
+    assert source["from"] == f"path:{path}"
 
 
 def test_text_piped_in_is_remembered(corpus: Path, run: CliRunner):

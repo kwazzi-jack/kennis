@@ -20,12 +20,12 @@ from __future__ import annotations
 import os
 import shutil
 import stat
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from by_hand import edited_by_hand
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOptions, add_docs
 from kennis.engine.corpus.collection import Collection
@@ -46,39 +46,6 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(root))
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
     return root
-
-
-@pytest.fixture(autouse=True)
-def refusing_as_windows_does(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Windows refuses to replace or delete a read-only file; POSIX asks
-    only whether the directory is writable. So on Linux every step kennis
-    takes to make a file writable before replacing or removing it is inert,
-    and an injection removing one passes. Under this fixture the two calls
-    every such path ends in refuse as Windows would, here too."""
-    real_replace = os.replace
-    real_unlink = os.unlink
-
-    def is_read_only_at(path: str | Path, dir_fd: int | None) -> bool:
-        try:
-            mode = os.stat(path, dir_fd=dir_fd, follow_symlinks=False).st_mode
-        except FileNotFoundError:
-            return False
-        return stat.S_ISREG(mode) and not mode & stat.S_IWRITE
-
-    def replace(source: str | Path, target: str | Path) -> None:
-        if is_read_only_at(target, None):
-            raise PermissionError(13, "read-only, as Windows refuses", str(target))
-        real_replace(source, target)
-
-    def unlink(path: str | Path, *, dir_fd: int | None = None) -> None:
-        if is_read_only_at(path, dir_fd):
-            raise PermissionError(13, "read-only, as Windows refuses", str(path))
-        real_unlink(path, dir_fd=dir_fd)
-
-    monkeypatch.setattr(os, "replace", replace)
-    monkeypatch.setattr(os, "unlink", unlink)
-    monkeypatch.setattr(os, "remove", unlink)
-    yield
 
 
 def test_the_fixture_refuses_what_windows_refuses(tmp_path: Path):
@@ -125,13 +92,6 @@ def is_read_only(path: Path) -> bool:
     """By the mode bit, which Python maps from the read-only attribute on
     Windows; `os.access` would answer yes for an administrator anyway."""
     return not path.stat().st_mode & stat.S_IWRITE
-
-
-def edited_by_hand(path: Path, old: str, new: str) -> None:
-    """What an editor's "save anyway" does: make the file writable, then
-    write."""
-    path.chmod(path.stat().st_mode | stat.S_IWRITE)
-    path.write_text(path.read_text(encoding="utf-8").replace(old, new), "utf-8")
 
 
 def notes_in(corpus: Path) -> list[Document]:

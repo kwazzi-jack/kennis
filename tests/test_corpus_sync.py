@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from by_hand import deleted_by_hand
 from kennis.engine.corpus.add import Uniqueness, write_note
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, write_document
@@ -310,7 +311,7 @@ def test_a_damaged_pack_stops_the_sync_rather_than_emptying_the_corpus(
     0" is corruption, never a declaration that the pack ships nothing."""
     installed(corpus, tmp_path)
     sync_corpus(corpus)
-    (pack_root(corpus, "alpha") / "notes" / "one.md").unlink()
+    deleted_by_hand(pack_root(corpus, "alpha") / "notes" / "one.md")
 
     with pytest.raises(PackInvalid) as raised:
         sync_corpus(corpus)

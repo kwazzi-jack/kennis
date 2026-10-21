@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from by_hand import deleted_by_hand
 from kennis.engine.errors import PackNotInstalled
 from kennis.engine.events import OperationFinished, Outcome, Recorder
 from kennis.engine.pack.installed import (
@@ -125,7 +126,7 @@ def test_a_pack_whose_store_was_emptied_is_listed_as_not_verifying(
     for a decision. `pack status` is where a user should learn the store is
     damaged - before a sync reads it as a pack that ships nothing."""
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
-    (pack_root(corpus, "alpha") / "notes" / "one.md").unlink()
+    deleted_by_hand(pack_root(corpus, "alpha") / "notes" / "one.md")
 
     listing = list_installed(corpus)
 

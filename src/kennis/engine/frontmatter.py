@@ -48,17 +48,22 @@ def split_frontmatter(text: str) -> tuple[Frontmatter, str]:
 
 
 class _Dumper(yaml.SafeDumper):
-    """`safe_dump`'s dumper, writing a string that holds a colon in double
-    quotes (#523, Brian, 2026-10-21).
+    """`safe_dump`'s dumper, writing a string that holds a colon in quotes
+    (#523, Brian, 2026-10-21).
 
     YAML reads `from: copy:0yldj2vkpy` as one string, since a colon starts
     a mapping only before a space or the end. Quoted, nobody reading the
     document - a person, another tool - needs to know that.
+
+    **Single quotes**, in which only a quote is escaped: in double quotes a
+    backslash is, so a Windows path was written `"path:C:\\Users..."` and a
+    person copying it got a path that does not exist (#532). PyYAML falls
+    back to double quotes itself for a string single quotes cannot hold.
     """
 
 
 def _string(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
-    style = '"' if ":" in value else None
+    style = "'" if ":" in value else None
     return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
 
 

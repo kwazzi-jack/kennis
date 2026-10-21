@@ -16,6 +16,7 @@ archive's size and entry count.
 
 from __future__ import annotations
 
+import difflib
 import itertools
 import os
 import re
@@ -24,6 +25,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+from kennis.cli import display
 
 BASELINE = Path(__file__).parent / "baseline"
 REGENERATE = os.environ.get("KENNIS_REGENERATE_BASELINE") == "1"
@@ -59,7 +62,10 @@ def pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     a pack scaffold and backups. Returns the scratch folder."""
     monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("COLUMNS", "100")
+    # 100 columns as drawn. rich takes one off `COLUMNS` on a Windows console
+    # without virtual-terminal support, which is what CI gives a job, and
+    # two answers then wrapped a word earlier there (#532).
+    monkeypatch.setenv("COLUMNS", str(100 + int(display.console.legacy_windows)))
     for variable in ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE"):
         monkeypatch.setenv(variable, "2026-01-02T03:04:05+00:00")
     identifiers = counted_identifiers()
@@ -105,6 +111,11 @@ def normalised(text: str, scratch: Path) -> str:
         text = text.replace(spelling, "<scratch>")
     # A path inside the folder is spelled with the platform's separator.
     text = _INSIDE_SCRATCH.sub(lambda found: found[0].replace("\\", "/"), text)
+    # And so is one relative to it, as `backups\kennis-corpus.7z` on
+    # Windows. Only there, because elsewhere a backslash is not a separator
+    # and nothing the scenario prints holds one (#532).
+    if os.sep != "/":
+        text = text.replace(os.sep, "/")
     text = _DATE.sub("<date>", text)
     text = _HASH.sub("<commit>", text)
     text = _SIZE.sub("<size>", text)
@@ -133,7 +144,20 @@ def compared_with_baseline(produced: dict[str, str], folder: Path) -> None:
         for name, text in produced.items()
         if (folder / name).read_text(encoding="utf-8") != text
     ]
+    # The differences themselves, because the run that finds them may be a
+    # CI job on a system nobody here can regenerate on (#532).
+    shown = "".join(
+        "".join(
+            difflib.unified_diff(
+                (folder / name).read_text(encoding="utf-8").splitlines(keepends=True),
+                produced[name].splitlines(keepends=True),
+                fromfile=f"stored/{name}",
+                tofile=f"produced/{name}",
+            )
+        )
+        for name in differing
+    )
     assert not differing, (
         f"{len(differing)} answers are now something else: {differing}. "
-        "Regenerate into a copy and compare with `git diff --no-index`."
+        "Regenerate into a copy and compare with `git diff --no-index`.\n" + shown
     )
