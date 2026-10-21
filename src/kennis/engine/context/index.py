@@ -27,6 +27,7 @@ from pathlib import Path
 import yaml
 
 from kennis.engine.context.bundle import index_root_for
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.context.projects import note_project
 from kennis.engine.errors import NothingToIndex
@@ -47,26 +48,6 @@ from kennis.engine.rag.index import (
     load_index,
 )
 from kennis.engine.rag.models import Document, Metadata
-
-CONTEXT_COLLECTION = "context"
-
-
-def project_group(project: str) -> str:
-    """A search group for one project's notes when it is not the project
-    the search was run from, whose group is plain `context` (14g)."""
-    return f"{CONTEXT_COLLECTION}:{project}"
-
-
-def project_of_group(name: str) -> str | None:
-    """The project a `context:<project>` group is named for, else None."""
-    prefix = f"{CONTEXT_COLLECTION}:"
-    return name.removeprefix(prefix) if name.startswith(prefix) else None
-
-
-def is_bundle_group(name: str) -> bool:
-    """Whether a search group holds a project's own notes."""
-    return name == CONTEXT_COLLECTION or project_of_group(name) is not None
-
 
 _FRONTMATTER_DELIMITER = "---"
 
@@ -223,11 +204,7 @@ def index_bundle(
 
 
 __all__ = [
-    "CONTEXT_COLLECTION",
     "BundleLoader",
     "index_bundle",
-    "is_bundle_group",
     "load_bundle_index",
-    "project_group",
-    "project_of_group",
 ]

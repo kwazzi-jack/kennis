@@ -13,12 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.context import (
-    index_bundle,
-    init_bundle,
-    remember_in_bundle,
-    reset_bundle,
-)
+from kennis.engine.context.bundle import init_bundle
+from kennis.engine.context.index import index_bundle
+from kennis.engine.context.notes import remember_in_bundle
+from kennis.engine.context.reset import reset_bundle
 
 
 @pytest.fixture

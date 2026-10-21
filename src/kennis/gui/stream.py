@@ -26,6 +26,7 @@ from typing import Final
 from kennis.engine.context.sync import OPERATION as CONTEXT_SYNC
 from kennis.engine.corpus.sync import OPERATION as CORPUS_SYNC
 from kennis.engine.events import (
+    FETCH_MODEL,
     Diagnostic,
     ItemFinished,
     ItemStarted,
@@ -33,7 +34,6 @@ from kennis.engine.events import (
     Outcome,
     Progress,
 )
-from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.engine.refusals import Quoted
 from kennis.protocol.progress import Began, Elapsed, Queued
 from kennis.render.diagnostics import describe_diagnostic

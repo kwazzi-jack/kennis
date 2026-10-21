@@ -189,7 +189,7 @@ def test_a_model_fetch_is_the_one_item_the_report_shows(
     outcome is reported afterwards from the report. A model fetch has no
     later line to account for it, and without one a reader watches sixty
     seconds of nothing. Concern #209."""
-    from kennis.engine.rag.embedding import FETCH_MODEL
+    from kennis.engine.events import FETCH_MODEL
 
     with sink.DisplaySink() as shown:
         shown.emit(ItemStarted(operation=FETCH_MODEL, item="BAAI/bge-small-en-v1.5"))

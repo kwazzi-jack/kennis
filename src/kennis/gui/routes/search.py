@@ -15,8 +15,7 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
-from kennis.engine.context.index import project_of_group
-from kennis.engine.context.packs import pack_of_group
+from kennis.engine.context.groups import pack_of_group, project_of_group
 from kennis.engine.context.projects import present_bundles, project_named
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.docs.versions import chosen_or_default, project_versions
@@ -33,11 +32,8 @@ from kennis.gui.pages import (
     versions_query,
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, frame, from_htmx
-from kennis.retrieval import (
-    EVERY_SCOPE,
-    SCOPE_NAMES,
-    sweep,
-)
+from kennis.retrieval import sweep
+from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
 router = APIRouter()
 

@@ -25,21 +25,17 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 from kennis.engine.atomic import remove_tree
 from kennis.engine.errors import PackInvalid, PackNotInstalled
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
-from kennis.engine.pack.content import content_digest, selects
 from kennis.engine.pack.resolve import Declaration
-from kennis.engine.pack.schema import ContentSource, Pack, load_pack
-from kennis.engine.pack.store import (
-    DECLARATION_FILENAME,
-    PackState,
-    pack_root,
-    packs_root,
-    read_state,
-)
+from kennis.engine.pack.schema import Pack
+from kennis.engine.pack.store import PackState
+
+if TYPE_CHECKING:
+    from kennis.engine.pack.schema import ContentSource
 
 OPERATION: Final = "pack-remove"
 
@@ -122,6 +118,8 @@ def list_installed(corpus_root: Path) -> PackListing:
     Sorted so two runs print the same order; a listing whose order came
     from the filesystem would make a diff of two runs unreadable.
     """
+    from kennis.engine.pack.store import packs_root, read_state
+
     root = packs_root(corpus_root)
     if not root.is_dir():
         return PackListing(packs=(), unreadable=())
@@ -146,6 +144,9 @@ def list_installed(corpus_root: Path) -> PackListing:
 
 
 def _declaration(corpus_root: Path, pack_id: str) -> Pack | None:
+    from kennis.engine.pack.schema import load_pack
+    from kennis.engine.pack.store import DECLARATION_FILENAME, pack_root
+
     path = pack_root(corpus_root, pack_id) / DECLARATION_FILENAME
     try:
         return load_pack(path.read_text(encoding="utf-8"))
@@ -155,6 +156,9 @@ def _declaration(corpus_root: Path, pack_id: str) -> Pack | None:
 
 def _verifies(corpus_root: Path, state: PackState) -> bool:
     """Every recorded path present with its digest. Section 5, step 2 (4)."""
+    from kennis.engine.pack.content import content_digest
+    from kennis.engine.pack.store import pack_root
+
     root = pack_root(corpus_root, state.pack_id)
     for relative, digest in state.files.items():
         try:
@@ -258,6 +262,8 @@ def _destinations(state: PackState, source: ContentSource) -> list[tuple[str, st
     store can disagree, and what the pack *installed* is what a sync will
     act on.
     """
+    from kennis.engine.pack.content import selects
+
     prefix = source.source.strip("/")
     group = source.group.strip("/") if source.group else ""
     addresses: list[tuple[str, str]] = []
@@ -327,6 +333,8 @@ def declared_content(
     `first_applied_at`, the same rule `pack status` reports, and immutable
     so that re-adding a pack never changes who owns anything.
     """
+    from kennis.engine.pack.store import pack_root
+
     ordered = sorted(
         packs, key=lambda one: (one.state.first_applied_at, one.state.pack_id)
     )
@@ -369,6 +377,8 @@ def remove_pack(
     **The corpus documents and every workspace are untouched**, and the
     command line says so. Section 9.
     """
+    from kennis.engine.pack.store import pack_root, read_state
+
     started = time.monotonic()
     root = pack_root(corpus_root, pack_id)
     if not root.is_dir():

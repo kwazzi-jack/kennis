@@ -18,7 +18,8 @@ from click.testing import CliRunner
 import kennis.operations
 from kennis.cli.__main__ import main
 from kennis.context import resolve_context
-from kennis.engine.context import BUNDLE_DIRNAME, load_bundle_index
+from kennis.engine.context.bundle import BUNDLE_DIRNAME
+from kennis.engine.context.index import load_bundle_index
 from kennis.engine.pack.content import content_digest
 from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.rag.index import BuildReport

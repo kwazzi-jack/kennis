@@ -11,12 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.context import (
-    index_bundle,
-    init_bundle,
-    load_bundle_index,
-    remember_in_bundle,
-)
+from kennis.engine.context.bundle import init_bundle
+from kennis.engine.context.index import index_bundle, load_bundle_index
+from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.rag.search import search
 from kennis.engine.remember import titled_body

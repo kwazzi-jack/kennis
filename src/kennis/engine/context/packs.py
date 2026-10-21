@@ -30,6 +30,7 @@ import yaml
 
 from kennis.engine.atomic import replace_file
 from kennis.engine.context.bundle import declared_packs, is_bundle_dir
+from kennis.engine.context.groups import PACK_GROUP_PREFIX, pack_group
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.context.reset import USER_OWNER
 from kennis.engine.errors import (
@@ -52,25 +53,8 @@ from kennis.engine.rag.chunking import ChunkParameters
 from kennis.engine.rag.index import BuildReport, LoadedIndex, build_index, load_index
 from kennis.engine.rag.models import Document, Metadata
 
-# A pack's context group in a search, and the prefix of what a project's
-# copy says it replaces.
-PACK_GROUP_PREFIX: Final = "pack:"
 INDEX_DIRNAME: Final = ".index"
 _COLLECTION: Final = "context"
-
-
-def pack_group(pack_id: str) -> str:
-    return f"{PACK_GROUP_PREFIX}{pack_id}"
-
-
-def pack_of_group(name: str) -> str | None:
-    """The pack id a search group is named for, or None for any other
-    group."""
-    return (
-        name.removeprefix(PACK_GROUP_PREFIX)
-        if name.startswith(PACK_GROUP_PREFIX)
-        else None
-    )
 
 
 def pack_context_index_root(corpus_root: Path, pack_id: str) -> Path:
@@ -241,7 +225,6 @@ def _document(file: PackFile) -> Document:
 
 
 __all__ = [
-    "PACK_GROUP_PREFIX",
     "PackContextLoader",
     "PackFile",
     "PacksOfAProject",
@@ -250,8 +233,6 @@ __all__ = [
     "load_pack_context_index",
     "pack_context_index_root",
     "pack_files",
-    "pack_group",
-    "pack_of_group",
     "packs_of",
     "replaced_in",
 ]

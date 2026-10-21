@@ -14,6 +14,7 @@ printed at someone who asked a question.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import click
 
@@ -33,10 +34,10 @@ from kennis.cli.commands import (
     service_group,
 )
 from kennis.cli.group import KennisGroup
-from kennis.engine.errors import SettingsError
-from kennis.engine.settings import config_path, load_settings, unknown_settings
 from kennis.logs import start_logging
-from kennis.render.settings import describe_unknown_settings
+
+if TYPE_CHECKING:
+    pass
 
 
 def _logging_settings() -> dict[str, int]:
@@ -46,6 +47,9 @@ def _logging_settings() -> dict[str, int]:
     the log is how the reason gets read, and the command reports the
     failure itself when it loads the settings again.
     """
+    from kennis.engine.errors import SettingsError
+    from kennis.engine.settings import load_settings
+
     try:
         section = load_settings().logging
     except SettingsError:
@@ -64,6 +68,9 @@ def _say_unknown_settings() -> None:
     what an agent sees, `config show` is a TOML payload, and under `serve`
     stdout is the wire.
     """
+    from kennis.engine.settings import config_path, unknown_settings
+    from kennis.render.settings import describe_unknown_settings
+
     keys = unknown_settings()
     if not keys:
         return

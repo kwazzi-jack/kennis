@@ -35,8 +35,9 @@ from pathlib import Path
 import yaml
 
 from kennis.engine.atomic import replace_file
+from kennis.engine.context.groups import pack_group
 from kennis.engine.context.notes import bundle_files
-from kennis.engine.context.packs import pack_group, packs_of
+from kennis.engine.context.packs import packs_of
 from kennis.engine.context.projects import note_project
 from kennis.engine.context.reset import USER_OWNER
 from kennis.engine.errors import DocumentInvalid

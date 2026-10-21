@@ -26,9 +26,12 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from kennis.engine._glob import globstar_regex
-from kennis.engine.pack.schema import ContentSource
+
+if TYPE_CHECKING:
+    from kennis.engine.pack.schema import ContentSource
 
 
 @dataclass(frozen=True, slots=True)

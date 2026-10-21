@@ -11,7 +11,7 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.projects import project_named
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES

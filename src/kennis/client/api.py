@@ -12,42 +12,48 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from kennis.client import connection
 from kennis.client.calls import Answered, call
-from kennis.engine.backup import BackupReport
-from kennis.engine.context.bundle import BundleCreated
-from kennis.engine.context.notes import BundleNote
-from kennis.engine.context.projects import Project
-from kennis.engine.context.reset import BundleReset
-from kennis.engine.context.status import BundleStatus
-from kennis.engine.context.sync import BundleSync
-from kennis.engine.corpus.add import AddOptions, AddReport
-from kennis.engine.corpus.collection import CollectionContents
-from kennis.engine.corpus.document import Document
-from kennis.engine.corpus.sync import CorpusSync
-from kennis.engine.docs.versions import ProjectVersions
-from kennis.engine.events import EventSink
-from kennis.engine.history.history import HistoryEntry, RestoredDocument, ReturnChanges
 from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.pack.installed import PackListing, PackRemoval
-from kennis.engine.pack.store import PackInstall
-from kennis.engine.rag.models import Filter
-from kennis.engine.rag.search import ChunkRange
-from kennis.engine.remember import RememberReport
-from kennis.finding import DocumentRead, Found, PassageRead
-from kennis.holdings import CollectionTree, CorpusStatus
-from kennis.operations import (
-    BundleIndexBuild,
-    BundleResetPreview,
-    IndexBuild,
-    RemovedVersion,
-    ReturnedCorpus,
-)
 from kennis.protocol.progress import Began, Queued
-from kennis.render.hits import Hit
-from kennis.retrieval import Sweep
+
+if TYPE_CHECKING:
+    from kennis.engine.backup import BackupReport
+    from kennis.engine.context.bundle import BundleCreated
+    from kennis.engine.context.notes import BundleNote
+    from kennis.engine.context.projects import Project
+    from kennis.engine.context.reset import BundleReset
+    from kennis.engine.context.status import BundleStatus
+    from kennis.engine.context.sync import BundleSync
+    from kennis.engine.corpus.add import AddOptions, AddReport
+    from kennis.engine.corpus.collection import CollectionContents
+    from kennis.engine.corpus.document import Document
+    from kennis.engine.corpus.sync import CorpusSync
+    from kennis.engine.docs.versions import ProjectVersions
+    from kennis.engine.events import EventSink
+    from kennis.engine.history.history import (
+        HistoryEntry,
+        RestoredDocument,
+        ReturnChanges,
+    )
+    from kennis.engine.pack.installed import PackListing, PackRemoval
+    from kennis.engine.pack.store import PackInstall
+    from kennis.engine.rag.models import Filter
+    from kennis.engine.rag.search import ChunkRange
+    from kennis.engine.remember import RememberReport
+    from kennis.finding import DocumentRead, Found, PassageRead
+    from kennis.holdings import CollectionTree, CorpusStatus
+    from kennis.operations import (
+        BundleIndexBuild,
+        BundleResetPreview,
+        IndexBuild,
+        RemovedVersion,
+        ReturnedCorpus,
+    )
+    from kennis.render.hits import Hit
+    from kennis.retrieval import Sweep
 
 type Waiting = Callable[[Queued | Began], None]
 
@@ -105,6 +111,8 @@ def add(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[AddReport]:
+    from kennis.engine.corpus.add import AddReport
+
     return _write(
         corpus_root,
         "add",
@@ -125,6 +133,8 @@ def sync_corpus(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[CorpusSync]:
+    from kennis.engine.corpus.sync import CorpusSync
+
     return _write(
         corpus_root, "sync_corpus", {}, CorpusSync, events=events, on_waiting=on_waiting
     )
@@ -137,6 +147,8 @@ def index(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[IndexBuild]:
+    from kennis.operations import IndexBuild
+
     return _write(
         corpus_root,
         "index",
@@ -160,6 +172,8 @@ def sweep(
     bundle: Path | None,
     others: Sequence[Path] = (),
 ) -> Sweep:
+    from kennis.retrieval import Sweep
+
     return _read(
         corpus_root,
         "sweep",
@@ -188,6 +202,8 @@ def search_scope(
     bundle: Path | None,
     others: Sequence[Path] = (),
 ) -> list[Hit]:
+    from kennis.render.hits import Hit
+
     return cast(
         list[Hit],
         _read_as(
@@ -207,6 +223,8 @@ def search_scope(
 
 
 def found(corpus_root: Path, handle: str, collection: str | None) -> Found:
+    from kennis.finding import Found
+
     return _read(
         corpus_root, "found", {"handle": handle, "collection": collection}, Found
     )
@@ -215,6 +233,8 @@ def found(corpus_root: Path, handle: str, collection: str | None) -> Found:
 def read_document(
     corpus_root: Path, handle: str, collection: str | None, *, frontmatter: bool
 ) -> DocumentRead:
+    from kennis.finding import DocumentRead
+
     return _read(
         corpus_root,
         "read_document",
@@ -226,6 +246,8 @@ def read_document(
 def read_passage(
     corpus_root: Path, handle: str, collection: str | None, *, chunks: ChunkRange
 ) -> PassageRead:
+    from kennis.finding import PassageRead
+
     return _read(
         corpus_root,
         "read_passage",
@@ -235,16 +257,22 @@ def read_passage(
 
 
 def status(corpus_root: Path) -> CorpusStatus:
+    from kennis.holdings import CorpusStatus
+
     return _read(corpus_root, "status", {}, CorpusStatus)
 
 
 def contents(corpus_root: Path, collection: str) -> CollectionContents:
+    from kennis.engine.corpus.collection import CollectionContents
+
     return _read(
         corpus_root, "contents", {"collection": collection}, CollectionContents
     )
 
 
 def tree(corpus_root: Path, collection: str | None) -> list[CollectionTree]:
+    from kennis.holdings import CollectionTree
+
     trees = _read_as(
         corpus_root, "tree", {"collection": collection}, list[CollectionTree]
     )
@@ -254,6 +282,8 @@ def tree(corpus_root: Path, collection: str | None) -> list[CollectionTree]:
 def history(
     corpus_root: Path, collection: str | None, limit: int
 ) -> list[HistoryEntry]:
+    from kennis.engine.history.history import HistoryEntry
+
     entries = _read_as(
         corpus_root,
         "history",
@@ -264,6 +294,8 @@ def history(
 
 
 def docs_versions(corpus_root: Path) -> dict[str, ProjectVersions]:
+    from kennis.engine.docs.versions import ProjectVersions
+
     held = _read_as(corpus_root, "docs_versions", {}, dict[str, ProjectVersions])
     return cast(dict[str, ProjectVersions], held)
 
@@ -275,12 +307,16 @@ def version_pages(corpus_root: Path, project: str, version: str) -> int:
 
 
 def return_preview(corpus_root: Path, commit: str) -> ReturnChanges:
+    from kennis.engine.history.history import ReturnChanges
+
     return _read(corpus_root, "return_preview", {"commit": commit}, ReturnChanges)
 
 
 def copy_document(
     corpus_root: Path, handle: str, collection: str | None
 ) -> Written[Document]:
+    from kennis.engine.corpus.document import Document
+
     return _write(
         corpus_root,
         "copy_document",
@@ -294,6 +330,8 @@ def copy_document(
 def remove_document(
     corpus_root: Path, handle: str, collection: str | None
 ) -> Written[Document]:
+    from kennis.engine.corpus.document import Document
+
     return _write(
         corpus_root,
         "remove_document",
@@ -307,6 +345,8 @@ def remove_document(
 def remove_version(
     corpus_root: Path, project: str, version: str
 ) -> Written[RemovedVersion]:
+    from kennis.operations import RemovedVersion
+
     return _write(
         corpus_root,
         "remove_version",
@@ -336,6 +376,8 @@ def move_document(
     title: str | None,
     collection: str | None,
 ) -> Written[Document]:
+    from kennis.engine.corpus.document import Document
+
     return _write(
         corpus_root,
         "move_document",
@@ -349,6 +391,8 @@ def move_document(
 def restore_document(
     corpus_root: Path, document_id: str, commit: str
 ) -> Written[RestoredDocument]:
+    from kennis.engine.history.history import RestoredDocument
+
     return _write(
         corpus_root,
         "restore_document",
@@ -360,6 +404,8 @@ def restore_document(
 
 
 def return_corpus(corpus_root: Path, commit: str) -> Written[ReturnedCorpus]:
+    from kennis.operations import ReturnedCorpus
+
     return _write(
         corpus_root,
         "return_corpus",
@@ -377,6 +423,8 @@ def install_pack(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[PackInstall]:
+    from kennis.engine.pack.store import PackInstall
+
     return _write(
         corpus_root,
         "install_pack",
@@ -394,6 +442,8 @@ def remove_pack(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[PackRemoval]:
+    from kennis.engine.pack.installed import PackRemoval
+
     return _write(
         corpus_root,
         "remove_pack",
@@ -405,6 +455,8 @@ def remove_pack(
 
 
 def pack_listing(corpus_root: Path) -> PackListing:
+    from kennis.engine.pack.installed import PackListing
+
     return _read(corpus_root, "pack_listing", {}, PackListing)
 
 
@@ -415,6 +467,8 @@ def sync_bundle(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[BundleSync]:
+    from kennis.engine.context.sync import BundleSync
+
     return _write(
         corpus_root,
         "sync_bundle",
@@ -430,6 +484,8 @@ def sync_bundle(
 
 
 def init_bundle(corpus_root: Path, folder: Path) -> BundleCreated:
+    from kennis.engine.context.bundle import BundleCreated
+
     return _write(
         corpus_root,
         "init_bundle",
@@ -447,6 +503,8 @@ def index_bundle(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> BundleIndexBuild:
+    from kennis.operations import BundleIndexBuild
+
     return _write(
         corpus_root,
         "index_bundle",
@@ -491,6 +549,8 @@ def copy_pack_file(corpus_root: Path, bundle: Path, reference: str) -> Path:
 
 
 def reset_bundle(corpus_root: Path, bundle: Path) -> BundleReset:
+    from kennis.engine.context.reset import BundleReset
+
     return _write(
         corpus_root,
         "reset_bundle",
@@ -509,6 +569,8 @@ def remember_in_context(
     title: str | None = None,
     group: str | None = None,
 ) -> BundleNote:
+    from kennis.engine.context.notes import BundleNote
+
     return _write(
         corpus_root,
         "remember_in_context",
@@ -520,6 +582,8 @@ def remember_in_context(
 
 
 def add_project(corpus_root: Path, folder: Path) -> Project:
+    from kennis.engine.context.projects import Project
+
     return _write(
         corpus_root,
         "add_project",
@@ -531,6 +595,8 @@ def add_project(corpus_root: Path, folder: Path) -> Project:
 
 
 def forget_project(corpus_root: Path, name: str) -> Project:
+    from kennis.engine.context.projects import Project
+
     return _write(
         corpus_root,
         "forget_project",
@@ -542,12 +608,16 @@ def forget_project(corpus_root: Path, name: str) -> Project:
 
 
 def bundle_status(corpus_root: Path, bundle: Path) -> BundleStatus:
+    from kennis.engine.context.status import BundleStatus
+
     return _read(
         corpus_root, "bundle_status", {"bundle": bundle.resolve()}, BundleStatus
     )
 
 
 def reset_preview(corpus_root: Path, bundle: Path) -> BundleResetPreview:
+    from kennis.operations import BundleResetPreview
+
     return _read(
         corpus_root, "reset_preview", {"bundle": bundle.resolve()}, BundleResetPreview
     )
@@ -564,6 +634,8 @@ def remember(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[RememberReport]:
+    from kennis.engine.remember import RememberReport
+
     return _write(
         corpus_root,
         "remember",
@@ -588,6 +660,8 @@ def back_up(
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[BackupReport]:
+    from kennis.engine.backup import BackupReport
+
     return _write(
         corpus_root,
         "back_up",

@@ -18,19 +18,27 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final, Literal
 
-from kennis.engine.context.index import project_of_group
-from kennis.engine.context.packs import pack_of_group
-from kennis.engine.corpus.document import Document
+from kennis.engine.context.groups import pack_of_group, project_of_group
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
-from kennis.engine.docs.versions import ProjectVersions
-from kennis.engine.history.freshness import Freshness
-from kennis.engine.history.history import ReturnChanges
-from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.rag.search import DocumentSpan
-from kennis.engine.remember import IndexOutcome
+
+if TYPE_CHECKING:
+    from kennis.engine.corpus.document import Document
+    from kennis.engine.docs.versions import ProjectVersions
+    from kennis.engine.history.freshness import Freshness
+    from kennis.engine.history.history import ReturnChanges
+    from kennis.engine.history.outofband import OutOfBandChange
+    from kennis.engine.rag.search import DocumentSpan
+    from kennis.engine.remember import IndexOutcome
+
+# How a hit's relevance is shown: in words, as the raw scores, or not at
+# all. Here rather than in `hits.py` so that a client offering the choice
+# imports none of the search (#535).
+type ScoreStyle = Literal["human", "raw", "none"]
+
+SCORE_STYLES: Final[tuple[str, ...]] = ("human", "raw", "none")
 
 # What a bar says while an operation runs. One entry per verb the engine
 # emits with a `Progress`; a new verb has to be added here, and that is

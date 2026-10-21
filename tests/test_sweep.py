@@ -36,7 +36,8 @@ from kennis.cli.__main__ import main
 from kennis.engine.context.bundle import find_bundle
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import ContextNotFound, KennisError, NothingToIndex
-from kennis.retrieval import SCOPE_NAMES, Skipped, sweep
+from kennis.retrieval import Skipped, sweep
+from kennis.scopes import SCOPE_NAMES
 
 
 @pytest.fixture

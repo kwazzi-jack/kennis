@@ -13,9 +13,9 @@ be the one that waits for whatever is stuck.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import click
 
@@ -25,54 +25,14 @@ from kennis.cli.paths import anchored
 from kennis.cli.sink import DisplaySink, marker_for, say_waiting
 from kennis.client import api
 from kennis.context import existing_corpus, resolve_context
-from kennis.engine.corpus.add import (
-    AddOptions,
-    AddOutcome,
-    AddReport,
-    add_docs,
-    add_literature,
-    add_notes,
-)
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.corpus.sync import (
-    CorpusSync,
-)
-from kennis.engine.errors import KennisError
-from kennis.engine.events import Outcome
-from kennis.engine.history.freshness import Freshness
-from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.history.repository import initialise_corpus
-from kennis.engine.pack.resolve import ACTING
-from kennis.engine.rag.binding import binding_from
-from kennis.render.packs import (
-    describe_action,
-    describe_deferred,
-    describe_kept_copies,
-    describe_kept_copy,
-    describe_sync,
-    describe_unfetched,
-    describe_why_unfetched,
-)
-from kennis.render.refusals import (
-    choices_for_refusal,
-    describe_refusal,
-    remedies_for_refusal,
-)
-from kennis.render.words import (
-    NO_DOCS_VERSIONS,
-    RETURN_NEEDS_AN_INDEX,
-    conversion_cost,
-    conversion_repairs,
-    count_of,
-    describe_busy_indexes,
-    describe_change,
-    describe_current_version,
-    describe_freshness,
-    describe_held_versions,
-    describe_return_changes,
-    describe_returned,
-    remedies_for,
-)
+
+if TYPE_CHECKING:
+    from kennis.engine.corpus.add import AddOutcome, AddReport
+    from kennis.engine.corpus.sync import CorpusSync
+    from kennis.engine.errors import KennisError
+    from kennis.engine.history.freshness import Freshness
+    from kennis.engine.history.outofband import OutOfBandChange
 
 # Each collection's shorthand flag, for naming it back in an error. The
 # options themselves are declared literally on the command.
@@ -93,12 +53,6 @@ _COLLECTION_ONLY: Final[dict[str, str]] = {
     "--identifier": "literature",
 }
 
-_ADDERS: Final[dict[str, Callable[..., AddReport]]] = {
-    "notes": add_notes,
-    "literature": add_literature,
-    "docs": add_docs,
-}
-
 
 @click.group(name="corpus", cls=KennisGroup)
 def corpus_group() -> None:
@@ -113,6 +67,8 @@ def corpus_group() -> None:
 @corpus_group.command(name="init")
 def init_command() -> None:
     """Create the corpus and start its history."""
+    from kennis.engine.history.repository import initialise_corpus
+
     context = resolve_context()
     # No lock. There is nothing yet to guard, `initialise_corpus` refuses a
     # root that is already a corpus, and taking one would create the
@@ -126,6 +82,8 @@ def init_command() -> None:
 @corpus_group.command(name="status")
 def status_command() -> None:
     """What the corpus holds, and what has changed since kennis last looked."""
+    from kennis.render.words import count_of, describe_change, remedies_for
+
     status = api.status(existing_corpus().corpus_root)
 
     total = 0
@@ -175,6 +133,8 @@ def status_command() -> None:
 
 def report_restored(restored: Sequence[OutOfBandChange]) -> None:
     """What a restore put back, or nothing at all when it put back nothing."""
+    from kennis.render.words import count_of, describe_change
+
     if not restored:
         return
     display.operation("Restored", count_of(len(restored), "document"))
@@ -186,6 +146,8 @@ def _report_freshness(freshness: Freshness, name: str) -> bool:
     """How far this collection's index has fallen behind it, and whether it
     is current - so the caller can say once, rather than three times, what
     is true of the corpus as a whole."""
+    from kennis.render.words import describe_freshness
+
     described = describe_freshness(freshness, name)
     current = freshness.state == "in step" and not freshness.added
     if current:
@@ -208,6 +170,8 @@ def _report_freshness(freshness: Freshness, name: str) -> bool:
 )
 def list_command(collection: str | None) -> None:
     """Every document in the corpus."""
+    from kennis.engine.corpus.schema import COLLECTION_NAMES
+
     corpus_root = existing_corpus().corpus_root
     shown = 0
     for name in [collection] if collection else list(COLLECTION_NAMES):
@@ -304,6 +268,8 @@ def add_command(
     max_depth: int,
 ) -> None:
     """Add files, directories or URLs to one collection."""
+    from kennis.engine.corpus.add import AddOptions
+
     context = existing_corpus()
     destination = _destination(
         collection, notes=notes, literature=literature, docs=docs
@@ -370,6 +336,8 @@ def _destination(
     precedence puzzle, because someone who typed both meant one of them and
     kennis cannot tell which.
     """
+    from kennis.engine.corpus.schema import COLLECTION_NAMES
+
     chosen = [
         name
         for name, given in (
@@ -436,6 +404,9 @@ def _report_add(report: AddReport) -> None:
     above the summary that was the answer; `display.details` caps them, and
     the log has all of them either way.
     """
+    from kennis.engine.events import Outcome
+    from kennis.render.words import conversion_cost, conversion_repairs, count_of
+
     counts = report.counts
     # The cost rides on the operation line rather than a line of its own: it
     # is a property of what just happened, and a separate line would give a
@@ -469,6 +440,9 @@ def _named(item: AddOutcome) -> str:
     is the wrong place for one refused paper even if it is the right
     one for three hundred refused pages. Concern #322.
     """
+    from kennis.engine.events import Outcome
+    from kennis.render.refusals import describe_refusal
+
     name = item.title or item.identifier
     if item.outcome is not Outcome.FAILED or item.refusal is None:
         return name
@@ -482,6 +456,9 @@ def _report_remedies(report: AddReport) -> None:
     way share a remedy, and printing it twice invites the user to run it
     twice.
     """
+    from kennis.engine.events import Outcome
+    from kennis.render.refusals import choices_for_refusal, remedies_for_refusal
+
     commands: dict[str, None] = {}
     for item in report.outcomes:
         if item.outcome is Outcome.FAILED and item.refusal is not None:
@@ -509,6 +486,9 @@ def sync_command() -> None:
     is lost. A paper that cannot be fetched is reported and tried again
     next time, rather than stopping the run.
     """
+    from kennis.engine.pack.resolve import ACTING
+    from kennis.render.packs import describe_action, describe_sync
+
     corpus_root = existing_corpus().corpus_root
     with DisplaySink() as shown:
         written = api.sync_corpus(corpus_root, events=shown, on_waiting=say_waiting)
@@ -527,6 +507,14 @@ def sync_command() -> None:
 
 def _report_what_a_sync_left(result: CorpusSync) -> None:
     """The two things a sync did not do, each said once above nothing."""
+    from kennis.render.packs import (
+        describe_deferred,
+        describe_kept_copies,
+        describe_kept_copy,
+        describe_unfetched,
+        describe_why_unfetched,
+    )
+
     if result.copied:
         display.guidance(describe_kept_copies(len(result.copied)))
         # Named per document: the handle is the only way to address a
@@ -635,6 +623,8 @@ def remove_command(
 def _remove_docs_version(
     corpus_root: Path, project: str, version: str, *, yes: bool
 ) -> None:
+    from kennis.render.words import count_of, describe_current_version
+
     pages = api.version_pages(corpus_root, project, version)
     if not yes:
         click.confirm(
@@ -660,6 +650,8 @@ def version_command(project: str | None, version: str | None) -> None:
     project and a version, that version becomes the one searched unless a
     search names others with --version.
     """
+    from kennis.render.words import NO_DOCS_VERSIONS, describe_held_versions
+
     corpus_root = existing_corpus().corpus_root
     if project is not None and version is not None:
         api.make_version_current(corpus_root, project, version)
@@ -735,6 +727,9 @@ def move_command(
 )
 def index_command(collection: str | None) -> None:
     """Build the search index for one collection or all of them."""
+    from kennis.engine.rag.binding import binding_from
+    from kennis.render.words import count_of, describe_busy_indexes
+
     context = existing_corpus()
     binding = binding_from(context.settings.chunking, context.settings.embedding)
 
@@ -826,6 +821,12 @@ def return_command(commit: str, yes: bool) -> None:
     returning to the point before it undoes it. The index is left as built:
     rebuild it to search what is held afterwards.
     """
+    from kennis.render.words import (
+        RETURN_NEEDS_AN_INDEX,
+        describe_return_changes,
+        describe_returned,
+    )
+
     corpus_root = existing_corpus().corpus_root
     changes = api.return_preview(corpus_root, commit)
     lines = describe_return_changes(changes)

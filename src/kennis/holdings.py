@@ -19,7 +19,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from kennis.context import Context
 from kennis.engine.corpus.collection import Collection, CollectionContents
@@ -46,9 +46,10 @@ from kennis.engine.history.history import (
 )
 from kennis.engine.history.outofband import OutOfBandChange, detect_changes
 from kennis.engine.history.repository import Repository
-from kennis.engine.pack.installed import InstalledPack, list_installed
-from kennis.engine.rag.index import published_files, read_manifest
 from kennis.publishing import reading
+
+if TYPE_CHECKING:
+    from kennis.engine.pack.installed import InstalledPack
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +128,8 @@ def corpus_state(context: Context) -> CorpusState:
     - **each index's pointer and manifest**, which git ignores and which
       freshness reads.
     """
+    from kennis.engine.rag.index import published_files
+
     root = context.corpus_root
     head = git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=root).stdout
     listed = git(
@@ -195,6 +198,8 @@ def freshness_of(
     context: Context, repository: Repository, collection: str
 ) -> Freshness | None:
     """How far one index has fallen behind, or None if it has none."""
+    from kennis.engine.rag.index import read_manifest
+
     manifest = read_manifest(index_root(context.corpus_root), collection)
     if manifest is None:
         return None
@@ -247,6 +252,8 @@ def document_marks(context: Context, collection: str) -> DocumentMarks:
     """Per-document freshness for one collection, by the same rule as
     `freshness_of`, with `indexed=manifest.documents` for the same
     reason (#245)."""
+    from kennis.engine.rag.index import read_manifest
+
     manifest = read_manifest(index_root(context.corpus_root), collection)
     if manifest is None:
         return DocumentMarks(never_indexed=True, states=None)
@@ -268,6 +275,8 @@ def document_marks(context: Context, collection: str) -> DocumentMarks:
 @reading
 def installed_packs(context: Context) -> tuple[InstalledPack, ...]:
     """Every pack in the store, or nothing when there is no store yet."""
+    from kennis.engine.pack.installed import list_installed
+
     return tuple(list_installed(context.corpus_root).packs)
 
 

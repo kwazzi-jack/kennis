@@ -28,7 +28,7 @@ from kennis.render.words import (
     joined,
     needs_an_index,
 )
-from kennis.retrieval import EVERY_SCOPE
+from kennis.scopes import EVERY_SCOPE
 
 RECENTS_HEADING = "Recent searches"
 

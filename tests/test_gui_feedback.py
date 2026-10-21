@@ -28,10 +28,15 @@ from fastapi.testclient import TestClient
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.sync import CorpusSync
-from kennis.engine.events import EventSink, ItemFinished, ItemStarted, Outcome
+from kennis.engine.events import (
+    FETCH_MODEL,
+    EventSink,
+    ItemFinished,
+    ItemStarted,
+    Outcome,
+)
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.resolve import Action
-from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.engine.refusals import Quoted
 from kennis.gui import words
 from kennis.gui.app import build_app

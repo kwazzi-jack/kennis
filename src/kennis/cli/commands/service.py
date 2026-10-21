@@ -10,6 +10,8 @@ reinstall.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import click
 
 from kennis.cli import display
@@ -21,12 +23,9 @@ from kennis.client.process import hello, stop_service
 from kennis.context import existing_corpus
 from kennis.protocol.progress import Began, Queued
 from kennis.protocol.record import find_service
-from kennis.render.words import (
-    JOB_KINDS,
-    SERVICE_NOT_RUNNING,
-    service_running,
-    waiting_for,
-)
+
+if TYPE_CHECKING:
+    pass
 
 
 @click.group(name="service", cls=KennisGroup)
@@ -42,6 +41,8 @@ def status_command() -> None:
     The address is printed without its token: the token is in the
     service's record, readable by this account alone.
     """
+    from kennis.render.words import JOB_KINDS, SERVICE_NOT_RUNNING, service_running
+
     corpus_root = existing_corpus().corpus_root
     record = find_service(corpus_root)
     if record is None:
@@ -67,6 +68,8 @@ def status_command() -> None:
 def watch_command(task_id: str) -> None:
     """Follow a task to its end: one a command stopped watching on Ctrl-C,
     which goes on in the service."""
+    from kennis.render.words import JOB_KINDS, waiting_for
+
     link = connection.connect(existing_corpus().corpus_root)
     followed = task(link, task_id)
 
@@ -86,6 +89,8 @@ def stop_command() -> None:
     A task stopped part way keeps nothing of what it did, so the service
     refuses rather than throw that work away, and keeps running.
     """
+    from kennis.render.words import SERVICE_NOT_RUNNING
+
     corpus_root = existing_corpus().corpus_root
     record = find_service(corpus_root)
     if record is None:

@@ -27,14 +27,10 @@ from pathlib import Path
 from kennis.client import api
 from kennis.context import existing_corpus
 from kennis.engine.context.bundle import find_bundle
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.projects import present_bundles, project_named
-from kennis.render.hits import (
-    ScoreStyle,
-    best_lexical,
-    rendered_hit,
-    score_style_for,
-)
+from kennis.render.hits import best_lexical, rendered_hit, score_style_for
+from kennis.render.words import ScoreStyle
 
 # What a tool answers with when a scope holds nothing for this question.
 # A sentence rather than an empty string: an agent handed "" cannot tell

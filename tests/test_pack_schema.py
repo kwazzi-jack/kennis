@@ -14,7 +14,6 @@ import pytest
 
 from kennis.engine.errors import PackInvalid
 from kennis.engine.pack.schema import (
-    SCHEMA_VERSION,
     ContentSource,
     LiteratureEntry,
     Pack,
@@ -23,6 +22,7 @@ from kennis.engine.pack.schema import (
     schema_document,
     schema_path,
 )
+from kennis.engine.pack.versions import SCHEMA_VERSION
 
 MINIMAL = """
 kennis:

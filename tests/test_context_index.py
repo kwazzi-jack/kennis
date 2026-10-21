@@ -16,14 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.context import (
-    BundleLoader,
-    index_bundle,
-    index_root_for,
-    init_bundle,
-    load_bundle_index,
-    remember_in_bundle,
-)
+from kennis.engine.context.bundle import index_root_for, init_bundle
+from kennis.engine.context.index import BundleLoader, index_bundle, load_bundle_index
+from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.errors import NothingToIndex
 from kennis.engine.events import (
     Diagnostic,

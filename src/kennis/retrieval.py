@@ -17,28 +17,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Final, cast, get_args
+from typing import TYPE_CHECKING, Final, cast, get_args
 
 from kennis.context import Context, existing_corpus, resolve_context
-from kennis.engine.context.bundle import BUNDLE_DIRNAME
-from kennis.engine.context.index import (
+from kennis.engine.context.groups import (
     CONTEXT_COLLECTION,
-    is_bundle_group,
-    load_bundle_index,
-    project_group,
-)
-from kennis.engine.context.notes import bundle_documents
-from kennis.engine.context.packs import (
     PACK_GROUP_PREFIX,
-    load_pack_context_index,
+    is_bundle_group,
     pack_group,
-    packs_of,
-    replaced_in,
+    project_group,
 )
 from kennis.engine.context.projects import project_names
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
-from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.docs.versions import excluded_versions, project_versions
 from kennis.engine.errors import (
     ContextNotFound,
@@ -46,25 +37,18 @@ from kennis.engine.errors import (
     NothingToIndex,
     SettingsError,
 )
-from kennis.engine.rag.embedding import resolve_host
-from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Chunk, Filter
-from kennis.engine.rag.search import Mode, search
+from kennis.engine.rag.modes import Mode
 from kennis.render.hits import Hit
+from kennis.scopes import SCOPE_NAMES
+
+if TYPE_CHECKING:
+    from kennis.engine.rag.index import LoadedIndex
 
 # The most a caller may ask for. A ceiling rather than a validation
 # error: a caller asking for 500 wants "lots", and refusing them is
 # less useful than giving them the most that is sensible.
 MAX_TOP_K = 20
-
-# The four scopes a search may cover, in the order a report lists
-# them. Fixed rather than ranked: ordering groups by their best hit
-# would state a comparison across collections that kennis cannot
-# make. `context` leads because a bundle is the nearest knowledge.
-SCOPE_NAMES: Final[tuple[str, ...]] = (CONTEXT_COLLECTION, *COLLECTION_NAMES)
-
-# What the reader types, or picks, to mean all four.
-EVERY_SCOPE: Final = "all"
 
 
 def context_for(collection: str) -> Context:
@@ -94,6 +78,9 @@ def search_scope(
     "no hits" for an index that was never built has been told
     something false.
     """
+    from kennis.engine.rag.embedding import resolve_host
+    from kennis.engine.rag.search import search
+
     context = context_for(collection)
     if collection == CONTEXT_COLLECTION:
         # The bundle and each pack it declares, one after the other: an
@@ -141,6 +128,9 @@ def index_for(context: Context, collection: str, *, bundle: Path | None) -> Load
     `bundle` is the one the client found (#508); None is outside a
     project, where the context scope has no index to give.
     """
+    from kennis.engine.context.index import load_bundle_index
+    from kennis.engine.rag.index import load_index
+
     if collection == CONTEXT_COLLECTION:
         if bundle is None:
             raise ContextNotFound
@@ -405,6 +395,14 @@ def _sweep_context(
     declares the pack has its own copy**, so one project's version does
     not hide the pack's text from another project in the same search.
     """
+    from kennis.engine.context.bundle import BUNDLE_DIRNAME
+    from kennis.engine.context.notes import bundle_documents
+    from kennis.engine.context.packs import (
+        load_pack_context_index,
+        packs_of,
+        replaced_in,
+    )
+
     homes = [home] if home is not None else []
     resolved_home = home.resolve() if home is not None else None
     elsewhere = list(
@@ -505,6 +503,9 @@ def _hits_in(
 ) -> tuple[list[Hit], bool]:
     """One group's hits, and whether it ran lexically although more was
     asked of it."""
+    from kennis.engine.rag.embedding import resolve_host
+    from kennis.engine.rag.search import search
+
     # Per group, not once for the sweep. A bundle's method - and a pack's
     # context, which is advice of the same kind - is its own setting with
     # its own default, because a dense bundle index costs what
@@ -692,6 +693,9 @@ def _load(
     Both are absences of the same kind here, and they carry different
     resolutions, which is why each raises its own error.
     """
+    from kennis.engine.context.index import load_bundle_index
+    from kennis.engine.rag.index import load_index
+
     try:
         if name == CONTEXT_COLLECTION:
             if bundle is None:
@@ -724,6 +728,8 @@ def _why_skipped(
     that command would leave the same warning on the next search.
     Nobody believes a store they have never filled was searched.
     """
+    from kennis.engine.context.notes import bundle_documents
+
     if name == CONTEXT_COLLECTION:
         # A bundle with no notes yet, which a project that only declares
         # packs is, holds nothing an index would add.
@@ -773,9 +779,7 @@ def nothing_to_search(
 
 
 __all__ = [
-    "EVERY_SCOPE",
     "MAX_TOP_K",
-    "SCOPE_NAMES",
     "Skipped",
     "Sweep",
     "as_mode",

@@ -25,10 +25,11 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Iterator
 from types import TracebackType
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from kennis.cli import display
 from kennis.engine.events import (
+    FETCH_MODEL,
     Diagnostic,
     Event,
     ItemStarted,
@@ -37,11 +38,13 @@ from kennis.engine.events import (
     Progress,
     Severity,
 )
-from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.logs import FanOut, LogSink
 from kennis.protocol.progress import Began, Queued
 from kennis.render.diagnostics import describe_diagnostic
-from kennis.render.words import fetching_model, progress_label, waiting_for
+from kennis.render.words import fetching_model, progress_label
+
+if TYPE_CHECKING:
+    pass
 
 # The column glyph each outcome prints under. Layout rather than wording, so
 # it lives here and not in `render/`: `display.detail` colours by the marker,
@@ -152,5 +155,7 @@ def say_waiting(news: Queued | Began) -> None:
     """A task asked for behind others says so before it begins (14b): the
     service runs one write at a time in a lane, and silence while one waits
     reads as a hang."""
+    from kennis.render.words import waiting_for
+
     if isinstance(news, Queued):
         display.note(waiting_for(news.behind, news.ahead))

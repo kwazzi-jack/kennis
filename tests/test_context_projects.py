@@ -14,7 +14,9 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
-from kennis.engine.context import index_bundle, init_bundle, remember_in_bundle
+from kennis.engine.context.bundle import init_bundle
+from kennis.engine.context.index import index_bundle
+from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.context.projects import (
     ProjectListUnreadable,
     ProjectNotKnown,

@@ -13,7 +13,7 @@ from fastapi.responses import (
 )
 
 from kennis.context import Context, existing_corpus, resolve_context
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.packs import load_pack_context_index
 from kennis.engine.context.projects import project_named
 from kennis.engine.context.status import bundle_freshness

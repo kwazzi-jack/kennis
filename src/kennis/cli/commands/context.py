@@ -9,6 +9,7 @@ thing `design.md` left unspecified - concern #225.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
@@ -17,25 +18,12 @@ from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import DisplaySink, reporting, say_waiting
 from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.context import (
-    CONTEXT_COLLECTION,
-    LANDING_FILENAME,
-    BundleCreated,
-    find_bundle,
-    workspace_root,
-)
-from kennis.engine.context.bundle import declared_packs
-from kennis.engine.context.projects import known_projects, project_named
-from kennis.engine.context.sync import BundleSync
-from kennis.engine.errors import ContextNotFound
-from kennis.render.packs import (
-    describe_bundle_sync,
-    describe_declared,
-    describe_made_yours,
-    describe_no_declaration,
-    describe_not_installed,
-)
-from kennis.render.words import count_of, describe_freshness
+
+if TYPE_CHECKING:
+    from kennis.engine.context.bundle import (
+        BundleCreated,
+    )
+    from kennis.engine.context.sync import BundleSync
 
 
 @click.group(name="context", cls=KennisGroup)
@@ -68,6 +56,8 @@ def init_command(here: bool, packs: tuple[str, ...]) -> None:
     file that was deleted is written again, and anything you added is left
     alone.
     """
+    from kennis.engine.context.bundle import workspace_root
+
     corpus_root = existing_corpus().corpus_root
     folder = Path.cwd() if here else workspace_root(Path.cwd())
     created = api.init_bundle(corpus_root, folder)
@@ -84,6 +74,8 @@ def _report_init(created: BundleCreated) -> None:
     prints `warning:`, and a bundle that was already complete is not
     something going wrong.
     """
+    from kennis.engine.context.bundle import LANDING_FILENAME
+
     if created.created:
         display.operation("Created", f"context bundle at {created.path}")
         # Not `next_step`, which prints a command: rule 4.4 says a printed
@@ -126,6 +118,9 @@ def index_command_for_context(project: str | None) -> None:
     settings, and their embedding model if they configured one. A clone
     gets the documents and runs this command once.
     """
+    from kennis.engine.context.projects import project_named
+    from kennis.render.words import count_of
+
     corpus_root = existing_corpus().corpus_root
     bundle = require_bundle() if project is None else project_named(project).bundle
     with reporting() as events:
@@ -169,6 +164,8 @@ def sync_command_for_context() -> None:
     **Offline**, and **kennis does not commit**: the bundle is in your
     repository.
     """
+    from kennis.render.packs import describe_bundle_sync, describe_made_yours
+
     corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
     with DisplaySink() as shown:
@@ -196,6 +193,12 @@ def sync_command_for_context() -> None:
 def _report_the_declaration(result: BundleSync) -> None:
     """Which packs this project reads, said on every run, because a pack
     declared and never installed is otherwise silently not searched."""
+    from kennis.render.packs import (
+        describe_declared,
+        describe_no_declaration,
+        describe_not_installed,
+    )
+
     if result.declared:
         display.info(describe_declared(result.declared))
     if result.missing:
@@ -227,6 +230,8 @@ def packs_command_for_context(
     for one pack cannot drop another; `--drop` removes one and `--none`
     clears it.
     """
+    from kennis.engine.context.bundle import declared_packs
+
     if declare_none and (packs or dropped):
         raise display.CliError("pass --none alone: it clears the declaration.")
     corpus_root = existing_corpus().corpus_root
@@ -271,6 +276,8 @@ def list_command_for_context() -> None:
     forgotten, because a disk that is not mounted is not a project that
     was deleted.
     """
+    from kennis.engine.context.projects import known_projects
+
     projects = known_projects()
     if not projects:
         display.note("no project with a context bundle is known yet")
@@ -315,6 +322,9 @@ def status_command_for_context() -> None:
     records no commit and the comparison is made against the document
     digests the index stored instead.
     """
+    from kennis.engine.context.groups import CONTEXT_COLLECTION
+    from kennis.render.words import count_of, describe_freshness
+
     corpus_root = existing_corpus().corpus_root
     status = api.bundle_status(corpus_root, require_bundle())
     display.operation("Context", str(status.path))
@@ -372,6 +382,8 @@ def reset_command(yes: bool) -> None:
     A file with a header kennis cannot read counts as yours. The two
     mistakes do not cost the same.
     """
+    from kennis.render.words import count_of
+
     corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
     # Asked, not restated. The prompt has to offer exactly what the reset
@@ -413,6 +425,8 @@ def _what_goes(owned: list[str], has_index: bool) -> str:
     conventions/naming.md and the context index?" is checkable at a glance
     and a bare count is not.
     """
+    from kennis.render.words import count_of
+
     parts: list[str] = []
     if owned:
         parts.append(owned[0] if len(owned) == 1 else count_of(len(owned), "document"))
@@ -427,6 +441,9 @@ def require_bundle() -> Path:
 
     Every context command but `init` starts here.
     """
+    from kennis.engine.context.bundle import find_bundle
+    from kennis.engine.errors import ContextNotFound
+
     bundle = find_bundle(Path.cwd())
     if bundle is None:
         raise ContextNotFound

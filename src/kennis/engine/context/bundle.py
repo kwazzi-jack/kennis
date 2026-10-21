@@ -26,12 +26,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from kennis import __version__
 from kennis.engine.atomic import replace_file
 from kennis.engine.errors import ContextNotFound, DocumentInvalid, InputError
-from kennis.engine.pack.schema import is_pack_id
+
+if TYPE_CHECKING:
+    pass
 
 BUNDLE_DIRNAME: Final = ".context"
 MANIFEST_FILENAME: Final = "bundle.json"
@@ -175,6 +177,8 @@ def declare_packs(bundle: Path, packs: Sequence[str]) -> tuple[str, ...]:
     The manifest is committed with the project, so this is the project's
     decision and a collaborator's clone shares it (#513).
     """
+    from kennis.engine.pack.schema import is_pack_id
+
     refused = [pack for pack in packs if not is_pack_id(pack)]
     if refused:
         raise InputError(

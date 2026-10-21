@@ -15,24 +15,20 @@ import shutil
 import textwrap
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisGroup
-from kennis.engine.errors import SettingsError
-from kennis.engine.setting_costs import COSTED, costs_of
-from kennis.engine.settings import (
-    Settings,
-    config_document,
-    config_path,
-    credentials_path,
-    load_settings,
-    overriding_variable,
-)
-from kennis.engine.setup import Question, apply_answers, questions_for, validate_answer
-from kennis.render.settings import describe_costs, describe_overridden
-from kennis.render.words import count_of, describe_setting
+
+if TYPE_CHECKING:
+    from kennis.engine.settings import (
+        Settings,
+    )
+    from kennis.engine.setup import (
+        Question,
+    )
 
 
 @click.group(name="config", cls=KennisGroup)
@@ -43,6 +39,8 @@ def config_group() -> None:
 @config_group.command(name="path")
 def path_command() -> None:
     """Where the configuration file lives."""
+    from kennis.engine.settings import config_path
+
     display.path(config_path())
 
 
@@ -69,6 +67,8 @@ def show_command() -> None:
     terminal, so the redirect above still writes a file with no escape codes
     in it.
     """
+    from kennis.engine.settings import config_document, config_path
+
     path = config_path()
     settings = _settings_in(path)
     display.toml(settings if settings else config_document())
@@ -105,6 +105,9 @@ def _settings_in(path: Path) -> str:
 @click.argument("key", required=False)
 def get_command(key: str | None) -> None:
     """One setting's value, or every setting when no key is given."""
+    from kennis.engine.settings import Settings, load_settings
+    from kennis.render.words import describe_setting
+
     settings = load_settings()
     if key is None:
         for name in Settings.model_fields:
@@ -124,6 +127,11 @@ def set_command(key: str, value: str) -> None:
     is one `load_settings` will accept on the next command rather than one
     that fails somewhere else later.
     """
+    from kennis.engine.setting_costs import COSTED, costs_of
+    from kennis.engine.settings import Settings, overriding_variable
+    from kennis.engine.setup import apply_answers
+    from kennis.render.settings import describe_costs, describe_overridden
+
     # The key checked against the defaults, not what is in force: a bad
     # value in the file or the environment refused every `set`, including
     # the one its own error named as the repair.
@@ -152,6 +160,10 @@ def init_command(defaults: bool) -> None:
     is written, every setting included, and an existing one is replaced
     only once you say so.
     """
+    from kennis.engine.settings import config_path, credentials_path
+    from kennis.engine.setup import apply_answers, questions_for
+    from kennis.render.words import count_of, describe_setting
+
     if not _may_replace(config_path()):
         return
     if defaults:
@@ -218,6 +230,8 @@ def _ask(question: Question) -> str:
     left only the short line it has to echo and read on, because it writes
     with `click.echo` and nothing it prints can be styled.
     """
+    from kennis.engine.setup import validate_answer
+
     _describe(question)
     while True:
         answered: str = click.prompt(
@@ -300,6 +314,8 @@ def _may_replace(path: Path) -> bool:
 
 
 def _write_defaults() -> None:
+    from kennis.engine.settings import config_document, config_path
+
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(config_document(), encoding="utf-8", newline="\n")
@@ -314,6 +330,9 @@ def _section_values(settings: Settings, section: str) -> dict[str, object]:
 
 
 def _value_of(settings: Settings, key: str) -> object:
+    from kennis.engine.errors import SettingsError
+    from kennis.engine.settings import Settings
+
     section, _, field = key.partition(".")
     if section not in Settings.model_fields:
         raise SettingsError(

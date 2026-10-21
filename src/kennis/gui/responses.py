@@ -22,7 +22,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 
 from kennis.context import Context, existing_corpus
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.docs.versions import project_versions
@@ -47,9 +47,7 @@ from kennis.holdings import (
     revision,
 )
 from kennis.render.words import JOB_KINDS
-from kennis.retrieval import (
-    EVERY_SCOPE,
-)
+from kennis.scopes import EVERY_SCOPE
 from kennis.service.jobs import Job
 
 _HERE: Final = Path(__file__).parent

@@ -8,17 +8,16 @@ same window to every tab.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand
-from kennis.render.words import (
-    SERVICE_STOPS_ITSELF,
-    TOKEN_IN_THE_ADDRESS,
-    waiting_for_another_version,
-)
+
+if TYPE_CHECKING:
+    pass
 
 
 @click.command(cls=KennisCommand, name="gui")
@@ -45,6 +44,11 @@ def gui_command(no_browser: bool, replace: bool) -> None:
     from kennis.context import existing_corpus
     from kennis.gui.browser import open_quietly
     from kennis.protocol.record import find_service
+    from kennis.render.words import (
+        SERVICE_STOPS_ITSELF,
+        TOKEN_IN_THE_ADDRESS,
+        waiting_for_another_version,
+    )
 
     corpus_root = existing_corpus().corpus_root
     if replace:

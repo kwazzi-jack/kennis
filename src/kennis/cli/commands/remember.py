@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
@@ -24,10 +25,9 @@ from kennis.cli.commands.corpus import report_restored
 from kennis.cli.sink import DisplaySink, say_waiting
 from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.corpus.layout import relative_to_corpus
-from kennis.engine.events import Outcome
-from kennis.engine.remember import INLINE_ORIGIN, RememberReport
-from kennis.render.words import index_state, needs_an_index
+
+if TYPE_CHECKING:
+    from kennis.engine.remember import RememberReport
 
 
 @click.command(name="remember")
@@ -98,6 +98,8 @@ def _remember_in_context(
     - the design says the bundle is committed with the project "if the user
     wants", and the wanting is theirs.
     """
+    from kennis.engine.events import Outcome
+
     if no_index:
         # Absent rather than present and ignored, which is the rule #169
         # states: `context index` does not exist yet, so nothing here could
@@ -132,6 +134,8 @@ def _text_and_origin(text: str | None, from_path: Path | None) -> tuple[str, str
     caller that supplied both meant one of them, and guessing which would
     silently discard the other.
     """
+    from kennis.engine.remember import INLINE_ORIGIN
+
     if text is not None and from_path is not None:
         raise display.CliError("pass the text as an argument or with --from, not both.")
     if from_path is not None:
@@ -148,6 +152,10 @@ def _text_and_origin(text: str | None, from_path: Path | None) -> tuple[str, str
 
 def _report(report: RememberReport) -> None:
     """One operation line, and the step that makes the note findable."""
+    from kennis.engine.corpus.layout import relative_to_corpus
+    from kennis.engine.events import Outcome
+    from kennis.render.words import index_state, needs_an_index
+
     if report.outcome is Outcome.UNCHANGED:
         display.operation(
             "Unchanged", f"{report.title} is already remembered", style="unchanged"

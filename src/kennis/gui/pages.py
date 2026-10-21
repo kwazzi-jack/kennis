@@ -24,12 +24,14 @@ import yaml
 
 from kennis.context import Context
 from kennis.engine.backup import BackupReport
-from kennis.engine.context.index import (
+from kennis.engine.context.groups import (
+    pack_group,
+    pack_of_group,
     project_group,
     project_of_group,
 )
 from kennis.engine.context.notes import bundle_documents
-from kennis.engine.context.packs import pack_files, pack_group, pack_of_group
+from kennis.engine.context.packs import pack_files
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
@@ -76,7 +78,6 @@ from kennis.render.hits import (
     Hit,
     Leg,
     Relevance,
-    ScoreStyle,
     best_lexical,
     docs_versions_of,
     relevance_phrase,
@@ -112,6 +113,7 @@ from kennis.render.packs import (
 )
 from kennis.render.refusals import refusal_fact, remedies_for_refusal
 from kennis.render.words import (
+    ScoreStyle,
     describe_busy_indexes,
     group_name,
 )

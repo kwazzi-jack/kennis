@@ -55,10 +55,9 @@ from kennis.engine.literature.identifiers import (
     PaperIdentifier,
     identifier_if_reference,
 )
+from kennis.engine.pack.versions import SCHEMA_VERSION
 
 type JsonSchema = dict[str, Any]
-
-SCHEMA_VERSION: Final = 1
 
 # Section 7. A trailing dash is permitted by the design's own pattern; the id
 # names a directory in the store and appears in `owner: pack:<id>`, and
@@ -488,7 +487,6 @@ def _field_paths(error: ValidationError) -> str:
 
 
 __all__ = [
-    "SCHEMA_VERSION",
     "ContentSource",
     "CorpusSection",
     "DocsEntry",

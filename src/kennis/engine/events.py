@@ -25,9 +25,16 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, Protocol
+from typing import ClassVar, Final, Protocol
 
 from kennis.engine.refusals import Refusal
+
+# The operation name a model fetch is reported under. Shared with the front
+# ends, which render this one `ItemStarted` where they render no other: a
+# fetch is a precondition of the operation rather than one of its items, so
+# no later report line accounts for it. Here, beside the events, so that a
+# client recognising it imports nothing of the embedding (#535).
+FETCH_MODEL: Final = "fetch-model"
 
 
 class Outcome(Enum):

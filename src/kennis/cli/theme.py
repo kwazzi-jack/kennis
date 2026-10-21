@@ -8,14 +8,16 @@ command-line package to get them.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from pygments.token import string_to_tokentype
 from rich.style import Style
 from rich.syntax import ANSISyntaxTheme, SyntaxTheme
 from rich.theme import Theme
 
-from kennis.render.theme import ROLES, SENTENCE_ROLES, STYLE_PREFIX
+if TYPE_CHECKING:
+    pass
+
 
 # rich's own progress style names, restated in the eight standard colours.
 _RICH_PROGRESS_STYLES: Final[dict[str, str]] = {
@@ -36,6 +38,8 @@ def rich_style_name(role: str) -> str:
     variant as `<role>.line` and because those five are the roles a call site
     names directly. Everything else is namespaced.
     """
+    from kennis.render.theme import SENTENCE_ROLES, STYLE_PREFIX
+
     return role if role in SENTENCE_ROLES else f"{STYLE_PREFIX}{role}"
 
 
@@ -71,6 +75,8 @@ def syntax_theme() -> SyntaxTheme:
     eight colours cannot carry the hundred distinctions a pygments style
     draws, and pretending otherwise would give six of them the same colour.
     """
+    from kennis.render.theme import ROLES
+
     # Annotated as rich spells it. pygments' `_TokenType` subclasses `tuple`
     # and rich types its map as `dict[tuple[str, ...], Style]`; a dict is
     # invariant in its key, so the widening has to be stated rather than
@@ -89,6 +95,8 @@ def rich_theme() -> Theme:
     variants and rich's progress styles are both derived from roles here, not
     declared beside them.
     """
+    from kennis.render.theme import ROLES, SENTENCE_ROLES
+
     styles: dict[str, Style] = {}
     for role, definition in ROLES.items():
         styles[rich_style_name(role)] = Style.parse(definition.rich_style())

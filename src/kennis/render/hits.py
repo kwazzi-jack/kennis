@@ -43,14 +43,15 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
-from kennis.engine.context.bundle import BUNDLE_DIRNAME
-from kennis.engine.context.index import is_bundle_group
-from kennis.engine.context.packs import pack_of_group
+from kennis.engine.context.groups import is_bundle_group, pack_of_group
 from kennis.engine.docs.versions import version_order
 from kennis.engine.rag.models import SearchResult
-from kennis.render.words import group_name, snippet_of
+from kennis.render.words import ScoreStyle, group_name, snippet_of
+
+if TYPE_CHECKING:
+    pass
 
 type Relevance = Literal["very high", "high", "medium", "low", "very low"]
 
@@ -70,9 +71,6 @@ LEGS: Final[tuple[Leg, ...]] = ("lexical", "meaning")
 # Both front ends print it, so the terminal, an agent and the window
 # all say the same thing. Concern #417.
 LEG_LABELS: Final[dict[Leg, str]] = {"lexical": "keywords", "meaning": "meaning"}
-type ScoreStyle = Literal["human", "raw", "none"]
-
-SCORE_STYLES: Final[tuple[str, ...]] = ("human", "raw", "none")
 
 _LEVELS: Final[tuple[Relevance, ...]] = (
     "very high",
@@ -286,10 +284,8 @@ __all__ = [
     "CALIBRATED_MODELS",
     "LEGS",
     "LEG_LABELS",
-    "SCORE_STYLES",
     "Leg",
     "Relevance",
-    "ScoreStyle",
     "basis_phrase",
     "hit_detail_parts",
     "hit_handle",
@@ -400,6 +396,8 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     arrived and split `meaning:` from `medium`. The join is still what
     the command line prints, byte for byte. Concern #380.
     """
+    from kennis.engine.context.bundle import BUNDLE_DIRNAME
+
     pack = pack_of_group(hit.collection)
     handle = (
         bundle_hit_handle(hit.result, bundle_name=hit.place or BUNDLE_DIRNAME)

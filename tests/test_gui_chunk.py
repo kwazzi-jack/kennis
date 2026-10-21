@@ -43,7 +43,7 @@ from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_bundle_document
 from kennis.gui.words import MARK_WITHHELD
-from kennis.retrieval import EVERY_SCOPE
+from kennis.scopes import EVERY_SCOPE
 
 TOKEN = "a-test-token"
 

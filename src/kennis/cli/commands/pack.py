@@ -9,6 +9,7 @@ and `status` act on the installed store - consuming. `validate` serves both.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
@@ -17,38 +18,15 @@ from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.sink import DisplaySink, reporting, say_waiting
 from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.pack.installed import (
-    InstalledPack,
-    PackListing,
-    overlaps_between,
-)
-from kennis.engine.pack.scaffold import DEFAULT_VERSION, scaffold_pack
-from kennis.engine.pack.update import PackUpdate, update_pack
-from kennis.engine.pack.validate import PackReport, validate_pack
-from kennis.render.machine_readable import pack_list_document
-from kennis.render.packs import (
-    describe_after_install,
-    describe_damage,
-    describe_declarations,
-    describe_holdings,
-    describe_install,
-    describe_installed,
-    describe_lost_source,
-    describe_overlap,
-    describe_problem,
-    describe_recorded,
-    describe_refusal,
-    describe_removal,
-    describe_undescribed,
-    describe_unreadable,
-    describe_unselected,
-    describe_update_needed,
-    describe_verdict,
-    describe_what_remove_cannot_reach,
-    describe_when,
-    remedy_for,
-)
-from kennis.render.words import count_of
+from kennis.engine.pack.versions import DEFAULT_VERSION
+
+if TYPE_CHECKING:
+    from kennis.engine.pack.installed import (
+        InstalledPack,
+        PackListing,
+    )
+    from kennis.engine.pack.update import PackUpdate
+    from kennis.engine.pack.validate import PackReport
 
 _DIGEST_KINDS = frozenset({"digest-mismatch", "digest-absent", "undigested"})
 
@@ -81,6 +59,12 @@ def add_command(path: Path) -> None:
     records what the provider declared. `corpus sync` and `context sync`
     converge the documents with it, and neither is built.
     """
+    from kennis.render.packs import (
+        describe_after_install,
+        describe_declarations,
+        describe_install,
+    )
+
     corpus_root = existing_corpus().corpus_root
     with DisplaySink() as shown:
         install = api.install_pack(
@@ -140,6 +124,8 @@ def init_command(
     and refuses an existing file: a pack holds declarations kennis did not
     write and cannot restore.
     """
+    from kennis.engine.pack.scaffold import scaffold_pack
+
     destination = path if path is not None else Path(f"{identifier}.ken.yml")
     with reporting() as events:
         written = scaffold_pack(
@@ -172,6 +158,9 @@ def update_command(path: Path) -> None:
     A run that finds nothing changed leaves the file byte-identical, so
     calling it on every release build is free.
     """
+    from kennis.engine.pack.update import update_pack
+    from kennis.render.packs import describe_recorded
+
     with reporting() as events:
         result = update_pack(path, events=events)
     if result.outcome == "unchanged":
@@ -191,6 +180,8 @@ def _say_what_was_left(result: PackUpdate) -> None:
     matters most: an author who has just added a `.csv` to the source and
     been told "Unchanged" has no other way to find out why.
     """
+    from kennis.render.packs import describe_undescribed, describe_unselected
+
     if result.unselected:
         display.detail(">", describe_unselected(result.unselected))
     if result.undescribed:
@@ -212,6 +203,8 @@ def validate_command(path: Path) -> None:
 
     Exits non-zero when anything is wrong, so a pipeline stops.
     """
+    from kennis.engine.pack.validate import validate_pack
+
     with reporting() as events:
         report = validate_pack(path, events=events)
     _report(report)
@@ -221,6 +214,14 @@ def validate_command(path: Path) -> None:
 
 def _report(report: PackReport) -> None:
     """Everything found, refusals first."""
+    from kennis.render.packs import (
+        describe_problem,
+        describe_refusal,
+        describe_update_needed,
+        remedy_for,
+    )
+    from kennis.render.words import count_of
+
     if report.refusal is not None:
         display.failure(describe_refusal(report.refusal))
         display.hint(remedy_for(report.refusal))
@@ -252,6 +253,8 @@ def _say_what_was_checked(report: PackReport) -> None:
     a forgotten `pack update` should be caught, and a bare "valid" would
     report the same word for two different amounts of checking.
     """
+    from kennis.render.packs import describe_verdict
+
     # Both verdicts are details of the same operation, so both sit in the
     # detail column. `>` is the marker `sink.marker_for` already gives a
     # skipped item, and the digest check is exactly what was skipped - not a
@@ -279,6 +282,9 @@ def list_command(*, as_json: bool) -> None:
     still a failure rather than an empty document, because "kennis cannot
     answer" and "kennis holds nothing" lead a provider to different things.
     """
+    from kennis.render.machine_readable import pack_list_document
+    from kennis.render.packs import describe_holdings, describe_installed
+
     if as_json:
         display.declare_stdout_a_payload()
     listing = api.pack_listing(existing_corpus().corpus_root)
@@ -317,6 +323,8 @@ def _report_unreadable(listing: PackListing) -> None:
     is no state file to repair from, and `add` would rewrite the
     directory without ever mentioning what was there.
     """
+    from kennis.render.packs import describe_unreadable
+
     display.note(describe_unreadable(listing.unreadable))
     for name in listing.unreadable:
         display.next_step(f"kennis pack remove {name}")
@@ -332,6 +340,8 @@ def status_command() -> None:
     told about is one nobody can correct. Reported here every run rather
     than once, inside an automated provider run nobody reads.
     """
+    from kennis.render.packs import describe_installed, describe_when
+
     listing = api.pack_listing(existing_corpus().corpus_root)
     for installed in listing.packs:
         display.operation(installed.state.pack_id, describe_installed(installed))
@@ -353,6 +363,8 @@ def _report_damage(installed: InstalledPack) -> None:
     repair from and the only answer is the provider's own run, which
     kennis cannot name because it is not a kennis command.
     """
+    from kennis.render.packs import describe_damage, describe_lost_source
+
     damage = describe_damage(installed)
     if damage is None:
         return
@@ -371,6 +383,10 @@ def _report_overlaps(listing: PackListing) -> None:
     belongs to the pair, and filing it under either one would say it twice
     or say it in the wrong place.
     """
+    from kennis.engine.pack.installed import overlaps_between
+    from kennis.render.packs import describe_overlap
+    from kennis.render.words import count_of
+
     found = overlaps_between(listing.packs)
     if not found:
         return
@@ -389,6 +405,8 @@ def remove_command(pack_id: str) -> None:
     checked out - kennis keeps no registry of your projects, so it cannot
     reach them. They converge when each one is next synchronised.
     """
+    from kennis.render.packs import describe_removal, describe_what_remove_cannot_reach
+
     corpus_root = existing_corpus().corpus_root
     with DisplaySink() as shown:
         removal = api.remove_pack(

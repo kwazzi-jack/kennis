@@ -21,6 +21,7 @@ classes the plan says cross, so a walk that silently stops early fails; and
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import datetime
 import enum
@@ -56,6 +57,31 @@ from kennis.engine.rag.models import Chunk, Filter, SearchResult
 from kennis.engine.refusals import Refusal, SameContent, SamePaper
 from kennis.engine.settings import Settings
 from kennis.protocol.wire import WireError, dump, load, load_error, wire_name
+
+
+def type_checking_names(module: types.ModuleType) -> dict[str, object]:
+    """The names a module imports under `if TYPE_CHECKING:`, imported.
+
+    A module a client loads names its heavy types for the type checker
+    alone (#535), so a signature resolves only as a type checker resolves
+    it: with those imports in its namespace. Production never evaluates
+    these signatures; this test reads them to find what crosses.
+    """
+    source = inspect.getsource(module)
+    names: dict[str, object] = {}
+    for node in ast.parse(source).body:
+        if (
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.Name)
+            and node.test.id == "TYPE_CHECKING"
+        ):
+            exec(
+                compile(ast.Module(body=node.body, type_ignores=[]), "<guard>", "exec"),
+                names,
+            )
+    names.pop("__builtins__", None)
+    return names
+
 
 SHARED_MODULES = (
     kennis.operations,
@@ -231,7 +257,10 @@ def reached() -> dict[type, str]:
                 continue
             if function.__module__ != module.__name__:
                 continue
-            for parameter, hint in typing.get_type_hints(function).items():
+            namespace = {**vars(module), **type_checking_names(module)}
+            for parameter, hint in typing.get_type_hints(
+                function, globalns=namespace
+            ).items():
                 visit(hint, f"{module.__name__}.{name}:{parameter}")
     visit(Event, "Event")
     visit(Refusal, "Refusal")

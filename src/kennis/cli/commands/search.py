@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final, get_args
+from typing import TYPE_CHECKING, Final, get_args
 
 import click
 
@@ -18,42 +18,18 @@ from kennis.cli import display
 from kennis.cli.group import KennisCommand
 from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.context import (
-    CONTEXT_COLLECTION,
-)
-from kennis.engine.context.bundle import find_bundle
-from kennis.engine.context.projects import present_bundles
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.corpus.schema import COLLECTION_NAMES
-from kennis.engine.rag.models import Filter
-from kennis.engine.rag.search import (
-    ChunkRange,
-    Mode,
-    parse_chunk_range,
-)
-from kennis.render.hits import (
-    SCORE_STYLES,
-    Hit,
-    ScoreStyle,
-    around,
-    basis_phrase,
-    best_lexical,
-    rendered_hit,
-    score_style_for,
-    summary_of,
-)
-from kennis.render.words import (
-    describe_document,
-    describe_lexical_fallback,
-    describe_skipped,
-    describe_span,
-    group_title,
-)
-from kennis.retrieval import (
-    EVERY_SCOPE,
-    SCOPE_NAMES,
-    Skipped,
-    Sweep,
-)
+from kennis.engine.rag.modes import Mode
+from kennis.render.words import SCORE_STYLES
+from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
+
+if TYPE_CHECKING:
+    from kennis.engine.rag.models import Filter
+    from kennis.engine.rag.search import ChunkRange
+    from kennis.render.hits import Hit
+    from kennis.render.words import ScoreStyle
+    from kennis.retrieval import Skipped, Sweep
 
 _MODES: Final[tuple[str, ...]] = get_args(Mode.__value__)
 
@@ -85,6 +61,8 @@ def _scopes(
     Duplicates and order in the value are discarded: the report's order is
     `SCOPE_NAMES` and nothing a caller writes should change it.
     """
+    from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
+
     asked = [part.strip() for part in value.split(",") if part.strip()]
     if not asked:
         raise click.BadParameter("name at least one scope, or 'all'")
@@ -187,6 +165,11 @@ def search_command(
     `context` outside a project is an error, while a sweep that finds no
     bundle simply reports what it did search.
     """
+    from kennis.engine.context.bundle import find_bundle
+    from kennis.engine.context.projects import present_bundles
+    from kennis.render.words import describe_lexical_fallback
+    from kennis.scopes import SCOPE_NAMES
+
     if group is not None and project is not None:
         raise display.CliError("--project is an alias for --group; pass one of them.")
     # A scope the reader named is a promise; one swept into is not.
@@ -228,6 +211,9 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     is biased by leg count besides (#229). Grouping states what kennis knows:
     it ranks within a collection, and across them it only presents.
     """
+    from kennis.render.hits import basis_phrase, best_lexical, rendered_hit, summary_of
+    from kennis.render.words import describe_skipped, group_title
+
     # Grouped by the command they share rather than one line per scope.
     # On a corpus with only notes indexed, a warning per collection is two
     # thirds of the output before the answer, and the reader learns the
@@ -289,6 +275,8 @@ def _by_resolution(skipped: Sequence[Skipped]) -> dict[tuple[str, bool], list[st
     the old fixture could not see, having only ever one scope to
     skip. Concern #341.
     """
+    from kennis.engine.corpus.schema import COLLECTION_NAMES
+
     corpus_scopes = [scope.name for scope in skipped if scope.name in COLLECTION_NAMES]
     grouped: dict[tuple[str, bool], list[str]] = {}
     for scope in skipped:
@@ -314,6 +302,9 @@ def _read_hint(hits: list[Hit]) -> None:
     line is already the path, and opening a file in your own project is not
     something kennis has a verb for.
     """
+    from kennis.engine.corpus.schema import COLLECTION_NAMES
+    from kennis.render.hits import around
+
     readable = next((hit for hit in hits if hit.collection in COLLECTION_NAMES), None)
     if readable is None:
         return
@@ -334,6 +325,8 @@ def _score_style(hits: list[Hit], asked: ScoreStyle) -> ScoreStyle:
     it into its payload or leave it out, so the choice does not belong
     beside the decision.
     """
+    from kennis.render.hits import score_style_for
+
     style, degraded = score_style_for(hits, asked)
     if degraded:
         display.note(
@@ -350,6 +343,8 @@ def _as_score_style(asked: str) -> ScoreStyle:
     `Choice` is built from `SCORE_STYLES`, so nothing else reaches here
     except through a settings file that pydantic has already checked.
     """
+    from kennis.render.words import SCORE_STYLES
+
     if asked not in SCORE_STYLES:
         raise display.CliError(f"unknown score style '{asked}'")
     return "raw" if asked == "raw" else "none" if asked == "none" else "human"
@@ -362,6 +357,8 @@ def _filters(group: str | None) -> list[Filter] | None:
     records `group` on every chunk, which is why this needs no knowledge of
     how the corpus is laid out.
     """
+    from kennis.engine.rag.models import Filter
+
     if group is None:
         return None
     return [Filter(field="group", op="glob", value=group)]
@@ -421,6 +418,9 @@ def read_command(
     less` both get the markdown and nothing else. A contract that changed
     with a flag would put a report line on the front of one of them.
     """
+    from kennis.engine.context.groups import CONTEXT_COLLECTION
+    from kennis.engine.rag.search import parse_chunk_range
+
     if collection == CONTEXT_COLLECTION:
         # Accepted by the option and refused here, rather than left to
         # click's "invalid choice: context". That message is accurate and
@@ -455,6 +455,8 @@ def _read_document(
     a pipe must not be given a report line in the middle of their file. The
     same split `config show` makes.
     """
+    from kennis.render.words import describe_document
+
     read = api.read_document(corpus_root, handle, collection, frontmatter=frontmatter)
     display.operation(
         "Read",
@@ -468,6 +470,8 @@ def _read_span(
     corpus_root: Path, handle: str, collection: str | None, *, chunks: ChunkRange
 ) -> None:
     """One range of a document's chunks, stitched out of the index."""
+    from kennis.render.words import describe_span
+
     read = api.read_passage(corpus_root, handle, collection, chunks=chunks)
     display.operation(
         "Read", describe_span(read.collection, read.span, read.title), stderr=True

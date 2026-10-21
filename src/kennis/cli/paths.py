@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from kennis.engine._glob import looks_like_pattern
+if TYPE_CHECKING:
+    pass
 
 
 def anchored(arguments: Sequence[str]) -> list[str]:
@@ -25,6 +27,8 @@ def anchored(arguments: Sequence[str]) -> list[str]:
 
 
 def _anchored(argument: str, here: Path) -> str:
+    from kennis.engine._glob import looks_like_pattern
+
     if "://" in argument:
         return argument
     path = Path(argument).expanduser()
