@@ -1,0 +1,3 @@
+$ read_docs {"requests": [{"document_id": "doc0000001"}]}
+--- error False
+doc0000001: no document 'doc0000001' in the docs collection. Run `kennis corpus list`.

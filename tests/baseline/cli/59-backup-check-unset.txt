@@ -1,0 +1,7 @@
+$ kennis backup check
+--- exit 1
+--- stdout
+error: no backup folder is set
+  hint: run `kennis config set backup.folder <folder>`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

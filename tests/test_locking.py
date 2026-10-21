@@ -1,21 +1,26 @@
-"""One writer per corpus, and a second one told so rather than left waiting.
+"""One writer per corpus, and a second one kept waiting until the first lets go.
 
-`timeout=0` is the whole design: a command that blocks gives the user a
-terminal that has stopped, with nothing said and nothing to press.
+The lock refused at once until 14e. Every write is now the service's, which
+takes the corpus lock only to publish (`kennis/publishing.py`), so a wait is
+the length of one publish - or of another kennis process's, which is the
+case this file exists for.
 """
 
 from __future__ import annotations
 
-import os
+import logging
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from kennis.engine.errors import CorpusBusy
 from kennis.engine.locking import corpus_lock, lock_path
+
+_SETTLE = 0.5
+_PATIENCE = 30.0
 
 
 def test_a_lock_can_be_taken_and_released(tmp_path: Path):
@@ -26,20 +31,36 @@ def test_a_lock_can_be_taken_and_released(tmp_path: Path):
         pass
 
 
-def test_a_second_holder_is_refused_rather_than_blocked(tmp_path: Path):
-    with corpus_lock(tmp_path), pytest.raises(CorpusBusy), corpus_lock(tmp_path):
-        pass
+def test_a_second_holder_waits_and_then_holds(tmp_path: Path):
+    """Ordered by two events - the first holder letting go, the second taking
+    hold - and checked between them (#63): the waiter must not hold the
+    corpus while the first does."""
+    holding = threading.Event()
+    let_go = threading.Event()
+    taken = threading.Event()
 
+    def first() -> None:
+        with corpus_lock(tmp_path):
+            holding.set()
+            let_go.wait(timeout=_PATIENCE)
 
-def test_the_refusal_names_what_to_do(tmp_path: Path):
-    with (
-        corpus_lock(tmp_path),
-        pytest.raises(CorpusBusy) as raised,
-        corpus_lock(tmp_path),
-    ):
-        pass
+    def second() -> None:
+        with corpus_lock(tmp_path):
+            taken.set()
 
-    assert raised.value.__notes__
+    holder = threading.Thread(target=first, daemon=True)
+    holder.start()
+    assert holding.wait(timeout=_PATIENCE)
+    waiter = threading.Thread(target=second, daemon=True)
+    waiter.start()
+
+    assert not taken.wait(timeout=_SETTLE), (
+        "the waiter held the corpus beside the holder"
+    )
+    let_go.set()
+    assert taken.wait(timeout=_PATIENCE), "the waiter never took the corpus"
+    holder.join(timeout=_PATIENCE)
+    waiter.join(timeout=_PATIENCE)
 
 
 def test_the_lock_is_released_when_the_body_raises(tmp_path: Path):
@@ -52,26 +73,30 @@ def test_the_lock_is_released_when_the_body_raises(tmp_path: Path):
         pass
 
 
-def test_a_second_process_is_refused(tmp_path: Path):
+def test_a_second_process_waits_for_the_first(tmp_path: Path):
     """The case the lock exists for. A thread-local guard would pass every
-    test above and none of this one."""
+    test above and none of this one: the child must not report holding the
+    corpus while this process holds it, and must once it lets go."""
+    acquired = tmp_path / "acquired"
     program = (
-        "import sys;"
-        "from kennis.engine.locking import corpus_lock;"
-        "from kennis.engine.errors import CorpusBusy;"
-        f"\ntry:\n    ctx = corpus_lock({str(tmp_path)!r})\n    ctx.__enter__()\n"
-        "    print('acquired')\nexcept CorpusBusy:\n    print('busy')\n"
+        "from kennis.engine.locking import corpus_lock\n"
+        f"with corpus_lock({str(tmp_path)!r}):\n"
+        f"    open({str(acquired)!r}, 'w').close()\n"
     )
     with corpus_lock(tmp_path):
-        completed = subprocess.run(
+        child = subprocess.Popen(
             [sys.executable, "-c", program],
-            capture_output=True,
-            text=True,
-            timeout=30,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
         )
+        time.sleep(2 * _SETTLE)
+        held_beside = acquired.exists()
+    _, errors = child.communicate(timeout=60)
 
-    assert completed.stdout.strip() == "busy", completed.stderr
+    assert not held_beside, "the child held the corpus beside this process"
+    assert child.returncode == 0, errors.decode("utf-8", "replace")
+    assert acquired.exists(), "the child never took the corpus"
 
 
 def test_the_lock_file_sits_beside_the_corpus(tmp_path: Path):
@@ -96,86 +121,35 @@ def test_two_corpora_do_not_contend(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Real processes, real commands
+# Real processes
 # ---------------------------------------------------------------------------
-#
-# `test_a_second_process_is_refused` above spawns a python snippet and is
-# real - injecting a per-process lock file fails it. What it does not cover
-# is the case a user actually meets: two `kennis` commands, started at the
-# same moment, one of them losing. Concern #109 item 2.
-
-
-def test_a_real_command_is_refused_while_the_corpus_is_held(tmp_path: Path):
-    """The whole path, not the lock alone: the command must exit non-zero
-    and say which corpus is busy, rather than block or crash."""
-    corpus = tmp_path / "corpus"
-    subprocess.run(
-        [str(Path(sys.executable).parent / "kennis"), "corpus", "init"],
-        env={**os.environ, "KENNIS_CORPUS_ROOT": str(corpus)},
-        capture_output=True,
-        text=True,
-        timeout=120,
-        stdin=subprocess.DEVNULL,
-        check=True,
-    )
-    note = tmp_path / "a note.md"
-    note.write_text("# A note\n\nBody.\n", encoding="utf-8")
-
-    with corpus_lock(corpus):
-        completed = subprocess.run(
-            [
-                str(Path(sys.executable).parent / "kennis"),
-                "corpus",
-                "add",
-                "-n",
-                str(note),
-            ],
-            env={**os.environ, "KENNIS_CORPUS_ROOT": str(corpus)},
-            capture_output=True,
-            text=True,
-            timeout=120,
-            stdin=subprocess.DEVNULL,
-        )
-
-    output = completed.stdout + completed.stderr
-    assert completed.returncode != 0, output
-    assert "busy" in output.lower() or "another kennis command" in output.lower()
-    assert str(corpus) in output
 
 
 def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
-    """A genuine race: eight processes start together and fight for it.
+    """A genuine race: eight processes start together and each holds it in
+    turn.
 
     Each writes `in` on acquiring and `out` on releasing, into one journal
-    that only the holder writes; a refused one writes a file of its own,
-    because seven refusals appending to one file at once lose lines on
-    Windows, where an append is a seek and a write. Mutual exclusion is
-    the property that no `in` follows another `in` without an `out` between
-    them - which is what a lock is *for*, and which the ordered tests above
-    cannot observe because they never contend.
+    that only the holder writes. Mutual exclusion is the property that no
+    `in` follows another `in` without an `out` between them. The eight
+    starts are spread over a few milliseconds and each holder sleeps 200ms,
+    so a broken lock lets them overlap and the walk below finds it; every
+    process must also have held it, since a waiter is never turned away.
     """
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     journal = tmp_path / "journal.txt"
-    refusals = tmp_path / "refusals"
-    refusals.mkdir()
     program = (
-        "import os, sys, time\n"
+        "import time\n"
         "from kennis.engine.locking import corpus_lock\n"
-        "from kennis.engine.errors import CorpusBusy\n"
         f"journal = {str(journal)!r}\n"
-        f"root = {str(corpus)!r}\n"
-        f"refusals = {str(refusals)!r}\n"
         "def note(what):\n"
         "    with open(journal, 'a') as handle:\n"
         "        handle.write(what + '\\n')\n"
-        "try:\n"
-        "    with corpus_lock(root):\n"
-        "        note('in')\n"
-        "        time.sleep(0.2)\n"
-        "        note('out')\n"
-        "except CorpusBusy:\n"
-        "    open(os.path.join(refusals, str(os.getpid())), 'w').close()\n"
+        f"with corpus_lock({str(corpus)!r}):\n"
+        "    note('in')\n"
+        "    time.sleep(0.2)\n"
+        "    note('out')\n"
     )
 
     running = [
@@ -189,8 +163,7 @@ def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
     ]
     # `communicate` rather than `wait`, because it closes the pipes - an
     # unclosed one is a ResourceWarning and this suite turns warnings into
-    # errors. It also makes a child that died before reaching the lock say so,
-    # which would otherwise be indistinguishable from one that was refused.
+    # errors.
     failures: list[str] = []
     for process in running:
         _, errors = process.communicate(timeout=120)
@@ -199,19 +172,7 @@ def test_no_two_processes_hold_the_corpus_at_once(tmp_path: Path):
     assert not failures, failures
 
     entries = journal.read_text(encoding="utf-8").split()
-    refused = len(list(refusals.iterdir()))
-    assert entries, "no process recorded anything"
-    assert entries.count("in") + refused == 8
-    assert entries.count("in") >= 1, f"nobody got the lock: {entries}"
-    # The assertion that discriminates. Measured over ten runs, the journal is
-    # always one `in` and seven refusals: the holder sleeps 200ms and the eight
-    # starts are spread over a few, so every other process arrives while it is
-    # held. A refusal is therefore proof the processes really did overlap -
-    # and it is what a broken lock loses, because then all eight acquire and
-    # none is refused. Without it the interleaving loop below passes for free,
-    # having only one `in` to look at.
-    assert refused >= 1, f"no process ever contended: {entries}"
-
+    assert entries.count("in") == 8, entries
     held = False
     for entry in entries:
         if entry == "in":
@@ -235,6 +196,12 @@ def test_a_killed_process_does_not_leave_the_corpus_locked(tmp_path: Path):
         f"    open({str(ready)!r}, 'w').close()\n"
         "    time.sleep(60)\n"
     )
+    taken = threading.Event()
+
+    def waiting() -> None:
+        with corpus_lock(corpus):
+            taken.set()
+
     with subprocess.Popen(
         [sys.executable, "-c", program],
         stdout=subprocess.PIPE,
@@ -247,9 +214,9 @@ def test_a_killed_process_does_not_leave_the_corpus_locked(tmp_path: Path):
                     break
                 time.sleep(0.05)
             assert ready.exists(), "the holder never acquired the lock"
-
-            with pytest.raises(CorpusBusy), corpus_lock(corpus):
-                pass
+            waiter = threading.Thread(target=waiting, daemon=True)
+            waiter.start()
+            assert not taken.wait(timeout=_SETTLE), "taken while the holder lives"
         finally:
             # Unconditional: the holder sleeps for a minute, so leaving it
             # alive after a failed assertion would hang the suite in
@@ -257,5 +224,42 @@ def test_a_killed_process_does_not_leave_the_corpus_locked(tmp_path: Path):
             holder.kill()
 
     # The lock must now be free without anything having cleaned up.
-    with corpus_lock(corpus):
-        pass
+    assert taken.wait(timeout=_PATIENCE), "the corpus stayed locked after the kill"
+    waiter.join(timeout=_PATIENCE)
+
+
+def test_a_wait_is_logged_before_it_begins(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    """A service waiting at its start answers no client, and each client
+    points at the log; found by hand in 14e, when a stray process held the
+    corpus and the log said nothing. Asserted while the wait is under way,
+    and an uncontended lock logs nothing."""
+    holding = threading.Event()
+    let_go = threading.Event()
+
+    def holder() -> None:
+        with corpus_lock(tmp_path):
+            holding.set()
+            let_go.wait(timeout=_PATIENCE)
+
+    def taking_and_leaving() -> None:
+        with corpus_lock(tmp_path):
+            pass
+
+    with caplog.at_level(logging.WARNING, logger="kennis.engine.locking"):
+        with corpus_lock(tmp_path):
+            pass
+        assert caplog.records == []
+        first = threading.Thread(target=holder, daemon=True)
+        first.start()
+        assert holding.wait(timeout=_PATIENCE)
+        waiter = threading.Thread(target=taking_and_leaving, daemon=True)
+        waiter.start()
+        time.sleep(_SETTLE)
+        logged_while_waiting = [record.getMessage() for record in caplog.records]
+        let_go.set()
+        first.join(timeout=_PATIENCE)
+        waiter.join(timeout=_PATIENCE)
+
+    assert any("holds the corpus" in message for message in logged_while_waiting)

@@ -9,7 +9,8 @@
 <nav class="doc-bar" aria-label="{{ crumbs_label }}">
   <span class="crumbs">
     {% if search_crumb %}<a href="/?q={{ question | urlencode }}">{{ search_crumb }}</a><span class="sep">/</span>{% endif %}
-    <a class="crumb-collection" href="/collection/{{ document.collection }}">{{ document.collection }}</a><span class="sep">/</span>
+    {% set crumb_name, crumb_href = document.crumb %}
+    {% if crumb_href %}<a class="crumb-collection" href="{{ crumb_href }}">{{ crumb_name }}</a>{% else %}<span class="crumb-collection">{{ crumb_name }}</span>{% endif %}<span class="sep">/</span>
     {% if document.group %}<span>{{ document.group }}</span><span class="sep">/</span>{% endif %}
     {# The title, which is what the reader recognises; the handle in its
        tooltip. It ended in the id. #}
@@ -52,8 +53,11 @@
     <summary>{{ icon("chevron-right") }}{{ details_heading }}</summary>
     <dl>
       {% for detail in document.details %}
-      <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{% if detail.href %}<a href="{{ detail.href }}" target="_blank" rel="noopener noreferrer">{{ detail.value }}</a>{% else %}{{ detail.value }}{% endif %}{% if detail.copyable %} <button type="button" class="ghost copy" data-copy="{{ detail.value }}" data-copied="{{ copied_label }}" hidden>{{ copy_label }}</button>{% endif %}</dd>
+      <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{% if detail.href %}<a href="{{ detail.href }}"{% if detail.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ detail.value }}</a>{% else %}{{ detail.value }}{% endif %}{% if detail.copyable %} <button type="button" class="ghost copy" data-copy="{{ detail.value }}" data-copied="{{ copied_label }}" hidden>{{ copy_label }}</button>{% endif %}</dd>
       {% endfor %}
+      {% if document.other_versions %}
+      <dt>{{ also_held }}</dt><dd class="other-versions">{% for version, href in document.other_versions %}<a href="{{ href }}">{{ version }}</a>{% endfor %}</dd>
+      {% endif %}
     </dl>
   </details>
   {% if question %}

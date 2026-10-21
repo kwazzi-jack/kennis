@@ -1,0 +1,430 @@
+[
+  {
+    "description": "What the corpus holds, by collection.\n\nCall this to learn what exists before searching for it: which docs\nprojects are present, whether a paper was ever added, how much is in\neach collection. It needs no index, so it answers on a corpus that\nhas never been indexed.\n\n`collection` narrows to one of `notes`, `literature` or `docs`.\n`detail=\"documents\"` adds a row per document with the `document_id`\na `read_*` tool takes - copy one from here, never construct it.\n\nThe `context` bundle is not listed: it lives in the project's\nrepository and its files are read with native file tools.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "collection": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "detail": {
+          "default": "summary",
+          "enum": [
+            "summary",
+            "documents"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_corpus",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Search notes - the user's own material, machine-global.\n\nReach for this when a question is about *this user*: their\nconventions, their decisions, something they asked kennis to\nremember. Not upstream documentation and not published papers.\n\nReturns ranked hits, each with a relevance band, a `document_id` and\n`chunk` to pass to `read_notes`, and a snippet. Search locates; read\nexpands.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "top_k": {
+          "default": 5,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "name": "search_notes",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Search the literature collection - papers, with their metadata.\n\nReach for this to ground an explanation of *why* a method works, or\nto justify a choice, rather than answering from general knowledge.\nCite what comes back.\n\nReturns ranked hits with a `document_id` and `chunk` for\n`read_literature`, which expands a hit that is on-topic but cut off.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "top_k": {
+          "default": 5,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "name": "search_literature",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Search the docs collection - documentation sites, one folder per\nproject and version.\n\nReach for this for upstream usage, configuration and syntax. Call\n`list_corpus` first if you need to know which projects and versions\nare held.\n\nEach project's current version is searched unless `version` names\nothers: `\"2.12\"` for every project holding 2.12, `\"pydantic=2.12\"`\nfor one project's, `\"all\"` for every version held. Each hit names\nits version; a passage equal in several versions is shown once,\nnaming each.\n\nReturns ranked hits with a `document_id` and `chunk` for `read_docs`.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "top_k": {
+          "default": 5,
+          "type": "integer"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "name": "search_docs",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses comes after, with a `pack=` handle and the\npassage itself.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "projects": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "default": ""
+        },
+        "question": {
+          "type": "string"
+        },
+        "top_k": {
+          "default": 5,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "name": "search_context",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Read passages from notes - the user's own material.\n\nCall this on a `document_id` from `search_notes` or `list_corpus`.\nPass the hit's `chunk` as `chunk_index` to expand that passage;\nomit it to read the whole note.\n\nSeveral requests are answered in one call, and one that fails does\nnot cost the others.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "items": {
+            "description": "One document to read, and how much of it.\n\n`chunk_index` is a hit's `chunk`, copied from a search answer.\nOmitted, the whole document is read - which needs no index, so a\ndocument added but never indexed is still readable.\n\n`before` and `after` widen the window around `chunk_index`, in\nchunks. The defaults give the hit with one chunk either side, which\nis usually enough to recover a sentence cut at a chunk boundary.",
+            "properties": {
+              "after": {
+                "default": 1,
+                "type": "integer"
+              },
+              "before": {
+                "default": 1,
+                "type": "integer"
+              },
+              "chunk_index": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "document_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "type": "object"
+    },
+    "name": "read_notes",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Read passages from the literature collection - papers.\n\nCall this on a `document_id` from `search_literature`. Expanding a\nhit before citing it is the point: a snippet is enough to rank a\npaper and not enough to quote it.\n\nSeveral requests are answered in one call.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "items": {
+            "description": "One document to read, and how much of it.\n\n`chunk_index` is a hit's `chunk`, copied from a search answer.\nOmitted, the whole document is read - which needs no index, so a\ndocument added but never indexed is still readable.\n\n`before` and `after` widen the window around `chunk_index`, in\nchunks. The defaults give the hit with one chunk either side, which\nis usually enough to recover a sentence cut at a chunk boundary.",
+            "properties": {
+              "after": {
+                "default": 1,
+                "type": "integer"
+              },
+              "before": {
+                "default": 1,
+                "type": "integer"
+              },
+              "chunk_index": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "document_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "type": "object"
+    },
+    "name": "read_literature",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Read passages from the docs collection - documentation sites.\n\nCall this on a `document_id` from `search_docs` or `list_corpus`,\nwith the hit's `chunk` as `chunk_index`. A configuration key or a\nsignature usually needs the surrounding paragraph, which is what\n`before` and `after` widen to.\n\nSeveral requests are answered in one call.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "items": {
+            "description": "One document to read, and how much of it.\n\n`chunk_index` is a hit's `chunk`, copied from a search answer.\nOmitted, the whole document is read - which needs no index, so a\ndocument added but never indexed is still readable.\n\n`before` and `after` widen the window around `chunk_index`, in\nchunks. The defaults give the hit with one chunk either side, which\nis usually enough to recover a sentence cut at a chunk boundary.",
+            "properties": {
+              "after": {
+                "default": 1,
+                "type": "integer"
+              },
+              "before": {
+                "default": 1,
+                "type": "integer"
+              },
+              "chunk_index": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "document_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "type": "object"
+    },
+    "name": "read_docs",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Write something down so it is still here in a later session.\n\n**This is durable and it is not a scratchpad.** A note goes into the\nuser's corpus, is committed to its history, and will come back in\nsearches months from now. Use it for what the user has decided,\ncorrected or asked you to keep - not for working state, not for a\nsummary of what you just did, and not without their say-so.\n\n`to_context=True` writes into this project's `.context/` bundle\ninstead: for a convention or a decision that belongs to this\nrepository rather than to the user everywhere. It fails when there\nis no bundle here rather than falling back to notes, because\nrecording a project decision somewhere machine-global and reporting\nsuccess would be worse than not recording it.\n\n`title` overrides the first line, and `group` puts the note in a\nsubdirectory. The answer carries the `document_id` a `read_*` tool\ntakes.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "to_context": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "remember",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  }
+]

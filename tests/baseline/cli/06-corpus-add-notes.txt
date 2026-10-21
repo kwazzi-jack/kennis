@@ -1,0 +1,7 @@
+$ kennis corpus add -n sources/calibration.md sources/imaging.md
+--- exit 0
+--- stdout
+Added 2 documents in <elapsed>
+  + calibration
+  + imaging
+--- stderr

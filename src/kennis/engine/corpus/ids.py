@@ -124,10 +124,13 @@ def natural_key_for_literature(
     return None
 
 
-def natural_key_for_docs(*, project: str, page: str) -> str:
+def natural_key_for_docs(*, project: str, version: str | None, page: str) -> str:
     """The natural key of one documentation page.
 
-    A page is identified by which project it belongs to and which page of it
-    this is, which is stable across a re-crawl in a way a URL is not.
+    A page is identified by which project it belongs to, which version of it,
+    and which page of that version this is, which is stable across a re-crawl
+    in a way a URL is not (#489). A page written before versions has none.
     """
-    return f"docs:{project}/{page}"
+    if version is None:
+        return f"docs:{project}/{page}"
+    return f"docs:{project}/{version}/{page}"

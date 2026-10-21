@@ -86,6 +86,20 @@ def relative_to_corpus(path: Path, corpus_root: Path) -> str:
         return path.as_posix()
 
 
+# Where an operation prepares (`engine/staging.py`): `.git/<this>/<id>/`.
+STAGING_DIRNAME: Final = "kennis-staging"
+
+
+def published_corpus(root: Path) -> Path:
+    """The corpus `root` belongs to: itself, or for a mirror an operation is
+    preparing in, the corpus it mirrors. What a write must recognise as
+    kennis's own is the real corpus, and the mirror sits inside it."""
+    staging = root.parent
+    if staging.name == STAGING_DIRNAME and staging.parent.name == ".git":
+        return staging.parent.parent
+    return root
+
+
 def index_root(corpus_root: Path) -> Path:
     """Where the built indexes live: one directory per collection beneath it.
 

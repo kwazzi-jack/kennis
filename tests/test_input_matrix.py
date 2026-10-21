@@ -332,7 +332,7 @@ def test_docs_takes_a_local_file_filed_into_a_project(
     report = add_docs(
         pages,
         [str(a_file(tmp_path, "tutorial.md"))],
-        AddOptions(project="numpy", request_delay_seconds=0),
+        AddOptions(project="numpy", version="2.0", request_delay_seconds=0),
     )
 
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]

@@ -14,6 +14,7 @@ printed at someone who asked a question.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import click
 
@@ -30,11 +31,13 @@ from kennis.cli.commands import (
     remember_command,
     search_command,
     serve_command,
+    service_group,
 )
 from kennis.cli.group import KennisGroup
-from kennis.engine.errors import SettingsError
-from kennis.engine.settings import load_settings
 from kennis.logs import start_logging
+
+if TYPE_CHECKING:
+    pass
 
 
 def _logging_settings() -> dict[str, int]:
@@ -44,6 +47,9 @@ def _logging_settings() -> dict[str, int]:
     the log is how the reason gets read, and the command reports the
     failure itself when it loads the settings again.
     """
+    from kennis.engine.errors import SettingsError
+    from kennis.engine.settings import load_settings
+
     try:
         section = load_settings().logging
     except SettingsError:
@@ -53,6 +59,24 @@ def _logging_settings() -> dict[str, int]:
         "max_bytes": section.max_bytes,
         "backup_count": section.backup_count,
     }
+
+
+def _say_unknown_settings() -> None:
+    """Name the file's settings that kennis does not read (#480).
+
+    On stderr always, so no report's bytes change: `search` stands for
+    what an agent sees, `config show` is a TOML payload, and under `serve`
+    stdout is the wire.
+    """
+    from kennis.engine.settings import config_path, unknown_settings
+    from kennis.render.settings import describe_unknown_settings
+
+    keys = unknown_settings()
+    if not keys:
+        return
+    sentence = describe_unknown_settings(keys, str(config_path()))
+    logging.getLogger("kennis.cli").warning("%s", sentence)
+    display.note(sentence, stderr=True)
 
 
 @click.group(cls=KennisGroup, context_settings={"help_option_names": ["-h", "--help"]})
@@ -69,6 +93,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
     # wrong and it has to already exist by then.
     start_logging(**_logging_settings())
     logging.getLogger("kennis.cli").info("kennis %s", __version__)
+    _say_unknown_settings()
     # Which command, with which parameters, is logged by `KennisCommand` -
     # after this callback, so the handler above already exists. Click 8.5
     # exposes no useful remainder at the group level, and each command
@@ -86,6 +111,7 @@ main.add_command(read_command)
 main.add_command(remember_command)
 main.add_command(gui_command)
 main.add_command(serve_command)
+main.add_command(service_group)
 
 
 if __name__ == "__main__":

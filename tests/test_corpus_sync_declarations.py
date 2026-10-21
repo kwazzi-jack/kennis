@@ -12,6 +12,7 @@ Nothing here reaches a host: every client is an `httpx.MockTransport`.
 from __future__ import annotations
 
 import shutil
+import stat
 from pathlib import Path
 
 import httpx
@@ -204,6 +205,19 @@ def test_the_fetched_paper_is_owned_by_the_pack(corpus: Path, tmp_path: Path):
     assert papers_in(corpus)[0].frontmatter.owner == "pack:alpha"
 
 
+def test_a_pack_s_paper_stays_writable_so_its_text_can_be_corrected(
+    corpus: Path, tmp_path: Path
+):
+    """Everything else a pack supplies is written read-only (#514); a
+    paper's converted text may be corrected in place, keeping its citekey,
+    with git recording the correction (Brian, 2026-10-18)."""
+    installed(corpus, tmp_path, body=PAPER)
+
+    synced(corpus)
+
+    assert papers_in(corpus)[0].md_path.stat().st_mode & stat.S_IWRITE
+
+
 def test_a_second_sync_does_not_fetch_the_paper_again(corpus: Path, tmp_path: Path):
     """An unchanged declaration is `keep`, and a refetch would cost a
     request per paper on every provider run."""
@@ -338,8 +352,11 @@ def test_an_unrecognised_owner_refuses_before_anything_is_fetched(
     installed(corpus, tmp_path, body=PAPER)
     synced(corpus)
     path = papers_in(corpus)[0].md_path
+    written = path.read_text()
+    # Quoted since #529, because the value holds a colon.
+    assert "owner: 'pack:alpha'" in written
     path.write_text(
-        path.read_text().replace("owner: pack:alpha", "owner: managed_by:alpha"),
+        written.replace("owner: 'pack:alpha'", "owner: 'managed_by:alpha'"),
         encoding="utf-8",
     )
 
@@ -696,7 +713,9 @@ def test_a_paper_the_user_owns_stays_where_the_user_filed_it(
     assert literature_folder(paper, corpus) == "."
 
 
-def test_a_docs_project_is_still_one_folder_by_its_name(corpus: Path, tmp_path: Path):
+def test_a_docs_project_is_one_folder_by_its_name_holding_its_version(
+    corpus: Path, tmp_path: Path
+):
     installed(corpus, tmp_path, body=DOCS)
 
     synced(corpus)
@@ -705,7 +724,20 @@ def test_a_docs_project_is_still_one_folder_by_its_name(corpus: Path, tmp_path: 
         page.md_path.parent.relative_to(corpus / "docs").as_posix()
         for page in pages_in(corpus)
     }
-    assert folders == {"stimela"}
+    assert folders == {"stimela/latest"}
+
+
+def test_a_pack_s_named_version_decides_the_folder(corpus: Path, tmp_path: Path):
+    """#489: an entry's `version` wins over the one in its address."""
+    installed(corpus, tmp_path, body=DOCS + '      version: "2.2"\n')
+
+    synced(corpus)
+
+    folders = {
+        page.md_path.parent.relative_to(corpus / "docs").as_posix()
+        for page in pages_in(corpus)
+    }
+    assert folders == {"stimela/2.2"}
 
 
 # ---------------------------------------------------------------------------

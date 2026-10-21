@@ -19,13 +19,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 import yaml
 
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.repository import Repository
-from kennis.engine.rag.binding import document_digest
+
+if TYPE_CHECKING:
+    pass
 
 type IndexState = Literal["in step", "stale", "unverifiable"]
 
@@ -215,6 +217,8 @@ def _digest_of(root: Path, document: str) -> str | None:
     The same digest `build_index` recorded, so the two are comparable: taken
     over the body alone, because that is what the chunker was given.
     """
+    from kennis.engine.rag.binding import document_digest
+
     for candidate in (root / document, root / document / _WRAPPED):
         if not candidate.is_file():
             continue

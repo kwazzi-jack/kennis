@@ -1,0 +1,8 @@
+$ kennis context reset
+--- exit 0
+--- stdout
+Remove the context index? [y/N]: y
+your own files were left untouched, which was all of them
+Removed the context index
+  hint: run `kennis context index` to build it again
+--- stderr

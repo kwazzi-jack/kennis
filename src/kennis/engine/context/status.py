@@ -29,7 +29,8 @@ from pathlib import Path
 import yaml
 
 from kennis.engine.context.bundle import index_root_for
-from kennis.engine.context.index import CONTEXT_COLLECTION, BundleLoader
+from kennis.engine.context.groups import CONTEXT_COLLECTION
+from kennis.engine.context.index import BundleLoader
 from kennis.engine.context.notes import bundle_documents
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.freshness import Freshness

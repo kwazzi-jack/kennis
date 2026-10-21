@@ -13,11 +13,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from kennis.engine.context import (
-    bundle_documents,
-    init_bundle,
-    remember_in_bundle,
-)
+from kennis.engine.context.bundle import init_bundle
+from kennis.engine.context.notes import bundle_documents, remember_in_bundle
 from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
 

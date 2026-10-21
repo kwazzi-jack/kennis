@@ -28,18 +28,24 @@ from fastapi.testclient import TestClient
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.sync import CorpusSync
-from kennis.engine.events import EventSink, ItemFinished, ItemStarted, Outcome
+from kennis.engine.events import (
+    FETCH_MODEL,
+    EventSink,
+    ItemFinished,
+    ItemStarted,
+    Outcome,
+)
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.resolve import Action
-from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.engine.refusals import Quoted
 from kennis.gui import words
 from kennis.gui.app import build_app
-from kennis.gui.jobs import Elapsed, Jobs
 from kennis.gui.pages import ShownItem, ShownJob, shown_add, shown_corpus_sync
 from kennis.gui.responses import TEMPLATES
 from kennis.gui.stream import as_message
-from kennis.render.words import running_for
+from kennis.protocol.progress import Elapsed
+from kennis.render.words import JOB_KINDS, running_for
+from kennis.service.jobs import Jobs
 
 TOKEN = "a-test-token"
 STATIC = Path(__file__).parent.parent / "src" / "kennis" / "gui" / "static"
@@ -157,11 +163,16 @@ def test_the_stream_reports_elapsed_time_while_a_job_runs():
     jobs = Jobs()
     holding = threading.Event()
     job = jobs.start("add", lambda events: holding.wait(20))
-    releaser = threading.Timer(2.6, holding.set)
-    releaser.start()
 
+    # Released by the second tick, not by a timer: a stream that began late
+    # on a slow runner would see one tick before a fixed release (#533).
     began = time.monotonic()
-    ticks = [item for item in jobs.stream(job) if isinstance(item, Elapsed)]
+    ticks: list[Elapsed] = []
+    for item in jobs.stream(job):
+        if isinstance(item, Elapsed):
+            ticks.append(item)
+            if len(ticks) == 2:
+                holding.set()
     took = time.monotonic() - began
 
     assert len(ticks) >= 2
@@ -234,7 +245,7 @@ def test_the_outcome_line_does_not_repeat_its_name():
     """It read "= c.md - c.md: unchanged"; the name is first already."""
     action = Action(address="c.md", verdict="keep", declaration=None, existing=None)
     shown = shown_corpus_sync(
-        CorpusSync(actions=(action,), counts={"keep": 1}, deferred=(), edited=())
+        CorpusSync(actions=(action,), counts={"keep": 1}, deferred=(), copied=())
     )
 
     assert shown.items[0].detail == "unchanged"
@@ -250,7 +261,7 @@ def test_a_sync_outcome_names_each_document_where_it_is():
             actions=(action,),
             counts={"keep": 1},
             deferred=(),
-            edited=(),
+            copied=(),
             places={"c.md": "notes/boepie/Recipes.md"},
         )
     )
@@ -293,14 +304,20 @@ def test_a_page_drawn_while_a_job_runs_carries_it_in_the_strip(
     assert f'data-job="{job_id}"' in strip_of(page)
 
 
-def test_the_script_watches_every_running_panel_and_no_finished_one():
+def test_the_script_watches_every_unfinished_panel_and_no_finished_one():
     """The job's own page and the strip both draw a panel for it. One that
     has ended arrives drawn by the server; watched, its outcome would be
-    fetched again and a failed one's panel would open on every page."""
-    assert (
-        """document.querySelectorAll('.job[data-job][data-state="running"]')"""
-        ".forEach(watch);" in code_of("progress.js")
+    fetched again and a failed one's panel would open on every page. One
+    still queued is watched, because its stream says when it begins (14b)."""
+    selector = re.search(
+        r"\.querySelectorAll\('([^']*)'\)\s*\.forEach\(watch\)", code_of("progress.js")
     )
+
+    assert selector is not None
+    states = set(
+        re.findall(r'\.job\[data-job\]\[data-state="(\w+)"\]', selector.group(1))
+    )
+    assert states == {"running", "queued"}
 
 
 def test_an_idle_strip_says_where_the_corpus_stands(client: TestClient):
@@ -443,14 +460,23 @@ JOB_DOING = {
     "index": "Indexing",
     "sync": "Syncing the corpus",
     "context-sync": "Syncing the project context",
+    "context": "Changing a project's context",
+    "context-index": "Indexing a project's context",
     "pack": "Installing a pack",
     "backup": "Backing up",
+    "remember": "Writing a note",
+    "copy": "Copying a document",
+    "move": "Moving a document",
+    "remove": "Removing a document",
+    "restore": "Putting a document back",
+    "return": "Returning the corpus to an earlier point",
+    "version": "Changing a docs version",
 }
 
 
 def test_every_kind_of_job_says_what_it_is_doing():
     assert words.JOB_DOING == JOB_DOING
-    assert set(words.JOB_DOING) == set(words.JOB_KINDS)
+    assert set(words.JOB_DOING) == set(JOB_KINDS)
 
 
 def test_a_running_job_is_a_segment_that_opens_its_panel_without_a_script(
@@ -686,8 +712,8 @@ def test_activity_lists_what_ran_newest_first(app: FastAPI, client: TestClient):
     assert page.index(f'href="/job/{second_id}"') < page.index(
         f'href="/job/{first_id}"'
     )
-    assert words.JOB_KINDS["sync"] in page
-    assert words.JOB_KINDS["index"] in page
+    assert JOB_KINDS["sync"] in page
+    assert JOB_KINDS["index"] in page
     assert f"<h1>{words.ACTIVITY_HEADING}</h1>" in page
 
 

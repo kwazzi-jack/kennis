@@ -184,4 +184,4 @@ def test_the_forms_choices_are_worded_in_python(client: TestClient):
         str(radio["value"]): radio.find_parent("label").get_text(strip=True)
         for radio in remember.find_all("input", attrs={"name": "target"})
     }
-    assert labels == dict(words.REMEMBER_TARGETS)
+    assert labels == dict(words.remember_targets(()))

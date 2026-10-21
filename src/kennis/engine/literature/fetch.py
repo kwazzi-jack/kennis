@@ -22,13 +22,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 from urllib.parse import urljoin
 
 import httpx
 
-from kennis.engine.bounded import get_bounded
+from kennis.engine.courtesy import Disallowed, get_politely
 from kennis.engine.errors import SourceUnreadable
+
+if TYPE_CHECKING:
+    from bs4 import Tag
 
 _ARXIV_HTML: Final = "https://arxiv.org/html/{arxiv_id}"
 _AR5IV_HTML: Final = "https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
@@ -97,6 +100,56 @@ def fetch_paper(arxiv_id: str, *, client: httpx.Client | None = None) -> PaperTe
     )
 
 
+# The labels LaTeX's itemize draws by default, at its four levels. Each says
+# no more than markdown's own bullet does.
+_DEFAULT_BULLETS: Final = frozenset({"\u2022", "\u2013", "\u2217", "\u00b7"})
+
+
+def _one_marker_per_item(listing: Tag) -> None:
+    """Leave one marker on each item of one LaTeXML list.
+
+    LaTeXML turns the browser's marker off and draws the label itself, as
+    `span.ltx_tag_item` before the item's paragraph, so markdown would
+    write a bullet beside a bullet, or `1. 1.`, with the text on the line
+    below. Decided per list, so a list is never half numbered: when every
+    label says what markdown's marker will say - a default bullet, or the
+    number at that position - the labels go. Otherwise every label stays,
+    at the start of its item's text, and a numbered list becomes a bullet
+    list: `\\item[(ii)]` is what the paper's text refers to, and `1. (ii)`
+    would be two labels.
+    """
+    items = [
+        child
+        for child in listing.find_all("li", recursive=False)
+        if "ltx_item" in child.get_attribute_list("class")
+    ]
+    labelled = [
+        (entry, tag)
+        for entry in items
+        if (tag := entry.find(class_="ltx_tag_item", recursive=False)) is not None
+    ]
+    if not labelled:
+        return
+    start = int(str(listing.get("start") or 1)) if listing.name == "ol" else 1
+    redundant = all(
+        tag.get_text().strip() in _DEFAULT_BULLETS
+        if listing.name == "ul"
+        else tag.get_text().strip() == f"{start + items.index(entry)}."
+        for entry, tag in labelled
+    )
+    for entry, tag in labelled:
+        label = tag.get_text().strip()
+        tag.decompose()
+        if redundant:
+            continue
+        # Into the item's first paragraph, so the label and its text share
+        # the marker's line.
+        paragraph = entry.find(class_="ltx_p") or entry
+        paragraph.insert(0, f"{label} ")
+    if not redundant:
+        listing.name = "ul"
+
+
 def convert_arxiv_html(html: str, page_url: str) -> str:
     """LaTeXML article HTML to markdown, keeping equations as their LaTeX.
 
@@ -121,6 +174,9 @@ def convert_arxiv_html(html: str, page_url: str) -> str:
     for selector in _CHROME_SELECTORS:
         for node in article.select(selector):
             node.decompose()
+
+    for listing in article.select("ul, ol"):
+        _one_marker_per_item(listing)
 
     for element in article.find_all("math"):
         latex = str(element.get("alttext") or "").strip()
@@ -159,8 +215,12 @@ def _rendering_at(client: httpx.Client, page_url: str) -> tuple[str | None, str 
     both.
     """
     try:
-        response = get_bounded(
-            client, page_url, follow_redirects=True, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_politely(
+            client,
+            page_url,
+            user_agent=_USER_AGENT,
+            follow_redirects=True,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as error:
@@ -168,6 +228,8 @@ def _rendering_at(client: httpx.Client, page_url: str) -> tuple[str | None, str 
         if status == 404:
             return None, None
         return None, f"answered HTTP {status}"
+    except Disallowed:
+        return None, "is not allowed by that host's robots.txt"
     except httpx.HTTPError as error:
         return None, f"could not be reached: {error}"
 

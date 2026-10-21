@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from kennis.engine.errors import (
-    CorpusBusy,
     CorpusExists,
     CorpusNotFound,
     GitUnavailable,
@@ -101,7 +100,6 @@ def test_init_is_refused_rather_than_repeated(corpus: Path):
         initialise_corpus(corpus)
 
     assert "already" in str(raised.value)
-    assert not isinstance(raised.value, CorpusBusy)
 
 
 # ---------------------------------------------------------------------------
@@ -379,11 +377,9 @@ def test_a_hook_in_the_global_configuration_does_not_run(
     assert repository.commit("add", scope="notes", summary="1 added") is not None
 
 
-def test_a_commit_git_refuses_is_not_called_busy(corpus: Path):
-    """`CorpusBusy` tells the front ends nothing was changed and to try
-    again. A commit that fails has written its documents, and retrying
-    meets the same refusal - so it is its own error, with git's reason in
-    it and a command that shows the state it left."""
+def test_a_commit_git_refuses_says_why_and_what_shows_the_state(corpus: Path):
+    """Retrying meets the same refusal, so it is its own error, with git's
+    reason in it and a command that shows the state it left."""
     repository = initialise_corpus(corpus)
     (corpus / "notes" / "a.md").write_text("A note.\n", encoding="utf-8")
     (corpus / ".git" / "index.lock").write_text("", encoding="utf-8")
@@ -391,7 +387,6 @@ def test_a_commit_git_refuses_is_not_called_busy(corpus: Path):
     with pytest.raises(HistoryUnwritable) as raised:
         repository.commit("add", scope="notes", summary="1 added")
 
-    assert not isinstance(raised.value, CorpusBusy)
     assert "index.lock" in str(raised.value)
     assert raised.value.resolution is not None
     assert raised.value.resolution.startswith("git -C ")

@@ -1,0 +1,10 @@
+$ kennis search --collection context CASA
+--- exit 0
+--- stdout
+Found 1 in context
+
+Context keywords as a fraction of the best match here
+  [1] This project uses CASA
+      keywords: very high  path=.context/This project uses CASA.md
+      This project uses CASA.
+--- stderr

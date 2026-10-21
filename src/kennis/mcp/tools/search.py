@@ -22,14 +22,15 @@ an index that was never built tells the caller something false.
 
 from __future__ import annotations
 
-from kennis.engine.context.index import CONTEXT_COLLECTION
-from kennis.render.hits import (
-    ScoreStyle,
-    best_lexical,
-    rendered_hit,
-    score_style_for,
-)
-from kennis.retrieval import search_scope
+from pathlib import Path
+
+from kennis.client import api
+from kennis.context import existing_corpus
+from kennis.engine.context.bundle import find_bundle
+from kennis.engine.context.groups import CONTEXT_COLLECTION
+from kennis.engine.context.projects import present_bundles, project_named
+from kennis.render.hits import best_lexical, rendered_hit, score_style_for
+from kennis.render.words import ScoreStyle
 
 # What a tool answers with when a scope holds nothing for this question.
 # A sentence rather than an empty string: an agent handed "" cannot tell
@@ -69,18 +70,28 @@ def search_literature(question: str, top_k: int = 5) -> str:
     return _searched("literature", question, top_k)
 
 
-def search_docs(question: str, top_k: int = 5) -> str:
-    """Search the docs collection - documentation sites, one per project.
+def search_docs(question: str, top_k: int = 5, version: list[str] | None = None) -> str:
+    """Search the docs collection - documentation sites, one folder per
+    project and version.
 
     Reach for this for upstream usage, configuration and syntax. Call
-    `list_corpus` first if you need to know which projects are held.
+    `list_corpus` first if you need to know which projects and versions
+    are held.
+
+    Each project's current version is searched unless `version` names
+    others: `"2.12"` for every project holding 2.12, `"pydantic=2.12"`
+    for one project's, `"all"` for every version held. Each hit names
+    its version; a passage equal in several versions is shown once,
+    naming each.
 
     Returns ranked hits with a `document_id` and `chunk` for `read_docs`.
     """
-    return _searched("docs", question, top_k)
+    return _searched("docs", question, top_k, versions=tuple(version or ()))
 
 
-def search_context(question: str, top_k: int = 5) -> str:
+def search_context(
+    question: str, top_k: int = 5, projects: str | list[str] = ""
+) -> str:
     """Search this project's `.context/` bundle - its own conventions.
 
     Reach for this for decisions and conventions specific to the
@@ -89,23 +100,51 @@ def search_context(question: str, top_k: int = 5) -> str:
 
     **Returns file locations, not content.** A bundle lives in the
     user's own repository, so each hit's handle is a path: open it with
-    your native file tools. There is no `read_context`.
+    your native file tools. There is no `read_context`. Advice from a
+    pack the project uses comes after, with a `pack=` handle and the
+    passage itself.
+
+    `projects` widens the search: `"all"` for every project on this
+    machine, or a list of project names. Each other project's hits name
+    its folder in full. Outside any project every project is searched.
     """
-    return _searched(CONTEXT_COLLECTION, question, top_k)
+    return _searched(CONTEXT_COLLECTION, question, top_k, projects=projects)
 
 
-def _searched(collection: str, question: str, top_k: int) -> str:
+def _searched(
+    collection: str,
+    question: str,
+    top_k: int,
+    *,
+    versions: tuple[str, ...] = (),
+    projects: str | list[str] = "",
+) -> str:
     """One scope, searched and rendered.
 
-    The searching is `kennis.retrieval.search_scope`, shared with the
-    graphical front end - it answers "where is the index and which
-    mode can it run", which is not a question either front end owns.
+    The searching is the service's `search_scope`, which the window and
+    the command line reach too - it answers "where is the index and
+    which mode can it run", which is not a question any front end owns.
     What is left here is the rendering, which is.
 
     Its exceptions carry the command that resolves them, and fastmcp
     turns them into a tool error the agent can read.
     """
-    hits = search_scope(collection, question, top_k)
+    # The MCP server runs where its agent works, so its directory is the
+    # project's (#508); the service is sent the bundle, never asked to
+    # look for one.
+    bundle = find_bundle(Path.cwd())
+    others = _other_projects(projects, here=bundle)
+    # No corpus, no service: refused with `kennis corpus init`, which
+    # fastmcp gives the agent as the tool's error (14e).
+    hits = api.search_scope(
+        existing_corpus().corpus_root,
+        collection,
+        question,
+        top_k=top_k,
+        versions=versions,
+        bundle=bundle,
+        others=others,
+    )
     if not hits:
         return _NOTHING
     # The degraded flag is dropped rather than printed. A command line
@@ -114,18 +153,33 @@ def _searched(collection: str, question: str, top_k: int) -> str:
     # a sentence about calibration would cost tokens to say so twice.
     style, _ = score_style_for(hits, _STYLE)
     best = best_lexical(hits)
-    # A context hit's body is left out: the handle is a path and the
-    # agent opens the file, so a snippet would be a second copy of text
-    # it is about to read in full.
-    snippet = "none" if collection == CONTEXT_COLLECTION else "short"
     blocks: list[str] = []
     for rank, hit in enumerate(hits, start=1):
+        # A bundle hit's body is left out: the handle is a path and the
+        # agent opens the file, so a snippet would be a second copy of
+        # text it is about to read in full. A pack's file is in kennis's
+        # store, which the agent has no path to, so it gets the passage.
+        snippet = "none" if hit.collection == CONTEXT_COLLECTION else "short"
         shown = rendered_hit(hit, rank=rank, style=style, best=best, snippet=snippet)
         lines = [shown.headline, f"  {shown.detail}"]
         if shown.body is not None:
             lines.append(f"  {shown.body}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
+
+
+def _other_projects(projects: str | list[str], *, here: Path | None) -> list[Path]:
+    """The bundles a context search reads besides this project's.
+
+    Every known project when asked for `"all"`, or when the agent works
+    outside any project, where "this project" names nothing; the named
+    ones otherwise, refused by name when unknown.
+    """
+    if projects == "all" or (here is None and not projects):
+        return list(present_bundles())
+    if isinstance(projects, str):
+        return [project_named(projects).bundle] if projects else []
+    return [project_named(name).bundle for name in projects]
 
 
 __all__ = [

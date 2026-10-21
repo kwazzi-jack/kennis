@@ -9,41 +9,21 @@ thing `design.md` left unspecified - concern #225.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisCommand, KennisGroup
-from kennis.cli.sink import reporting
+from kennis.cli.sink import DisplaySink, reporting, say_waiting
+from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.context import (
-    CONTEXT_COLLECTION,
-    LANDING_FILENAME,
-    BundleCreated,
-    bundle_status,
-    find_bundle,
-    index_bundle,
-    index_root_for,
-    init_bundle,
-    removable_documents,
-    reset_bundle,
-    workspace_root,
-)
-from kennis.engine.context.sync import BundleSync
-from kennis.engine.errors import ContextNotFound
-from kennis.engine.pack.resolve import ACTING
-from kennis.engine.rag.binding import binding_from, chunk_parameters
-from kennis.engine.rag.embedding import ModelBinding
-from kennis.engine.settings import Settings, load_settings
-from kennis.operations import synchronise_bundle
-from kennis.render.packs import (
-    describe_action,
-    describe_claim_needed,
-    describe_deferred,
-    describe_moved,
-    describe_sync,
-)
-from kennis.render.words import count_of, describe_freshness
+
+if TYPE_CHECKING:
+    from kennis.engine.context.bundle import (
+        BundleCreated,
+    )
+    from kennis.engine.context.sync import BundleSync
 
 
 @click.group(name="context", cls=KennisGroup)
@@ -57,7 +37,14 @@ def context_group() -> None:
     is_flag=True,
     help="Create it in the working directory instead of the workspace root.",
 )
-def init_command(here: bool) -> None:
+@click.option(
+    "--pack",
+    "packs",
+    multiple=True,
+    metavar="ID",
+    help="A pack this project uses; repeat for several. See `context packs`.",
+)
+def init_command(here: bool, packs: tuple[str, ...]) -> None:
     """Create this project's `.context/` bundle.
 
     **Where it goes is not always where you are.** A bundle belongs at the
@@ -69,8 +56,15 @@ def init_command(here: bool) -> None:
     file that was deleted is written again, and anything you added is left
     alone.
     """
-    created = init_bundle(Path.cwd() if here else workspace_root())
+    from kennis.engine.context.bundle import workspace_root
+
+    corpus_root = existing_corpus().corpus_root
+    folder = Path.cwd() if here else workspace_root(Path.cwd())
+    created = api.init_bundle(corpus_root, folder)
     _report_init(created)
+    if packs:
+        declared = api.declare_packs(corpus_root, created.path, packs)
+        display.detail("+", f"declares {', '.join(declared)}")
 
 
 def _report_init(created: BundleCreated) -> None:
@@ -80,6 +74,8 @@ def _report_init(created: BundleCreated) -> None:
     prints `warning:`, and a bundle that was already complete is not
     something going wrong.
     """
+    from kennis.engine.context.bundle import LANDING_FILENAME
+
     if created.created:
         display.operation("Created", f"context bundle at {created.path}")
         # Not `next_step`, which prints a command: rule 4.4 says a printed
@@ -101,7 +97,14 @@ def _report_init(created: BundleCreated) -> None:
 
 
 @context_group.command(name="index", cls=KennisCommand)
-def index_command_for_context() -> None:
+@click.option(
+    "--project",
+    "project",
+    metavar="NAME",
+    help="Index another known project's context, as `kennis context list` "
+    "names it, rather than this one's.",
+)
+def index_command_for_context(project: str | None) -> None:
     """Build this project's context index.
 
     **BM25 only, and offline.** Design section 13: a bundle index that
@@ -115,86 +118,198 @@ def index_command_for_context() -> None:
     settings, and their embedding model if they configured one. A clone
     gets the documents and runs this command once.
     """
-    bundle = require_bundle()
-    settings = load_settings()
-    model = context_model(settings)
+    from kennis.engine.context.projects import project_named
+    from kennis.render.words import count_of
+
+    corpus_root = existing_corpus().corpus_root
+    bundle = require_bundle() if project is None else project_named(project).bundle
+    with reporting() as events:
+        built = api.index_bundle(
+            corpus_root, bundle, events=events, on_waiting=say_waiting
+        )
+    # Said after the build rather than before it: the service chose the
+    # model from its settings, and only its answer can say which.
     display.using(
-        f"{model.kind} {model.model}"
-        if model
+        f"{built.model_kind} {built.model_name}"
+        if built.model_kind
         else "lexical search only, which is what a bundle is indexed with"
     )
-    with reporting() as events:
-        report = index_bundle(
-            bundle,
-            chunking=chunk_parameters(settings.chunking),
-            model=model,
-            events=events,
-            embed_batch_size=settings.embedding.batch_size,
-        )
+    report = built.report
     display.operation(
         "Indexed",
         f"{count_of(report.document_count, 'document')} as "
-        f"{count_of(report.chunk_count, 'chunk')} in this project",
+        f"{count_of(report.chunk_count, 'chunk')} in "
+        + ("this project" if project is None else project),
         elapsed=report.elapsed_seconds,
     )
     # The documents, not the index: `init` gitignores the index, so what is
     # worth committing is what the index was built from. Named because it is
     # the thing a user has to do and kennis will not - the repository is
     # theirs.
-    display.guidance(f"commit {bundle.name}/ to share these notes with the project")
+    where = f"{bundle.name}/" if project is None else f"{bundle.name}/ in {project}"
+    display.guidance(f"commit {where} to share these notes with the project")
 
 
 @context_group.command(name="sync", cls=KennisCommand)
 def sync_command_for_context() -> None:
-    """Converge this project's context with every installed pack.
+    """Check this project's bundle against the packs it declares.
 
-    **Offline.** A pack's context content is already in this machine's
-    store, put there by `kennis pack add`, so this copies and never
-    fetches.
+    A pack's context is searched where `kennis pack add` stored it, so
+    nothing is copied into the project. A copy an earlier kennis made is
+    removed, unless you edited it: then it is yours, and this project
+    searches it in place of the pack's file. Says which declared packs
+    this machine has not got, and, when the project declares none, which
+    installed packs it could.
 
-    Nothing you own is touched. A file whose `owner` is you is reported
-    and left alone on every run, and so is a pack's file you have edited
-    in place - kennis will not overwrite your writing to apply a
-    provider's release.
-
-    **kennis does not commit.** The bundle is in your repository.
+    **Offline**, and **kennis does not commit**: the bundle is in your
+    repository.
     """
+    from kennis.render.packs import describe_bundle_sync, describe_made_yours
+
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
-    context = existing_corpus()
-    with reporting() as events:
-        result = synchronise_bundle(bundle, context, events=events)
-    display.operation("Synchronised", describe_sync(result.counts))
-    for action in result.actions:
-        display.detail(display.sync_marker(action.verdict), describe_action(action))
-    _report_what_was_left(result)
-    if any(action.verdict in ACTING for action in result.actions):
+    with DisplaySink() as shown:
+        result = api.sync_bundle(
+            corpus_root, bundle, events=shown, on_waiting=say_waiting
+        ).result
+    display.operation(
+        "Synchronised",
+        describe_bundle_sync(len(result.removed), len(result.made_yours)),
+    )
+    for address in result.removed:
+        display.detail("-", address)
+    for address in result.made_yours:
+        display.detail("~", address)
+    if result.made_yours:
+        display.guidance(describe_made_yours())
+    _report_the_declaration(result)
+    if result.removed or result.made_yours:
         # The index is derived from these documents and this command did
         # not rebuild it, for the same reason `remember --context` does
         # not: indexing is a separate decision with its own cost.
         display.next_step("kennis context index")
 
 
-def _report_what_was_left(result: BundleSync) -> None:
-    """The two things a sync did not do, each said once above nothing.
+def _report_the_declaration(result: BundleSync) -> None:
+    """Which packs this project reads, said on every run, because a pack
+    declared and never installed is otherwise silently not searched."""
+    from kennis.render.packs import (
+        describe_declared,
+        describe_no_declaration,
+        describe_not_installed,
+    )
 
-    All three are reported every run rather than only on the run they
-    began, because a provider whose file never appears, a user whose edit
-    is never applied, and a file that is not where the pack says it is
-    all need telling more than once.
+    if result.declared:
+        display.info(describe_declared(result.declared))
+    if result.missing:
+        display.note(describe_not_installed(result.missing))
+        display.next_step("kennis pack list")
+    if not result.declared and not result.missing:
+        display.guidance(describe_no_declaration())
+        for pack in result.available:
+            display.next_step(f"kennis context packs {pack}")
+
+
+@context_group.command(name="packs", cls=KennisCommand)
+@click.argument("packs", nargs=-1, metavar="[ID]...")
+@click.option(
+    "--drop", "dropped", multiple=True, metavar="ID", help="Stop using this pack."
+)
+@click.option("--none", "declare_none", is_flag=True, help="Declare no packs.")
+def packs_command_for_context(
+    packs: tuple[str, ...], dropped: tuple[str, ...], declare_none: bool
+) -> None:
+    """The packs this project uses: shown with no arguments, added to with
+    some.
+
+    A project reads only the packs it declares, so the stimela pack's
+    advice reaches the projects that use stimela and no others. The
+    declaration is in `.context/bundle.json`, committed with the project,
+    so whoever clones it declares the same packs. The ids given are added
+    to the declaration, never put in place of it, so a command printed
+    for one pack cannot drop another; `--drop` removes one and `--none`
+    clears it.
     """
-    edited = result.counts.get("edited", 0)
-    if edited:
-        # Guidance rather than a note: nothing is going wrong. kennis
-        # protected the user's writing and is saying so, and `warning:`
-        # would read as a fault in a bundle that is behaving correctly.
-        display.guidance(describe_claim_needed(edited))
-    if result.moved:
-        # Guidance, not a diagnostic: the user moved the file and kennis
-        # honoured it. `note` prints `warning:`, which would read as a
-        # fault in a bundle that is doing exactly what was asked.
-        display.guidance(describe_moved(result.moved))
-    if result.deferred:
-        display.note(describe_deferred(result.deferred))
+    from kennis.engine.context.bundle import declared_packs
+
+    if declare_none and (packs or dropped):
+        raise display.CliError("pass --none alone: it clears the declaration.")
+    corpus_root = existing_corpus().corpus_root
+    bundle = require_bundle()
+    if packs or dropped or declare_none:
+        declared = api.declare_packs(
+            corpus_root, bundle, packs, dropped, clear=declare_none
+        )
+        display.operation("Declared", ", ".join(declared) if declared else "no packs")
+        return
+    declared = declared_packs(bundle)
+    if not declared:
+        display.note("this project declares no packs")
+        display.next_step("kennis context packs --help")
+        return
+    display.operation("Declares", ", ".join(declared))
+
+
+@context_group.command(name="copy", cls=KennisCommand)
+@click.argument("reference", metavar="PACK/ADDRESS")
+def copy_command_for_context(reference: str) -> None:
+    """Make one of a pack's context files this project's own.
+
+    Copies `alpha/solving.md` - the `pack=` a search printed - into the
+    bundle with you as its owner. This project then searches your copy
+    in place of the pack's file; other projects still read the pack's.
+    """
+    corpus_root = existing_corpus().corpus_root
+    bundle = require_bundle()
+    written = api.copy_pack_file(corpus_root, bundle, reference)
+    display.operation("Copied", written.relative_to(bundle.parent).as_posix())
+    display.next_step("kennis context index")
+
+
+@context_group.command(name="list", cls=KennisCommand)
+def list_command_for_context() -> None:
+    """Every project on this machine whose context kennis knows of.
+
+    A project is listed once kennis has touched its bundle - made it,
+    remembered into it, indexed, synced or searched it - or once it is
+    added. One whose folder has gone stays listed as missing until it is
+    forgotten, because a disk that is not mounted is not a project that
+    was deleted.
+    """
+    from kennis.engine.context.projects import known_projects
+
+    projects = known_projects()
+    if not projects:
+        display.note("no project with a context bundle is known yet")
+        display.next_step("kennis context init", note="in a project")
+        return
+    width = max(len(project.name) for project in projects)
+    for project in projects:
+        display.row(project.name.ljust(width), str(project.bundle.parent))
+    for project in projects:
+        if not project.present:
+            display.detail(
+                "!", f"{project.name}: missing, no bundle at {project.bundle}"
+            )
+            display.next_step(f"kennis context forget {project.name}")
+
+
+@context_group.command(name="add", cls=KennisCommand)
+@click.argument("folder", type=click.Path(exists=True, file_okay=False, path_type=Path))
+def add_command_for_context(folder: Path) -> None:
+    """List a project kennis has not touched yet: a folder holding a
+    `.context/` bundle, or the bundle itself."""
+    added = api.add_project(existing_corpus().corpus_root, folder)
+    display.operation("Added", f"{added.name}, {added.bundle.parent}")
+
+
+@context_group.command(name="forget", cls=KennisCommand)
+@click.argument("name")
+def forget_command_for_context(name: str) -> None:
+    """Take a project off the list. Its files are not touched; kennis lists
+    it again the next time it touches its bundle."""
+    forgotten = api.forget_project(existing_corpus().corpus_root, name)
+    display.operation("Forgot", f"{forgotten.name}, {forgotten.bundle.parent}")
 
 
 @context_group.command(name="status", cls=KennisCommand)
@@ -207,7 +322,11 @@ def status_command_for_context() -> None:
     records no commit and the comparison is made against the document
     digests the index stored instead.
     """
-    status = bundle_status(require_bundle())
+    from kennis.engine.context.groups import CONTEXT_COLLECTION
+    from kennis.render.words import count_of, describe_freshness
+
+    corpus_root = existing_corpus().corpus_root
+    status = api.bundle_status(corpus_root, require_bundle())
     display.operation("Context", str(status.path))
     # "Holds" rather than "Documents", which would print `Documents 3
     # documents`. `corpus status` gets away with the shape because its verb
@@ -263,15 +382,16 @@ def reset_command(yes: bool) -> None:
     A file with a header kennis cannot read counts as yours. The two
     mistakes do not cost the same.
     """
+    from kennis.render.words import count_of
+
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
     # Asked, not restated. The prompt has to offer exactly what the reset
     # will take, and a second copy of the rule here is a copy that can
     # stop matching - as it did when the engine widened to see a file the
     # user had hidden.
-    owned = [
-        path.relative_to(bundle).as_posix() for path in removable_documents(bundle)
-    ]
-    has_index = index_root_for(bundle).is_dir()
+    preview = api.reset_preview(corpus_root, bundle)
+    owned, has_index = list(preview.owned), preview.has_index
     if not owned and not has_index:
         display.guidance("nothing to remove - everything here is yours")
         return
@@ -283,7 +403,7 @@ def reset_command(yes: bool) -> None:
         # prompt says what will go rather than asking in the abstract.
         click.confirm(f"Remove {_what_goes(owned, has_index)}?", abort=True)
 
-    report = reset_bundle(bundle)
+    report = api.reset_bundle(corpus_root, bundle)
     # Documents first, each under its own heading, and the index last with
     # the command that rebuilds it beside it. The other order put a hint
     # about the index above the list of documents it had nothing to do with.
@@ -298,23 +418,6 @@ def reset_command(yes: bool) -> None:
         display.next_step("kennis context index", note="to build it again")
 
 
-def context_model(settings: Settings) -> ModelBinding | None:
-    """The embedding model a bundle index is built with, if any.
-
-    One line of policy, named so it can be asked directly: without a name it
-    is only observable through a command that builds an index, and on a
-    machine with no embedding backend both answers look identical from
-    there.
-
-    `binding_from` answers `model=None` when the backend is `none`, so
-    asking for hybrid without a backend yields a lexical index rather than a
-    failure - the corpus behaves the same way.
-    """
-    if settings.retrieval.context_method == "bm25":
-        return None
-    return binding_from(settings.chunking, settings.embedding).model
-
-
 def _what_goes(owned: list[str], has_index: bool) -> str:
     """What the prompt says is about to be deleted.
 
@@ -322,6 +425,8 @@ def _what_goes(owned: list[str], has_index: bool) -> str:
     conventions/naming.md and the context index?" is checkable at a glance
     and a bare count is not.
     """
+    from kennis.render.words import count_of
+
     parts: list[str] = []
     if owned:
         parts.append(owned[0] if len(owned) == 1 else count_of(len(owned), "document"))
@@ -336,10 +441,13 @@ def require_bundle() -> Path:
 
     Every context command but `init` starts here.
     """
-    bundle = find_bundle()
+    from kennis.engine.context.bundle import find_bundle
+    from kennis.engine.errors import ContextNotFound
+
+    bundle = find_bundle(Path.cwd())
     if bundle is None:
         raise ContextNotFound
     return bundle
 
 
-__all__ = ["context_group", "context_model", "require_bundle"]
+__all__ = ["context_group", "require_bundle"]

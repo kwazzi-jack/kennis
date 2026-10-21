@@ -11,10 +11,12 @@ owns it (section 5, step 4).
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 
 import pytest
 
+from by_hand import deleted_by_hand
 from kennis.engine.errors import PackNotInstalled
 from kennis.engine.events import OperationFinished, Outcome, Recorder
 from kennis.engine.pack.installed import (
@@ -30,6 +32,13 @@ from kennis.engine.pack.store import (
     packs_root,
 )
 from kennis.engine.pack.update import update_pack
+
+
+def corrupted(path: Path, text: str) -> None:
+    """Overwrite a file kennis stored read-only (#514), as anything that
+    damages a store has to: write permission first."""
+    path.chmod(path.stat().st_mode | stat.S_IWRITE)
+    path.write_text(text, encoding="utf-8")
 
 
 def a_provider(
@@ -117,7 +126,7 @@ def test_a_pack_whose_store_was_emptied_is_listed_as_not_verifying(
     for a decision. `pack status` is where a user should learn the store is
     damaged - before a sync reads it as a pack that ships nothing."""
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
-    (pack_root(corpus, "alpha") / "notes" / "one.md").unlink()
+    deleted_by_hand(pack_root(corpus, "alpha") / "notes" / "one.md")
 
     listing = list_installed(corpus)
 
@@ -151,9 +160,7 @@ def test_a_corrupt_stored_declaration_does_not_hide_the_pack(
     is corruption. The pack still has a state file and still has to be
     listed - a store you cannot see is the thing this unit exists to end."""
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
-    (pack_root(corpus, "alpha") / "pack.ken.yml").write_text(
-        "not: [a, pack\n", encoding="utf-8"
-    )
+    corrupted(pack_root(corpus, "alpha") / "pack.ken.yml", "not: [a, pack\n")
 
     listing = list_installed(corpus)
 
@@ -166,7 +173,7 @@ def test_a_corrupt_stored_declaration_does_not_hide_the_pack(
 # ---------------------------------------------------------------------------
 
 
-DOCS = 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n'
+DOCS = 'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/latest/"\n'
 PAPER = (
     "corpus:\n  literature:\n    - citekey: kenyon2018\n"
     '      title: t\n      identifier: "1712.01093"\n'
@@ -317,8 +324,8 @@ def test_a_pack_declaring_an_item_twice_is_not_an_overlap_with_itself(
     corpus: Path, tmp_path: Path
 ):
     body = (
-        'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/"\n'
-        '    - project: stimela\n      base_url: "https://y/"\n'
+        'corpus:\n  docs:\n    - project: stimela\n      base_url: "https://x/latest/"\n'
+        '    - project: stimela\n      base_url: "https://y/latest/"\n'
     )
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha", body=body))
 
@@ -452,9 +459,7 @@ def test_an_edited_file_in_the_store_fails_verification(corpus: Path, tmp_path: 
     digest map exists for - its absence would be caught by the filesystem
     alone."""
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
-    (pack_root(corpus, "alpha") / "notes" / "one.md").write_text(
-        "Edited.\n", encoding="utf-8"
-    )
+    corrupted(pack_root(corpus, "alpha") / "notes" / "one.md", "Edited.\n")
 
     assert [one.verified for one in list_installed(corpus).packs] == [False]
 
@@ -467,9 +472,7 @@ def test_a_pack_whose_declaration_will_not_parse_declares_nothing(
     listed, and the corruption is reported on its own."""
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha", body=DOCS))
     install_pack(corpus, a_provider(tmp_path / "b", identifier="beta", body=DOCS))
-    (pack_root(corpus, "beta") / "pack.ken.yml").write_text(
-        "not: [a, pack\n", encoding="utf-8"
-    )
+    corrupted(pack_root(corpus, "beta") / "pack.ken.yml", "not: [a, pack\n")
 
     assert overlaps_between(list_installed(corpus).packs) == ()
 
@@ -724,9 +727,7 @@ def test_the_union_skips_a_pack_whose_declaration_will_not_parse(
             files={"content/two.md": "B.\n"},
         ),
     )
-    (pack_root(corpus, "beta") / "pack.ken.yml").write_text(
-        "not: [a, pack\n", encoding="utf-8"
-    )
+    corrupted(pack_root(corpus, "beta") / "pack.ken.yml", "not: [a, pack\n")
 
     union = declared_content(corpus, list_installed(corpus).packs, "context")
 

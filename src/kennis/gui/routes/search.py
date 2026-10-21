@@ -5,16 +5,20 @@ was asked.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Final
+from typing import Annotated, Final
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import (
     HTMLResponse,
     RedirectResponse,
 )
 
 from kennis.context import existing_corpus
+from kennis.engine.context.groups import pack_of_group, project_of_group
+from kennis.engine.context.projects import present_bundles, project_named
+from kennis.engine.corpus.collection import Collection
+from kennis.engine.docs.versions import chosen_or_default, project_versions
 from kennis.engine.errors import (
     KennisError,
 )
@@ -25,13 +29,11 @@ from kennis.gui.pages import (
     shown_orders,
     shown_recents,
     shown_skips,
+    versions_query,
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, frame, from_htmx
-from kennis.retrieval import (
-    EVERY_SCOPE,
-    SCOPE_NAMES,
-    sweep,
-)
+from kennis.retrieval import sweep
+from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
 router = APIRouter()
 
@@ -67,6 +69,8 @@ def _hits_context(
     *,
     k: int = 0,
     record: bool = True,
+    versions: Sequence[str] = (),
+    project: str = "",
 ) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -79,6 +83,10 @@ def _hits_context(
     notes meant a reader looking for a paper from a cold start was
     answered nothing at all until they knew to change a dropdown.
     Concern #314 is what made one sweep possible.
+
+    **Every project's context, or the one `project` names** (14g, #512):
+    the window belongs to no project, so it is the same whichever one
+    `kennis gui` was typed in.
     """
     context: dict[str, object] = {
         **frame(existing_corpus()),
@@ -88,6 +96,10 @@ def _hits_context(
         "question": question,
         "scope": scope,
         "mode": mode,
+        # As the address names them, for the form's boxes to be ticked
+        # by; `chosen` below is what the search and its links carry.
+        "versions": tuple(versions),
+        "project": project,
         # Only this page's form searches as you type: live search swaps
         # into `#hits`, which no other page has.
         "searching_here": True,
@@ -126,6 +138,16 @@ def _hits_context(
     # three (the flows review, F4).
     wanted = k if 0 < k <= MOST else existing_corpus().settings.retrieval.default_top_k
     try:
+        # A choice that searches what the default does is no choice, so
+        # an ordinary search's address and history entry are unchanged.
+        chosen = chosen_or_default(
+            project_versions(
+                Collection(root=existing_corpus().corpus_root, name="docs").path
+            ),
+            versions,
+        )
+        context["chosen_versions"] = chosen
+        others = (project_named(project).bundle,) if project else present_bundles()
         found = sweep(
             question,
             scopes=asked,
@@ -135,6 +157,9 @@ def _hits_context(
             # own setting. Not the same as "hybrid": a bundle index is
             # lexical by design.
             mode=mode or None,
+            versions=chosen,
+            bundle=None,
+            others=others,
         )
         context["groups"] = shown_groups_of(found, question, order)
         found_count = sum(len(hits) for hits in found.groups.values())
@@ -143,10 +168,11 @@ def _hits_context(
         # why this is the usual case rather than the exception.
         capped = any(len(hits) >= wanted for hits in found.groups.values())
         if wanted < MOST:
-            chosen = f"&mode={quote(mode)}" if mode else ""
+            asked_mode = f"&mode={quote(mode)}" if mode else ""
             context["more"] = {
                 name: (
-                    f"/?q={quote(question)}&scope={quote(name)}{chosen}"
+                    f"/?q={quote(question)}&{scope_query(name)}{asked_mode}"
+                    f"{versions_query(chosen)}"
                     f"&k={min(wanted + MORE_STEP, MOST)}"
                 )
                 for name, hits in found.groups.items()
@@ -163,7 +189,11 @@ def _hits_context(
         # nothing.
         if key is not None and len(key.lines) > 1:
             context["orders"] = shown_orders(
-                question=question, scope=scope, mode=mode, order=order
+                question=question,
+                scope=scope,
+                mode=mode,
+                order=order,
+                versions=chosen,
             )
         context["skips"] = shown_skips(found)
         # The command line has printed this since milestone 1 and the
@@ -190,11 +220,25 @@ def _hits_context(
                 mode=mode,
                 hits=found_count,
                 capped=capped,
+                versions=chosen,
+                project=project,
             )
     except KennisError as error:
         context["problem"] = str(error)
         context["resolution"] = error.resolution
     return context
+
+
+def scope_query(group: str) -> str:
+    """The address's scope for more of one group: a project's notes and a
+    pack's context are both the context scope, the first narrowed to its
+    project."""
+    project = project_of_group(group)
+    if project is not None:
+        return f"scope=context&project={quote(project)}"
+    if pack_of_group(group) is not None:
+        return "scope=context"
+    return f"scope={quote(group)}"
 
 
 def shown_keywords_only(degraded: Sequence[str]) -> dict[str, str]:
@@ -228,8 +272,19 @@ def serve_search(
     mode: str = words.MODE_DEFAULT,
     order: str = "",
     k: int = 0,
+    version: Annotated[list[str] | None, Query()] = None,
+    project: str = "",
 ) -> HTMLResponse:
-    context = _hits_context(q, scope, mode, order, k=k, record=not _prefetched(request))
+    context = _hits_context(
+        q,
+        scope,
+        mode,
+        order,
+        k=k,
+        record=not _prefetched(request),
+        versions=version or (),
+        project=project,
+    )
     # Only with no query. With one, the results have that space -
     # a page showing both would put what was looked for before
     # beside what was just found, which is two answers to one
@@ -263,15 +318,23 @@ def serve_hits(
     mode: str = words.MODE_DEFAULT,
     order: str = "",
     k: int = 0,
+    version: Annotated[list[str] | None, Query()] = None,
+    project: str = "",
 ) -> HTMLResponse:
     # The partial htmx swaps in. The same context as the page, so
     # a first load and a keystroke cannot disagree about what a
     # result looks like.
-    answer = TEMPLATES.TemplateResponse(
-        request,
-        "hits.html",
-        _hits_context(q, scope, mode, order, k=k, record=not _prefetched(request)),
+    context = _hits_context(
+        q,
+        scope,
+        mode,
+        order,
+        k=k,
+        record=not _prefetched(request),
+        versions=version or (),
+        project=project,
     )
+    answer = TEMPLATES.TemplateResponse(request, "hits.html", context)
     # **The address the reader should end up at, not the one that
     # was fetched.** `hx-push-url="true"` pushes the request URL,
     # which is this route - so Back and reload rendered the bare
@@ -282,5 +345,11 @@ def serve_hits(
     # says the reader chose the default rather than not having
     # chosen.
     chosen = f"&mode={quote(mode)}" if mode else ""
-    answer.headers["HX-Push-Url"] = f"/?q={quote(q)}&scope={quote(scope)}{chosen}"
+    carried = context.get("chosen_versions", ())
+    pushed = versions_query(carried if isinstance(carried, tuple) else ())
+    # The project too, or a reload forgets the filter it was chosen with.
+    narrowed = f"&project={quote(project)}" if project else ""
+    answer.headers["HX-Push-Url"] = (
+        f"/?q={quote(q)}&scope={quote(scope)}{narrowed}{chosen}{pushed}"
+    )
     return answer

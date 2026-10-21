@@ -31,9 +31,9 @@ from kennis.engine.history.repository import Repository
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.responses import REVISION_HEADER
-from kennis.gui.serve import ANY_PORT, HOST
 from kennis.gui.theme import CSS_COLOURS, css_variables
 from kennis.render.theme import ANSI_COLOURS, ROLES
+from kennis.service.serve import ANY_PORT, HOST
 
 TOKEN = "a-test-token"
 STATIC_SCRIPTS = Path(__file__).parents[1] / "src" / "kennis" / "gui" / "static"
@@ -932,20 +932,27 @@ def test_saying_the_same_thing_twice_is_reported_as_already_known(
     assert len(held.documents) == 1
 
 
-def test_a_busy_corpus_is_a_state_to_retry_from(corpus: Path, client: TestClient):
-    """The lock is `timeout=0`, so a `corpus index` in a terminal
-    refuses this write. Losing what someone typed is worse than making
-    them press the button again, so it is an outcome and not an error
-    page. Concern #167 is about this lock."""
-    from kennis.engine.locking import corpus_lock
+def test_a_note_prepared_against_a_changed_corpus_is_a_state_to_retry_from(
+    corpus: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """`PublishRefused` is the one write refused rather than kept waiting
+    (14e): another write changed the notes while this one was prepared.
+    Losing what someone typed is worse than making them press the button
+    again, so it is an outcome and not an error page."""
+    from kennis.engine.errors import PublishRefused
+    from kennis.gui.routes import remember as remember_route
 
+    def refused(*arguments: object, **options: object) -> object:
+        raise PublishRefused
+
+    monkeypatch.setattr(remember_route, "write_note", refused)
     admitted(client)
 
-    with corpus_lock(corpus / "corpus"):
-        answer = posted(client, "/remember", data={"text": "Written while busy."})
+    answer = posted(client, "/remember", data={"text": "Written meanwhile."})
 
     assert answer.status_code == 200
-    assert "busy" in answer.text.lower()
+    assert words.CHANGED_MEANWHILE in answer.text
+    assert "role-warning" in answer.text
 
 
 def test_writing_to_a_project_with_no_bundle_is_refused_not_redirected(

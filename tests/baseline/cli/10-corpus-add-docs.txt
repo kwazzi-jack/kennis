@@ -1,0 +1,6 @@
+$ kennis corpus add -d --project tool --version 1.0 sources/page.md
+--- exit 0
+--- stdout
+Added 1 document in <elapsed>
+  + Tool
+--- stderr

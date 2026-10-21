@@ -28,7 +28,7 @@ type Metadata = dict[str, Any]
 
 type ChunkPredicate = Callable[[Chunk], bool]
 
-FilterOp = Literal["eq", "in", "contains", "gte", "lte", "glob"]
+FilterOp = Literal["eq", "in", "not_in", "contains", "gte", "lte", "glob"]
 
 
 class Document(BaseModel):
@@ -102,7 +102,9 @@ class Filter(BaseModel):
     `contains` matches a case-insensitive substring; `gte` and `lte` compare
     numerically when both sides parse as numbers and lexically otherwise, so
     a year stored as a string still orders as a number; `glob` matches a
-    shell-style pattern with `**` spanning separators.
+    shell-style pattern with `**` spanning separators. `not_in` is true for
+    a chunk without the field, because what is absent from a chunk is in
+    no list: it is how a search leaves out docs versions (#489).
     """
 
     field: str
@@ -114,6 +116,8 @@ class Filter(BaseModel):
 
         def check(chunk: Chunk) -> bool:
             actual = _lookup(chunk.metadata, field)
+            if op == "not_in":
+                return actual not in value
             # A missing field is false rather than an error: a filter runs
             # over a mixed collection where not every chunk has every field.
             if actual is None:

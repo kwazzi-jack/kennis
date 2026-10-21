@@ -1,0 +1,13 @@
+$ kennis search --collection docs --version all tool
+--- exit 0
+--- stdout
+warning: the docs index has no meaning leg, so this matched keywords only
+Found 1 in docs
+
+Docs keywords as a fraction of the best match here
+  [1] Tool
+      keywords: very high  tool 1.0  id=22k3nnp36k chunk=0
+      # Tool The tool's reference page.
+
+  hint: run `kennis read 22k3nnp36k --chunks 0:2` to read one in context
+--- stderr

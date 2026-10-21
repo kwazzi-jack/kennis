@@ -41,6 +41,8 @@
     <label class="visually-hidden" for="add-{{ field.name }}">{{ typed_words }}</label>
     <span class="entry-row">{{ typed }}</span>
   </details>
+  {% elif field.widget == "flag" %}
+  <span class="entry-row flag" id="add-{{ field.name }}-entry"><input id="add-{{ field.name }}" type="checkbox" name="{{ field.name }}" value="on"{% if field.value %} checked{% endif %}>{% if field.empty %}<span class="role-muted">{{ empty_prefix }} {{ field.empty }}</span>{% endif %}</span>
   {% else %}
   <span class="entry-row{% if field.name == 'identifiers' and field.when %} wand{% endif %}" id="add-{{ field.name }}-entry">{% if field.name == "identifiers" and field.when %}{{ icon("wand-sparkles") }}{% endif %}{{ typed }}</span>
   {% endif %}

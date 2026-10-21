@@ -1,0 +1,6 @@
+$ kennis corpus copy convention
+--- exit 0
+--- stdout
+Copied Convention as doc0000007
+  hint: run `kennis corpus index` to search it
+--- stderr

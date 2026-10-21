@@ -36,7 +36,10 @@ installation actually has.
   their decisions, anything they asked kennis to remember. Prefer it when
   a question is about this user rather than about upstream behaviour.
 - `literature` - papers, with their bibliographic metadata.
-- `docs` - documentation sites, one project per site.
+- `docs` - documentation sites, one folder per project and version.
+  `search_docs` searches each project's current version unless given
+  others, as `version=["2.12"]`, `version=["pydantic=2.12"]` or
+  `version=["all"]`; `list_corpus` says which versions are held.
 - `context` - the current project's `.context/` bundle, committed with
   the repository. Project-specific conventions and decisions.
 

@@ -1,0 +1,6 @@
+$ kennis --no-progress corpus index --collection notes
+--- exit 0
+--- stdout
+Using lexical search only, with no embedding backend
+Indexed 7 documents as 9 chunks in notes in <elapsed>
+--- stderr

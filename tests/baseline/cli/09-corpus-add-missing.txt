@@ -1,0 +1,6 @@
+$ kennis corpus add -n sources/absent.md
+--- exit 0
+--- stdout
+Added 0 documents in <elapsed>
+  ! sources/absent.md - not an existing file or an http(s) URL, and no resolver recognised it
+--- stderr

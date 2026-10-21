@@ -1,0 +1,5 @@
+$ kennis corpus list
+--- exit 0
+--- stdout
+warning: no documents
+--- stderr

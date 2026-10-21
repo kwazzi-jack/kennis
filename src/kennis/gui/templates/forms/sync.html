@@ -1,5 +1,5 @@
 {% from "tip.html" import tip %}
-{% set pane = pane_now() %}
+{% set pane = pane_now(request) %}
 <p class="role-muted">{{ sync_preamble }} {{ tip("sync", title, sync_tip) }}</p>
 {# One form and every dialog's foot: Cancel, then the usual action at the
    right. The project context's sync is the other button's own address,
@@ -11,6 +11,5 @@
   <div class="form-foot sync-foot">
     <a class="button" href="/" data-close>{{ cancel_label }}</a>
     <button type="submit" class="primary">{{ icon("refresh-cw") }}{{ sync_corpus_action }}</button>
-    {% if pane.project %}<button type="submit" formaction="/context-sync" hx-post="/context-sync" hx-disabled-elt="this">{{ sync_context_action }}</button>{% endif %}
   </div>
 </form>

@@ -38,7 +38,7 @@ from kennis.cli.__main__ import main
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.icons import icon
-from kennis.retrieval import EVERY_SCOPE, SCOPE_NAMES
+from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
 TOKEN = "a-test-token"
 STATIC = Path(__file__).resolve().parents[1] / "src/kennis/gui/static"

@@ -10,6 +10,7 @@
 <section data-section="kennis" class="kennis">
 <h2>{{ kennis_settings_heading }}</h2>
 <p class="role-muted">{{ kennis_note }}</p>
+{% if unknown_settings %}<p class="notice role-warning" id="unknown-settings">{{ icon("triangle-alert") }}<span>{{ unknown_settings }}</span></p>{% endif %}
 {% if outcome %}<p class="outcome{% if outcome_is_problem %} role-error{% endif %}" role="status">{{ outcome }}</p>{% endif %}
 {% if rebuild %}
 <div class="rebuild">

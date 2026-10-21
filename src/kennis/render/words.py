@@ -18,15 +18,27 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final, Literal
 
-from kennis.engine.corpus.document import Document
+from kennis.engine.context.groups import pack_of_group, project_of_group
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
-from kennis.engine.history.freshness import Freshness
-from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.rag.search import DocumentSpan
-from kennis.engine.remember import IndexOutcome
+
+if TYPE_CHECKING:
+    from kennis.engine.corpus.document import Document
+    from kennis.engine.docs.versions import ProjectVersions
+    from kennis.engine.history.freshness import Freshness
+    from kennis.engine.history.history import ReturnChanges
+    from kennis.engine.history.outofband import OutOfBandChange
+    from kennis.engine.rag.search import DocumentSpan
+    from kennis.engine.remember import IndexOutcome
+
+# How a hit's relevance is shown: in words, as the raw scores, or not at
+# all. Here rather than in `hits.py` so that a client offering the choice
+# imports none of the search (#535).
+type ScoreStyle = Literal["human", "raw", "none"]
+
+SCORE_STYLES: Final[tuple[str, ...]] = ("human", "raw", "none")
 
 # What a bar says while an operation runs. One entry per verb the engine
 # emits with a `Progress`; a new verb has to be added here, and that is
@@ -53,6 +65,23 @@ def count_of(number: int, noun: str, plural: str | None = None) -> str:
     if number == 1:
         return f"1 {noun}"
     return f"{number} {plural or noun + 's'}"
+
+
+# `kennis corpus version` when no docs project is held by version.
+NO_DOCS_VERSIONS: Final = "no documentation is held by version"
+
+
+def describe_held_versions(versions: ProjectVersions) -> str:
+    """A project's versions in order, the one searched by default marked:
+    `2.12  2.14 (current)`."""
+    return "  ".join(
+        f"{version} (current)" if version == versions.current else version
+        for version in versions.held
+    )
+
+
+def describe_current_version(project: str, version: str) -> str:
+    return f"{project} {version} is the version searched by default"
 
 
 def joined(items: Sequence[str]) -> str:
@@ -117,11 +146,9 @@ def remedies_for(change: OutOfBandChange) -> tuple[str, ...]:
         return (f"kennis corpus restore {change.document_id or change.path}",)
     if change.owner is not None and pack_id_of(change.owner) is not None:
         handle = change.document_id or change.path
-        # `kennis corpus claim` is the second way forward and `design.md`
-        # describes it, but it is not built. Naming it here would print an
-        # instruction that fails - rules.md 4.4. It joins this tuple when the
-        # command lands.
-        return (f"kennis corpus restore {handle}",)
+        # Put the pack's text back, or keep the edit as a note of one's
+        # own first: a pack's note is not edited in place (#514).
+        return (f"kennis corpus copy {handle}", f"kennis corpus restore {handle}")
     return ("kennis corpus index",)
 
 
@@ -303,7 +330,23 @@ def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
             return "not indexed - another process is rebuilding it"
 
 
-def describe_skipped(names: Sequence[str]) -> str:
+def group_name(name: str) -> str:
+    """A search group's name: `notes`, `context`, `context thesis` for
+    another project's notes, or `pack alpha` for a pack's context, each
+    searched in its own group (14g)."""
+    pack = pack_of_group(name)
+    if pack is not None:
+        return f"pack {pack}"
+    project = project_of_group(name)
+    return f"context {project}" if project is not None else name
+
+
+def group_title(name: str) -> str:
+    """`group_name` as a heading: `Notes`, `Pack alpha`."""
+    return group_name(name).capitalize()
+
+
+def describe_skipped(names: Sequence[str], *, installed: bool = True) -> str:
     """Which scopes a search did not reach, and why.
 
     One line for every scope sharing a remedy, not one per scope: on
@@ -315,6 +358,8 @@ def describe_skipped(names: Sequence[str]) -> str:
     The sentence lives here and not on `retrieval.Skipped`, which
     carries the scope and the command as fields. Concern #81.
     """
+    if not installed:
+        return f"not searched, declared but not installed: {', '.join(names)}"
     return f"not searched, no index yet: {', '.join(names)}"
 
 
@@ -327,7 +372,10 @@ def describe_lexical_fallback(collection: str) -> str:
     """
     # In the words the mode control uses, "Keywords only", so the
     # warning names the choice it made for the reader (#417).
-    return f"the {collection} index has no meaning leg, so this matched keywords only"
+    return (
+        f"the {group_name(collection)} index has no meaning leg, so this "
+        "matched keywords only"
+    )
 
 
 def describe_busy_indexes(collections: Sequence[str]) -> str:
@@ -343,19 +391,6 @@ def describe_busy_indexes(collections: Sequence[str]) -> str:
         f"{joined(list(collections))} {'is' if one else 'are'} being rebuilt "
         f"by another kennis process, so {'it was' if one else 'they were'} "
         f"left alone"
-    )
-
-
-def describe_uncommitted_build() -> str:
-    """A build that finished while something else held the corpus.
-
-    The index is published and searchable; only its commit waits. Said
-    rather than swallowed, because a corpus whose history does not
-    mention an index it has is a corpus somebody will wonder about.
-    """
-    return (
-        "the corpus was busy, so this index is published but not yet "
-        "committed; the next write records it"
     )
 
 
@@ -379,6 +414,49 @@ def fetching_model(model: str) -> str:
     their disk it would take.
     """
     return f"the embedding model {model}"
+
+
+# What each kind of job is called where a person reads it: the window's
+# strip and Activity page, and a terminal waiting its turn. The keys are
+# the kinds the service starts jobs under.
+JOB_KINDS: Final[dict[str, str]] = {
+    "add": "Add",
+    "index": "Index",
+    "sync": "Corpus sync",
+    "context-sync": "Project context sync",
+    "context": "Project context change",
+    "context-index": "Project context index",
+    "pack": "Pack install",
+    "backup": "Backup",
+    "remember": "Note",
+    "copy": "Copy",
+    "move": "Move",
+    "remove": "Removal",
+    "restore": "Putting back",
+    "return": "Return",
+    "version": "Docs version change",
+}
+
+
+def put_back_at_start(operation: str) -> str:
+    """The service found a write a killed service left half made, and put
+    the corpus back as it was before it (14e, #507)."""
+    name = JOB_KINDS.get(operation, operation).lower()
+    article = "an" if name[:1] in "aeiou" else "a"
+    return (
+        f"The kennis service stopped part way through {article} {name} and has "
+        "put the corpus back as it was before it. Run it again."
+    )
+
+
+def waiting_for(behind: str, ahead: int) -> str:
+    """What a job asked for behind others in its lane says until its turn
+    (14b): the nearest by name, and how many more."""
+    name = JOB_KINDS.get(behind, behind).lower()
+    more = ahead - 1
+    return f"Waiting for the {name} to finish" + (
+        f", and {count_of(more, 'task')} before it" if more else ""
+    )
 
 
 def running_for(seconds: float) -> str:
@@ -410,31 +488,77 @@ def progress_label(operation: str) -> str:
     return _PARTICIPLES.get(operation, operation.capitalize())
 
 
-def still_running_on_interrupt(kind: str) -> str:
-    """What `kennis gui` says to a Ctrl-C that arrives during a job (#422)."""
-    return (
-        f"A {kind} job is still running, and stopping now would end it "
-        "wherever it is. Wait for it, or press Ctrl-C again to stop anyway."
-    )
-
-
 # The published documentation, as `mkdocs.yml`'s `site_url` names it; a
 # test holds the two together. A page's address is this, the page's path
 # under `docs/` without `.md`, and a heading's fragment.
 DOCS_SITE: Final = "https://kwazzi-jack.github.io/kennis/"
 
 
-# `kennis gui` when a window is already open (Brian, 2026-10-17, #484).
-OPEN_OR_REPLACE: Final = "Open it, replace it, or cancel?"
-OPEN_CHOICES: Final = ("open", "replace", "cancel")
-REPLACED_THE_WINDOW: Final = "the other kennis window"
+# The service that owns the corpus (milestone 14), as `kennis gui` and
+# `kennis service` speak of it.
+SERVICE_NOT_RUNNING: Final = "no kennis service is running for this corpus"
+TOKEN_IN_THE_ADDRESS: Final = (
+    "The token is in the address, and lasts as long as the service runs."
+)
+SERVICE_STOPS_ITSELF: Final = (
+    "It stops by itself when idle, and the next command starts it again."
+)
 
 
-def window_already_open(started: str, version: str) -> str:
-    """Said before the choice; the time and version tell an old window
-    from one started a minute ago, and kennis before a reinstall from
-    kennis after it."""
+def service_running(pid: int, started: str, version: str) -> str:
+    """One service, as `kennis service status` reports it."""
+    return f"process {pid}, started {started}, kennis {version}"
+
+
+def waiting_for_another_version(version: str) -> str:
+    """Said once while a busy service of another kennis version finishes
+    its task before it is replaced."""
     return (
-        f"kennis is already open in another window, started {started} "
-        f"(kennis {version})"
+        f"the kennis service running is version {version} and busy; "
+        "waiting for its task to finish before replacing it"
     )
+
+
+# How many titles a line about a return names before it counts the rest.
+_RETURN_TITLES_SHOWN: Final = 8
+
+
+def describe_return_changes(changes: ReturnChanges) -> list[str]:
+    """What returning to a point would do, one line per kind of change,
+    each naming its documents by title; nothing to say is said as such."""
+    if changes.nothing:
+        return [f"the documents are already as they were at {changes.commit[:8]}"]
+    lines: list[str] = []
+    for verb, held in (
+        ("puts back", changes.added),
+        ("removes", changes.removed),
+        ("changes back", changes.changed),
+    ):
+        if not held:
+            continue
+        named = [one.title for one in held[:_RETURN_TITLES_SHOWN]]
+        if len(held) > _RETURN_TITLES_SHOWN:
+            named.append(f"{len(held) - _RETURN_TITLES_SHOWN} more")
+        lines.append(f"{verb} {count_of(len(held), 'document')}: {joined(named)}")
+    return lines
+
+
+def describe_returned(commit: str, *, added: int, removed: int, changed: int) -> str:
+    """What a return did, in the words `describe_return_changes` used."""
+    if not (added or removed or changed):
+        return f"already as at {commit[:8]}, so nothing changed"
+    parts = [
+        f"{count_of(count, 'document')} {verb}"
+        for verb, count in (
+            ("put back", added),
+            ("removed", removed),
+            ("changed back", changed),
+        )
+        if count
+    ]
+    return f"to {commit[:8]}: {', '.join(parts)}"
+
+
+# After a return, search still reads the index built before it: the
+# command line's hint closes with this, after the command.
+RETURN_NEEDS_AN_INDEX: Final = "so search sees what the return changed"

@@ -187,6 +187,8 @@ def _add_options(context: Context, form: FormData) -> AddOptions | str:
         or None,
         unpaywall_email=context.settings.literature.unpaywall_email,
         project=str(form.get("project") or "") or None,
+        version=str(form.get("version") or "").strip() or None,
+        refresh=form.get("refresh") == "on",
         batch_size=context.settings.conversion.batch_size,
         # arXiv's pacing, for arXiv: a site gets the docs default.
         request_delay_seconds=(
@@ -305,11 +307,20 @@ def _typed(value: str, prefilled: str) -> str:
 
 @router.get("/add/preview/site")
 def preview_a_site(
-    request: Request, identifiers: str = "", project: str = "", probe: str = ""
+    request: Request,
+    identifiers: str = "",
+    project: str = "",
+    version: str = "",
+    probe: str = "",
 ) -> HTMLResponse:
     first = next(iter(_lines(identifiers)), "")
     probed = bool(probe) and bool(first)
-    preview = preview_site(first, project=project.strip() or None, probe=probed)
+    preview = preview_site(
+        first,
+        project=project.strip() or None,
+        version=version.strip() or None,
+        probe=probed,
+    )
     return TEMPLATES.TemplateResponse(
         request,
         "forms/add-preview.html",
@@ -376,12 +387,20 @@ def serve_chooser(
 
 
 def _docs_refusal(
-    destination: str, identifiers: list[str], project: str | None
+    destination: str,
+    identifiers: list[str],
+    project: str | None,
+    version: str | None = None,
 ) -> str | None:
     """Why a docs add of these lines cannot start, asked before it does."""
     if destination != "docs":
         return None
-    unusable = unusable_docs_input(identifiers, project=project)
+    unusable = unusable_docs_input(
+        identifiers,
+        project=project,
+        version=version,
+        docs_root=Collection(root=existing_corpus().corpus_root, name="docs").path,
+    )
     return None if unusable is None else words.docs_input_refused(*unusable)
 
 
@@ -439,7 +458,7 @@ def start_add(request: Request, form: PostedForm) -> Response:
         return refused_in_the_form(
             request, "#add-problem", words.unknown_collection(destination)
         )
-    refusal = _docs_refusal(destination, identifiers, options.project)
+    refusal = _docs_refusal(destination, identifiers, options.project, options.version)
     if refusal is not None:
         return refused_in_the_form(request, "#add-problem", refusal)
     put_back: list[OutOfBandChange] = []

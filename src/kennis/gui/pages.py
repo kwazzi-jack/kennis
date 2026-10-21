@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -24,12 +24,20 @@ import yaml
 
 from kennis.context import Context
 from kennis.engine.backup import BackupReport
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import (
+    pack_group,
+    pack_of_group,
+    project_group,
+    project_of_group,
+)
 from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.packs import pack_files
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.copying import COPY_ORIGIN_SCHEME
 from kennis.engine.corpus.document import Document, DocumentFacts
+from kennis.engine.corpus.ids import derive_id, natural_key_for_docs
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import (
     COLLECTION_NAMES,
@@ -38,9 +46,16 @@ from kennis.engine.corpus.schema import (
     LiteratureFrontmatter,
 )
 from kennis.engine.corpus.sync import CorpusSync
-from kennis.engine.errors import DocumentNotFound, KennisError
+from kennis.engine.docs.versions import (
+    ProjectVersions,
+    excluded_versions,
+    project_versions,
+    versions_holding,
+)
+from kennis.engine.errors import DocumentNotFound, KennisError, PackNotInstalled
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.pack.installed import list_installed
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Chunk
@@ -63,8 +78,8 @@ from kennis.render.hits import (
     Hit,
     Leg,
     Relevance,
-    ScoreStyle,
     best_lexical,
+    docs_versions_of,
     relevance_phrase,
     relevances,
     rendered_hit,
@@ -81,17 +96,27 @@ from kennis.render.html import (
     to_html,
 )
 from kennis.render.packs import (
-    describe_corpus_claim_needed,
+    describe_bundle_sync,
     describe_declarations,
+    describe_declared,
     describe_deferred,
     describe_install,
+    describe_kept_copies,
+    describe_kept_copy,
+    describe_made_yours,
+    describe_no_declaration,
+    describe_not_installed,
     describe_outcome_of,
     describe_sync,
     describe_unfetched,
     describe_why_unfetched,
 )
 from kennis.render.refusals import refusal_fact, remedies_for_refusal
-from kennis.render.words import describe_busy_indexes, describe_uncommitted_build
+from kennis.render.words import (
+    ScoreStyle,
+    describe_busy_indexes,
+    group_name,
+)
 from kennis.retrieval import Sweep
 
 # Bands rather than raw fused scores, as the other two front ends use:
@@ -157,6 +182,9 @@ class ShownHit:
     # that chose between them with an `{% if %}` would be a template
     # deciding where a document lives.
     href: str
+    # `pydantic 2.14`, or the versions a merged passage stands for; empty
+    # for a hit that is not a versioned docs page (#489).
+    version: str = ""
 
     @property
     def opens(self) -> bool:
@@ -222,9 +250,65 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
                     hit.result.chunk.chunk_index,
                     question,
                 ),
+                version=docs_versions_of(hit) or "",
             )
         )
     return shown
+
+
+def versions_query(versions: Sequence[str]) -> str:
+    """`&version=...` for each docs version a search was asked for, so a
+    link that runs it again searches the same versions (#489)."""
+    return "".join(f"&version={quote(version)}" for version in versions)
+
+
+@dataclass(frozen=True, slots=True)
+class ShownVersionChoice:
+    """One version of one project, as a checkbox beside the search box."""
+
+    value: str
+    version: str
+    checked: bool
+    current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ShownVersionProject:
+    project: str
+    choices: tuple[ShownVersionChoice, ...]
+
+
+def shown_version_choices(
+    held: Mapping[str, ProjectVersions], chosen: Sequence[str]
+) -> list[ShownVersionProject]:
+    """Each project that holds more than one version, its versions ticked
+    as `chosen` searches them; none when there is nothing to choose.
+
+    Ticked by `excluded_versions`, the rule the search itself follows,
+    so the boxes cannot say something other than what was searched. A
+    choice that cannot be read ticks the default, and the page says why
+    above the results.
+    """
+    try:
+        left_out = set(excluded_versions(held, chosen))
+    except KennisError:
+        left_out = set(excluded_versions(held, ()))
+    return [
+        ShownVersionProject(
+            project=project,
+            choices=tuple(
+                ShownVersionChoice(
+                    value=f"{project}={version}",
+                    version=version,
+                    checked=f"{project}/{version}" not in left_out,
+                    current=version == versions.current,
+                )
+                for version in versions.held
+            ),
+        )
+        for project, versions in held.items()
+        if len(versions.held) > 1
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +325,7 @@ class ShownGroup:
     """
 
     collection: str
+    name: str
     icon: str
     hits: list[ShownHit]
 
@@ -263,6 +348,7 @@ def shown_groups_of(found: Sweep, question: str, order: str = "") -> list[ShownG
     return [
         ShownGroup(
             collection=name,
+            name=group_name(name),
             # The bundle is drawn as a folder in the pane, so here too.
             icon=words.COLLECTION_ICONS.get(name, "folder"),
             hits=shown_hits(ordered_by(hits, order), question=question),
@@ -306,7 +392,12 @@ class ShownOrder:
 
 
 def shown_orders(
-    *, question: str, scope: str, mode: str, order: str
+    *,
+    question: str,
+    scope: str,
+    mode: str,
+    order: str,
+    versions: Sequence[str] = (),
 ) -> list[ShownOrder]:
     """The orders on offer, each a link carrying the search it reorders.
 
@@ -318,6 +409,7 @@ def shown_orders(
         query = f"/?q={quote(question)}&scope={quote(scope)}"
         if mode:
             query += f"&mode={quote(mode)}"
+        query += versions_query(versions)
         if value:
             query += f"&order={value}"
         shown.append(ShownOrder(label=label, href=query, current=value == order))
@@ -414,8 +506,16 @@ def _href(
     # times.
     asked = f"&q={quote(question)}" if question else ""
     tail = f"?chunk={chunk_index}{asked}#chunk-{chunk_index}"
-    if collection == CONTEXT_COLLECTION:
-        return f"/bundle/{quote(document_id)}{tail}"
+    project = project_of_group(collection)
+    if project is not None:
+        # In the query, because a project's name may hold a `/` (#512).
+        return (
+            f"/bundle/{quote(document_id)}?project={quote(project)}"
+            f"&chunk={chunk_index}{asked}#chunk-{chunk_index}"
+        )
+    pack = pack_of_group(collection)
+    if pack is not None:
+        return f"/pack/{quote(pack)}/{quote(document_id)}{tail}"
     return f"/document/{quote(collection)}/{quote(document_id)}{tail}"
 
 
@@ -455,6 +555,8 @@ def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
             href=(
                 f"/?q={quote(search.query)}&scope={quote(search.scope)}"
                 + (f"&mode={quote(search.mode)}" if search.mode else "")
+                + versions_query(search.versions)
+                + (f"&project={quote(search.project)}" if search.project else "")
             ),
         )
         for search in searches
@@ -477,6 +579,9 @@ class ShownDetail:
     href: str = ""
     # Offered to the clipboard: the citekey, which is typed into a paper.
     copyable: bool = False
+    # False for a page of this window - the original a copy was made from -
+    # which opens here rather than in a tab that cannot reach back.
+    external: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,6 +607,21 @@ class ShownDocument:
     byline: str | None = None
     details: tuple[ShownDetail, ...] = ()
     outline: tuple[Heading, ...] = ()
+    # The same docs page in the other versions held, as (version, link):
+    # what changed between two releases is a click away (#489).
+    other_versions: tuple[tuple[str, str], ...] = ()
+    # The breadcrumb for the store it is in, when that is not a corpus
+    # collection: a bundle has no page of its own, so its crumb is words
+    # with no link, and a pack's leads to the packs (14g).
+    crumb_name: str = ""
+    crumb_href: str = ""
+
+    @property
+    def crumb(self) -> tuple[str, str]:
+        """The breadcrumb's words and where it leads; no link when empty."""
+        if self.crumb_name:
+            return self.crumb_name, self.crumb_href
+        return self.collection, f"/collection/{self.collection}"
 
 
 def byline_of(frontmatter: DocumentFrontmatter) -> str | None:
@@ -523,6 +643,7 @@ def document_details(
     collection: str,
     group: str,
     state: DocumentState | None,
+    original: tuple[str, str] | None = None,
 ) -> tuple[ShownDetail, ...]:
     """What the frontmatter says, as the inspector's rows.
 
@@ -559,17 +680,31 @@ def document_details(
         rows.append(ShownDetail(label["page"], frontmatter.docs.page, verbatim=True))
         if frontmatter.docs.version:
             rows.append(ShownDetail(label["version"], frontmatter.docs.version))
+        # What the site calls its own release, when it says something the
+        # folder does not: `latest` built as 2.2.0rc1.
+        release = frontmatter.docs.release
+        if release and release != frontmatter.docs.version:
+            rows.append(ShownDetail(label["release"], release))
     source = frontmatter.source
-    fetched = source.origin.removeprefix("url:")
-    rows.append(
-        ShownDetail(
-            label["source"],
-            source.origin,
-            verbatim=True,
-            href=fetched if fetched.startswith(("https://", "http://")) else "",
+    if original is not None:
+        # A copy's source is a document here, not a conversion (#514).
+        identifier, href = original
+        rows.append(
+            ShownDetail(
+                label["copied"], identifier, verbatim=True, href=href, external=False
+            )
         )
-    )
-    rows.append(ShownDetail(label["converted"], source.via))
+    else:
+        fetched = source.origin.removeprefix("url:")
+        rows.append(
+            ShownDetail(
+                label["source"],
+                source.origin,
+                verbatim=True,
+                href=fetched if fetched.startswith(("https://", "http://")) else "",
+            )
+        )
+        rows.append(ShownDetail(label["converted"], source.via))
     rows.append(ShownDetail(label["added"], source.at.date().isoformat()))
     if state is not None:
         rows.append(ShownDetail(label["index"], words.INDEX_STATES[state]))
@@ -690,8 +825,55 @@ def shown_document(
             collection=collection,
             group=group,
             state=None if marks is None else state_in(marks, corpus_root, anchor),
+            original=_original_of(corpus_root, frontmatter),
         ),
         outline=tuple(headings_of(document.body, without_title=frontmatter.title)),
+        other_versions=_other_versions(held, frontmatter),
+    )
+
+
+def _original_of(
+    corpus_root: Path, frontmatter: DocumentFrontmatter
+) -> tuple[str, str] | None:
+    """The document a copy was made from and its page, or no link when it
+    has gone; None when this is not a copy. Searched only for a copy,
+    because finding an identifier lists each collection."""
+    origin = frontmatter.source.origin
+    if not origin.startswith(COPY_ORIGIN_SCHEME):
+        return None
+    identifier = origin.removeprefix(COPY_ORIGIN_SCHEME)
+    for name in COLLECTION_NAMES:
+        try:
+            Collection(root=corpus_root, name=name).resolve(identifier)
+        except DocumentNotFound:
+            continue
+        return identifier, f"/document/{name}/{identifier}"
+    return identifier, ""
+
+
+def _other_versions(
+    held: Collection, frontmatter: DocumentFrontmatter
+) -> tuple[tuple[str, str], ...]:
+    """Where the same page is in the project's other versions.
+
+    Linked by the identifier an add derives from the project, the version
+    and the page, which is the one every copy was written under.
+    """
+    if not isinstance(frontmatter, DocsFrontmatter) or frontmatter.docs.version is None:
+        return ()
+    docs = frontmatter.docs
+    return tuple(
+        (
+            version,
+            "/document/docs/"
+            + derive_id(
+                natural_key_for_docs(
+                    project=docs.project, version=version, page=docs.page
+                )
+            ),
+        )
+        for version in versions_holding(held.path, docs.project, docs.page)
+        if version != docs.version
     )
 
 
@@ -699,6 +881,7 @@ def shown_bundle_document(
     bundle: Path,
     relative_path: str,
     *,
+    project: str,
     load_remote_images: bool,
     marked: MarkedRange | None = None,
     question: str = "",
@@ -738,7 +921,9 @@ def shown_bundle_document(
     return ShownDocument(
         title=str(title),
         document_id=relative_path,
-        collection=CONTEXT_COLLECTION,
+        # The project's group, so the page's own links name it too.
+        collection=project_group(project),
+        crumb_name=f"{project}/{bundle.name}",
         path=f"{bundle.name}/{relative_path}",
         body_html=to_html(
             body,
@@ -753,7 +938,9 @@ def shown_bundle_document(
         # A bundle note's frontmatter is the user's own and has no
         # model, so its details are where it is and nothing more.
         details=(
-            ShownDetail(words.DETAIL_LABELS["collection"], CONTEXT_COLLECTION),
+            ShownDetail(
+                words.DETAIL_LABELS["collection"], group_name(project_group(project))
+            ),
             ShownDetail(
                 words.DETAIL_LABELS["path"],
                 f"{bundle.name}/{relative_path}",
@@ -761,6 +948,68 @@ def shown_bundle_document(
             ),
         ),
         outline=tuple(headings_of(body, without_title=str(title))),
+    )
+
+
+def shown_pack_document(
+    corpus_root: Path,
+    pack_id: str,
+    address: str,
+    *,
+    load_remote_images: bool,
+    marked: MarkedRange | None = None,
+    question: str = "",
+) -> ShownDocument:
+    """One of a pack's context files, as the store holds it (14g).
+
+    Looked up among the files the pack declares, never joined onto a
+    path, for the reason `shown_bundle_document` gives. Read only: the
+    file is the pack's, and a project that wants its own version copies
+    it with `kennis context copy`.
+    """
+    held = {one.state.pack_id: one for one in list_installed(corpus_root).packs}
+    if pack_id not in held:
+        raise PackNotInstalled(f"no pack '{pack_id}' is installed")
+    file = pack_files(corpus_root, held[pack_id]).get(address)
+    if file is None:
+        raise DocumentNotFound(
+            f"the pack '{pack_id}' ships no context file '{address}'",
+            resolution=f"kennis pack status {pack_id}",
+        )
+    text = file.path.read_text(encoding="utf-8")
+    try:
+        frontmatter, body = split_frontmatter(text)
+    except yaml.YAMLError:
+        frontmatter, body = {}, text
+    title = str(frontmatter.get("title") or Path(address).stem)
+    return ShownDocument(
+        title=title,
+        document_id=address,
+        collection=pack_group(pack_id),
+        crumb_name=group_name(pack_group(pack_id)),
+        crumb_href="/corpus#packs",
+        path=f"{pack_id}/{address}",
+        body_html=to_html(
+            body,
+            load_remote_images=load_remote_images,
+            marked=marked,
+            without_title=title,
+            heading_anchors=True,
+            terms=terms_of(question),
+        ),
+        has_blocked_images=_refers_remotely(body),
+        handle=f"{pack_id}/{address}",
+        details=(
+            ShownDetail(
+                words.DETAIL_LABELS["collection"], group_name(pack_group(pack_id))
+            ),
+            ShownDetail(
+                words.DETAIL_LABELS["copy"],
+                f"kennis context copy {pack_id}/{address}",
+                verbatim=True,
+            ),
+        ),
+        outline=tuple(headings_of(body, without_title=title)),
     )
 
 
@@ -1139,6 +1388,11 @@ class ShownBranch:
     add_here: str
     children: list[ShownBranch]
     count: int
+    # For a docs version's folder (#489): its project and version, and
+    # whether a search uses it by default. Empty for any other group.
+    project: str = ""
+    version: str = ""
+    current: bool = False
 
     @property
     def name(self) -> str:
@@ -1196,7 +1450,12 @@ def shown_tree(context: Context, collection: str) -> ShownTree:
             )
         )
     levels = every_level(grouped)
-    top = _branch(collection, "", grouped, levels)
+    held = (
+        project_versions(Collection(root=root, name="docs").path)
+        if collection == "docs"
+        else {}
+    )
+    top = _branch(collection, "", grouped, levels, held)
     every = top.beneath()
     return ShownTree(
         collection=collection,
@@ -1213,13 +1472,17 @@ def _branch(
     group: str,
     grouped: dict[str, list[ShownTreeEntry]],
     levels: list[str],
+    held: Mapping[str, ProjectVersions],
 ) -> ShownBranch:
     """`group` and, drawn inside it, every group one level down."""
     children = [
-        _branch(collection, level, grouped, levels)
+        _branch(collection, level, grouped, levels, held)
         for level in levels
         if level.rpartition("/")[0] == group
     ]
+    project, _, version = group.partition("/")
+    versions = held.get(project)
+    is_version = versions is not None and version in versions.held
     entries = grouped.get(group, [])
     beneath = entries + [entry for child in children for entry in child.beneath()]
     attention = [entry.state for entry in beneath if entry.mark]
@@ -1231,6 +1494,9 @@ def _branch(
         add_here=add_here_address(collection, group),
         children=children,
         count=len(beneath),
+        project=project if is_version else "",
+        version=version if is_version else "",
+        current=is_version and versions is not None and versions.current == version,
     )
 
 
@@ -1427,8 +1693,6 @@ def shown_index(built: IndexBuild) -> ShownJob:
         notes.append(describe_busy_indexes(built.busy))
     elif not built.built:
         notes.append(words.NOTHING_TO_INDEX)
-    if not built.committed:
-        notes.append(describe_uncommitted_build())
     return ShownJob(
         headline=words.indexed_headline(built),
         items=tuple(
@@ -1449,9 +1713,11 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
     """A corpus sync, with the two things it deliberately did not do."""
     notes: list[str] = []
     steps: list[str] = []
-    if result.edited:
-        notes.append(describe_corpus_claim_needed(len(result.edited)))
-        steps.extend(f"kennis corpus claim {held}" for held in result.edited)
+    if result.copied:
+        notes.append(describe_kept_copies(len(result.copied)))
+        notes.extend(
+            describe_kept_copy(original, copy) for original, copy in result.copied
+        )
     if result.failed:
         notes.append(describe_unfetched(result.failed))
         notes.extend(
@@ -1489,20 +1755,29 @@ def capitalised(said: str) -> str:
 def shown_bundle_sync(result: BundleSync) -> ShownJob:
     """A context sync. No commit happened and the page has to say so."""
     notes: list[str] = [words.BUNDLE_NOT_COMMITTED]
-    if result.deferred:
-        notes.append(describe_deferred(result.deferred))
-    acted = any(action.verdict in ACTING for action in result.actions)
+    if result.made_yours:
+        notes.append(describe_made_yours())
+    if result.declared:
+        notes.append(describe_declared(result.declared))
+    if result.missing:
+        notes.append(describe_not_installed(result.missing))
+    if not result.declared and not result.missing:
+        notes.append(describe_no_declaration())
+    acted = bool(result.removed or result.made_yours)
     return ShownJob(
-        headline=capitalised(describe_sync(result.counts)),
+        headline=capitalised(
+            describe_bundle_sync(len(result.removed), len(result.made_yours))
+        ),
         role="role-added" if acted else "role-muted",
-        items=tuple(
-            ShownItem(
-                marker=SYNC_MARKERS.get(action.verdict, ">"),
-                name=action.address,
-                outcome=action.verdict,
-                detail=describe_outcome_of(action),
-            )
-            for action in result.actions
+        items=(
+            *(
+                ShownItem(marker="-", name=address, outcome="removed")
+                for address in result.removed
+            ),
+            *(
+                ShownItem(marker="~", name=address, outcome="made yours")
+                for address in result.made_yours
+            ),
         ),
         notes=tuple(notes),
         # `kennis context index` stays a command, unlike the corpus

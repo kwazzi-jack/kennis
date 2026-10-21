@@ -1,0 +1,6 @@
+$ kennis pack status
+--- exit 0
+--- stdout
+provider 0.1.0, 1 file
+  = added <date>
+--- stderr

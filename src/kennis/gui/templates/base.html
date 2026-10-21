@@ -1,4 +1,4 @@
-{% set pane_open = pane_state(request) %}{% set pane = pane_now() %}{% set sized = sizes(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
+{% set pane_open = pane_state(request) %}{% set pane = pane_now(request) %}{% set sized = sizes(request) %}{% from "resize.html" import handle %}{% from "tip.html" import tip %}<!doctype html>
 <html lang="en" data-pane="{{ pane_open }}" data-inspector="{{ inspector_state(request) }}"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}{% if sized %} style="{{ sized }}"{% endif %}>
 <head>
 <meta charset="utf-8">
@@ -54,7 +54,7 @@
   {% set asked_scope = scope | default(everywhere) %}
   <form class="searchbox" role="search" action="/" method="get"
         {% if searching_here %}hx-get="/hits" hx-target="#hits"
-        hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope], change from:select[name=mode]"{% endif %}>
+        hx-trigger="submit, input changed delay:400ms from:input[name=q], change from:select[name=scope], change from:select[name=project], change from:select[name=mode], change from:.versions"{% endif %}>
     {{ icon("search") }}
     <input type="search" name="q" value="{{ question | default('') }}"
            placeholder="{{ scope_hints[asked_scope] }}" aria-label="{{ search_action }}"
@@ -66,6 +66,16 @@
       <option value="{{ name }}" data-hint="{{ scope_hints[name] }}"{% if name == asked_scope %} selected{% endif %}>{{ name }}</option>
       {% endfor %}
     </select>
+    {# Whose context, once there is more than one project to choose
+       from: every project's, or one's (14g, #512). #}
+    {% if pane.projects | length > 1 %}
+    <select name="project" aria-label="{{ project_label }}" title="{{ project_label }}">
+      <option value=""{% if not project %} selected{% endif %}>{{ every_project }}</option>
+      {% for name in pane.projects %}
+      <option value="{{ name }}"{% if name == project %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
     {# Named rather than `from:select` in the trigger: htmx resolves
        that against the document, and the theme control is a select
        too - a colour change would run a search. #}
@@ -76,6 +86,25 @@
     </select>
     {# Not drawn, as the mockup has none, but kept: a browser submits on
        Enter through it, and a reader without a script needs it. #}
+    {# Which docs versions to search, drawn only when a project holds
+       more than one (#489). Checkboxes, because several may be chosen;
+       inside the form, so a scriptless search carries them. #}
+    {% set offered_versions = version_choices(request) %}
+    {% if offered_versions %}
+    <details class="versions">
+      <summary title="{{ versions_label }}">{{ icon("history") }}<span class="label">{{ versions_label }}</span></summary>
+      <div class="versions-list">
+      {% for project in offered_versions %}
+        <fieldset>
+          <legend>{{ project.project }}</legend>
+          {% for choice in project.choices %}
+          <label{% if choice.current %} data-current="true"{% endif %}><input type="checkbox" name="version" value="{{ choice.value }}"{% if choice.checked %} checked{% endif %}><span>{{ choice.version }}</span>{% if choice.current %}<span class="role-muted">{{ current_version }}</span>{% endif %}</label>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+      </div>
+    </details>
+    {% endif %}
     <button type="submit" class="visually-hidden" tabindex="-1">{{ search_action }}</button>
     {% if searching_here %}<p class="searching role-muted" id="searching" aria-live="polite" hidden>{{ searching }}</p>{% endif %}
   </form>
@@ -123,12 +152,14 @@
     </ul>
   </section>
   <section>
-    <h2 class="pane-head">{{ context_heading }}{% if pane.project %} <span class="project">{{ pane.project }}</span>{% endif %}</h2>
-    {% if pane.project %}
-    <details hx-get="/tree/context" hx-trigger="toggle once" hx-target="find .branch">
-      <summary class="node top">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">.context</span></summary>
+    <h2 class="pane-head">{{ context_heading }}</h2>
+    {% if pane.projects %}
+    {% for project in pane.projects %}
+    <details hx-get="/tree/context?project={{ project | urlencode }}" hx-trigger="toggle once" hx-target="find .branch">
+      <summary class="node top">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ project }}</span></summary>
       <div class="branch"></div>
     </details>
+    {% endfor %}
     {% else %}
     <p class="pane-note role-muted">{{ no_context }} {{ tip("no-context", context_heading, no_context_tip) }}</p>
     {% endif %}

@@ -1,0 +1,13 @@
+$ kennis corpus history
+--- exit 0
+--- stdout
+  <commit>  <date>  remove(notes): 1 removed
+  <commit>  <date>  move(notes): 1 changed
+  <commit>  <date>  remember(notes): 1 documents
+  <commit>  <date>  remember(notes): 1 documents
+  <commit>  <date>  index(corpus): 4 documents, 6 chunks
+  <commit>  <date>  add(docs): 1 added
+  <commit>  <date>  add(notes): 1 added
+  <commit>  <date>  add(notes): 2 added
+  <commit>  <date>  init(corpus): create the corpus
+--- stderr

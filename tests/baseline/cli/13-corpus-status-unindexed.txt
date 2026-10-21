@@ -1,0 +1,9 @@
+$ kennis corpus status
+--- exit 0
+--- stdout
+Literature 0 documents
+Docs 1 document
+Notes 3 documents
+warning: no index yet, so nothing is searchable
+  hint: run `kennis corpus index`
+--- stderr

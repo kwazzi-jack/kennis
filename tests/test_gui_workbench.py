@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from starlette.routing import BaseRoute
 
 from kennis.cli.__main__ import main
+from kennis.context import existing_corpus
 from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.theme import stylesheet
@@ -341,7 +342,7 @@ def test_the_pane_says_how_much_is_held_and_what_its_dots_mean(
     corpus: Path, client: TestClient
 ):
     admitted(client)
-    write_note("Calibration converged after three rounds.")
+    write_note(existing_corpus(), "Calibration converged after three rounds.")
 
     pane = BeautifulSoup(pane_of(client.get("/").text), "html.parser")
     text = " ".join(pane.get_text(" ").split())
@@ -361,7 +362,7 @@ def test_the_pane_says_which_collections_need_indexing(
     apart: an empty collection has nothing to index, and a collection
     never indexed is not *stale* - concern #245's distinction."""
     admitted(client)
-    write_note("Calibration converged after three rounds.")
+    write_note(existing_corpus(), "Calibration converged after three rounds.")
     never = collection_states(client.get("/").text)
 
     # The first index of a collection is a deliberate act: `remember`
@@ -370,7 +371,7 @@ def test_the_pane_says_which_collections_need_indexing(
     assert CliRunner().invoke(main, indexing).exit_code == 0
     indexed = collection_states(client.get("/").text)
 
-    write_note("A second note, deliberately left out.", index=False)
+    write_note(existing_corpus(), "A second note, deliberately left out.", index=False)
     behind = collection_states(client.get("/").text)
 
     assert never["literature"] == "empty"
@@ -385,7 +386,7 @@ def test_the_documents_are_not_drawn_on_every_page(corpus: Path, client: TestCli
     every page. A collection's documents are fetched when it is
     opened; the page carries only the address to fetch them from."""
     admitted(client)
-    write_note("Calibration converged after three rounds.")
+    write_note(existing_corpus(), "Calibration converged after three rounds.")
 
     pane = pane_of(client.get("/").text)
 
@@ -397,7 +398,11 @@ def test_an_opened_collection_lists_its_groups_and_documents(
     corpus: Path, client: TestClient
 ):
     admitted(client)
-    write_note("Calibration converged after three rounds.", group="observing")
+    write_note(
+        existing_corpus(),
+        "Calibration converged after three rounds.",
+        group="observing",
+    )
 
     tree = client.get("/tree/notes").text
 
@@ -435,14 +440,19 @@ def test_the_context_is_named_after_its_project(
     assert CliRunner().invoke(main, ["context", "init"]).exit_code == 0
     # A fresh bundle holds only its landing page and hidden scaffolding,
     # neither of which `bundle_documents` counts.
-    write_context_note("Solution intervals are per scan.", title="Intervals")
+    bundle = project / ".context"
+    write_context_note(
+        "Solution intervals are per scan.", title="Intervals", bundle=bundle
+    )
     admitted(client)
 
     pane = pane_of(client.get("/").text)
 
-    assert re.search(r'class="project"[^>]*>boepie<', pane), pane
-    assert 'hx-get="/tree/context"' in pane
-    assert re.search(r'href="/bundle/[^"]+\.md"', client.get("/tree/context").text)
+    # Every known project, wherever the window was started (14g, #512).
+    assert re.search(r'class="name">boepie<', pane), pane
+    assert 'hx-get="/tree/context?project=boepie"' in pane
+    tree = client.get("/tree/context", params={"project": "boepie"}).text
+    assert re.search(r'href="/bundle/[^"]+\.md\?project=boepie"', tree), tree
 
 
 def test_without_a_bundle_the_context_section_says_so(corpus: Path, client: TestClient):
@@ -627,7 +637,12 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # Written by hand: how many routes the window answers. The walk below is
 # what both tests read, and an included router it failed to enter would
 # otherwise leave them asserting over nothing.
-EXPECTED_ROUTES = 46
+# 48th and 49th: GET and POST /docs/remove-version (#489); 50th to 54th: GET
+# and POST /document/remove and /corpus/return, POST /corpus/restore; 55th:
+# GET /pack/{id}/{address}, a pack's context file (14g); and POST
+# /context-sync gone, because the window copies no pack into a project (14g);
+# and POST /copy, a document copied into a note of the person's (14g, #514)
+EXPECTED_ROUTES = 55
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

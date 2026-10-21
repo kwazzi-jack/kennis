@@ -9,10 +9,12 @@ deletion of the user's documents on the next sync.
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 
 import pytest
 
+from by_hand import deleted_by_hand
 from kennis.engine.errors import PackInvalid
 from kennis.engine.pack.store import (
     STATE_FILENAME,
@@ -188,7 +190,7 @@ def test_an_emptied_store_is_repaired_rather_than_believed(
     a pack declaring nothing and deletes every document it owns."""
     install_pack(corpus, provider / "p.ken.yml")
     for path in (pack_root(corpus, "boepie") / "notes").iterdir():
-        path.unlink()
+        deleted_by_hand(path)
 
     again = install_pack(corpus, provider / "p.ken.yml")
 
@@ -200,9 +202,9 @@ def test_an_emptied_store_is_repaired_rather_than_believed(
 
 def test_a_corrupted_file_in_the_store_is_repaired(corpus: Path, provider: Path):
     install_pack(corpus, provider / "p.ken.yml")
-    (pack_root(corpus, "boepie") / "notes" / "conventions.md").write_text(
-        "Truncated", encoding="utf-8"
-    )
+    stored = pack_root(corpus, "boepie") / "notes" / "conventions.md"
+    stored.chmod(stored.stat().st_mode | stat.S_IWRITE)
+    stored.write_text("Truncated", encoding="utf-8")
 
     again = install_pack(corpus, provider / "p.ken.yml")
 

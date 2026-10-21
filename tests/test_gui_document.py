@@ -19,7 +19,7 @@ from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
-from kennis.engine.corpus.schema import LiteratureFrontmatter
+from kennis.engine.corpus.schema import DocsFrontmatter, LiteratureFrontmatter
 from kennis.engine.rag.index import load_index
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
@@ -193,6 +193,40 @@ def test_a_notes_details_say_where_it_is_and_whether_it_is_searchable(
     assert details[words.DETAIL_LABELS["index"]] == words.INDEX_STATES[""]
 
 
+def test_a_copy_says_what_it_was_copied_from_and_leads_there(
+    corpus: Path, client: TestClient
+):
+    """`copy:<id>` is the record (#514); the reader is shown the original's
+    identifier and a way to it, in this window rather than a new tab, and
+    not "Converted from copy", which is the record read aloud."""
+    original = a_note(corpus, index=False)
+    copied = CliRunner().invoke(main, ["corpus", "copy", original])
+    assert copied.exit_code == 0, copied.output
+    copy_id = copied.output.splitlines()[0].rsplit(" ", 1)[-1]
+
+    soup = page_of(client, copy_id)
+
+    details = details_in(soup)
+    assert details[words.DETAIL_LABELS["copied"]] == original
+    assert words.DETAIL_LABELS["converted"] not in details
+    assert words.DETAIL_LABELS["source"] not in details
+    link = found(soup, f".inspector .details a[href='/document/notes/{original}']")
+    assert not link.get("target")
+
+
+def test_a_copy_whose_original_is_gone_still_names_it(corpus: Path, client: TestClient):
+    original = a_note(corpus, index=False)
+    run = CliRunner()
+    copied = run.invoke(main, ["corpus", "copy", original])
+    copy_id = copied.output.splitlines()[0].rsplit(" ", 1)[-1]
+    assert run.invoke(main, ["corpus", "remove", "-y", original]).exit_code == 0
+
+    soup = page_of(client, copy_id)
+
+    assert details_in(soup)[words.DETAIL_LABELS["copied"]] == original
+    assert not soup.select(f".inspector .details a[href*='{original}']")
+
+
 def test_a_document_added_since_the_index_says_so(corpus: Path, client: TestClient):
     """The tree's own rule: a collection never indexed marks everything
     as not indexed."""
@@ -239,6 +273,57 @@ def test_a_papers_details_carry_its_citekey_and_identifiers_verbatim():
     assert words.DETAIL_LABELS["group"] not in shown
 
 
+def a_docs_page(*, version: str | None, release: str | None) -> DocsFrontmatter:
+    return DocsFrontmatter.model_validate(
+        {
+            "id": "abcdefghij",
+            "title": "Models",
+            "owner": "user",
+            "source": {
+                "from": "url:https://h.io/2.12/m/",
+                "via": "html",
+                "format": "html",
+            },
+            "docs": {
+                "project": "pydantic",
+                "page": "m",
+                "version": version,
+                "release": release,
+            },
+        }
+    )
+
+
+def test_a_docs_page_s_details_say_its_version_and_the_site_s_release():
+    """#489: the folder's version, and the site's release when it says more."""
+    shown = {
+        detail.label: detail.value
+        for detail in document_details(
+            a_docs_page(version="latest", release="2.2.0rc1"),
+            collection="docs",
+            group="",
+            state="",
+        )
+    }
+
+    assert shown[words.DETAIL_LABELS["version"]] == "latest"
+    assert shown[words.DETAIL_LABELS["release"]] == "2.2.0rc1"
+
+
+def test_a_release_the_version_already_says_is_not_said_twice():
+    shown = [
+        detail.label
+        for detail in document_details(
+            a_docs_page(version="2.12", release="2.12"),
+            collection="docs",
+            group="",
+            state="",
+        )
+    ]
+
+    assert words.DETAIL_LABELS["release"] not in shown
+
+
 def test_an_index_that_cannot_be_checked_says_nothing_about_the_document():
     shown = [
         detail.label
@@ -271,14 +356,14 @@ def test_an_index_whose_commit_is_gone_cannot_say_a_document_is_searchable(
 def test_a_documents_chunks_are_its_own_in_order(corpus: Path):
     identifier = a_note(corpus)
 
-    chunks = document_chunks(existing_corpus(), "notes", identifier)
+    chunks = document_chunks(existing_corpus(), "notes", identifier, bundle=None)
 
     assert len(chunks) > 2, "the sample must chunk"
     assert [chunk.chunk_index for chunk in chunks] == list(range(len(chunks)))
     assert {chunk.document_id for chunk in chunks} == {identifier}
     for chunk in chunks:
         assert chunk_range(
-            existing_corpus(), "notes", identifier, chunk.chunk_index
+            existing_corpus(), "notes", identifier, chunk.chunk_index, bundle=None
         ) == (chunk.char_start, chunk.char_end)
 
 

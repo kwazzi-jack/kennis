@@ -1,0 +1,7 @@
+$ kennis search anything
+--- exit 1
+--- stdout
+error: there is no kennis corpus at <scratch>/corpus
+  hint: run `kennis corpus init`
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

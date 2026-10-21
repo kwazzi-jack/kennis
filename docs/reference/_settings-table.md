@@ -60,7 +60,7 @@ How papers are identified and fetched.
 
 | key | type | default | what it does |
 |---|---|---|---|
-| `request_delay` | `float` | `3.0` | Seconds between arXiv requests. arXiv states three. |
+| `request_delay` | `float` | `3.0` | Least seconds between arXiv papers. A longer `Crawl-delay` in a host's robots.txt applies instead: arxiv.org asks for 15. |
 | `unpaywall_email` | `str` | `""` | Your email address, which Unpaywall requires, to look up a free and legal copy of a paper known only by its DOI. Empty: Unpaywall is not asked, and such a paper needs your own copy. |
 
 ### `[logging]`
@@ -80,3 +80,11 @@ Where the encrypted backup of the corpus is written.
 | key | type | default | what it does |
 |---|---|---|---|
 | `folder` | `str` | `""` | Folder the encrypted backup is written to, often one a cloud client synchronises. The backup holds the full text of every document. |
+
+### `[service]`
+
+How the process that owns the corpus behaves (milestone 14).
+
+| key | type | default | what it does |
+|---|---|---|---|
+| `idle_minutes` | `float` | `30.0` | Minutes the kennis service waits with no task, request or open window before it exits. The next command starts it again. |

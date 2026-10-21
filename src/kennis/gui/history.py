@@ -71,6 +71,12 @@ class Search:
     # this is true of most searches.
     capped: bool
     at: float
+    # The docs versions the search was asked for, as its address carries
+    # them; empty for each project's current one (#489).
+    versions: tuple[str, ...] = ()
+    # The project a search was narrowed to, or "" for every project
+    # (#519): offered again, it searches what it searched.
+    project: str = ""
 
 
 def history_path() -> Path:
@@ -100,6 +106,8 @@ def recent() -> list[Search]:
                 hits=int(entry["hits"]),
                 capped=bool(entry["capped"]),
                 at=float(entry["at"]),
+                versions=tuple(str(one) for one in entry.get("versions", [])),
+                project=str(entry.get("project", "")),
             )
             for entry in written
         ]
@@ -120,6 +128,8 @@ def overwrite(searches: Sequence[Search]) -> None:
                     "hits": search.hits,
                     "capped": search.capped,
                     "at": search.at,
+                    "versions": list(search.versions),
+                    "project": search.project,
                 }
                 for search in searches
             ],
@@ -132,7 +142,16 @@ def clear() -> None:
     overwrite([])
 
 
-def record(query: str, *, scope: str, hits: int, capped: bool, mode: str) -> None:
+def record(
+    query: str,
+    *,
+    scope: str,
+    hits: int,
+    capped: bool,
+    mode: str,
+    versions: tuple[str, ...] = (),
+    project: str = "",
+) -> None:
     """Note that this search happened, collapsing it into the last
     one where the two are the same search still being typed.
 
@@ -155,6 +174,8 @@ def record(query: str, *, scope: str, hits: int, capped: bool, mode: str) -> Non
         hits=hits,
         capped=capped,
         at=time.time(),
+        versions=versions,
+        project=project,
     )
     held = recent()
     # Two removals, and they are different rules.

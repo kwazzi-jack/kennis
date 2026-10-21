@@ -1,0 +1,7 @@
+$ kennis backup create --to backups
+--- exit 0
+--- stdout
+Backup password: 
+Repeat for confirmation: 
+Backed up backups/kennis-corpus.7z (<size>, <count> entries) in <elapsed>
+--- stderr

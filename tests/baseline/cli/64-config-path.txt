@@ -1,0 +1,5 @@
+$ kennis config path
+--- exit 0
+--- stdout
+<scratch>/config/config.toml
+--- stderr

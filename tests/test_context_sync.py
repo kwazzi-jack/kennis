@@ -1,28 +1,27 @@
-"""`kennis context sync`: converging a bundle with every installed pack.
+"""`kennis context sync`: a bundle against the packs its project declares.
 
-Milestone 7 unit 7, first half. This is the destination with no network in
-it, so everything the resolution table decides can be exercised end to end
-here - including the two rows that cost the user something if they are
-wrong: a file they edited is never overwritten, and a file they own is
-never touched and always reported.
+A pack's context is searched in the store (14g, #513), so a sync writes no
+pack content. What it still does, and what each test here holds it to:
+a copy an earlier kennis wrote and nobody edited is removed; an edited
+copy becomes the person's own file that replaces the pack's (#514); and a
+file the person owns is never touched.
 """
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
 
-from kennis.engine.context.bundle import init_bundle
+from kennis.engine.context.bundle import declare_packs, init_bundle
 from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.context.sync import sync_bundle
-from kennis.engine.errors import DocumentInvalid, PackInvalid
+from kennis.engine.errors import DocumentInvalid
 from kennis.engine.events import Outcome, Recorder
 from kennis.engine.frontmatter import split_frontmatter
-from kennis.engine.pack.store import install_pack, pack_root
+from kennis.engine.pack.content import content_digest
+from kennis.engine.pack.store import install_pack
 from kennis.engine.pack.update import update_pack
 
 
@@ -35,70 +34,45 @@ def corpus(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def bundle(tmp_path: Path) -> Path:
-    root = tmp_path / "project" / ".context"
-    root.parent.mkdir(parents=True)
-    init_bundle(root)
-    return root
+    project = tmp_path / "project"
+    project.mkdir()
+    return init_bundle(project).path
 
 
-def a_pack(
-    root: Path,
-    *,
-    identifier: str = "alpha",
-    files: dict[str, str] | None = None,
-    group: str | None = None,
-    source: str = "content/",
-) -> Path:
-    """A pack shipping context content, installed the way a provider does.
-
-    The source tree is rebuilt from scratch each time, so a second call
-    with fewer files really ships fewer files - leaving the directory
-    alone would make "the provider dropped a file" untestable, because
-    `pack update` re-globs what is there.
-    """
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir(parents=True)
-    for relative, text in (files or {"content/one.md": "One.\n"}).items():
-        path = root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    grouped = f"    group: {group}\n" if group else ""
+def installed(corpus: Path, tmp_path: Path, identifier: str = "alpha") -> None:
+    root = tmp_path / identifier
+    (root / "content").mkdir(parents=True)
+    (root / "content" / "one.md").write_text("One.\n", encoding="utf-8")
     path = root / f"{identifier}.ken.yml"
     path.write_text(
         "kennis:\n  schema_version: 1\n"
         f'pack:\n  id: {identifier}\n  name: n\n  version: "1.0.0"\n'
-        f"context:\n  - source: {source}\n{grouped}",
+        "context:\n  - source: content/\n",
         encoding="utf-8",
     )
     update_pack(path)
-    return path
+    install_pack(corpus, path)
 
 
-def installed(
-    corpus: Path,
-    tmp_path: Path,
+def a_copy(
+    bundle: Path,
+    relative: str = "one.md",
     *,
-    identifier: str = "alpha",
-    files: dict[str, str] | None = None,
-    group: str | None = None,
-    source: str = "content/",
-) -> None:
-    install_pack(
-        corpus,
-        a_pack(
-            tmp_path / identifier,
-            identifier=identifier,
-            files=files,
-            group=group,
-            source=source,
-        ),
+    body: str = "One.\n",
+    written: str | None = "One.\n",
+    owner: str = "pack:alpha",
+) -> Path:
+    """A file as the copying sync of earlier versions wrote it: `written`
+    is the body it recorded a digest of, None for no digest at all."""
+    digest = f"  sha256: {content_digest(written.encode())}\n" if written else ""
+    path = bundle / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\ntitle: one\nowner: {owner}\nsource:\n  via: pack\n  pack: alpha\n"
+        f"  address: one.md\n{digest}---\n{body}",
+        encoding="utf-8",
     )
-
-
-def body_of(path: Path) -> str:
-    _, body = split_frontmatter(path.read_text(encoding="utf-8"))
-    return body
+    return path
 
 
 def header_of(path: Path) -> dict[str, object]:
@@ -106,325 +80,192 @@ def header_of(path: Path) -> dict[str, object]:
     return frontmatter
 
 
-# ---------------------------------------------------------------------------
-# Writing
-# ---------------------------------------------------------------------------
-
-
-def test_a_declared_file_appears_in_the_bundle(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path)
-
-    sync_bundle(bundle, corpus)
-
-    assert (bundle / "one.md").is_file()
-
-
-def test_the_body_is_the_pack_content_verbatim(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Verbatim, because the digest recorded beside it is the store's
-    digest of that content - the user-edit check is the two agreeing."""
-    installed(corpus, tmp_path, files={"content/one.md": "Exactly this.\n"})
-
-    sync_bundle(bundle, corpus)
-
-    assert body_of(bundle / "one.md") == "Exactly this.\n"
-
-
-def test_the_file_is_owned_by_the_pack_that_shipped_it(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """`owner` is what makes the resolution table decidable, and what
-    makes `pack remove` possible at all."""
-    installed(corpus, tmp_path)
-
-    sync_bundle(bundle, corpus)
-
-    assert header_of(bundle / "one.md")["owner"] == "pack:alpha"
-
-
-def test_a_group_puts_the_file_in_a_subdirectory(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path, group="decisions")
-
-    sync_bundle(bundle, corpus)
-
-    assert (bundle / "decisions" / "one.md").is_file()
-
-
-def test_a_packs_own_frontmatter_supplies_the_title(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """A pack shipping a titled file should not lose the title, and the
-    file must not end up with two frontmatter blocks."""
-    installed(
-        corpus,
-        tmp_path,
-        files={"content/one.md": "---\ntitle: Calibration\n---\n\nBody.\n"},
-    )
-
-    sync_bundle(bundle, corpus)
-
-    written = (bundle / "one.md").read_text()
-    assert header_of(bundle / "one.md")["title"] == "Calibration"
-    assert written.count("---\n") == 2
-
-
-def test_a_second_sync_changes_nothing(corpus: Path, bundle: Path, tmp_path: Path):
-    """The common case on every run, and the one that must cost nothing."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    before = (bundle / "one.md").read_bytes()
-
-    result = sync_bundle(bundle, corpus)
-
-    assert (bundle / "one.md").read_bytes() == before
-    assert result.counts.get("keep") == 1
-
-
-def test_a_pack_file_with_its_own_frontmatter_settles_after_one_sync(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Found by running the command, not by the suite. A pack file that
-    carries its own header is not written verbatim - the header is read
-    and replaced - so the body kennis writes and the file in the store
-    have different digests. With one recorded digest, every such file
-    reads as changed on every run and is rewritten forever."""
-    installed(
-        corpus,
-        tmp_path,
-        files={"content/one.md": "---\ntitle: Solver\n---\n\nBody.\n"},
-    )
-    sync_bundle(bundle, corpus)
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts.get("keep") == 1
-    assert result.counts.get("rewrite") is None
-
-
-def test_an_edit_to_a_file_that_had_its_own_frontmatter_is_still_caught(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """The other half of the same pair: recording the store's digest
-    alone would make a user edit invisible."""
-    installed(
-        corpus,
-        tmp_path,
-        files={"content/one.md": "---\ntitle: Solver\n---\n\nBody.\n"},
-    )
-    sync_bundle(bundle, corpus)
-    edited = (bundle / "one.md").read_text().replace("Body.", "Mine now.")
-    (bundle / "one.md").write_text(edited, encoding="utf-8")
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts.get("edited") == 1
-    assert "Mine now." in (bundle / "one.md").read_text()
-
-
-def test_content_the_provider_changed_is_rewritten(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path, files={"content/one.md": "First.\n"})
-    sync_bundle(bundle, corpus)
-
-    installed(corpus, tmp_path, files={"content/one.md": "Second.\n"})
-    result = sync_bundle(bundle, corpus)
-
-    assert body_of(bundle / "one.md") == "Second.\n"
-    assert result.counts.get("rewrite") == 1
+def body_of(path: Path) -> str:
+    _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+    return body
 
 
 # ---------------------------------------------------------------------------
-# The two rows that cost the user something
-# ---------------------------------------------------------------------------
+# Nothing of a pack is written
 
 
-def test_a_file_the_user_edited_is_not_overwritten(
+def test_a_declared_pack_s_content_is_not_written_into_the_bundle(
     corpus: Path, bundle: Path, tmp_path: Path
 ):
-    """Section 5 step 4a. Open a pack-shipped note, fix an error, save -
-    and the next provider release must not destroy it."""
-    installed(corpus, tmp_path, files={"content/one.md": "First.\n"})
-    sync_bundle(bundle, corpus)
-    edited = (bundle / "one.md").read_text().replace("First.\n", "Mine now.\n")
-    (bundle / "one.md").write_text(edited, encoding="utf-8")
+    installed(corpus, tmp_path)
+    declare_packs(bundle, ["alpha"])
 
-    installed(corpus, tmp_path, files={"content/one.md": "Second.\n"})
     result = sync_bundle(bundle, corpus)
 
-    assert "Mine now." in (bundle / "one.md").read_text()
-    assert result.counts.get("edited") == 1
+    assert not (bundle / "one.md").exists()
+    assert result.removed == ()
+    assert result.made_yours == ()
 
 
-def test_a_file_the_user_owns_is_left_alone_and_reported_every_run(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """The `yours:` row. Reported on every run, not only on the run where
-    the declaration moved - the defect it exists for is a reconciler that
-    passed over a user-owned document without counting it."""
-    installed(corpus, tmp_path)
-    (bundle / "one.md").write_text(
-        "---\ntitle: Mine\nowner: user\n---\n\nMine.\n", encoding="utf-8"
-    )
-
-    first = sync_bundle(bundle, corpus)
-    second = sync_bundle(bundle, corpus)
-
-    assert body_of(bundle / "one.md") == "Mine.\n"
-    assert first.counts.get("yours") == 1
-    assert second.counts.get("yours") == 1
+# ---------------------------------------------------------------------------
+# Copies an earlier kennis wrote
 
 
-def test_a_file_no_pack_declares_any_more_is_deleted(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(
-        corpus, tmp_path, files={"content/one.md": "1.\n", "content/two.md": "2.\n"}
-    )
-    sync_bundle(bundle, corpus)
+def test_an_unedited_copy_is_removed(corpus: Path, bundle: Path):
+    copy = a_copy(bundle)
 
-    installed(corpus, tmp_path, files={"content/one.md": "1.\n"})
     result = sync_bundle(bundle, corpus)
 
-    assert not (bundle / "two.md").exists()
-    assert result.counts.get("delete") == 1
+    assert not copy.exists()
+    assert result.removed == ("one.md",)
 
 
-def test_a_dropped_file_the_user_edited_is_kept_rather_than_deleted(
-    corpus: Path, bundle: Path, tmp_path: Path
+def test_a_hidden_unedited_copy_is_removed_too(corpus: Path, bundle: Path):
+    """Hiding a file behind a dot keeps it out of the index, not out of
+    kennis's sight (#247)."""
+    copy = a_copy(bundle, ".one.md")
+
+    sync_bundle(bundle, corpus)
+
+    assert not copy.exists()
+
+
+def test_an_edited_copy_becomes_the_person_s_and_replaces_the_pack_s(
+    corpus: Path, bundle: Path
 ):
-    """The more expensive mistake of the two: there is no next release to
-    put the user's writing back. Concern #272."""
-    installed(
-        corpus, tmp_path, files={"content/one.md": "1.\n", "content/two.md": "2.\n"}
-    )
-    sync_bundle(bundle, corpus)
-    text = (bundle / "two.md").read_text().replace("2.\n", "Mine.\n")
-    (bundle / "two.md").write_text(text, encoding="utf-8")
+    copy = a_copy(bundle, body="One, and two.\n")
 
-    installed(corpus, tmp_path, files={"content/one.md": "1.\n"})
-    sync_bundle(bundle, corpus)
+    result = sync_bundle(bundle, corpus)
 
-    assert (bundle / "two.md").is_file()
-    assert "Mine." in (bundle / "two.md").read_text()
+    assert result.made_yours == ("one.md",)
+    header = header_of(copy)
+    assert header["owner"] == "user"
+    assert header["replaces"] == "pack:alpha/one.md"
+    assert "source" not in header
+    assert header["title"] == "one"
+    assert body_of(copy) == "One, and two.\n"
 
 
-def test_a_note_the_user_remembered_is_never_touched(
-    corpus: Path, bundle: Path, tmp_path: Path
+def test_a_copy_moved_elsewhere_replaces_the_address_it_was_written_for(
+    corpus: Path, bundle: Path
 ):
-    """Most of a bundle is this, and none of it is a sync's business."""
-    remember_in_bundle(bundle, "Calibration runs in four-minute chunks.")
-    installed(corpus, tmp_path)
-    before = sorted(path.name for path in bundle.rglob("*.md"))
+    copy = a_copy(bundle, "kept/mine.md", body="Mine.\n")
 
     sync_bundle(bundle, corpus)
 
-    assert "one.md" in sorted(path.name for path in bundle.rglob("*.md"))
-    assert set(before) <= set(path.name for path in bundle.rglob("*.md"))
+    assert header_of(copy)["replaces"] == "pack:alpha/one.md"
+
+
+def test_a_copy_recording_no_digest_is_kept_as_the_person_s(corpus: Path, bundle: Path):
+    """No digest is no evidence the file was left alone, and removing a
+    person's writing is the one mistake a sync must not make."""
+    copy = a_copy(bundle, written=None)
+
+    sync_bundle(bundle, corpus)
+
+    assert copy.exists()
+    assert header_of(copy)["owner"] == "user"
+
+
+def test_a_second_sync_changes_nothing(corpus: Path, bundle: Path):
+    a_copy(bundle)
+    a_copy(bundle, "two.md", body="Edited.\n")
+    sync_bundle(bundle, corpus)
+
+    again = sync_bundle(bundle, corpus)
+
+    assert again.removed == ()
+    assert again.made_yours == ()
+
+
+def test_a_group_directory_a_removal_emptied_is_removed(corpus: Path, bundle: Path):
+    a_copy(bundle, "decisions/one.md")
+
+    sync_bundle(bundle, corpus)
+
+    assert not (bundle / "decisions").exists()
+
+
+def test_a_directory_holding_something_else_is_left_alone(corpus: Path, bundle: Path):
+    a_copy(bundle, "decisions/one.md")
+    (bundle / "decisions" / "notes.txt").write_text("mine", encoding="utf-8")
+
+    sync_bundle(bundle, corpus)
+
+    assert (bundle / "decisions" / "notes.txt").exists()
 
 
 # ---------------------------------------------------------------------------
-# Refusals
-# ---------------------------------------------------------------------------
+# What is never touched
 
 
-def test_a_pack_may_not_ship_a_hidden_file_into_a_bundle(
-    corpus: Path, bundle: Path, tmp_path: Path
+def test_a_note_the_person_remembered_is_never_touched(corpus: Path, bundle: Path):
+    remembered = remember_in_bundle(
+        bundle, "Our gains drift.", title=None, group=None
+    ).path
+    before = remembered.read_bytes()
+
+    sync_bundle(bundle, corpus)
+
+    assert remembered.read_bytes() == before
+
+
+def test_an_unrecognised_owner_is_refused_before_anything_is_written(
+    corpus: Path, bundle: Path
 ):
-    """Concerns #247 and #267, settled together. A dot-prefixed path in a
-    bundle is never indexed - that is the documented way a user keeps a
-    file out of search - so a pack shipping one would land a file that is
-    copied, never indexed, and invisible."""
-    installed(corpus, tmp_path, files={"content/.hidden.md": "Invisible.\n"})
-
-    with pytest.raises(PackInvalid) as raised:
-        sync_bundle(bundle, corpus)
-
-    assert ".hidden.md" in str(raised.value)
-
-
-def test_a_hidden_destination_is_refused_before_anything_is_written(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """A half-converged bundle is worse than an unconverged one."""
-    installed(
-        corpus,
-        tmp_path,
-        files={"content/fine.md": "Fine.\n", "content/.hidden.md": "No.\n"},
-    )
-
-    with pytest.raises(PackInvalid):
-        sync_bundle(bundle, corpus)
-
-    assert not (bundle / "fine.md").exists()
-
-
-def test_a_pack_may_not_overwrite_the_landing_page(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """`LANDING.md` is the entry point an agent is told to read first, and
-    it is the user's to edit."""
-    installed(corpus, tmp_path, files={"content/LANDING.md": "Mine.\n"})
-
-    with pytest.raises(PackInvalid) as raised:
-        sync_bundle(bundle, corpus)
-
-    assert "LANDING.md" in str(raised.value)
-
-
-def test_an_owner_kennis_does_not_recognise_refuses_the_sync(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Section 6: corruption, not a compatibility case. Named, never
-    guessed at, and nothing is written."""
-    installed(corpus, tmp_path)
-    (bundle / "one.md").write_text(
-        "---\ntitle: x\nowner: managed_by:boepie\n---\n\nx.\n", encoding="utf-8"
-    )
+    copy = a_copy(bundle)
+    a_copy(bundle, "odd.md", owner="somebody")
 
     with pytest.raises(DocumentInvalid) as raised:
         sync_bundle(bundle, corpus)
 
-    assert "one.md" in str(raised.value)
+    assert "odd.md" in str(raised.value)
+    assert copy.exists()
+
+
+# ---------------------------------------------------------------------------
+# The declaration
+
+
+def test_the_declared_packs_are_split_by_whether_they_are_installed(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path)
+    declare_packs(bundle, ["alpha", "gamma"])
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.declared == ("alpha",)
+    assert result.missing == ("gamma",)
+    assert result.available == ()
+
+
+def test_a_project_declaring_nothing_is_offered_the_installed_packs(
+    corpus: Path, bundle: Path, tmp_path: Path
+):
+    installed(corpus, tmp_path, "beta")
+    installed(corpus, tmp_path, "alpha")
+
+    result = sync_bundle(bundle, corpus)
+
+    assert result.available == ("alpha", "beta")
 
 
 # ---------------------------------------------------------------------------
 # Reporting
-# ---------------------------------------------------------------------------
 
 
-def test_every_action_reaches_the_event_stream(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Section 14: the display ignores `ItemFinished`, so this is what the
-    log keeps and the terminal does not."""
-    installed(
-        corpus, tmp_path, files={"content/one.md": "1.\n", "content/two.md": "2.\n"}
-    )
+def test_every_change_reaches_the_event_stream(corpus: Path, bundle: Path):
+    a_copy(bundle)
+    a_copy(bundle, "two.md", body="Edited.\n")
     events = Recorder()
 
     sync_bundle(bundle, corpus, events=events)
 
     assert events.outcomes() == {
-        "one.md": Outcome.ADDED,
-        "two.md": Outcome.ADDED,
+        "one.md": Outcome.REMOVED,
+        "two.md": Outcome.CHANGED,
     }
 
 
-def test_a_bundle_with_no_packs_installed_does_nothing(corpus: Path, bundle: Path):
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {}
-
-
-def test_the_sync_makes_no_commit(corpus: Path, bundle: Path, tmp_path: Path):
-    """kennis does not write to the user's repository. The bundle lives in
-    one kennis does not own, so committing is theirs to do."""
+def test_the_sync_makes_no_commit(corpus: Path, bundle: Path):
+    """kennis does not write to the person's repository's history. The
+    bundle lives in one kennis does not own."""
     project = bundle.parent
     subprocess.run(
         ["git", "init", "-q"],
@@ -433,7 +274,7 @@ def test_the_sync_makes_no_commit(corpus: Path, bundle: Path, tmp_path: Path):
         timeout=30,
         stdin=subprocess.DEVNULL,
     )
-    installed(corpus, tmp_path)
+    a_copy(bundle)
 
     sync_bundle(bundle, corpus)
 
@@ -448,275 +289,16 @@ def test_the_sync_makes_no_commit(corpus: Path, bundle: Path, tmp_path: Path):
     assert log.stdout.strip() == ""
 
 
-def test_a_group_directory_a_deletion_emptied_is_removed(
+def test_a_project_that_chose_its_packs_is_not_offered_the_rest(
     corpus: Path, bundle: Path, tmp_path: Path
 ):
-    """An empty directory left behind is a group in `context status` with
-    nothing in it, and a diff in the user's repository that says nothing."""
-    installed(
-        corpus,
-        tmp_path,
-        group="decisions",
-        files={"content/one.md": "1.\n"},
-    )
-    sync_bundle(bundle, corpus)
-    assert (bundle / "decisions").is_dir()
-
-    installed(corpus, tmp_path, group="decisions", files={"content/two.md": "2.\n"})
-    sync_bundle(bundle, corpus)
-
-    assert (bundle / "decisions" / "two.md").is_file()
-    assert (bundle / "decisions" / "one.md").exists() is False
-
-
-def test_a_directory_holding_something_else_is_left_alone(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Only a directory a deletion emptied, and only when it is empty:
-    a file kennis does not index is still the user's."""
-    installed(corpus, tmp_path, group="decisions", files={"content/one.md": "1.\n"})
-    sync_bundle(bundle, corpus)
-    (bundle / "decisions" / "notes.txt").write_text("Mine.\n", encoding="utf-8")
-
-    installed(corpus, tmp_path, group="decisions", files={"content/two.md": "2.\n"})
-    sync_bundle(bundle, corpus)
-
-    assert (bundle / "decisions" / "notes.txt").is_file()
-
-
-def test_a_pack_owned_file_with_no_recorded_digest_is_not_read_as_edited(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """A file somebody wrote by hand claiming a pack owns it. There is
-    nothing to compare against, so it cannot be an edit - and treating it
-    as one would protect a file the pack is entitled to replace, forever
-    and silently."""
-    installed(corpus, tmp_path, files={"content/one.md": "Shipped.\n"})
-    (bundle / "one.md").write_text(
-        "---\ntitle: x\nowner: pack:alpha\n---\n\nBy hand.\n", encoding="utf-8"
-    )
+    """Offered on every run, the other packs would read as a fault in a
+    project whose declaration is deliberate."""
+    installed(corpus, tmp_path, "alpha")
+    installed(corpus, tmp_path, "beta")
+    declare_packs(bundle, ["alpha"])
 
     result = sync_bundle(bundle, corpus)
 
-    assert result.counts.get("edited") is None
-    assert body_of(bundle / "one.md") == "Shipped.\n"
-
-
-def test_a_pack_whose_stored_declaration_is_corrupt_refuses_the_sync(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """**The door the silent deletion comes in by.** An unreadable
-    declaration declares nothing that can be read, and a sync that took
-    that at face value would find every file the pack owns undeclared and
-    delete all of them. Found by writing this test: the first
-    implementation did exactly that."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    (pack_root(corpus, "alpha") / "pack.ken.yml").write_text(
-        "not: [a, pack\n", encoding="utf-8"
-    )
-
-    with pytest.raises(PackInvalid) as raised:
-        sync_bundle(bundle, corpus)
-
-    assert "alpha" in str(raised.value)
-    assert (bundle / "one.md").is_file()
-
-
-def test_a_pack_whose_content_is_gone_refuses_the_sync(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Section 5 step 2a from this side: "the store says N files and disk
-    has 0" is corruption, never a declaration that the pack now ships
-    nothing."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    (pack_root(corpus, "alpha") / "content" / "one.md").unlink()
-
-    with pytest.raises(PackInvalid) as raised:
-        sync_bundle(bundle, corpus)
-
-    assert raised.value.resolution == "kennis pack status"
-    assert (bundle / "one.md").is_file()
-
-
-# ---------------------------------------------------------------------------
-# A file the user moved
-# ---------------------------------------------------------------------------
-#
-# A bundle file kennis wrote records the address it stands for, so the
-# sync finds it wherever the user has since put it. Without that, hiding
-# a pack's file - the documented way to keep something out of the index -
-# made the next sync write the declared address again and leave two
-# copies of the same content. Concern #247.
-
-
-def test_the_file_records_the_address_it_stands_for(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path, group="reference")
-
-    sync_bundle(bundle, corpus)
-
-    source = header_of(bundle / "reference" / "one.md")["source"]
-    assert isinstance(source, dict)
-    assert source["address"] == "reference/one.md"
-
-
-def test_hiding_a_pack_file_does_not_produce_a_second_copy(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """The defect itself: renaming to a dot-prefixed name is how a user
-    keeps a file out of the index, and it used to make the file invisible
-    to the sync rather than known to it."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    (bundle / "one.md").rename(bundle / ".one.md")
-
-    result = sync_bundle(bundle, corpus)
-
-    assert not (bundle / "one.md").exists()
-    assert result.counts == {"keep": 1}
-
-
-def test_a_hidden_pack_file_is_updated_where_it_now_sits(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path, files={"content/one.md": "First.\n"})
-    sync_bundle(bundle, corpus)
-    (bundle / "one.md").rename(bundle / ".one.md")
-    installed(corpus, tmp_path, files={"content/one.md": "Second.\n"})
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {"rewrite": 1}
-    assert body_of(bundle / ".one.md") == "Second.\n"
-    assert not (bundle / "one.md").exists()
-
-
-def test_a_hidden_pack_file_the_user_edited_is_still_protected(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path, files={"content/one.md": "First.\n"})
-    sync_bundle(bundle, corpus)
-    hidden = bundle / ".one.md"
-    (bundle / "one.md").rename(hidden)
-    hidden.write_text(hidden.read_text(encoding="utf-8") + "Mine.\n", encoding="utf-8")
-    installed(corpus, tmp_path, files={"content/one.md": "Second.\n"})
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {"edited": 1}
-    assert "Mine.\n" in hidden.read_text(encoding="utf-8")
-
-
-def test_a_hidden_pack_file_is_removed_when_the_pack_drops_it(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path, files={"content/one.md": "One.\n"})
-    sync_bundle(bundle, corpus)
-    (bundle / "one.md").rename(bundle / ".one.md")
-    installed(corpus, tmp_path, files={"content/two.md": "Two.\n"})
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {"write": 1, "delete": 1}
-    assert not (bundle / ".one.md").exists()
-
-
-def test_a_renamed_pack_file_is_followed_rather_than_restored(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """A rename and a hiding are the same act on the same kind of file,
-    so they get the same answer: the file is followed. The alternative -
-    writing the declared address back and deleting the rename - destroys
-    what the user did."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    (bundle / "one.md").rename(bundle / "renamed.md")
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {"keep": 1}
-    assert not (bundle / "one.md").exists()
-    assert (bundle / "renamed.md").is_file()
-
-
-def test_a_second_copy_of_a_pack_file_is_deleted_not_duplicated(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """Two files recording one address. The declared path is the one
-    kept; the other is a pack-owned file at an address no pack declares,
-    which is the delete row, and it is reported as one."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    shutil.copyfile(bundle / "one.md", bundle / "copy.md")
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {"keep": 1, "delete": 1}
-    assert (bundle / "one.md").is_file()
-    assert not (bundle / "copy.md").exists()
-
-
-def test_a_pack_file_recording_no_address_is_keyed_by_its_path(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """The fallback. A header kennis cannot read an address out of is
-    still a header naming an owner and two digests, and the file resolves
-    on its path as it always did."""
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-    written = bundle / "one.md"
-    before = written.read_text(encoding="utf-8")
-    after = before.replace("  address: one.md\n", "")
-    assert after != before, "the address line to remove was not there"
-    written.write_text(after, encoding="utf-8")
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.counts == {"keep": 1}
-
-
-def test_a_file_that_moved_is_reported_with_where_it_now_is(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    """The sync follows a moved file silently otherwise, and the report
-    then names an address that is not on disk."""
-    installed(corpus, tmp_path, group="reference")
-    sync_bundle(bundle, corpus)
-    moved = bundle / "reference" / ".one.md"
-    (bundle / "reference" / "one.md").rename(moved)
-
-    result = sync_bundle(bundle, corpus)
-
-    assert result.moved == (("reference/one.md", "reference/.one.md"),)
-
-
-def test_a_file_where_its_pack_declares_it_is_not_reported_as_moved(
-    corpus: Path, bundle: Path, tmp_path: Path
-):
-    installed(corpus, tmp_path)
-    sync_bundle(bundle, corpus)
-
-    assert sync_bundle(bundle, corpus).moved == ()
-
-
-@pytest.mark.parametrize(
-    ("title", "description"),
-    [("Calibration: a primer", "The array's gains"), ("yes", "no: really")],
-)
-def test_a_pack_s_title_and_description_are_written_as_given(
-    corpus: Path, bundle: Path, tmp_path: Path, title: str, description: str
-):
-    """Formatted into the header, a colon in the title or an apostrophe in
-    the description made a file that is not YAML."""
-    shipped = yaml.safe_dump({"title": title, "description": description})
-    installed(
-        corpus, tmp_path, files={"content/one.md": f"---\n{shipped}---\n\nBody.\n"}
-    )
-
-    sync_bundle(bundle, corpus)
-
-    header = header_of(bundle / "one.md")
-    assert (header["title"], header["description"]) == (title, description)
+    assert result.declared == ("alpha",)
+    assert result.available == ()

@@ -1,4 +1,4 @@
-"""Writing a note, into the corpus or into this project's bundle."""
+"""Writing a note, into the corpus or into a known project's bundle."""
 
 from __future__ import annotations
 
@@ -10,10 +10,12 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
+from kennis.engine.context.projects import project_named
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.errors import (
-    CorpusBusy,
+    ContextNotFound,
     KennisError,
+    PublishRefused,
 )
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui import words
@@ -51,32 +53,46 @@ def _remember_context(outcome: ShownOutcome | None) -> dict[str, object]:
 
 
 def _remembered(
-    text: str, *, title: str | None, group: str | None, to_context: bool
+    text: str,
+    *,
+    title: str | None,
+    group: str | None,
+    target: str,
 ) -> ShownOutcome:
     """Write, and turn whatever happened into something to show.
 
     Every domain failure becomes an outcome rather than a page: the
     text the person typed is still in the box, and replacing the page
-    would lose it. `CorpusBusy` is the case that makes this matter -
-    a `corpus index` running in a terminal refuses this write, and it
-    is worth retrying rather than worth an error page.
+    would lose it. `PublishRefused` is the case that makes this matter -
+    another write changed the notes while this one was prepared, and it
+    is worth saving again rather than worth an error page.
     """
     if not text.strip():
         return ShownOutcome(message=words.NOTHING_TO_REMEMBER, role="role-warning")
     try:
-        if to_context:
-            note, bundle_name = write_context_note(text, title=title, group=group)
-            return words.describe_written_to_bundle(note, bundle_name)
+        # `notes`, or `context:<project>`. Anything else - a plain
+        # `context` from an older form or an edited address - is refused:
+        # filed into the corpus's notes it would be a project decision
+        # recorded machine-wide and reported as saved.
+        if target != "notes":
+            project = target.removeprefix("context:")
+            if project == target or not project:
+                raise ContextNotFound
+            note, bundle_name = write_context_note(
+                text, title=title, group=group, bundle=project_named(project).bundle
+            )
+            return words.describe_written_to_bundle(note, f"{project}/{bundle_name}")
         restored: list[OutOfBandChange] = []
-        report = write_note(text, title=title, group=group, restored=restored)
+        context = existing_corpus()
+        report = write_note(context, text, title=title, group=group, restored=restored)
         written = words.describe_written(
-            report, relative_to_corpus(report.path, existing_corpus().corpus_root)
+            report, relative_to_corpus(report.path, context.corpus_root)
         )
         return replace(
             written, notes=tuple(describe_change(change) for change in restored)
         )
-    except CorpusBusy:
-        return ShownOutcome(message=words.CORPUS_BUSY, role="role-warning")
+    except PublishRefused:
+        return ShownOutcome(message=words.CHANGED_MEANWHILE, role="role-warning")
     except KennisError as error:
         return ShownOutcome(
             message=str(error), role="role-error", resolution=error.resolution
@@ -107,8 +123,12 @@ def accept_remembered(request: Request, form: PostedForm) -> HTMLResponse:
     text_given = str(form.get("text") or "")
     title = str(form.get("title") or "") or None
     group = str(form.get("group") or "") or None
-    to_context = str(form.get("target") or "notes") == "context"
-    outcome = _remembered(text_given, title=title, group=group, to_context=to_context)
+    outcome = _remembered(
+        text_given,
+        title=title,
+        group=group,
+        target=str(form.get("target") or "notes"),
+    )
     if not from_htmx(request):
         return action_page(
             request, "/remember", "forms/remember.html", _remember_context(outcome)

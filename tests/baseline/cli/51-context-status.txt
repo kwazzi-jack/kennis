@@ -1,0 +1,7 @@
+$ kennis context status
+--- exit 0
+--- stdout
+Context <scratch>/project/.context
+Holds 0 documents
+  hint: run `kennis remember --help`
+--- stderr

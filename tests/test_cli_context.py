@@ -15,18 +15,28 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+import kennis.operations
 from kennis.cli.__main__ import main
-from kennis.cli.commands.context import context_model
-from kennis.engine.context import BUNDLE_DIRNAME, load_bundle_index
+from kennis.context import resolve_context
+from kennis.engine.context.bundle import BUNDLE_DIRNAME
+from kennis.engine.context.index import load_bundle_index
+from kennis.engine.pack.content import content_digest
+from kennis.engine.rag.embedding import ModelBinding
+from kennis.engine.rag.index import BuildReport
 from kennis.engine.rag.search import search
-from kennis.engine.settings import load_settings
+from kennis.operations import context_model
 
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A corpus, because a bundle is acted on by the corpus's service and
+    there is none without one (14e)."""
     monkeypatch.setenv("KENNIS_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("KENNIS_LOG_DIR", str(tmp_path / "state"))
     monkeypatch.delenv("KENNIS_CONTEXT_DIR", raising=False)
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+    initialised = CliRunner().invoke(main, ["corpus", "init"])
+    assert initialised.exit_code == 0, initialised.output
 
 
 @pytest.fixture
@@ -186,16 +196,6 @@ def test_remember_context_writes_into_the_bundle(bundle: Path, run: CliRunner):
     written = bundle_notes(bundle)
     assert len(written) == 1, written
     assert "4-minute chunks" in written[0].read_text(encoding="utf-8")
-
-
-def test_remember_context_needs_no_corpus(bundle: Path, run: CliRunner):
-    """A bundle belongs to one project; a corpus is machine-global. Writing
-    a project's own note must not require the second to exist, and this test
-    is run with no `KENNIS_CORPUS_ROOT` and no `corpus init`."""
-    result = run.invoke(main, ["remember", "--context", "A local decision."])
-
-    assert result.exit_code == 0, result.output
-    assert len(bundle_notes(bundle)) == 1
 
 
 def test_remember_context_does_not_commit_to_the_users_repository(
@@ -685,10 +685,10 @@ def test_the_method_setting_is_what_asks_for_a_dense_leg(
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "ollama")
 
     monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "bm25")
-    assert context_model(load_settings()) is None
+    assert context_model(resolve_context()) is None
 
     monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "hybrid")
-    asked = context_model(load_settings())
+    asked = context_model(resolve_context())
     assert asked is not None
     assert asked.kind == "ollama"
 
@@ -708,6 +708,43 @@ def test_asking_for_hybrid_without_a_backend_is_a_lexical_index(
     assert result.exit_code == 0, result.output
     assert "lexical search only" in result.output
     assert load_bundle_index(bundle).binding.model is None
+
+
+def test_the_model_the_service_chose_is_the_one_reported(
+    bundle: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """The service reads the settings and chooses the model (14e), so the
+    command can only say which from the service's answer. The build is a
+    stand-in: building with `ollama` would need its daemon, and what is
+    asserted is the report, not the vectors."""
+    monkeypatch.setenv("KENNIS_RETRIEVAL_CONTEXT_METHOD", "hybrid")
+    monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "ollama")
+    monkeypatch.setenv("KENNIS_EMBEDDING_MODEL", "a-model")
+    chosen: list[ModelBinding | None] = []
+
+    def built(bundle: Path, *, model: ModelBinding | None, **_: object) -> BuildReport:
+        chosen.append(model)
+        return BuildReport(
+            collection="context",
+            index_id="x",
+            index_dir=bundle,
+            document_count=1,
+            chunk_count=1,
+            chunks_by_document={},
+            embedded_count=1,
+            pruned_count=0,
+            elapsed_seconds=0.0,
+        )
+
+    monkeypatch.setattr(kennis.operations, "index_bundle", built)
+
+    result = run.invoke(main, ["context", "index"])
+
+    assert result.exit_code == 0, result.output
+    (model,) = chosen
+    assert model is not None
+    assert f"{model.kind} {model.model}" in result.output
+    assert "lexical search only" not in result.output
 
 
 def test_a_default_context_search_reports_no_downgrade(bundle: Path, run: CliRunner):
@@ -787,59 +824,60 @@ def a_context_pack(
 def synced(
     workspace: Path, run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    """A workspace with a bundle and a corpus holding one installed pack."""
-    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
-    assert run.invoke(main, ["corpus", "init"]).exit_code == 0
+    """A workspace with a bundle, beside the corpus `isolated` made."""
+    del tmp_path, monkeypatch
     assert run.invoke(main, ["context", "init"]).exit_code == 0
     return workspace
 
 
-def test_sync_writes_the_packs_content_into_the_bundle(
+def test_sync_writes_nothing_of_a_pack_and_says_what_the_project_uses(
     synced: Path, run: CliRunner, tmp_path: Path
 ):
+    """A pack's context is searched in the store (14g, #513)."""
     path = a_context_pack(tmp_path / "provider", run)
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert (synced / BUNDLE_DIRNAME / "one.md").is_file()
-    assert "added by boepie" in result.output
-
-
-def test_sync_names_the_index_command_when_something_changed(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    """The index is derived from these documents and sync did not rebuild
-    it, so a reader is told what to type. Concern #244."""
-    path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-
-    result = run.invoke(main, ["context", "sync"])
-
-    assert "kennis context index" in result.output
-
-
-def test_a_sync_that_changed_nothing_does_not_ask_for_an_index(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    """Advice to rebuild an index that is already current is advice to do
-    nothing, and it teaches a reader to ignore the line."""
-    del synced
-    path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    assert run.invoke(main, ["context", "sync"]).exit_code == 0
-
-    result = run.invoke(main, ["context", "sync"])
-
+    assert not (synced / BUNDLE_DIRNAME / "one.md").exists()
+    assert "this project uses boepie" in result.output
     assert "kennis context index" not in result.output
 
 
-def test_the_synced_content_is_searchable_after_indexing(
+def an_old_copy(bundle: Path, body: str = "One.\n") -> Path:
+    """A file as the copying sync of earlier versions wrote it."""
+    digest = content_digest(b"One.\n")
+    path = bundle / "one.md"
+    path.write_text(
+        "---\ntitle: one\nowner: pack:boepie\nsource:\n  via: pack\n"
+        f"  pack: boepie\n  address: one.md\n  sha256: {digest}\n---\n{body}",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_sync_removes_an_old_copy_and_names_the_index_command(
+    synced: Path, run: CliRunner
+):
+    """The index is derived from these documents and sync did not rebuild
+    it, so a reader is told what to type. Concern #244."""
+    copy = an_old_copy(synced / BUNDLE_DIRNAME)
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert not copy.exists()
+    assert "1 copy of a pack's file removed" in result.output
+    assert "kennis context index" in result.output
+
+
+def test_a_declared_pack_s_content_is_searchable_with_no_copy(
     synced: Path, run: CliRunner, tmp_path: Path
 ):
-    """The crossing test: a document written by one path must be visible
-    to the indexer, which is the failure mode the plan singles out."""
+    """The crossing test, again: content one path stored is what another
+    path searches."""
     del synced
     path = a_context_pack(
         tmp_path / "provider",
@@ -847,73 +885,51 @@ def test_the_synced_content_is_searchable_after_indexing(
         files={"content/one.md": "Calibration runs in four-minute chunks.\n"},
     )
     assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    assert run.invoke(main, ["context", "sync"]).exit_code == 0
-    assert run.invoke(main, ["context", "index"]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     result = run.invoke(main, ["search", "four-minute chunks"])
 
     assert result.exit_code == 0, result.output
-    assert ".context/one.md" in result.output
+    assert "Pack boepie" in result.output
+    assert "pack=boepie/one.md" in result.output
 
 
-def test_sync_reports_a_file_the_user_edited_without_changing_it(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    provider = tmp_path / "provider"
-    path = a_context_pack(provider, run, files={"content/one.md": "First.\n"})
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    assert run.invoke(main, ["context", "sync"]).exit_code == 0
-    written = synced / BUNDLE_DIRNAME / "one.md"
-    written.write_text(
-        written.read_text().replace("First.", "Mine now."), encoding="utf-8"
-    )
-
-    path = a_context_pack(provider, run, files={"content/one.md": "Second.\n"})
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-    result = run.invoke(main, ["context", "sync"])
-
-    assert "Mine now." in written.read_text()
-    assert "you edited this" in result.output
-    assert "owner: user" in result.output
-
-
-def test_sync_refuses_a_pack_that_declares_a_hidden_destination(
-    synced: Path, run: CliRunner, tmp_path: Path
-):
-    del synced
-    path = a_context_pack(
-        tmp_path / "provider", run, files={"content/.hidden.md": "No.\n"}
-    )
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
-
-    result = run.invoke(main, ["context", "sync"])
-
-    assert result.exit_code != 0
-    assert ".hidden.md" in result.output
-
-
-def test_sync_with_no_packs_installed_says_so(synced: Path, run: CliRunner):
-    del synced
+def test_sync_makes_an_edited_old_copy_yours_and_says_so(synced: Path, run: CliRunner):
+    copy = an_old_copy(synced / BUNDLE_DIRNAME, body="Mine now.\n")
 
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert "nothing declared" in result.output
+    assert "Mine now." in copy.read_text(encoding="utf-8")
+    assert "owner: user" in copy.read_text(encoding="utf-8")
+    assert "1 edited copy made yours" in result.output
 
 
-def test_sync_needs_a_corpus_to_read_the_store_from(
-    workspace: Path, run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_sync_in_a_project_declaring_nothing_offers_each_installed_pack(
+    synced: Path, run: CliRunner, tmp_path: Path
 ):
-    """The packs live in the corpus. Without one there is no store, and
-    the error names the command that makes one."""
-    del workspace
-    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
-    assert run.invoke(main, ["context", "init"]).exit_code == 0
+    del synced
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
 
-    assert result.exit_code != 0
-    assert "kennis corpus init" in result.output
+    assert result.exit_code == 0, result.output
+    assert "declares no packs" in result.output
+    assert "kennis context packs boepie" in result.output
+
+
+def test_sync_names_a_declared_pack_this_machine_has_not_got(
+    synced: Path, run: CliRunner
+):
+    del synced
+    assert run.invoke(main, ["context", "packs", "gamma"]).exit_code == 0
+
+    result = run.invoke(main, ["context", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "not installed here: gamma" in result.output
+    assert "kennis pack list" in result.output
 
 
 def test_sync_makes_no_commit_in_the_users_repository(
@@ -921,8 +937,8 @@ def test_sync_makes_no_commit_in_the_users_repository(
 ):
     """The invariant every context command is held to: the bundle lives
     in a repository kennis does not own."""
-    path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    del tmp_path
+    an_old_copy(synced / BUNDLE_DIRNAME)
 
     assert run.invoke(main, ["context", "sync"]).exit_code == 0
 

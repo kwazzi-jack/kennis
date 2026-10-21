@@ -1,0 +1,5 @@
+$ kennis corpus restore doc0000003 --commit <commit>
+--- exit 0
+--- stdout
+Restored doc0000003 from <commit>
+--- stderr

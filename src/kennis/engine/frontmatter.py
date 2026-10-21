@@ -47,11 +47,40 @@ def split_frontmatter(text: str) -> tuple[Frontmatter, str]:
     return {}, text
 
 
+class _Dumper(yaml.SafeDumper):
+    """`safe_dump`'s dumper, writing a string that holds a colon in quotes
+    (#523, Brian, 2026-10-21).
+
+    YAML reads `from: copy:0yldj2vkpy` as one string, since a colon starts
+    a mapping only before a space or the end. Quoted, nobody reading the
+    document - a person, another tool - needs to know that.
+
+    **Single quotes**, in which only a quote is escaped: in double quotes a
+    backslash is, so a Windows path was written `"path:C:\\Users..."` and a
+    person copying it got a path that does not exist (#532). PyYAML falls
+    back to double quotes itself for a string single quotes cannot hold.
+    """
+
+
+def _string(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+    style = "'" if ":" in value else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+
+_Dumper.add_representer(str, _string)
+
+
 def join_frontmatter(frontmatter: Frontmatter, body: str) -> str:
     """Render `frontmatter` and `body` back into one document string.
 
     `sort_keys=False` keeps the model's own field order, so a document reads
     top-down in the order the schema declares rather than alphabetically.
     """
-    block = yaml.safe_dump(dict(frontmatter), sort_keys=False, default_flow_style=False)
+    block = yaml.dump(
+        dict(frontmatter),
+        Dumper=_Dumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=False,
+    )
     return f"{_DELIMITER}\n{block}{_DELIMITER}\n\n{body}"

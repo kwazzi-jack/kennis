@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.preview import PaperPreview
@@ -57,6 +58,8 @@ from kennis.gui.repairs import (
 )
 from kennis.gui.responses import TEMPLATES
 from kennis.render.refusals import describe_refusal, refusal_fact
+from kennis.render.words import waiting_for
+from kennis.service.jobs import INDEX_LANE
 
 TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
@@ -148,12 +151,16 @@ def test_a_pack_file_that_is_not_there_is_refused_in_the_form(client: TestClient
 # ---------------------------------------------------------------------------
 
 
-def test_a_context_sync_with_no_context_is_a_task_that_failed(
+def a_task_that_cannot_start(client: TestClient) -> Response:
+    """An index of a collection there is not, which is refused before its
+    job begins."""
+    return client.post("/index", data={"collection": "notse"}, headers=HTMX)
+
+
+def test_a_task_that_could_not_start_is_a_task_that_failed(
     app: FastAPI, client: TestClient
 ):
-    answer = BeautifulSoup(
-        client.post("/context-sync", headers=HTMX).text, "html.parser"
-    )
+    answer = BeautifulSoup(a_task_that_cannot_start(client).text, "html.parser")
 
     job = answer.find(class_="job")
     assert isinstance(job, Tag)
@@ -161,7 +168,7 @@ def test_a_context_sync_with_no_context_is_a_task_that_failed(
     assert job.has_attr("data-open"), "the reader's own action: its panel opens"
     assert job.find(attrs={"popover": True}) is not None
     recorded = app.state.jobs.get(job["data-job"])
-    assert recorded is not None and recorded.kind == "context-sync"
+    assert recorded is not None and recorded.kind == "index"
     assert recorded.failed and recorded.done.is_set()
     activity = client.get("/activity").text
     assert f"/job/{job['data-job']}" in activity
@@ -173,7 +180,7 @@ def test_a_task_drawn_on_a_page_load_does_not_open_itself(
 ):
     """Only an answer to the reader's own action opens a panel: one that
     opened on every page would hide the page behind it."""
-    client.post("/context-sync", headers=HTMX)
+    a_task_that_cannot_start(client)
 
     bar = bar_of(client.get("/").text)
 
@@ -182,11 +189,13 @@ def test_a_task_drawn_on_a_page_load_does_not_open_itself(
     assert not job.has_attr("data-open")
 
 
-def test_a_second_task_is_answered_by_the_running_one_with_its_panel_open(
+def test_a_second_task_in_the_same_lane_is_answered_by_itself_waiting(
     app: FastAPI, client: TestClient
 ):
+    """It was answered by the running task with a refusal in its panel; in
+    the service it is its own job, queued, saying what it waits for (14b)."""
     holding = threading.Event()
-    running = app.state.jobs.start("index", lambda events: holding.wait(20))
+    running = app.state.jobs.start("add", lambda events: holding.wait(20))
     try:
         answer = BeautifulSoup(client.post("/sync", headers=HTMX).text, "html.parser")
     finally:
@@ -194,14 +203,26 @@ def test_a_second_task_is_answered_by_the_running_one_with_its_panel_open(
 
     job = answer.find(class_="job")
     assert isinstance(job, Tag)
-    assert job["data-job"] == running.id
-    assert job["data-state"] == "running"
-    assert job.has_attr("data-open")
-    panel = job.find(attrs={"popover": True})
-    assert isinstance(panel, Tag)
-    assert words.BUSY_WITH_ANOTHER in panel.get_text()
+    assert job["data-job"] != running.id
+    assert job["data-state"] == "queued"
+    assert waiting_for("add", 1) in job.get_text()
     # Nothing outside the job: the bar is the job's.
     assert answer.find("p", class_="role-warning", recursive=False) is None
+
+
+def test_a_task_in_another_lane_does_not_wait(app: FastAPI, client: TestClient):
+    """A sync writes documents and a build writes an index: two lanes, so
+    neither is behind the other (#167)."""
+    holding = threading.Event()
+    app.state.jobs.start("index", lambda events: holding.wait(20), lane=INDEX_LANE)
+    try:
+        answer = BeautifulSoup(client.post("/sync", headers=HTMX).text, "html.parser")
+    finally:
+        holding.set()
+
+    job = answer.find(class_="job")
+    assert isinstance(job, Tag)
+    assert job["data-state"] == "running"
 
 
 def test_a_domain_error_aimed_at_the_bar_becomes_a_task(
@@ -478,3 +499,17 @@ def test_a_form_holding_its_own_htmx_control_passes_nothing_down(
         ]
         if inner:
             assert form.get("hx-disinherit") == "*", (route, form.get("action"))
+
+
+def test_an_index_of_a_collection_there_is_not_is_refused_not_widened(
+    app: FastAPI, client: TestClient
+):
+    """It indexed every collection: a value from an edited address read
+    as "all" rather than as a mistake."""
+    answer = BeautifulSoup(a_task_that_cannot_start(client).text, "html.parser")
+
+    job = answer.find(class_="job")
+    assert isinstance(job, Tag) and job["data-state"] == "failed"
+    recorded = app.state.jobs.get(job["data-job"])
+    assert recorded is not None and recorded.kind == "index"
+    assert "notse" in answer.get_text()

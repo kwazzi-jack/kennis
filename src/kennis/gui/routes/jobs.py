@@ -22,23 +22,21 @@ from markupsafe import Markup
 
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
-from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddReport
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import (
-    ContextNotFound,
-    CorpusBusy,
     KennisError,
+    PublishRefused,
+    UnknownCollection,
 )
 from kennis.engine.events import EventSink
-from kennis.engine.history.history import read_history
+from kennis.engine.history.history import read_history, removed_in
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
 from kennis.gui import words
-from kennis.gui.jobs import AlreadyRunning, Job, Jobs
 from kennis.gui.pages import (
     ShownJob,
     shown_add,
@@ -64,10 +62,16 @@ from kennis.operations import (
     IndexBuild,
     build_indexes,
     install_a_pack,
-    synchronise_bundle,
     synchronise_corpus,
 )
-from kennis.render.words import describe_change
+from kennis.protocol.progress import Queued
+from kennis.render.words import JOB_KINDS, describe_change, waiting_for
+from kennis.service.jobs import (
+    CORPUS_LANE,
+    INDEX_LANE,
+    Job,
+    Jobs,
+)
 
 router = APIRouter()
 
@@ -127,7 +131,7 @@ class ActivityRow:
 def _activity_row(job: Job) -> ActivityRow:
     return ActivityRow(
         job_id=job.id,
-        kind=words.JOB_KINDS.get(job.kind, job.kind),
+        kind=JOB_KINDS.get(job.kind, job.kind),
         state=job_state(job),
         started=time.strftime("%H:%M", time.localtime(job.started_wall)),
     )
@@ -138,42 +142,36 @@ def started(
     kind: str,
     work: Callable[[EventSink], JobReport],
     *,
+    lane: str = CORPUS_LANE,
     restored: list[OutOfBandChange] | None = None,
 ) -> Response:
-    """Hand the work to a thread and answer with the panel watching it.
+    """Hand the work to its lane and answer with the panel watching it.
 
-    A second operation is refused rather than queued, and says so:
-    the corpus lock would refuse it anyway with `timeout=0`, so the
-    limit is honest, and dropping a click in silence is not.
+    A task asked for while another runs in the same lane waits its turn
+    and says what it waits for (14b); it was refused until the service,
+    because the corpus lock refused it anyway.
     """
     jobs: Jobs = request.app.state.jobs
-    try:
-        job = jobs.start(kind, work, restored=restored)
-    except AlreadyRunning as busy:
-        if not from_htmx(request):
-            return RedirectResponse(f"/job/{busy.running}", status_code=303)
-        # The running job answers, its panel open and saying why this one
-        # did not start: the bar holds one job, and replacing the running
-        # one with a sentence lost its progress until a reload (#475).
-        running = jobs.get(busy.running)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "job.html",
-            {
-                "job_id": busy.running,
-                "kind": running.kind if running is not None else kind,
-                "problem": words.BUSY_WITH_ANOTHER,
-                "open_panel": True,
-            },
-        )
+    job = jobs.start(kind, work, lane=lane, restored=restored)
     if not from_htmx(request):
         # 303: the answer to a POST that tells the browser to GET,
         # so a reload shows the job rather than starting it again
         # (#412).
         return RedirectResponse(f"/job/{job.id}", status_code=303)
-    return TEMPLATES.TemplateResponse(
-        request, "job.html", {"job_id": job.id, "kind": job.kind}
-    )
+    return TEMPLATES.TemplateResponse(request, "job.html", _shown_unfinished(job))
+
+
+def _shown_unfinished(job: Job) -> dict[str, object]:
+    """What a job's panel is drawn with before it ends: a queued one says
+    what it is waiting for, from its first recorded event."""
+    shown: dict[str, object] = {"job_id": job.id, "kind": job.kind}
+    if job.state == "queued" and job.history and isinstance(job.history[0], Queued):
+        queued = job.history[0]
+        shown |= {
+            "state": "queued",
+            "headline": waiting_for(queued.behind, queued.ahead),
+        }
+    return shown
 
 
 # Every route that starts a task, and the task it starts: a domain error
@@ -232,7 +230,11 @@ def serve_index_form(request: Request, collection: str = "") -> HTMLResponse:
 @router.post("/index")
 def start_index(request: Request, form: PostedForm) -> Response:
     chosen = str(form.get("collection") or "")
-    collection = chosen if chosen in COLLECTION_NAMES else None
+    # Empty is every collection; anything else must be one. A name from
+    # an edited address read as "all" indexed what nobody asked for.
+    if chosen and chosen not in COLLECTION_NAMES:
+        raise UnknownCollection(words.unknown_collection(chosen))
+    collection = chosen or None
     context = existing_corpus()
     restored: list[OutOfBandChange] = []
     return started(
@@ -241,6 +243,7 @@ def start_index(request: Request, form: PostedForm) -> Response:
         lambda events: build_indexes(
             context, collection, events=events, restored=restored
         ),
+        lane=INDEX_LANE,
         restored=restored,
     )
 
@@ -255,7 +258,6 @@ def serve_sync_form(request: Request) -> HTMLResponse:
             "sync_preamble": words.SYNC_PREAMBLE,
             "sync_tip": words.SYNC_TIP,
             "sync_corpus_action": words.SYNC_CORPUS_ACTION,
-            "sync_context_action": words.SYNC_CONTEXT_ACTION,
         },
     )
 
@@ -269,23 +271,6 @@ def start_corpus_sync(request: Request) -> Response:
         "sync",
         lambda events: synchronise_corpus(context, events=events, restored=restored),
         restored=restored,
-    )
-
-
-@router.post("/context-sync")
-def start_bundle_sync(request: Request) -> Response:
-    context = existing_corpus()
-    bundle = find_bundle()
-    if bundle is None:
-        # `ContextNotFound` carries the command that makes one,
-        # which is the whole point of the errors carrying their
-        # own resolution: the advice was chosen where the problem
-        # is known.
-        return refused_task(request, "context-sync", ContextNotFound())
-    return started(
-        request,
-        "context-sync",
-        lambda events: synchronise_bundle(bundle, context, events=events),
     )
 
 
@@ -326,7 +311,7 @@ def serve_job(request: Request, job_id: str) -> HTMLResponse:
     job = request.app.state.jobs.get(job_id)
     if job is None:
         return refused_a_post(request, words.NO_SUCH_JOB)
-    shown: dict[str, object] = {"job_id": job.id, "kind": job.kind}
+    shown = _shown_unfinished(job)
     if job.done.is_set():
         outcome = _outcome(request, job)
         shown |= {
@@ -339,7 +324,7 @@ def serve_job(request: Request, job_id: str) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(
         request,
         "job-page.html",
-        {**shown, "inline": True, "title": words.JOB_KINDS.get(job.kind, job.kind)},
+        {**shown, "inline": True, "title": JOB_KINDS.get(job.kind, job.kind)},
     )
 
 
@@ -359,6 +344,8 @@ def serve_activity(request: Request) -> HTMLResponse:
             "changes": _changes(),
             "changes_heading": words.CHANGES_HEADING,
             "no_changes": words.NO_CHANGES,
+            "return_here": words.RETURN_HERE,
+            "put_back": words.PUT_BACK,
         },
     )
 
@@ -367,7 +354,7 @@ def serve_activity(request: Request) -> HTMLResponse:
 _CHANGES_SHOWN: Final = 30
 
 
-def _changes() -> list[dict[str, str]]:
+def _changes() -> list[dict[str, object]]:
     """The corpus's newest commits, whoever made them.
 
     The jobs above are only this window's, and only for an hour: an add
@@ -376,9 +363,8 @@ def _changes() -> list[dict[str, str]]:
     worth drawing - and the pane says what is wrong with the corpus.
     """
     try:
-        entries = read_history(
-            Repository(existing_corpus().corpus_root), limit=_CHANGES_SHOWN
-        )
+        repository = Repository(existing_corpus().corpus_root)
+        entries = read_history(repository, limit=_CHANGES_SHOWN)
     except KennisError:
         return []
     return [
@@ -386,8 +372,16 @@ def _changes() -> list[dict[str, str]]:
             "when": entry.when.astimezone().strftime("%Y-%m-%d %H:%M"),
             "what": words.change_line(entry.operation, entry.scope, entry.summary),
             "commit": entry.commit[:7],
+            # The newest is where the corpus is: nothing to return to.
+            "return_href": f"/corpus/return?commit={entry.commit}" if position else "",
+            "removed": (
+                removed_in(repository, entry.commit)
+                if entry.operation == "remove"
+                else []
+            ),
+            "parent": f"{entry.commit}^",
         }
-        for entry in entries
+        for position, entry in enumerate(entries)
     ]
 
 
@@ -431,7 +425,7 @@ def _outcome(request: Request, job: Job) -> _Outcome:
 
     The state is decided here once and written onto the headline as
     `data-state`, which `progress.js` reads: `failed`, `attention` when the
-    reader has something to do or to see - a busy corpus to try again, a
+    reader has something to do or to see - a write to run again, a
     choice, a command, an item that failed - or `done`.
     """
     if job.crash is not None:
@@ -440,9 +434,10 @@ def _outcome(request: Request, job: Job) -> _Outcome:
             refused(request, said, role="role-error", state="failed"), "failed", said
         )
     if job.error is not None:
-        busy = isinstance(job.error, CorpusBusy)
-        said = words.CORPUS_BUSY_RETRY if busy else str(job.error)
-        # Busy is something to try again, not a failure of the job.
+        busy = isinstance(job.error, PublishRefused)
+        said = words.CHANGED_MEANWHILE_RETRY if busy else str(job.error)
+        # Prepared against what changed meanwhile: something to run again,
+        # not a failure of the job.
         state = "attention" if busy else "failed"
         answer = refused(
             request,
@@ -482,9 +477,18 @@ class ShownBarJob:
 def shown_bar_job(request: Request) -> ShownBarJob | None:
     """The running job, else the newest that ended, for the bar."""
     jobs: Jobs = request.app.state.jobs
-    running = jobs.running()
-    if running is not None:
-        return ShownBarJob(running.id, running.kind, "running")
+    unfinished = jobs.unfinished()
+    if unfinished:
+        # The newest asked for: what the reader just did, or what a page
+        # loaded later finds still going.
+        newest = unfinished[-1]
+        shown = _shown_unfinished(newest)
+        return ShownBarJob(
+            newest.id,
+            newest.kind,
+            newest.state,
+            str(shown.get("headline", "")),
+        )
     for job in jobs.recent():
         if job.done.is_set():
             outcome = _outcome(request, job)

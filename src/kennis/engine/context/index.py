@@ -21,12 +21,15 @@ consequences of the bundle being the user's own directory:
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import yaml
 
 from kennis.engine.context.bundle import index_root_for
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.projects import note_project
 from kennis.engine.errors import NothingToIndex
 from kennis.engine.events import (
     Diagnostic,
@@ -45,8 +48,6 @@ from kennis.engine.rag.index import (
     load_index,
 )
 from kennis.engine.rag.models import Document, Metadata
-
-CONTEXT_COLLECTION = "context"
 
 _FRONTMATTER_DELIMITER = "---"
 
@@ -141,7 +142,11 @@ def load_bundle_index(bundle: Path) -> LoadedIndex:
     bundle - `context` is not one of the three values that option takes.
     Rule 4.4 says a printed command runs as printed, so the translation
     happens here rather than in every caller.
+
+    Loading is what every search of a bundle does, so this is where a
+    search records the project (14g).
     """
+    note_project(bundle)
     try:
         return load_index(index_root_for(bundle), CONTEXT_COLLECTION)
     except NothingToIndex as error:
@@ -171,6 +176,7 @@ def index_bundle(
     directory and writes the pointer only after the swap, so the worst a
     concurrent build can do is waste itself. Concern #236.
     """
+    note_project(bundle)
     try:
         return build_index(
             BundleLoader(bundle),
@@ -186,6 +192,11 @@ def index_bundle(
         # learn what it is about to be told. What is added here is the
         # wording, because "the 'context' collection is empty" describes a
         # corpus and a bundle is not one.
+        #
+        # An index left from before the last note went would still answer
+        # searches with files that are gone, and status would name this
+        # command for ever. It is derived and gitignored, so it goes.
+        shutil.rmtree(index_root_for(bundle), ignore_errors=True)
         raise NothingToIndex(
             "this project's context bundle has nothing in it to index yet",
             resolution="kennis remember --help",
@@ -193,7 +204,6 @@ def index_bundle(
 
 
 __all__ = [
-    "CONTEXT_COLLECTION",
     "BundleLoader",
     "index_bundle",
     "load_bundle_index",

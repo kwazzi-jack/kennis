@@ -1,0 +1,6 @@
+$ kennis remember --title Flagging --group topics RFI is flagged first.
+--- exit 0
+--- stdout
+Remembered Flagging, indexed, 1 chunk in <elapsed>
+  + notes/topics/Flagging.md
+--- stderr

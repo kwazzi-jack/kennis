@@ -11,15 +11,18 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
-from kennis.engine.context.bundle import find_bundle
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import CONTEXT_COLLECTION
+from kennis.engine.context.projects import project_named
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import pages_of_version, project_versions
 from kennis.engine.errors import (
     KennisError,
     UnknownCollection,
 )
+from kennis.engine.history.history import what_a_return_changes
 from kennis.engine.history.outofband import OutOfBandChange
+from kennis.engine.history.repository import Repository
 from kennis.gui import words
 from kennis.gui.pages import (
     shown_groups,
@@ -30,6 +33,7 @@ from kennis.gui.pane import bundle_folders
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
+    action_page,
     frame,
     from_htmx,
     problem_page,
@@ -42,10 +46,20 @@ from kennis.holdings import (
     installed_packs,
 )
 from kennis.operations import (
+    copy_a_document,
+    make_docs_version_current,
     move_a_document,
+    remove_a_document,
+    remove_docs_version,
+    restore_a_document,
+    return_corpus_to,
 )
 from kennis.render.packs import describe_holdings
-from kennis.render.words import describe_change
+from kennis.render.words import (
+    describe_change,
+    describe_return_changes,
+    describe_returned,
+)
 
 router = APIRouter()
 
@@ -70,14 +84,78 @@ def _tree(
             "moved": moved,
             "attention_only": words.ATTENTION_ONLY,
             "menu_open": words.MENU_OPEN,
+            "menu_copy": words.MENU_COPY,
             "menu_move": words.MENU_MOVE,
             "menu_add_here": words.MENU_ADD_HERE,
             "menu_index": words.MENU_INDEX,
+            "menu_remove": words.MENU_REMOVE,
             "move_group_label": words.MOVE_GROUP_LABEL,
             "move_group_empty": words.MOVE_GROUP_EMPTY,
             "menu_for": words.menu_for,
         },
     )
+
+
+@router.post("/docs/current")
+def make_a_version_current(request: Request, form: PostedForm) -> Response:
+    """Search this version of a docs project by default (#489), chosen
+    from its folder's menu in the tree."""
+    project = str(form.get("project") or "")
+    version = str(form.get("version") or "")
+    try:
+        make_docs_version_current(existing_corpus(), project, version)
+    except KennisError as error:
+        if from_htmx(request):
+            return _tree(request, "docs", problem=str(error))
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return written(_tree(request, "docs"))
+    return RedirectResponse("/collection/docs", status_code=303)
+
+
+@router.get("/docs/remove-version")
+def ask_to_remove_a_version(
+    request: Request, project: str = "", version: str = ""
+) -> HTMLResponse:
+    """What removing a version of a docs project would remove, and the
+    form that removes it (#489): reached from the version's menu in the
+    tree, so nothing goes on one click."""
+    docs_root = Collection(root=existing_corpus().corpus_root, name="docs").path
+    try:
+        pages = pages_of_version(docs_root, project, version)
+    except KennisError as error:
+        return problem_page(request, error)
+    current = project_versions(docs_root)[project].current == version
+    return action_page(
+        request,
+        "/docs/remove-version",
+        "forms/remove-version.html",
+        {
+            "project": project,
+            "version": version,
+            "removing": words.removing_version(
+                project, version, pages, current=current
+            ),
+            "remove_version_action": words.REMOVE_VERSION_ACTION,
+        },
+    )
+
+
+@router.post("/docs/remove-version")
+def remove_a_version(request: Request, form: PostedForm) -> Response:
+    """Remove every page of one version of a docs project, and redraw the
+    docs branch of the pane, whose counts it changed."""
+    project = str(form.get("project") or "")
+    version = str(form.get("version") or "")
+    try:
+        remove_docs_version(existing_corpus(), project, version)
+    except KennisError as error:
+        if from_htmx(request):
+            return _tree(request, "docs", problem=str(error))
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return written(_tree(request, "docs", moved=True))
+    return RedirectResponse("/collection/docs", status_code=303)
 
 
 @router.get("/corpus")
@@ -122,7 +200,7 @@ def serve_collection(request: Request, collection: str) -> HTMLResponse:
 
 
 @router.get("/tree/{collection}")
-def serve_tree(request: Request, collection: str) -> HTMLResponse:
+def serve_tree(request: Request, collection: str, project: str = "") -> HTMLResponse:
     """One collection's documents, or the bundle's, for the pane.
 
     Fetched when the reader opens it, never drawn with the page:
@@ -130,10 +208,14 @@ def serve_tree(request: Request, collection: str) -> HTMLResponse:
     load would be most of a second at a thousand documents.
     """
     if collection == CONTEXT_COLLECTION:
-        bundle = find_bundle()
-        folders = [] if bundle is None else bundle_folders(bundle)
+        try:
+            bundle = project_named(project).bundle
+        except KennisError as error:
+            return refused(request, str(error))
         return TEMPLATES.TemplateResponse(
-            request, "tree-context.html", {"folders": folders}
+            request,
+            "tree-context.html",
+            {"folders": bundle_folders(bundle), "project": project},
         )
     if collection not in COLLECTION_NAMES:
         return refused(request, words.unknown_collection(collection))
@@ -169,3 +251,143 @@ def move_from_the_tree(request: Request, form: PostedForm) -> Response:
         notes = tuple(describe_change(change) for change in restored)
         return written(_tree(request, collection, notes=notes, moved=True))
     return RedirectResponse(f"/collection/{collection}", status_code=303)
+
+
+@router.post("/copy")
+def copy_from_the_tree(request: Request, form: PostedForm) -> Response:
+    """Copy one document into a note of the person's, by the sequence
+    `corpus copy` runs, and open the copy - the version they can edit
+    (#514). A navigation whether or not htmx is there, so the form is a
+    plain one and a refusal is a page."""
+    collection = str(form.get("collection") or "")
+    if collection not in COLLECTION_NAMES:
+        return refused_a_post(request, words.unknown_collection(collection))
+    try:
+        copied = copy_a_document(
+            existing_corpus(), str(form.get("document") or ""), collection
+        )
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    return RedirectResponse(f"/document/notes/{copied.id}", status_code=303)
+
+
+@router.get("/document/remove")
+def ask_to_remove_a_document(
+    request: Request, collection: str = "", document: str = ""
+) -> HTMLResponse:
+    """What removing one document would remove, and the form that removes
+    it: reached from the document's menu in the tree, so nothing goes on
+    one click."""
+    if collection not in COLLECTION_NAMES:
+        return refused(request, words.unknown_collection(collection))
+    held = Collection(root=existing_corpus().corpus_root, name=collection)
+    try:
+        found = held.resolve(document)
+    except KennisError as error:
+        return problem_page(request, error)
+    return action_page(
+        request,
+        "/document/remove",
+        "forms/remove-document.html",
+        {
+            "collection": collection,
+            "document_id": found.id,
+            "removing": words.removing_document(found.frontmatter.title, collection),
+            "remove_document_action": words.REMOVE_DOCUMENT_ACTION,
+        },
+    )
+
+
+@router.post("/document/remove")
+def remove_from_the_tree(request: Request, form: PostedForm) -> Response:
+    """Remove one document by the sequence `corpus remove` runs, and redraw
+    its collection's branch, whose counts it changed."""
+    collection = str(form.get("collection") or "")
+    if collection not in COLLECTION_NAMES:
+        return refused_a_post(request, words.unknown_collection(collection))
+    context = existing_corpus()
+    held = Collection(root=context.corpus_root, name=collection)
+    try:
+        remove_a_document(context, held, held.resolve(str(form.get("document") or "")))
+    except KennisError as error:
+        if from_htmx(request):
+            return _tree(request, collection, problem=str(error))
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return written(_tree(request, collection, moved=True))
+    return RedirectResponse(f"/collection/{collection}", status_code=303)
+
+
+@router.get("/corpus/return")
+def ask_to_return(request: Request, commit: str = "") -> HTMLResponse:
+    """What returning the corpus to a point would put back, remove and
+    change, by document, and the form that does it - none when the
+    documents are already as they were there."""
+    try:
+        changes = what_a_return_changes(
+            Repository(existing_corpus().corpus_root), commit
+        )
+    except KennisError as error:
+        return problem_page(request, error)
+    return action_page(
+        request,
+        "/corpus/return",
+        "forms/return.html",
+        {
+            "commit": changes.commit,
+            "lines": describe_return_changes(changes),
+            "nothing": changes.nothing,
+            "return_explained": words.RETURN_EXPLAINED,
+            "return_action": words.RETURN_ACTION,
+        },
+    )
+
+
+@router.post("/corpus/return")
+def return_the_corpus(request: Request, form: PostedForm) -> Response:
+    """Return the corpus by the sequence `corpus return` runs, and say what
+    it did, offering the index, which still holds what was searched before.
+
+    A page whether htmx asked or not: the form is a plain one, because what
+    follows a return is a decision about the index, not a fragment."""
+    try:
+        returned = return_corpus_to(existing_corpus(), str(form.get("commit") or ""))
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    changed = bool(returned.added or returned.removed or returned.changed)
+    return written(
+        TEMPLATES.TemplateResponse(
+            request,
+            "returned.html",
+            {
+                "returned_heading": words.RETURNED_HEADING,
+                "returned": words.returned(
+                    describe_returned(
+                        returned.commit,
+                        added=returned.added,
+                        removed=returned.removed,
+                        changed=returned.changed,
+                    )
+                ),
+                "changed": changed,
+                "returned_index": words.RETURNED_INDEX,
+                "index_now": words.INDEX_NOW,
+                **frame(existing_corpus()),
+            },
+        )
+    )
+
+
+@router.post("/corpus/restore")
+def put_back(request: Request, form: PostedForm) -> Response:
+    """Put back one document a removal took, as it was just before, by the
+    sequence `corpus restore` runs; then the Activity page again."""
+    try:
+        restore_a_document(
+            existing_corpus(),
+            str(form.get("document") or ""),
+            commit=str(form.get("commit") or ""),
+        )
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    return written(RedirectResponse("/activity", status_code=303))

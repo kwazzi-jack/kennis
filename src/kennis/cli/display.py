@@ -59,12 +59,9 @@ import textwrap
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import lru_cache
-from typing import IO, Any
+from typing import IO, TYPE_CHECKING, Any
 
 import click
-from pygments.lexer import Lexer
-from pygments.lexers import get_lexer_by_name
-from pygments.util import ClassNotFound
 from rich.console import Console, RenderableType
 from rich.highlighter import RegexHighlighter
 from rich.padding import Padding
@@ -75,12 +72,17 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from rich.syntax import SyntaxTheme
 from rich.text import Text
 
 from kennis.cli.theme import rich_style_name, rich_theme, syntax_theme
-from kennis.render.markdown import Block, detected_language, split_blocks
 from kennis.render.theme import STYLE_PREFIX
+
+if TYPE_CHECKING:
+    from pygments.lexer import Lexer
+    from rich.syntax import SyntaxTheme
+
+if TYPE_CHECKING:
+    from kennis.render.markdown import Block
 
 _THEME = rich_theme()
 
@@ -921,6 +923,8 @@ def body(text: str, *, indent: str = "") -> None:
     block and pads every line out to the console width - trailing spaces
     that are invisible on screen and land in the file on a redirect.
     """
+    from kennis.render.markdown import split_blocks
+
     if indent:
         width = max(40, console.width - len(indent))
         text = textwrap.fill(
@@ -953,6 +957,8 @@ def _block(block: Block) -> None:
     renderer that adds a newline turns a document into a different document.
     A test asserts the whole round trip.
     """
+    from kennis.render.markdown import detected_language
+
     if block.kind == "prose":
         _prose(block.text)
     elif block.kind == "fence":
@@ -990,6 +996,9 @@ def _lexer_for(language: str) -> Lexer | None:
     appends a newline to a block that had none and strips leading ones, and
     `read` would then emit a document the corpus does not hold.
     """
+    from pygments.lexers import get_lexer_by_name
+    from pygments.util import ClassNotFound
+
     try:
         return get_lexer_by_name(language, stripnl=False, ensurenl=False)
     except ClassNotFound:

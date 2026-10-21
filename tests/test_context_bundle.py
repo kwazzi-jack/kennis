@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.context import (
+from kennis.engine.context.bundle import (
     BUNDLE_DIRNAME,
     INDEX_DIRNAME,
     MANIFEST_FILENAME,

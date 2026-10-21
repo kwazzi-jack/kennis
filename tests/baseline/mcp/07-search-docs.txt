@@ -1,0 +1,5 @@
+$ search_docs {"question": "tool"}
+--- error False
+[1] Tool
+  keywords: very high  tool 1.0  id=22k3nnp36k chunk=0
+  # Tool The tool's reference page.

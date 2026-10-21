@@ -16,12 +16,15 @@ call a real tool, and hold every byte that came back to being protocol.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,11 +32,17 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.client.process import stop_service
+from kennis.protocol.record import find_service
 
 # Slow because each test spawns a real interpreter and imports fastmcp.
 # Marked rather than trimmed: the subprocess is the whole point, and a
 # faster version of this test would not test the thing.
-pytestmark = pytest.mark.slow
+#
+# Marked `service` too, since 14d: with a corpus, starting the server asks
+# the corpus's service for the installed packs, which starts a real one.
+# The fixture stops it.
+pytestmark = [pytest.mark.slow, pytest.mark.service]
 
 
 @pytest.fixture(autouse=True)
@@ -45,13 +54,19 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def corpus(isolated: Path) -> Path:
+def corpus(isolated: Path) -> Iterator[Path]:
     result = CliRunner().invoke(main, ["corpus", "init"])
     assert result.exit_code == 0, result.output
-    return isolated / "corpus"
+    root = isolated / "corpus"
+    yield root
+    record = find_service(root)
+    if record is not None:
+        stop_service(root, record)
 
 
 _TIMEOUT_SECONDS = 60
+# How long a closed server's stdout may take to reach its end.
+_HELD_OPEN_SECONDS = 10
 
 
 def request(identifier: int, method: str, params: dict[str, object]) -> str:
@@ -70,6 +85,9 @@ class Session:
 
     stdout: str
     stderr: str
+    # Whether the server's stdout stayed open after the server exited,
+    # held by a process it started.
+    held_open: bool
 
 
 def a_session(corpus_root: Path) -> Session:
@@ -166,10 +184,29 @@ def a_session(corpus_root: Path) -> Session:
 
         server.stdin.close()
         server.wait(timeout=_TIMEOUT_SECONDS)
-        reader.join(timeout=_TIMEOUT_SECONDS)
+        reader.join(timeout=_HELD_OPEN_SECONDS)
+        # The server has exited, so a reader still waiting means another
+        # process holds the server's stdout - one the server started and
+        # let inherit it. Leaving the block would then wait for ever on
+        # the pipe's lock, so the holder is ended first and the session
+        # says what happened instead of hanging the suite.
+        held_open = reader.is_alive()
+        if held_open:
+            _end_the_service(corpus_root)
+            reader.join(timeout=_TIMEOUT_SECONDS)
         assert server.stderr is not None
         complaints = server.stderr.read()
-    return Session(stdout="\n".join(received), stderr=complaints)
+    return Session(stdout="\n".join(received), stderr=complaints, held_open=held_open)
+
+
+def _end_the_service(corpus_root: Path) -> None:
+    record = find_service(corpus_root)
+    if record is not None:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(
+                record.pid,
+                signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL,
+            )
 
 
 def messages_in(stdout: str) -> list[dict[str, object]]:
@@ -251,3 +288,17 @@ def test_the_server_describes_itself_over_the_wire(corpus: Path):
     result = initialised["result"]
     assert isinstance(result, dict)
     assert "kennis holds durable knowledge" in str(result.get("instructions"))
+
+
+def test_a_service_started_from_the_server_leaves_the_wire_alone(corpus: Path):
+    """The case #291 was always for (14d): the server starts the corpus's
+    service, which runs on after it, and nothing the service writes may
+    reach the server's stdout. The service is spawned through a launcher
+    with three null streams; this holds the two to it."""
+    finished = a_session(corpus)
+
+    assert not finished.held_open, (
+        "a process the server started held its stdout open after it exited"
+    )
+    assert find_service(corpus) is not None, "the session started no service"
+    assert messages_in(finished.stdout), finished.stderr

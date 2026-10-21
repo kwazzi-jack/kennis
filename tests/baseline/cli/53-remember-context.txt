@@ -1,0 +1,6 @@
+$ kennis remember --context This project uses CASA.
+--- exit 0
+--- stdout
+Remembered This project uses CASA, in this project
+  + .context/This project uses CASA.md
+--- stderr

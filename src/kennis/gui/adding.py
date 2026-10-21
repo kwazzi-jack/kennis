@@ -70,7 +70,8 @@ _TARGET: Final = re.compile(r"identifiers|lines-[0-9]{1,3}|backup\.folder|path")
 # How many blocks the group tab draws before "Another group" is used.
 FIRST_BLOCKS: Final[tuple[int, ...]] = (1, 2)
 
-type Widget = Literal["text", "number", "choice", "ways"]
+# `flag` is a checkbox: on or off, for one add.
+type Widget = Literal["text", "number", "choice", "ways", "flag"]
 type Upload = Literal["file", "both"]
 
 
@@ -229,6 +230,13 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
                 preview="/add/preview/site",
             ),
             ShownField(
+                name="version",
+                label=labels["version"],
+                required=False,
+                empty=empty["version"],
+                preview="/add/preview/site",
+            ),
+            ShownField(
                 name="max_pages",
                 label=labels["max_pages"],
                 required=False,
@@ -241,6 +249,13 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
                 required=False,
                 widget="number",
                 empty=empty["max_depth"],
+            ),
+            ShownField(
+                name="refresh",
+                label=labels["refresh"],
+                required=False,
+                widget="flag",
+                empty=empty["refresh"],
             ),
         ]
     return [
@@ -269,6 +284,12 @@ def add_fields(kind: str, *, default_group: str | None) -> list[ShownField]:
             label=labels["project"],
             required=False,
             empty=empty["file_project"],
+        ),
+        ShownField(
+            name="version",
+            label=labels["version"],
+            required=False,
+            empty=empty["file_version"],
         ),
     ]
 
@@ -378,7 +399,10 @@ def shown_site_preview(preview: SitePreview, *, probed: bool) -> list[ShownLine]
     lines = [
         ShownLine(words.previewed_project(preview.project))
         if preview.project is not None
-        else ShownLine(words.PROJECT_UNNAMED, "role-warning")
+        else ShownLine(words.PROJECT_UNNAMED, "role-warning"),
+        ShownLine(words.previewed_version(preview.version))
+        if preview.version is not None
+        else ShownLine(words.VERSION_UNNAMED, "role-warning"),
     ]
     if probed:
         lines.append(

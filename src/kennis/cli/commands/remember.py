@@ -5,29 +5,29 @@ the user is saying now, so the text arrives by one of three routes - an
 argument, `--from`, or standard input - and all three reach the same engine
 call. Design section 12.
 
-The order is the one every mutating command uses: take the lock, call the
-engine, commit.
+A note for the corpus is written by the service, which takes the lock,
+writes, indexes and commits (`writing.write_note`); a note for a project's
+bundle is written here, because the bundle is in the user's repository and
+the service owns the corpus alone.
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from kennis.cli import display
 from kennis.cli.commands.context import require_bundle
 from kennis.cli.commands.corpus import report_restored
-from kennis.cli.sink import reporting
+from kennis.cli.sink import DisplaySink, say_waiting
+from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.context import remember_in_bundle
-from kennis.engine.corpus.layout import relative_to_corpus
-from kennis.engine.events import Outcome
-from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.remember import INLINE_ORIGIN, RememberReport
-from kennis.render.words import index_state, needs_an_index
-from kennis.writing import write_note
+
+if TYPE_CHECKING:
+    from kennis.engine.remember import RememberReport
 
 
 @click.command(name="remember")
@@ -70,33 +70,36 @@ def remember_command(
     if to_context:
         _remember_in_context(body, title=title, group=group, no_index=no_index)
         return
-    restored: list[OutOfBandChange] = []
-    with reporting() as events:
-        report = write_note(
+    corpus_root = existing_corpus().corpus_root
+    with DisplaySink() as shown:
+        written = api.remember(
+            corpus_root,
             body,
             title=title,
             group=group,
             origin=origin,
             index=not no_index,
-            events=events,
-            restored=restored,
+            events=shown,
+            on_waiting=say_waiting,
         )
 
-    report_restored(restored)
-    _report(report)
+    report_restored(written.restored)
+    _report(written.result)
 
 
 def _remember_in_context(
     body: str, *, title: str | None, group: str | None, no_index: bool
 ) -> None:
-    """The bundle path: no corpus, no lock, and no commit.
+    """The bundle path: written by the service, with no lock and no commit.
 
-    The corpus one takes `corpus_lock` and ends in `Repository.commit`.
+    The corpus one is published and ends in `Repository.commit`.
     Neither applies here. The bundle lives inside a repository kennis does
     not own, so committing to it would take over the user's version control
     - the design says the bundle is committed with the project "if the user
     wants", and the wanting is theirs.
     """
+    from kennis.engine.events import Outcome
+
     if no_index:
         # Absent rather than present and ignored, which is the rule #169
         # states: `context index` does not exist yet, so nothing here could
@@ -104,8 +107,9 @@ def _remember_in_context(
         raise display.CliError(
             "--no-index has nothing to skip for --context; a bundle is not indexed yet."
         )
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
-    note = remember_in_bundle(bundle, body, title=title, group=group)
+    note = api.remember_in_context(corpus_root, bundle, body, title=title, group=group)
     if note.outcome is Outcome.UNCHANGED:
         display.operation(
             "Unchanged",
@@ -130,6 +134,8 @@ def _text_and_origin(text: str | None, from_path: Path | None) -> tuple[str, str
     caller that supplied both meant one of them, and guessing which would
     silently discard the other.
     """
+    from kennis.engine.remember import INLINE_ORIGIN
+
     if text is not None and from_path is not None:
         raise display.CliError("pass the text as an argument or with --from, not both.")
     if from_path is not None:
@@ -146,6 +152,10 @@ def _text_and_origin(text: str | None, from_path: Path | None) -> tuple[str, str
 
 def _report(report: RememberReport) -> None:
     """One operation line, and the step that makes the note findable."""
+    from kennis.engine.corpus.layout import relative_to_corpus
+    from kennis.engine.events import Outcome
+    from kennis.render.words import index_state, needs_an_index
+
     if report.outcome is Outcome.UNCHANGED:
         display.operation(
             "Unchanged", f"{report.title} is already remembered", style="unchanged"

@@ -29,13 +29,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kennis.context import Context, existing_corpus
-from kennis.engine.corpus.collection import Collection
+from kennis.client import api
+from kennis.context import existing_corpus
 from kennis.engine.corpus.document import Document
-from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import KennisError
-from kennis.engine.rag.index import LoadedIndex, load_index
-from kennis.engine.rag.search import ChunkRange, read_span
+from kennis.engine.rag.search import ChunkRange
 from kennis.render.words import describe_document, describe_span
 
 # How much of a whole document one answer carries. A tool's answer goes
@@ -124,22 +122,20 @@ def _read(collection: str, requests: list[ReadRequest]) -> str:
             f"{len(requests)} requests is more than one call reads. "
             f"Ask for at most {_MAX_REQUESTS}, best first."
         )
-    context = existing_corpus()
-    held = Collection(root=context.corpus_root, name=collection)
-    index = _Lazy(context, collection)
+    corpus_root = existing_corpus().corpus_root
     return "\n\n".join(
-        _answered(collection, held, index, request) for request in requests
+        _answered(corpus_root, collection, request) for request in requests
     )
 
 
-def _answered(
-    collection: str, held: Collection, index: _Lazy, request: ReadRequest
-) -> str:
+def _answered(corpus_root: Path, collection: str, request: ReadRequest) -> str:
     """One request: its provenance line, then its text.
 
     Every domain failure becomes a block rather than an exception. The
     note a `KennisError` carries names the command that resolves it, so
-    an agent reading a failed block is told what a person would be.
+    an agent reading a failed block is told what a person would be. A
+    whole document needs no index, so a batch of them answers on a corpus
+    never indexed; each request is its own call to the service.
     """
     if request.chunk_index is not None and request.chunk_index < 0:
         return (
@@ -147,24 +143,23 @@ def _answered(
             "Pass the `chunk` of a search hit, which counts from 0."
         )
     try:
-        document = held.resolve(request.document_id)
         if request.chunk_index is None:
-            # `held.root` is the corpus root, which is the same value
-            # the index loader relativises against - so the two kinds
-            # of read cannot address the corpus differently.
-            return _whole(collection, document, held.root)
-        return _range(collection, index.get(), document, request)
+            read = api.read_document(
+                corpus_root, request.document_id, collection, frontmatter=False
+            )
+            return _whole(read.collection, read.document, read.text, corpus_root)
+        return _range(corpus_root, collection, request)
     except KennisError as error:
         return _failed(request.document_id, error)
 
 
-def _whole(collection: str, document: Document, corpus_root: Path) -> str:
+def _whole(collection: str, document: Document, body: str, corpus_root: Path) -> str:
     """A document read in full, cut if it is long.
 
     The cut names `chunk_index` rather than a byte offset, because that
     is the argument that reads the rest and there is no other.
     """
-    body = document.body.strip("\n")
+    body = body.strip("\n")
     if len(body) > _MAX_CHARACTERS:
         body = (
             f"{body[:_MAX_CHARACTERS]}\n\n"
@@ -175,9 +170,7 @@ def _whole(collection: str, document: Document, corpus_root: Path) -> str:
     return f"{provenance}\n{body}"
 
 
-def _range(
-    collection: str, index: LoadedIndex, document: Document, request: ReadRequest
-) -> str:
+def _range(corpus_root: Path, collection: str, request: ReadRequest) -> str:
     """A window of chunks around the one a hit named.
 
     `max(0, ...)` on the start is not defensive tidiness: `ChunkRange`
@@ -190,36 +183,15 @@ def _range(
         start=max(0, request.chunk_index - max(0, request.before)),
         stop=request.chunk_index + max(0, request.after) + 1,
     )
-    span = read_span(index, document.id, chunks=chunks)
-    provenance = describe_span(collection, span, document.frontmatter.title)
-    return f"{provenance}\n{span.text.strip()}"
+    read = api.read_passage(corpus_root, request.document_id, collection, chunks=chunks)
+    provenance = describe_span(read.collection, read.span, read.title)
+    return f"{provenance}\n{read.span.text.strip()}"
 
 
 def _failed(document_id: str, error: KennisError) -> str:
     """One request that could not be served, named so the rest are usable."""
     resolution = f" Run `{error.resolution}`." if error.resolution else ""
     return f"{document_id}: {error}.{resolution}"
-
-
-class _Lazy:
-    """The collection's index, loaded at most once and only if asked.
-
-    A batch of whole-document reads must not fail on a corpus that has
-    never been indexed, and a batch of chunk reads must not load the
-    index once per request.
-    """
-
-    def __init__(self, context: Context, collection: str) -> None:
-        self._context = context
-        self._collection = collection
-        self._loaded: LoadedIndex | None = None
-
-    def get(self) -> LoadedIndex:
-        if self._loaded is None:
-            self._loaded = load_index(
-                index_root(self._context.corpus_root), self._collection
-            )
-        return self._loaded
 
 
 __all__ = ["ReadRequest", "read_docs", "read_literature", "read_notes"]

@@ -26,21 +26,27 @@ from typing import Final
 from kennis.engine.context.sync import OPERATION as CONTEXT_SYNC
 from kennis.engine.corpus.sync import OPERATION as CORPUS_SYNC
 from kennis.engine.events import (
+    FETCH_MODEL,
     Diagnostic,
-    Event,
     ItemFinished,
     ItemStarted,
     OperationFinished,
     Outcome,
     Progress,
 )
-from kennis.engine.rag.embedding import FETCH_MODEL
 from kennis.engine.refusals import Quoted
-from kennis.gui.jobs import Elapsed
+from kennis.protocol.progress import Began, Elapsed, Queued
 from kennis.render.diagnostics import describe_diagnostic
 from kennis.render.packs import verdict_word
 from kennis.render.refusals import refusal_fact
-from kennis.render.words import count_of, fetching_model, progress_label, running_for
+from kennis.render.words import (
+    count_of,
+    fetching_model,
+    progress_label,
+    running_for,
+    waiting_for,
+)
+from kennis.service.jobs import JobEvent
 
 # The marker each outcome is shown under, the same vocabulary the
 # command line prints. Not imported from `cli/`, which `gui/` may not
@@ -71,7 +77,7 @@ SYNC_MARKERS: Final[dict[str, str]] = {
 }
 
 
-def as_message(event: Event | Elapsed) -> dict[str, object] | None:
+def as_message(event: JobEvent | Elapsed) -> dict[str, object] | None:
     """One event as something a page can draw, or None to ignore it.
 
     `ItemStarted` is the step line - what is in hand now - and never a
@@ -83,6 +89,12 @@ def as_message(event: Event | Elapsed) -> dict[str, object] | None:
     match event:
         case Elapsed():
             return {"kind": "elapsed", "text": running_for(event.seconds)}
+        case Queued():
+            return {"kind": "current", "text": waiting_for(event.behind, event.ahead)}
+        case Began():
+            # The waiting line gives way to the operation's own, and the
+            # page marks the job running.
+            return {"kind": "began", "text": ""}
         case ItemStarted(operation=operation) if operation == FETCH_MODEL:
             return {
                 "kind": "current",
@@ -150,7 +162,7 @@ def sent_event(message: dict[str, object]) -> str:
 
 
 def as_stream(
-    events: Iterator[Event | Elapsed], closing: dict[str, object]
+    events: Iterator[JobEvent | Elapsed], closing: dict[str, object]
 ) -> Iterator[str]:
     """Every event as a wire message, then one that says it is over.
 

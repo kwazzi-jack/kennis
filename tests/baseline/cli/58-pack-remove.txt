@@ -1,0 +1,10 @@
+$ kennis pack remove provider
+--- exit 0
+--- stdout
+Removed provider
+  - 1 file dropped from the store
+nothing this pack supplied has been removed: the corpus keeps its documents until the next sync, and
+each project keeps its content until it is synchronised there
+  hint: run `kennis corpus sync`
+  hint: run `kennis context sync` in each project that has its content
+--- stderr

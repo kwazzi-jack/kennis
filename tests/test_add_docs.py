@@ -118,7 +118,8 @@ def test_a_page_records_its_project_and_page_key(docs: Collection):
     assert frontmatter.docs.project == "example"
     assert frontmatter.docs.page == "guide/start"
     assert frontmatter.docs.base_url == BASE
-    assert frontmatter.docs.version == "2.1.0"
+    assert frontmatter.docs.version == "latest"
+    assert frontmatter.docs.release == "2.1.0"
 
 
 def test_the_identifier_is_derived_from_the_project_and_the_page(docs: Collection):
@@ -132,7 +133,7 @@ def test_the_identifier_is_derived_from_the_project_and_the_page(docs: Collectio
     )
 
     frontmatter = pages_of(docs)["index"]
-    key = natural_key_for_docs(project="example", page="index")
+    key = natural_key_for_docs(project="example", version="latest", page="index")
     assert frontmatter.id == derive_id(key)
     assert frontmatter.id_from == key
 
@@ -318,7 +319,9 @@ def test_a_local_markdown_file_can_be_filed_into_a_project(
     tutorial.write_text("# A tutorial\n\nWritten by hand.\n", encoding="utf-8")
 
     add_docs(
-        docs, [str(tutorial)], AddOptions(project="example", request_delay_seconds=0)
+        docs,
+        [str(tutorial)],
+        AddOptions(project="example", version="latest", request_delay_seconds=0),
     )
 
     frontmatter = pages_of(docs)["tutorial"]
@@ -371,7 +374,7 @@ def test_an_address_of_a_file_is_one_document_not_a_site(docs: Collection):
             headers={"content-type": "text/markdown"},
         )
 
-    address = "https://example.org/guides/calibration.md"
+    address = "https://example.org/en/latest/guides/calibration.md"
     report = add_docs(
         docs,
         [address],

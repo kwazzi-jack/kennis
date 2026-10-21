@@ -15,7 +15,7 @@ other users on them. Concern #309.
 The token is minted per launch. It is stored in one place only: the
 window's record in the state directory, readable by this account alone,
 so a second `kennis gui` can open this window or stop it
-(`gui/instance.py`, #484). It arrives once as a
+(`protocol/record.py`, #484). It arrives once as a
 query parameter, because that is what can be put in a URL handed to a
 browser, and is then held in a cookie so it is not on every subsequent
 request line and not in the address bar to be copied into a chat
@@ -41,7 +41,6 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.gui import words
-from kennis.gui.jobs import Jobs
 from kennis.gui.responses import TEMPLATES, from_htmx, refused
 from kennis.gui.routes import (
     add,
@@ -54,6 +53,7 @@ from kennis.gui.routes import (
     shell,
 )
 from kennis.gui.theme import stylesheet
+from kennis.service.jobs import Jobs
 
 _HERE: Final = Path(__file__).parent
 
@@ -184,6 +184,17 @@ def _locked(request: Request) -> Response:
     )
 
 
+def bearer_token(request: Request) -> str | None:
+    """The token a client of the service sends, as `Authorization: Bearer`.
+
+    A header rather than the query or a cookie: the command line and the
+    MCP server are not browsers, and a token in a query string is a token
+    in any log that records the address (14b).
+    """
+    scheme, _, credential = request.headers.get("authorization", "").partition(" ")
+    return credential if scheme.lower() == "bearer" and credential else None
+
+
 def new_token() -> str:
     """A token for one launch.
 
@@ -222,7 +233,11 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         cookie = cookie_name(request)
-        supplied = request.query_params.get("token") or request.cookies.get(cookie)
+        supplied = (
+            request.query_params.get("token")
+            or request.cookies.get(cookie)
+            or bearer_token(request)
+        )
         if not secrets.compare_digest(supplied or "", token):
             # 401 and not a redirect. A refusal that redirects is a
             # refusal a client follows, and then the test that proves
@@ -342,6 +357,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
 
 __all__ = [
     "COOKIE_NAME",
+    "bearer_token",
     "build_app",
     "content_policy",
     "cookie_name",

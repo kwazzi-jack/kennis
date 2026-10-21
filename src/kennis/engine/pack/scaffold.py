@@ -20,7 +20,7 @@ from typing import Final
 
 from kennis.engine.errors import PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
-from kennis.engine.pack.schema import SCHEMA_VERSION, load_pack
+from kennis.engine.pack.versions import DEFAULT_VERSION, SCHEMA_VERSION
 
 # Raw GitHub serves `text/plain`, which the extension accepts. A fact about
 # where kennis is published rather than about packs, which is why it is one
@@ -29,8 +29,6 @@ SCHEMA_URL: Final = (
     "https://raw.githubusercontent.com/kwazzi-jack/kennis/main/src/kennis/schema/"
     f"ken-{SCHEMA_VERSION}.json"
 )
-
-DEFAULT_VERSION: Final = "0.1.0"
 
 OPERATION: Final = "pack-init"
 
@@ -112,6 +110,10 @@ def scaffold_pack(
     # Before writing, not after: an id that is not a slug leaves no file
     # behind, so a failed `init` is not a half-made pack the author has to
     # delete before trying again.
+    # Here rather than at the top: the client imports this module for its
+    # constants, and the schema's models are what it must not pay for (#535).
+    from kennis.engine.pack.schema import load_pack
+
     load_pack(text)
     path.write_text(text, encoding="utf-8", newline="\n")
     if events is not None:

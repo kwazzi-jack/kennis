@@ -9,31 +9,20 @@ shell's history.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisGroup
-from kennis.cli.sink import reporting
+from kennis.cli.sink import DisplaySink, say_waiting
+from kennis.client import api
 from kennis.context import existing_corpus, resolve_context
-from kennis.engine.backup import (
-    SET_FOLDER_COMMAND,
-    check_backup,
-    restore_backup,
-)
-from kennis.engine.errors import BackupRefused, BackupUnreadable
-from kennis.engine.settings import load_settings
-from kennis.operations import back_up_corpus
-from kennis.render.backup import (
-    BACKUP_PASSWORD_PROMPT,
-    NO_BACKUP_FOLDER,
-    describe_archive,
-    describe_folder,
-    describe_restored,
-    describe_verified,
-    describe_written,
-)
+
+if TYPE_CHECKING:
+    pass
 
 _TO_HELP = "This folder instead of backup.folder, for this run only."
 
@@ -53,13 +42,20 @@ def create_command(folder: Path | None) -> None:
     password before it replaces the last backup, so a failed run never
     destroys a good one.
     """
+    from kennis.render.backup import BACKUP_PASSWORD_PROMPT, describe_written
+
     chosen = _folder(folder)
     context = existing_corpus()
     password = click.prompt(
         BACKUP_PASSWORD_PROMPT, hide_input=True, confirmation_prompt=True
     )
-    with reporting() as events:
-        report = back_up_corpus(context, chosen, password, events=events)
+    with DisplaySink() as shown:
+        report = api.back_up(
+            context.corpus_root, chosen, password, events=shown, on_waiting=say_waiting
+        ).result
+    # The service was sent the folder made absolute; the report names it
+    # as the person did, which is what `backup check --to` will be given.
+    report = replace(report, path=chosen / report.path.name)
     display.operation(
         "Backed up", describe_written(report), elapsed=report.elapsed_seconds
     )
@@ -74,6 +70,15 @@ def create_command(folder: Path | None) -> None:
 )
 def check_command(folder: Path | None, test: bool) -> None:
     """Whether the folder is usable, and when the backup was last written."""
+    from kennis.engine.backup import check_backup
+    from kennis.engine.errors import BackupUnreadable
+    from kennis.render.backup import (
+        BACKUP_PASSWORD_PROMPT,
+        describe_archive,
+        describe_folder,
+        describe_verified,
+    )
+
     chosen = _folder(folder)
     password = click.prompt(BACKUP_PASSWORD_PROMPT, hide_input=True) if test else None
     checked = check_backup(chosen, password)
@@ -96,6 +101,9 @@ def check_command(folder: Path | None, test: bool) -> None:
 )
 def restore_command(archive: Path, target: Path | None) -> None:
     """Unpack a backup as the corpus, refusing to write over one."""
+    from kennis.engine.backup import restore_backup
+    from kennis.render.backup import BACKUP_PASSWORD_PROMPT, describe_restored
+
     destination = target or resolve_context().corpus_root
     password = click.prompt(BACKUP_PASSWORD_PROMPT, hide_input=True)
     report = restore_backup(archive, destination, password)
@@ -104,6 +112,11 @@ def restore_command(archive: Path, target: Path | None) -> None:
 
 
 def _folder(given: Path | None) -> Path:
+    from kennis.engine.backup import SET_FOLDER_COMMAND
+    from kennis.engine.errors import BackupRefused
+    from kennis.engine.settings import load_settings
+    from kennis.render.backup import NO_BACKUP_FOLDER
+
     if given is not None:
         return given.expanduser()
     configured = load_settings().backup.folder

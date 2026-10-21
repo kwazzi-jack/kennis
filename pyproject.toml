@@ -1,6 +1,6 @@
 [project]
 name = "kennis"
-version = "0.8.0"
+version = "0.10.0"
 description = "Local knowledge and memory management system for users and AI"
 readme = "README.md"
 authors = [
@@ -214,7 +214,7 @@ testpaths = ["tests"]
 # opt-in live tests are run with `uv run pytest -m network`, and exist to
 # settle what a fixture cannot: a fixture agrees with its parser by
 # construction, a real host does not.
-addopts = "-ra --strict-markers --strict-config -m 'not network and not slow and not browser'"
+addopts = "-ra --strict-markers --strict-config -m 'not network and not slow and not browser and not service'"
 markers = [
     "network: touches the real network; deselected unless asked for by name",
     # Separate from `network` because the two ask different questions and
@@ -225,6 +225,9 @@ markers = [
     # have: `uv sync --group browser && uv run playwright install chromium`,
     # then `uv run pytest -m browser`.
     "browser: drives the window in a real Chromium; deselected by default",
+    # Each starts a Python process that imports the engine, about a second
+    # apiece: `uv run pytest -m service`.
+    "service: starts a real kennis service process; deselected by default",
 ]
 xfail_strict = true
 # An upstream deprecation becomes a failing test at the moment it appears,

@@ -5,14 +5,13 @@ from __future__ import annotations
 import pytest
 
 from kennis.engine.errors import (
-    CorpusBusy,
     CorpusNotFound,
     GitUnavailable,
     KennisError,
     SettingsError,
 )
 
-SUBCLASSES = (CorpusNotFound, CorpusBusy, GitUnavailable, SettingsError)
+SUBCLASSES = (CorpusNotFound, GitUnavailable, SettingsError)
 
 
 def test_a_bare_error_has_no_resolution():
@@ -58,14 +57,14 @@ def test_every_subclass_names_a_resolving_command_by_default(
 
 
 def test_a_caller_may_override_the_default_resolution():
-    error = CorpusBusy(resolution="kennis corpus status")
+    error = CorpusNotFound(resolution="kennis corpus status")
 
     assert error.resolution == "kennis corpus status"
     assert error.__notes__ == ["run `kennis corpus status`"]
 
 
 def test_a_caller_may_state_that_no_command_resolves_it():
-    error = CorpusBusy(resolution=None)
+    error = CorpusNotFound(resolution=None)
 
     assert error.resolution is None
     assert not getattr(error, "__notes__", [])

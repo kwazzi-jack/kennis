@@ -11,11 +11,16 @@
    contents. Every entry is a link or a form, so each works without a
    script; `menu.js` adds right-click and Escape. #}
 {% macro mark(shown) %}{% if shown %}<span class="doc-state role-{{ shown.role }}" title="{{ shown.sentence }}">{{ shown.letter }}</span>{% endif %}{% endmacro %}
-{% macro menu(name, document_id, add_here) %}
+{% macro menu(name, document_id, add_here, branch=none) %}
 <details class="menu">
 <summary class="menu-button" aria-label="{{ menu_for(name) }}">{{ icon("ellipsis") }}</summary>
 <div class="menu-items">
 {% if document_id %}<a class="item" href="/document/{{ tree.collection }}/{{ document_id }}">{{ menu_open }}</a>{% endif %}
+{% if document_id %}<form class="copy" action="/copy" method="post">
+<input type="hidden" name="collection" value="{{ tree.collection }}">
+<input type="hidden" name="document" value="{{ document_id }}">
+<button type="submit" class="item">{{ menu_copy }}</button>
+</form>{% endif %}
 {% if document_id and tree.movable %}<form class="move" action="/move" method="post" hx-post="/move" hx-target="closest .branch" hx-swap="innerHTML">
 <input type="hidden" name="collection" value="{{ tree.collection }}">
 <input type="hidden" name="document" value="{{ document_id }}">
@@ -27,6 +32,13 @@
 <input type="hidden" name="collection" value="{{ tree.collection }}">
 <button type="submit" class="item">{{ menu_index }}</button>
 </form>
+{% if branch and branch.version and not branch.current %}<form class="make-current" action="/docs/current" method="post" hx-post="/docs/current" hx-target="closest .branch" hx-swap="innerHTML">
+<input type="hidden" name="project" value="{{ branch.project }}">
+<input type="hidden" name="version" value="{{ branch.version }}">
+<button type="submit" class="item">{{ make_current }}</button>
+</form>{% endif %}
+{% if branch and branch.version %}{% set removal = "/docs/remove-version?project=" ~ (branch.project | urlencode) ~ "&version=" ~ (branch.version | urlencode) %}<a class="item remove-version" href="{{ removal }}" hx-get="{{ removal }}" hx-target="#dialog" hx-swap="innerHTML">{{ menu_remove_version }}</a>{% endif %}
+{% if document_id %}{% set removal = "/document/remove?collection=" ~ (tree.collection | urlencode) ~ "&document=" ~ (document_id | urlencode) %}<a class="item remove-document" href="{{ removal }}" hx-get="{{ removal }}" hx-target="#dialog" hx-swap="innerHTML">{{ menu_remove }}</a>{% endif %}
 </div>
 </details>
 {% endmacro %}
@@ -36,13 +48,13 @@
 {% macro folder(branch) %}
 <li class="group{% if not branch.mark %} quiet{% endif %}" data-group="{{ branch.group }}" data-state="{{ branch.state }}">
 <details open>
-<summary class="node" title="{{ branch.group }}">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ branch.name }}</span><span class="count">{{ branch.count }}</span>{{ mark(branch.mark) }}</summary>
+<summary class="node" title="{{ branch.group }}">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ branch.name }}</span>{% if branch.current %}<span class="current-version">{{ current_version }}</span>{% endif %}<span class="count">{{ branch.count }}</span>{{ mark(branch.mark) }}</summary>
 <ul class="tree">
 {% for shown in branch.entries %}{{ entry(shown, branch.add_here) }}{% endfor %}
 {% for child in branch.children %}{{ folder(child) }}{% endfor %}
 </ul>
 </details>
-{{ menu(branch.group, "", branch.add_here) }}
+{{ menu(branch.group, "", branch.add_here, branch) }}
 </li>
 {% endmacro %}
 {% macro entry(shown, add_here) %}

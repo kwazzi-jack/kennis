@@ -58,6 +58,8 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "logging.level": ("next_start",),
     "logging.max_bytes": ("next_start",),
     "logging.backup_count": ("next_start",),
+    # Read when the service starts, as the log's settings are.
+    "service.idle_minutes": ("next_start",),
 }
 
 # The values that send document text off this machine, per key.

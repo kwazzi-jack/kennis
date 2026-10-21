@@ -1,0 +1,5 @@
+$ kennis corpus move imaging --group topics/radio
+--- exit 0
+--- stdout
+Moved doc0000002  topics/radio/imaging.md
+--- stderr

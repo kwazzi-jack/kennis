@@ -32,6 +32,13 @@ A value is taken from the first source that offers it:
     variable has no way to find out why. kennis walks its own model instead
     and looks each name up exactly.
 
+A name in the file that kennis does not read - a misspelling such as
+`chunking.sise`, or a setting a later kennis removed - has no effect.
+Every command says so on stderr, and the settings page says so at the
+head of its kennis section. The next change to the configuration removes
+it, because every write renders the whole file from the settings kennis
+has.
+
 ## Reading and changing settings
 
 ```

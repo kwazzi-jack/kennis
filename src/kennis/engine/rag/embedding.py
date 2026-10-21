@@ -40,7 +40,7 @@ import numpy as np
 from platformdirs import user_cache_dir
 
 from kennis.engine.errors import EmbeddingUnavailable, SettingsError
-from kennis.engine.events import EventSink, ItemStarted
+from kennis.engine.events import FETCH_MODEL, EventSink, ItemStarted
 from kennis.engine.settings import credential, load_settings
 
 if TYPE_CHECKING:
@@ -59,12 +59,6 @@ KINDS: Final[tuple[str, ...]] = ("fastembed", "ollama", "openai")
 # Texts per request. Both hosted backends accept a batch; a modest size bounds
 # the peak request while still amortising per-call overhead.
 _BATCH_SIZE: Final = 64
-
-# The operation name a model fetch is reported under. Shared with the front
-# ends, which render this one `ItemStarted` where they render no other: a
-# fetch is a precondition of the operation rather than one of its items, so
-# no later report line accounts for it.
-FETCH_MODEL: Final = "fetch-model"
 
 # In-flight batches when a binding does not set its own.
 _MAX_IN_FLIGHT: Final = 4

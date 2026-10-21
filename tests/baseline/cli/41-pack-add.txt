@@ -1,0 +1,10 @@
+$ kennis pack add provider/provider.ken.yml
+--- exit 0
+--- stdout
+Installed provider
+  + 1 file installed
+its papers, documentation and notes arrive with a corpus sync, and a project reads its context once 
+the project declares it
+  hint: run `kennis corpus sync`
+  hint: run `kennis context packs provider` in each project that uses it
+--- stderr

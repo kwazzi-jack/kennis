@@ -7,7 +7,7 @@
    screen reader (Brian, 2026-10-16). What waits is the control that
    indexes it. The last change stands where the job would, and gives way
    to one. #}
-{% set pane = pane if pane is defined else pane_now() %}
+{% set pane = pane if pane is defined else pane_now(request) %}
 <div id="strip-status" class="strip-status role-muted"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% for item in strip_status(pane) %}
   {% if item.kind == "waiting" %}

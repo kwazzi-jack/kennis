@@ -1,0 +1,7 @@
+$ kennis backup restore backups/kennis-corpus.7z
+--- exit 1
+--- stdout
+Backup password: 
+error: <scratch>/corpus is not empty, and a restore never writes over a corpus
+  hint: full detail in <scratch>/log-dir/kennis.log
+--- stderr

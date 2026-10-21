@@ -1,0 +1,6 @@
+$ kennis pack update provider.ken.yml
+--- exit 0
+--- stdout
+Updated provider.ken.yml
+  + 1 file recorded
+--- stderr

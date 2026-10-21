@@ -8,6 +8,8 @@ a page that is not documentation at all - a bot challenge is served as HTTP
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from kennis.engine.docs.fetch import convert_page
@@ -178,3 +180,97 @@ def test_a_refusal_does_not_repeat_the_page_it_is_about():
 
     assert PAGE_URL not in str(refused.value)
     assert "no main-content container" in str(refused.value)
+
+
+# ---------------------------------------------------------------------------
+# A code block keeps the language its site marked (#354, #491)
+# ---------------------------------------------------------------------------
+
+# Each structure as the site served it on 2026-10-17, cut to one block.
+# Sphinx (stimela, pytest): the mark is two levels above the <pre>.
+SPHINX_BLOCK = """<html><body><article role="main"><h1>Variables</h1>
+<section><div class="highlight-yaml notranslate"><div class="highlight"><pre>my-recipe:
+    assign:
+        foo: x
+</pre></div></div></section></article></body></html>
+"""
+
+# Starlight (pydantic): the mark is on the <code> inside the <pre>, which
+# carries only the theme's own class.
+STARLIGHT_BLOCK = """<html><body><div class="sl-markdown-content"><h1>Models</h1>
+<div class="annotated-code astro-fypcbrun"><figure class="code-frame astro-fypcbrun">
+<pre class="astro-fypcbrun"><code class="language-python astro-fypcbrun">\
+from pydantic import BaseModel
+</code></pre></figure></div></div></body></html>
+"""
+
+# Expressive Code and some MkDocs themes say it as an attribute.
+ATTRIBUTE_BLOCK = """<html><body><main><h1>Install</h1>
+<pre data-language="bash"><code>pip install kennis
+</code></pre></main></body></html>
+"""
+
+
+def fence_languages(markdown: str) -> list[str]:
+    """The info string of every opening fence, indented or not: an empty
+    string for a fence that names no language."""
+    fences = re.findall(r"^[ \t]*```(\S*)[ \t]*$", markdown, re.M)
+    # Fences pair up; the opening one of each pair is the one that names.
+    return fences[0::2]
+
+
+@pytest.mark.parametrize(
+    ("html", "language"),
+    [(SPHINX_BLOCK, "yaml"), (STARLIGHT_BLOCK, "python"), (ATTRIBUTE_BLOCK, "bash")],
+    ids=["sphinx", "starlight", "attribute"],
+)
+def test_a_code_block_keeps_the_language_its_site_marked(html: str, language: str):
+    assert fence_languages(convert_page(html, PAGE_URL)) == [language]
+
+
+def test_only_the_fence_changes():
+    """The code itself is what it was, so a chunk, a digest of unchanged
+    text and a search see nothing new but the name."""
+    converted = convert_page(SPHINX_BLOCK, PAGE_URL)
+
+    assert "```yaml\nmy-recipe:\n    assign:\n        foo: x\n```" in converted
+
+
+@pytest.mark.parametrize("name", ["pytest", "default", "not-a-language"])
+def test_a_name_pygments_does_not_know_leaves_the_fence_plain(name: str):
+    """Sphinx marks a terminal session `highlight-pytest` and its fallback
+    `highlight-default`; neither names a lexer, so neither can colour."""
+    html = SPHINX_BLOCK.replace("highlight-yaml", f"highlight-{name}")
+
+    assert fence_languages(convert_page(html, PAGE_URL)) == [""]
+
+
+def test_a_name_is_written_as_pygments_spells_it_lower_case():
+    html = SPHINX_BLOCK.replace("highlight-yaml", "highlight-YAML")
+
+    assert fence_languages(convert_page(html, PAGE_URL)) == ["yaml"]
+
+
+def test_an_unmarked_block_names_no_language():
+    html = SPHINX_BLOCK.replace("highlight-yaml notranslate", "notranslate")
+
+    assert fence_languages(convert_page(html, PAGE_URL)) == [""]
+
+
+def test_a_class_far_above_the_block_is_not_its_language():
+    """A page-level class is not a statement about one block."""
+    html = (
+        SPHINX_BLOCK.replace("highlight-yaml notranslate", "notranslate")
+        .replace("<section>", '<section class="language-python"><div><div>')
+        .replace("</section>", "</div></div></section>")
+    )
+
+    assert fence_languages(convert_page(html, PAGE_URL)) == [""]
+
+
+def test_a_block_inside_a_list_item_keeps_its_language_too():
+    html = STARLIGHT_BLOCK.replace(
+        '<div class="annotated-code', '<ol><li><p>Step.</p><div class="annotated-code'
+    ).replace("</figure></div>", "</figure></div></li></ol>")
+
+    assert fence_languages(convert_page(html, PAGE_URL)) == ["python"]

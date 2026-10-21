@@ -1,0 +1,12 @@
+{# Removing one document, said before it goes. The answer is the
+   collection's branch of the pane redrawn, so the document is seen gone;
+   without a script the form posts and returns to the collection. #}
+<p>{{ removing }}</p>
+<form class="remove-document" action="/document/remove" method="post" hx-post="/document/remove" hx-target="#pane-branch-{{ collection }}" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" data-closes-dialog>
+  <input type="hidden" name="collection" value="{{ collection }}">
+  <input type="hidden" name="document" value="{{ document_id }}">
+  <div class="form-foot">
+    <a class="button" href="/collection/{{ collection }}" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ remove_document_action }}</button>
+  </div>
+</form>

@@ -33,9 +33,11 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.engine.context.bundle import find_bundle
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import ContextNotFound, KennisError, NothingToIndex
-from kennis.retrieval import SCOPE_NAMES, Skipped, sweep
+from kennis.retrieval import Skipped, sweep
+from kennis.scopes import SCOPE_NAMES
 
 
 @pytest.fixture
@@ -47,6 +49,11 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     run = CliRunner()
     assert run.invoke(main, ["corpus", "init"]).exit_code == 0
     return tmp_path
+
+
+def here() -> Path | None:
+    """The bundle where the test stands, as a client finds it (#508)."""
+    return find_bundle(Path.cwd())
 
 
 def a_note(tmp_path: Path, name: str, body: str) -> None:
@@ -64,7 +71,17 @@ def a_doc(tmp_path: Path, name: str, body: str) -> None:
     source.write_text(f"# {name}\n\n{body}\n", encoding="utf-8")
     assert (
         run.invoke(
-            main, ["corpus", "add", "-d", str(source), "--project", "stimela"]
+            main,
+            [
+                "corpus",
+                "add",
+                "-d",
+                str(source),
+                "--project",
+                "stimela",
+                "--version",
+                "latest",
+            ],
         ).exit_code
         == 0
     )
@@ -104,7 +121,7 @@ def test_a_sweep_searches_every_scope_that_has_an_index(corpus: Path):
     a_doc(corpus, "solver", "The solver applies antenna gains per interval.")
     indexed(corpus)
 
-    found = sweep("antenna gains", scopes=SCOPE_NAMES, named=False)
+    found = sweep("antenna gains", scopes=SCOPE_NAMES, named=False, bundle=here())
 
     assert set(found.groups) == {"notes", "docs"}
     assert found.searched == ("docs", "notes")
@@ -131,7 +148,7 @@ def test_the_groups_keep_scope_order_whatever_order_they_were_asked_in(
     a_doc(corpus, "solver", "A passing mention of gains.")
     indexed(corpus)
 
-    found = sweep("gains", scopes=("notes", "docs"), named=False)
+    found = sweep("gains", scopes=("notes", "docs"), named=False, bundle=here())
 
     assert list(found.groups) == ["docs", "notes"]
 
@@ -144,7 +161,7 @@ def test_a_scope_with_no_index_is_skipped_with_its_own_command(corpus: Path):
         == 0
     )
 
-    found = sweep("gains", scopes=SCOPE_NAMES, named=False)
+    found = sweep("gains", scopes=SCOPE_NAMES, named=False, bundle=here())
 
     assert "notes" in found.groups
     skipped = {entry.name: entry for entry in found.skipped}
@@ -164,12 +181,12 @@ def test_a_named_scope_with_no_index_raises_instead_of_being_skipped(corpus: Pat
     )
 
     with pytest.raises((NothingToIndex, KennisError)):
-        sweep("gains", scopes=("docs",), named=True)
+        sweep("gains", scopes=("docs",), named=True, bundle=here())
 
 
 def test_a_named_context_with_no_bundle_raises(corpus: Path):
     with pytest.raises(ContextNotFound):
-        sweep("gains", scopes=("context",), named=True)
+        sweep("gains", scopes=("context",), named=True, bundle=here())
 
 
 def test_a_swept_context_with_no_bundle_is_not_even_mentioned(corpus: Path):
@@ -179,7 +196,7 @@ def test_a_swept_context_with_no_bundle_is_not_even_mentioned(corpus: Path):
     a_note(corpus, "gains", "Antenna gains drift.")
     indexed(corpus)
 
-    found = sweep("gains", scopes=SCOPE_NAMES, named=False)
+    found = sweep("gains", scopes=SCOPE_NAMES, named=False, bundle=here())
 
     assert "context" not in {entry.name for entry in found.skipped}
 
@@ -191,7 +208,7 @@ def test_nothing_searchable_at_all_is_a_refusal(corpus: Path):
     a_note(corpus, "gains", "Antenna gains drift.")
 
     with pytest.raises(KennisError) as refused:
-        sweep("gains", scopes=SCOPE_NAMES, named=False)
+        sweep("gains", scopes=SCOPE_NAMES, named=False, bundle=here())
 
     assert refused.value.resolution is not None
 
@@ -204,7 +221,7 @@ def test_a_skipped_scope_carries_no_sentence(corpus: Path):
     line cannot group two skips onto one line. Concern #81."""
     fields = {field for field in Skipped.__dataclass_fields__}
 
-    assert fields == {"name", "resolution"}
+    assert fields == {"name", "resolution", "installed"}
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +303,7 @@ def test_the_command_line_output_is_unchanged_by_the_extraction(corpus: Path):
 
 
 @pytest.mark.slow
+@pytest.mark.service
 def test_the_real_command_reports_the_same_scopes_it_searched(corpus: Path):
     """Through a real process, because `CliRunner` shares this
     interpreter and a report assembled at import time would look
@@ -293,15 +311,28 @@ def test_the_real_command_reports_the_same_scopes_it_searched(corpus: Path):
     a_note(corpus, "gains", "Antenna gains drift on long tracks.")
     indexed(corpus)
 
-    finished = subprocess.run(
-        ["uv", "run", "kennis", "search", "gains"],
-        capture_output=True,
-        text=True,
-        timeout=300,
-        stdin=subprocess.DEVNULL,
-        cwd=Path(__file__).resolve().parents[1],
-        env={**_environment(corpus)},
-    )
+    # A real command reaches a real service (14c), stopped here whatever
+    # the assertions say.
+    try:
+        finished = subprocess.run(
+            ["uv", "run", "kennis", "search", "gains"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            stdin=subprocess.DEVNULL,
+            cwd=Path(__file__).resolve().parents[1],
+            env={**_environment(corpus)},
+        )
+    finally:
+        subprocess.run(
+            ["uv", "run", "kennis", "service", "stop"],
+            capture_output=True,
+            timeout=300,
+            stdin=subprocess.DEVNULL,
+            cwd=Path(__file__).resolve().parents[1],
+            env={**_environment(corpus)},
+            check=False,
+        )
 
     assert finished.returncode == 0, finished.stderr
     assert "Found 1 in notes" in finished.stdout + finished.stderr

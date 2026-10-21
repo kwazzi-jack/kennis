@@ -1,0 +1,3 @@
+$ list_corpus {"collection": "elsewhere"}
+--- error False
+no collection called 'elsewhere'. The collections are literature, docs, notes.

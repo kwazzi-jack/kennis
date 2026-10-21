@@ -33,13 +33,8 @@ from kennis import __version__
 from kennis.engine.errors import PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.content import address_of, content_digest, read_source
-from kennis.engine.pack.schema import (
-    SCHEMA_VERSION,
-    ContentSource,
-    GeneratedSource,
-    Pack,
-    load_pack,
-)
+from kennis.engine.pack.schema import ContentSource, GeneratedSource, Pack, load_pack
+from kennis.engine.pack.versions import SCHEMA_VERSION
 from kennis.engine.refusals import Quoted
 
 type ProblemKind = Literal[
@@ -232,7 +227,7 @@ def version_refusal(pack: Pack) -> VersionRefusal | None:
 
 def _content_sources(pack: Pack) -> list[tuple[str, ContentSource]]:
     """Every source whose files are copied, with the section it belongs to."""
-    return [("notes", source) for source in pack.corpus.notes] + [
+    return [("notes", source) for source in pack.corpus.note_sources] + [
         ("context", source) for source in pack.context
     ]
 

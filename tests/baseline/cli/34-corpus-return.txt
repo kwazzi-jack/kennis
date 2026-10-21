@@ -1,0 +1,8 @@
+$ kennis corpus return <commit> -y
+--- exit 0
+--- stdout
+  ~ puts back 1 document: imaging
+  ~ removes 1 document: imaging
+Returned to <commit>: 1 document put back, 1 document removed
+  hint: run `kennis corpus index` so search sees what the return changed
+--- stderr

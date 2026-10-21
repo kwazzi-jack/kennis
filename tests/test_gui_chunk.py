@@ -43,7 +43,7 @@ from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.pages import shown_bundle_document
 from kennis.gui.words import MARK_WITHHELD
-from kennis.retrieval import EVERY_SCOPE
+from kennis.scopes import EVERY_SCOPE
 
 TOKEN = "a-test-token"
 
@@ -497,7 +497,9 @@ def test_the_bundle_reader_refuses_a_path_outside_the_bundle(bundle: Path):
     outside.write_text("root:x:0:0:SECRET\n", encoding="utf-8")
 
     with pytest.raises(DocumentNotFound):
-        shown_bundle_document(bundle, "../secret.txt", load_remote_images=False)
+        shown_bundle_document(
+            bundle, "../secret.txt", project="workspace", load_remote_images=False
+        )
 
 
 def test_a_stale_bundle_index_withholds_the_mark_and_says_why(
@@ -652,7 +654,17 @@ def test_a_sweep_names_the_scopes_it_could_not_search(corpus: Path, client: Test
     source.write_text("# doc\n\nSome documentation text.\n", encoding="utf-8")
     assert (
         run.invoke(
-            main, ["corpus", "add", "-d", str(source), "--project", "stimela"]
+            main,
+            [
+                "corpus",
+                "add",
+                "-d",
+                str(source),
+                "--project",
+                "stimela",
+                "--version",
+                "latest",
+            ],
         ).exit_code
         == 0
     )

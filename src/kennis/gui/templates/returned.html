@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}kennis - {{ returned_heading }}{% endblock %}
+{% block main %}
+{# What a return did, and the way to make search agree with it. #}
+<section class="action-page">
+  <h2>{{ returned_heading }}</h2>
+  <p>{{ returned }}</p>
+  {% if changed %}
+  <p class="role-muted">{{ returned_index }}</p>
+  <div class="form-foot">
+    <a class="button" href="/activity">{{ activity_heading }}</a>
+    <a class="button primary" href="/index" hx-get="/index" hx-target="#dialog" hx-swap="innerHTML">{{ icon("database") }}{{ index_now }}</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

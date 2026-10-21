@@ -43,12 +43,15 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
-from kennis.engine.context.bundle import BUNDLE_DIRNAME
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import is_bundle_group, pack_of_group
+from kennis.engine.docs.versions import version_order
 from kennis.engine.rag.models import SearchResult
-from kennis.render.words import snippet_of
+from kennis.render.words import ScoreStyle, group_name, snippet_of
+
+if TYPE_CHECKING:
+    pass
 
 type Relevance = Literal["very high", "high", "medium", "low", "very low"]
 
@@ -68,9 +71,6 @@ LEGS: Final[tuple[Leg, ...]] = ("lexical", "meaning")
 # Both front ends print it, so the terminal, an agent and the window
 # all say the same thing. Concern #417.
 LEG_LABELS: Final[dict[Leg, str]] = {"lexical": "keywords", "meaning": "meaning"}
-type ScoreStyle = Literal["human", "raw", "none"]
-
-SCORE_STYLES: Final[tuple[str, ...]] = ("human", "raw", "none")
 
 _LEVELS: Final[tuple[Relevance, ...]] = (
     "very high",
@@ -252,6 +252,16 @@ def bundle_hit_handle(result: SearchResult, *, bundle_name: str) -> str:
     return f"path={bundle_name}/{result.chunk.document_id}"
 
 
+def pack_hit_handle(result: SearchResult, *, pack_id: str) -> str:
+    """Where a pack's context hit is: the pack and the file's address, which
+    is what `kennis context copy` takes to make the file the project's own.
+
+    Not a path, because the file is in kennis's store and is not to be
+    edited there (14g).
+    """
+    return f"pack={pack_id}/{result.chunk.document_id}"
+
+
 def raw_scores(result: SearchResult) -> str:
     """Every leg that ran, at the precision that distinguishes hits.
 
@@ -274,10 +284,8 @@ __all__ = [
     "CALIBRATED_MODELS",
     "LEGS",
     "LEG_LABELS",
-    "SCORE_STYLES",
     "Leg",
     "Relevance",
-    "ScoreStyle",
     "basis_phrase",
     "hit_detail_parts",
     "hit_handle",
@@ -312,6 +320,27 @@ class Hit:
     collection: str
     result: SearchResult
     model: str | None
+    # The other versions of the same docs page whose passage is this one,
+    # word for word, merged into it when a search ran over several (#489).
+    merged_versions: tuple[str, ...] = ()
+    # Where a project's note is, as the reader is told: `.context` for
+    # the project the search ran from, the bundle's whole path for
+    # another (14g). Empty for every other hit.
+    place: str = ""
+
+
+def docs_versions_of(hit: Hit) -> str | None:
+    """`pydantic 2.14`, or `pydantic 2.12, 2.14` for a merged passage: which
+    project and versions a docs hit comes from. None for any other hit,
+    and for a page written before versions."""
+    docs = hit.result.chunk.metadata.get("docs")
+    if not isinstance(docs, dict):
+        return None
+    project, version = docs.get("project"), docs.get("version")
+    if not isinstance(project, str) or not isinstance(version, str):
+        return None
+    versions = sorted({version, *hit.merged_versions}, key=version_order)
+    return f"{project} {', '.join(versions)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,17 +396,26 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     arrived and split `meaning:` from `medium`. The join is still what
     the command line prints, byte for byte. Concern #380.
     """
+    from kennis.engine.context.bundle import BUNDLE_DIRNAME
+
+    pack = pack_of_group(hit.collection)
     handle = (
-        bundle_hit_handle(hit.result, bundle_name=BUNDLE_DIRNAME)
-        if hit.collection == CONTEXT_COLLECTION
+        bundle_hit_handle(hit.result, bundle_name=hit.place or BUNDLE_DIRNAME)
+        if is_bundle_group(hit.collection)
+        else pack_hit_handle(hit.result, pack_id=pack)
+        if pack is not None
         else hit_handle(hit.result)
     )
+    # Which version a docs passage is from travels with its handle, so the
+    # command line, an agent and the window all say it (#489).
+    where = docs_versions_of(hit)
+    reach = (where, handle) if where is not None else (handle,)
     if style == "none":
-        return (handle,)
+        return reach
     if style == "raw":
-        return (raw_scores(hit.result), handle)
+        return (raw_scores(hit.result), *reach)
     found = relevances(hit.result, model=hit.model, best=best)
-    return (*(f"{LEG_LABELS[leg]}: {level}" for leg, level in found), handle)
+    return (*(f"{LEG_LABELS[leg]}: {level}" for leg, level in found), *reach)
 
 
 def hit_detail(hit: Hit, *, style: ScoreStyle, best: float) -> str:
@@ -472,7 +510,9 @@ def summary_of(groups: Mapping[str, Sequence[Hit]]) -> str:
     The basis is not here. It belongs to a group, and this line spans
     them.
     """
-    return ", ".join(f"{len(hits)} in {name}" for name, hits in groups.items())
+    return ", ".join(
+        f"{len(hits)} in {group_name(name)}" for name, hits in groups.items()
+    )
 
 
 def around(chunk_index: int) -> str:

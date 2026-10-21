@@ -34,6 +34,7 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
+from kennis.engine.courtesy import crawl_delay, robots_for
 from kennis.engine.docs.http import USER_AGENT, get_within
 from kennis.engine.docs.sites import DocsSite
 
@@ -42,11 +43,6 @@ _REQUEST_TIMEOUT_SECONDS: Final = 30
 # Spacing between requests to one host. Politeness, and the reason this layer
 # is serial rather than concurrent.
 _FETCH_DELAY_SECONDS: Final = 0.2
-
-# The longest robots.txt's `Crawl-delay` is honoured to. A site asking for
-# more is still read, this slowly: three hundred pages at a minute each
-# would be a five-hour add that looks no different from a hung one.
-_MAX_CRAWL_DELAY_SECONDS: Final = 30.0
 
 # Walking a third-party site, so every axis is bounded.
 _MAX_PAGES: Final = 300
@@ -90,15 +86,6 @@ _NON_HTML_SUFFIXES: Final = (
     ".rst",
     ".json",
 )
-
-
-# The two answers a missing or refused robots.txt stands for, written as
-# robots bodies rather than set on the parser's `allow_all`/`disallow_all`
-# attributes: those exist at runtime but are not part of the declared
-# interface, and parsing an equivalent body is the same behaviour through the
-# documented one. An empty body matches nothing, so everything is allowed.
-_ALLOW_EVERYTHING: Final = ()
-_FORBID_EVERYTHING: Final = ("User-agent: *", "Disallow: /")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,10 +164,7 @@ def paced_by(robots: RobotFileParser, delay: float) -> float:
     Read but ignored before, so a site asking for ten seconds between
     requests got one every fifth of a second.
     """
-    asked = robots.crawl_delay(USER_AGENT)
-    if asked is None:
-        return delay
-    return max(delay, min(float(asked), _MAX_CRAWL_DELAY_SECONDS))
+    return max(delay, crawl_delay(robots, USER_AGENT))
 
 
 def discovery_mode(client: httpx.Client, base_url: str) -> str:
@@ -211,35 +195,6 @@ def page_key(url: str, path_prefix: str) -> str:
             relative = relative[: -len(suffix)]
             break
     return relative.strip("/") or "index"
-
-
-def robots_for(client: httpx.Client, origin: str) -> RobotFileParser:
-    """`{origin}/robots.txt`, parsed.
-
-    Fetched through the caller's own client rather than through
-    `urllib.robotparser`'s `urlopen`, which means replicating by hand the
-    status handling it would have done: refusing to serve robots.txt at all
-    (401 or 403) forbids everything, any other client error allows
-    everything, and an unreachable file is absent rather than forbidding.
-    """
-    parser = RobotFileParser()
-    robots_url = urljoin(origin + "/", "robots.txt")
-    parser.set_url(robots_url)
-    try:
-        response = get_within(client, robots_url, origin=origin)
-    except httpx.HTTPError:
-        parser.parse(_ALLOW_EVERYTHING)
-        return parser
-
-    # A server error is "may not crawl now", as RFC 9309 has it: its body
-    # is an error page, and parsed as rules it allowed everything.
-    if response.status_code in (401, 403) or response.status_code >= 500:
-        parser.parse(_FORBID_EVERYTHING)
-    elif 400 <= response.status_code < 500:
-        parser.parse(_ALLOW_EVERYTHING)
-    else:
-        parser.parse(response.text.splitlines())
-    return parser
 
 
 def crawl_site(

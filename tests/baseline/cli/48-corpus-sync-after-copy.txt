@@ -1,0 +1,6 @@
+$ kennis corpus sync
+--- exit 0
+--- stdout
+Synchronised 1 document unchanged
+  = notes/provider/Convention.md: unchanged
+--- stderr

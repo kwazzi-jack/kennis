@@ -30,7 +30,8 @@ from kennis.cli.display import sync_marker
 from kennis.cli.sink import marker_for
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.events import Outcome
+from kennis.engine.errors import InputError
+from kennis.engine.events import EventSink, Outcome
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock
 from kennis.engine.pack.store import PackInstall
@@ -41,6 +42,7 @@ from kennis.gui.pane import Pane
 from kennis.gui.responses import TEMPLATES
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.logs import log_path, start_logging, stop_logging
+from kennis.render.words import waiting_for
 
 TOKEN = "a-test-token"
 
@@ -323,30 +325,30 @@ def test_the_stream_carries_each_item_and_then_closes(
 
 
 def test_the_stream_ends_even_when_the_operation_fails(
-    client: TestClient, tmp_path: Path
+    app: FastAPI, client: TestClient
 ):
     """A stream that simply stopped would leave a page showing a
     spinner, with no way to tell a finished job from a dropped
     connection."""
-    corpus_root = existing_corpus().corpus_root
-    with corpus_lock(corpus_root):
-        started = posted(
-            client,
-            "/add",
-            data={
-                "identifiers": str(a_source(tmp_path, "trees.md")),
-                "collection": "notes",
-            },
-        )
-        seen = messages(client, job_of(started.text))
+
+    def fails(events: EventSink) -> object:
+        raise InputError("this operation could not run")
+
+    job = app.state.jobs.start("add", fails)
+    seen = messages(client, job.id)
 
     assert seen[-1]["kind"] == "closed"
+    assert job.error is not None
 
 
-def test_a_busy_corpus_is_a_state_to_retry_from(client: TestClient, tmp_path: Path):
-    """`timeout=0`, so a second writer is told rather than left with a
-    page that has stopped. Nothing was changed, so the answer says to
-    try again rather than reporting a failure."""
+def test_a_corpus_held_elsewhere_is_waited_for_not_refused(
+    app: FastAPI, client: TestClient, tmp_path: Path
+):
+    """In the service a job waits for the corpus rather than being told it
+    is busy (14b): a terminal or a build's commit that holds it was there
+    first. Checked between the two events it orders - the job must not
+    have finished while the corpus is held, and must finish once it is not.
+    """
     corpus_root = existing_corpus().corpus_root
     with corpus_lock(corpus_root):
         started = posted(
@@ -357,10 +359,13 @@ def test_a_busy_corpus_is_a_state_to_retry_from(client: TestClient, tmp_path: Pa
                 "collection": "notes",
             },
         )
-        shown = finished(client, job_of(started.text))
+        job = app.state.jobs.get(job_of(started.text))
+        assert job is not None
+        assert not job.done.wait(0.5), "the job ran beside the corpus's holder"
+    shown = finished(client, job.id)
 
-    assert "busy" in shown
-    assert "try again" in shown
+    assert job.error is None
+    assert "busy" not in shown
 
 
 def test_an_operation_started_from_the_window_reaches_the_log(
@@ -400,37 +405,42 @@ def test_the_markers_agree_with_the_command_lines(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
-# One at a time
+# One at a time in each lane, and the rest wait their turn (14b)
 # ---------------------------------------------------------------------------
 
 
-def test_a_second_operation_is_refused_and_says_which_is_running(
+def test_a_second_operation_waits_its_turn_and_says_for_what(
     app: FastAPI, client: TestClient, tmp_path: Path
 ):
-    """The corpus lock would refuse it anyway, so the limit is honest.
-    What would not be honest is dropping the second click in silence.
+    """It was refused while the corpus lock refused it anyway; in the
+    service it queues, and says which task it is behind.
 
     The first job is held open by an event this test releases, rather
     than by a corpus lock: a lock makes the operation *fail*, which
     finishes the job, and a job that has finished is no longer the one
-    in the way. That version of this test passed for the wrong reason
-    until the run that caught it.
+    in the way.
     """
     holding = threading.Event()
     running = app.state.jobs.start("add", lambda events: holding.wait(10))
+    try:
+        second = posted(
+            client,
+            "/add",
+            data={
+                "identifiers": str(a_source(tmp_path, "two.md")),
+                "collection": "notes",
+            },
+        )
+        waiting = app.state.jobs.get(job_of(second.text))
 
-    second = posted(
-        client,
-        "/add",
-        data={
-            "identifiers": str(a_source(tmp_path, "two.md")),
-            "collection": "notes",
-        },
-    )
-
-    assert words.BUSY_WITH_ANOTHER in second.text
-    assert job_of(second.text) == running.id
-    holding.set()
+        assert job_of(second.text) != running.id
+        assert waiting is not None and waiting.state == "queued"
+        assert waiting_for("add", 1) in second.text
+        assert 'data-state="queued"' in second.text
+    finally:
+        holding.set()
+    finished(client, job_of(second.text))
+    assert waiting.result is not None
 
 
 def test_a_job_that_has_finished_is_no_longer_in_the_way(
@@ -451,7 +461,7 @@ def test_a_job_that_has_finished_is_no_longer_in_the_way(
         },
     )
 
-    assert "One operation runs at a time" not in started.text
+    assert 'data-state="queued"' not in started.text
     finished(client, job_of(started.text))
 
 
@@ -498,16 +508,6 @@ def test_a_corpus_sync_with_no_packs_reports_nothing_and_does_not_fail(
     assert "role-added" not in shown
 
 
-def test_a_project_sync_outside_a_bundle_is_a_task_naming_what_makes_one(
-    client: TestClient,
-):
-    """A task that could not begin, on the bar like any other (#475)."""
-    answer = posted(client, "/context-sync", data={})
-
-    assert 'data-state="failed"' in answer.text
-    assert "kennis context init" in answer.text
-
-
 def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     client: TestClient,
 ):
@@ -538,22 +538,18 @@ def test_the_pack_field_browses_the_computer_kennis_runs_on(client: TestClient):
     assert client.get(address, headers={"HX-Request": "true"}).status_code == 200
 
 
-def test_the_sync_dialog_offers_the_project_context_only_where_there_is_one(
+def test_the_sync_dialog_syncs_the_corpus_and_no_project(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
-    """The one dialog with two operations in it. Every other action's
-    dialog posts to its own path, which `test_gui_workbench` asserts; this
-    one also posts to `/context-sync` - offered only where there is a
-    project context, since with none it would refuse."""
-    alone = client.get("/sync", headers={"HX-Request": "true"}).text
-    monkeypatch.setattr("kennis.gui.pane.project_name", lambda: "kennis")
-    with_context = client.get("/sync", headers={"HX-Request": "true"}).text
+    """A project's context is read from the store, so there is nothing of
+    a pack for the window to copy into one (14g); its sync stays on the
+    command line, run in the project concerned."""
+    monkeypatch.setattr("kennis.gui.pane.present_projects", lambda: ("kennis",))
+    dialog = client.get("/sync", headers={"HX-Request": "true"}).text
 
-    assert 'hx-post="/sync"' in alone
-    assert 'hx-post="/context-sync"' not in alone
-    assert 'hx-post="/context-sync"' in with_context
-    assert 'hx-disabled-elt="this"' in with_context
-    foot = BeautifulSoup(with_context, "html.parser").select_one(".form-foot")
+    assert 'hx-post="/sync"' in dialog
+    assert "/context-sync" not in dialog
+    foot = BeautifulSoup(dialog, "html.parser").select_one(".form-foot")
     assert foot is not None
     submits = foot.select("button[type=submit]")
     assert "primary" in (submits[0].get("class") or [])
@@ -608,7 +604,7 @@ def test_an_installed_pack_offers_the_sync_as_a_button_not_a_command(
         )
     )
     drawn = TEMPLATES.get_template("job-outcome.html").render(
-        shown=shown, pane_now=lambda: Pane(collections=(), project=None)
+        shown=shown, pane_now=lambda request: Pane(collections=(), projects=())
     )
 
     assert shown.next_steps == ()

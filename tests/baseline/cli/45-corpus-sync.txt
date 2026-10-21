@@ -1,0 +1,7 @@
+$ kennis corpus sync
+--- exit 0
+--- stdout
+Synchronised 1 document added
+  + notes/provider/Convention.md: added by provider
+  hint: run `kennis corpus index`
+--- stderr

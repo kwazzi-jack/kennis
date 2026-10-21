@@ -100,16 +100,18 @@ def test_a_deletion_names_the_command_that_puts_it_back():
     )
 
 
-def test_a_pack_owned_edit_names_the_command_that_undoes_it():
+def test_a_pack_owned_edit_names_the_commands_that_keep_or_undo_it():
     """Commands rather than one sentence containing them, so a front end can
-    list them, number them, or offer them as choices.
-
-    Only `restore` for now: `kennis corpus claim` is designed and not built,
-    and rules.md 4.4 forbids printing an instruction that fails.
+    list them, number them, or offer them as choices. Keeping the edit
+    means a copy of the person's, because a pack's note is obtained text
+    the next sync puts back (#514); undoing it is `restore`.
     """
     remedies = remedies_for(a_change(kind="edited", owner="pack:boepie"))
 
-    assert remedies == ("kennis corpus restore aaaaaaaaaa",)
+    assert remedies == (
+        "kennis corpus copy aaaaaaaaaa",
+        "kennis corpus restore aaaaaaaaaa",
+    )
 
 
 def command_accepts(invocation: str) -> str:

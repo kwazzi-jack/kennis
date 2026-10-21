@@ -9,14 +9,16 @@ commit, and what a person is told afterwards.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from held import held_for_a_moment
 from kennis.cli.__main__ import main
+from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.repository import Repository
-from kennis.engine.locking import corpus_lock
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +72,10 @@ def test_text_read_from_a_file_is_remembered(
     assert result.exit_code == 0, result.output
     stored = only_note(corpus).read_text(encoding="utf-8")
     assert "The pipeline runs on 16 cores." in stored
-    assert f"path:{path}" in stored
+    frontmatter, _ = split_frontmatter(stored)
+    source = frontmatter["source"]
+    assert isinstance(source, dict)
+    assert source["from"] == f"path:{path}"
 
 
 def test_text_piped_in_is_remembered(corpus: Path, run: CliRunner):
@@ -130,17 +135,18 @@ def test_remembering_the_same_thing_twice_makes_no_second_commit(
     assert len(sorted((corpus / "notes").rglob("*.md"))) == 1
 
 
-def test_remember_is_refused_while_the_corpus_is_busy(corpus: Path, run: CliRunner):
-    """A mutating command, so it takes the corpus lock like every other one.
-    Design section 16 would rather it wrote the note and deferred only the
-    index; that needs a lock per collection, which is not what was built.
-    Concern #167."""
-    with corpus_lock(corpus):
+def test_remember_waits_while_the_corpus_is_busy_and_then_writes(
+    corpus: Path, run: CliRunner
+):
+    """A write through the service waits for the corpus rather than being
+    refused (14b), so a note asked for during another write lands after it."""
+    with held_for_a_moment(corpus) as hold:
         result = run.invoke(main, ["remember", "A thing worth keeping."])
+        finished = time.monotonic()
 
-    assert result.exit_code != 0
-    assert "another kennis command" in result.output.lower()
-    assert sorted((corpus / "notes").rglob("*.md")) == []
+    assert result.exit_code == 0, result.output
+    assert finished >= hold.released, "the command did not wait for the holder"
+    assert len(sorted((corpus / "notes").rglob("*.md"))) == 1
 
 
 def test_the_title_can_be_given(corpus: Path, run: CliRunner):
@@ -200,6 +206,25 @@ def test_a_remembered_note_is_searchable_without_a_second_command(
     found = run.invoke(main, ["search", "ionospheric screens", "--mode", "bm25"])
     assert found.exit_code == 0, found.output
     assert "onospheric" in found.output
+
+
+def test_no_index_writes_the_note_and_leaves_the_index_as_it_was(
+    corpus: Path, run: CliRunner
+):
+    """`--no-index` crosses to the service as an argument (14c); a note
+    written with it is held and not yet searchable."""
+    assert run.invoke(main, ["remember", "Old words about calibration."]).exit_code == 0
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+
+    result = run.invoke(
+        main,
+        ["remember", "--no-index", "Ionospheric screens need solutions."],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(sorted((corpus / "notes").rglob("*.md"))) == 2
+    found = run.invoke(main, ["search", "ionospheric screens", "--mode", "bm25"])
+    assert "onospheric" not in found.output
 
 
 def test_an_unchanged_note_does_not_sweep_up_unrelated_changes(

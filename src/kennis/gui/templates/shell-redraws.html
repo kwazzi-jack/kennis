@@ -2,4 +2,4 @@
    redrawn out of band: after anything that wrote, they say what the
    corpus is now rather than what it was when the page was drawn
    (#457). #}
-{% with oob = true %}{% include "strip-status.html" %}{% set pane = pane_now() %}{% if pane.readable %}{% include "pane-documents.html" %}{% endif %}{% for row in pane.collections %}{% include "pane-row.html" %}{% endfor %}{% endwith %}
+{% with oob = true %}{% include "strip-status.html" %}{% set pane = pane_now(request) %}{% if pane.readable %}{% include "pane-documents.html" %}{% endif %}{% for row in pane.collections %}{% include "pane-row.html" %}{% endfor %}{% endwith %}

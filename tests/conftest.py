@@ -6,13 +6,23 @@ stays in that file, where its reason for existing sits next to its use.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
+import signal
 import stat
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
+import httpx
 import pytest
 
+from in_process import InProcessServices
+from kennis.client import connection
+from kennis.engine.courtesy import forget_hosts
+from kennis.engine.settings import state_dir
+from kennis.protocol.record import find_service
 from platforms import NO_POSIX_SHELL
 
 # A fake MinerU. It parses the flags the converter passes, writes one markdown
@@ -47,6 +57,43 @@ for staged in "$input_dir"/*; do
 done
 exit "${MINERU_FAKE_EXIT-0}"
 """
+
+
+@pytest.fixture(autouse=True)
+def refusing_as_windows_does(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Windows refuses to replace or delete a read-only file; POSIX asks
+    only whether the directory is writable. So on Linux every step kennis
+    takes to make a file writable before replacing or removing it is inert,
+    and an injection removing one passes. Under this fixture the two calls
+    every such path ends in refuse as Windows would, here too.
+
+    For every test, not one file's (14f): five tests damaged a pack's store
+    by deleting a file kennis had made read-only, passed here, and failed
+    on Windows, which was the first place anything said so (#532)."""
+    real_replace = os.replace
+    real_unlink = os.unlink
+
+    def is_read_only_at(path: str | Path, dir_fd: int | None) -> bool:
+        try:
+            mode = os.stat(path, dir_fd=dir_fd, follow_symlinks=False).st_mode
+        except FileNotFoundError:
+            return False
+        return stat.S_ISREG(mode) and not mode & stat.S_IWRITE
+
+    def replace(source: str | Path, target: str | Path) -> None:
+        if is_read_only_at(target, None):
+            raise PermissionError(13, "read-only, as Windows refuses", str(target))
+        real_replace(source, target)
+
+    def unlink(path: str | Path, *, dir_fd: int | None = None) -> None:
+        if is_read_only_at(path, dir_fd):
+            raise PermissionError(13, "read-only, as Windows refuses", str(path))
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(os, "unlink", unlink)
+    monkeypatch.setattr(os, "remove", unlink)
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -153,6 +200,49 @@ def somewhere_else(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def hosts_forgotten() -> None:
+    """Each test starts with no host's robots.txt read and no request timed.
+
+    `engine/courtesy.py` keeps both for the process, so without this a test
+    inherits the rules a previous test's mock served, and waits on its clock.
+    """
+    forget_hosts()
+
+
+# Addresses a test may reach: the window's own server, on this machine.
+_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No test reaches a host unless it is marked `network`.
+
+    Patched where every real `httpx` request passes and an
+    `httpx.MockTransport` never does. `pytest.fail` rather than an `httpx`
+    error, because kennis reads a failed request as "the host is down" and
+    carries on - which is how a test that reached arXiv passed in silence.
+    Concern #495.
+    """
+    if request.node.get_closest_marker("network") is not None:
+        return
+    real = httpx.HTTPTransport.handle_request
+
+    def refused(
+        transport: httpx.HTTPTransport, outgoing: httpx.Request
+    ) -> httpx.Response:
+        if outgoing.url.host in _LOOPBACK:
+            return real(transport, outgoing)
+        pytest.fail(
+            f"a test reached {outgoing.url}: give it an httpx.MockTransport, "
+            "or mark it `network`"
+        )
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refused)
+
+
 @pytest.fixture
 def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Put a fake `mineru` first on PATH and return the log it writes.
@@ -194,3 +284,53 @@ def no_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     interpreter = empty / "python"
     interpreter.write_text("", encoding="utf-8")
     monkeypatch.setattr(sys, "executable", str(interpreter))
+
+
+@pytest.fixture(autouse=True)
+def service_in_this_process(monkeypatch: pytest.MonkeyPatch) -> InProcessServices:
+    """Every command reaches a service built in this process (14c).
+
+    Autouse for the reason the others are: a test that forgot would start
+    a real service, outside every monkeypatch and guard here (#503), and
+    `test_architecture.py` fails if this is removed. The `service` suite
+    starts processes on purpose and calls `ensure_service` itself.
+    """
+    services = InProcessServices()
+    monkeypatch.setattr(connection, "connect", services.connect)
+    return services
+
+
+@pytest.fixture(autouse=True)
+def no_service_left_running(request: pytest.FixtureRequest) -> Iterator[None]:
+    """A test not marked `service` that started a real service fails, and
+    the service is ended (14c).
+
+    A command run as a real process - the installed `kennis` in a
+    subprocess - starts a real service for its corpus, outside every guard
+    here, and that service stays for its idle timeout. One test did this
+    and left a process waiting on a lock for every run of the suite. The
+    records are under the test's own state directory, so only this test's
+    services are seen.
+    """
+    yield
+    if request.node.get_closest_marker("service") is not None:
+        return
+    # A record is a service only while its corpus lock is held, which is
+    # what `find_service` asks: a test of the records writes records with
+    # made-up process ids, and signalling one of those would signal
+    # whatever process happens to have that id.
+    running = []
+    for path in sorted(state_dir().glob("service-*.json")):
+        with contextlib.suppress(ValueError, OSError, KeyError):
+            corpus = Path(json.loads(path.read_text(encoding="utf-8"))["corpus"])
+            found = find_service(corpus)
+            if found is not None and found.pid != os.getpid():
+                running.append(found.pid)
+    for pid in running:
+        with contextlib.suppress(OSError):
+            os.kill(pid, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
+    if running:
+        pytest.fail(
+            "a test not marked `service` started a real kennis service; "
+            "mark it, or drive the command in this process with CliRunner"
+        )

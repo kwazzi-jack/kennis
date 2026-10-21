@@ -47,6 +47,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kennis.engine.corpus.layout import published_corpus
 from kennis.engine.errors import SettingsError
 
 _ENVIRONMENT_PREFIX: Final = "KENNIS"
@@ -236,7 +237,8 @@ class LiteratureSettings(BaseModel):
         default=3.0,
         ge=0.0,
         le=60.0,
-        description="Seconds between arXiv requests. arXiv states three.",
+        description="Least seconds between arXiv papers. A longer `Crawl-delay` "
+        "in a host's robots.txt applies instead: arxiv.org asks for 15.",
     )
     unpaywall_email: str = Field(
         default="",
@@ -276,6 +278,20 @@ class BackupSettings(BaseModel):
     )
 
 
+class ServiceSettings(BaseModel):
+    """How the process that owns the corpus behaves (milestone 14)."""
+
+    idle_minutes: float = Field(
+        default=30.0,
+        gt=0,
+        le=1440,
+        description=(
+            "Minutes the kennis service waits with no task, request or open "
+            "window before it exits. The next command starts it again."
+        ),
+    )
+
+
 class Settings(BaseSettings):
     """Every setting kennis honours."""
 
@@ -289,6 +305,7 @@ class Settings(BaseSettings):
     literature: LiteratureSettings = LiteratureSettings()
     logging: LoggingSettings = LoggingSettings()
     backup: BackupSettings = BackupSettings()
+    service: ServiceSettings = ServiceSettings()
 
     @classmethod
     def settings_customise_sources(
@@ -427,9 +444,10 @@ def own_directories(corpus_root: Path) -> tuple[Path, ...]:
     Nothing in them is ever a source to add: the corpus would be copied into
     itself, the configuration holds API keys in `credentials.toml`, and the
     state holds the reader's search history - each a supported format, and
-    each, once added, a document an agent can read.
+    each, once added, a document an agent can read. Asked from a mirror an
+    operation prepares in, the corpus is the one mirrored, which holds it.
     """
-    return (corpus_root, config_dir(), state_dir(), log_dir())
+    return (published_corpus(corpus_root), config_dir(), state_dir(), log_dir())
 
 
 def overriding_variable(key: str) -> str | None:
@@ -646,6 +664,33 @@ def section_models() -> dict[str, type[BaseModel]]:
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             models[section_name] = annotation
     return models
+
+
+def unknown_settings() -> tuple[str, ...]:
+    """Every name in the file that no section declares, sorted (#480).
+
+    A section's name when the section is unknown, `section.key` when only
+    the key is. The models ignore such a name, so a misspelt key leaves
+    the default in force; this is how a front end can say so. A file that
+    is missing names nothing, and so does one that will not read: the
+    loader refuses that with its own message.
+    """
+    path = config_path()
+    try:
+        stored = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ()
+    models = section_models()
+    unknown: list[str] = []
+    for section_name, section in stored.items():
+        model = models.get(section_name)
+        if model is None or not isinstance(section, dict):
+            unknown.append(section_name)
+            continue
+        unknown.extend(
+            f"{section_name}.{key}" for key in section if key not in model.model_fields
+        )
+    return tuple(sorted(unknown))
 
 
 def _described(key: str, field: FieldInfo, value: object) -> str:

@@ -283,6 +283,19 @@ class Repository:
         self._require_repository()
         return git(["checkout", commit, "--", path], cwd=self.root).ok
 
+    def move_head(self, commit: str) -> None:
+        """Point HEAD and the staging area at `commit`, leaving the working
+        tree as it is: what a rollback uses after putting back the paths it
+        placed, so a person's edit elsewhere stays (#507)."""
+        self._require_repository()
+        moved = git(["reset", "--mixed", "-q", commit], cwd=self.root)
+        if not moved.ok:
+            raise HistoryUnwritable(
+                f"the corpus at {self.root} could not be returned to {commit}: "
+                f"{moved.stderr.strip()}",
+                resolution=self._status_command(),
+            )
+
     def _require_repository(self) -> None:
         if not (self.root / ".git").is_dir():
             raise CorpusNotFound(

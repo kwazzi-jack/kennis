@@ -1,0 +1,6 @@
+$ list_corpus {"collection": "notes", "detail": "documents"}
+--- error False
+notes: 3 documents
+  doc0000001  calibration.md
+  doc0000002  imaging.md
+  doc0000003  Convention.md

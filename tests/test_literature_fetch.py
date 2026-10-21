@@ -10,6 +10,8 @@ refused add.
 
 from __future__ import annotations
 
+import re
+
 import httpx
 import pytest
 
@@ -203,3 +205,123 @@ def test_an_unreachable_source_says_so():
 
     assert result.reason is not None
     assert "could not be reached" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# One marker per list item (2026-10-18)
+# ---------------------------------------------------------------------------
+
+PAGE = "https://arxiv.org/html/1101.1764"
+
+
+def item(label: str, text: str) -> str:
+    """One item as LaTeXML writes it: the browser's marker turned off, the
+    label drawn as text, the item's prose in a paragraph after it."""
+    return (
+        '<li class="ltx_item" style="list-style-type:none;">'
+        f'<span class="ltx_tag ltx_tag_item">{label}</span> '
+        f'<div class="ltx_para"><p class="ltx_p">{text}</p></div></li>'
+    )
+
+
+def article(*lists: str) -> str:
+    return (
+        '<html><body><article class="ltx_document">'
+        '<h1 class="ltx_title">A paper</h1>'
+        + "".join(lists)
+        + "</article></body></html>"
+    )
+
+
+def itemize(*items: str) -> str:
+    return f'<ul class="ltx_itemize">{"".join(items)}</ul>'
+
+
+def enumerate_(*items: str, start: int | None = None) -> str:
+    opening = f' start="{start}"' if start is not None else ""
+    return f'<ol class="ltx_enumerate"{opening}>{"".join(items)}</ol>'
+
+
+def items_of(markdown: str) -> list[str]:
+    """Every list item's first line, as written."""
+    return [
+        line.strip()
+        for line in markdown.splitlines()
+        if re.match(r"^\s*(?:[-*+]|\d+\.)(?:\s|$)", line)
+    ]
+
+
+def test_a_bullet_list_has_one_bullet_per_item():
+    html = article(
+        itemize(item("\u2022", "Scalars commute."), item("\u2022", "So do diagonals."))
+    )
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == [
+        "* Scalars commute.",
+        "* So do diagonals.",
+    ]
+
+
+def test_every_default_bullet_of_latex_is_one_bullet():
+    for bullet in ("\u2022", "\u2013", "\u2217", "\u00b7"):
+        html = article(itemize(item(bullet, "An item.")))
+
+        assert items_of(convert_arxiv_html(html, PAGE)) == ["* An item."], bullet
+
+
+def test_a_numbered_list_has_one_number_per_item():
+    html = article(enumerate_(item("1.", "Compute H."), item("2.", "Invert H.")))
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == ["1. Compute H.", "2. Invert H."]
+
+
+def test_a_numbered_list_that_starts_later_keeps_its_numbers():
+    html = article(enumerate_(item("3.", "Third."), item("4.", "Fourth."), start=3))
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == ["3. Third.", "4. Fourth."]
+
+
+def test_an_author_s_own_labels_are_kept_as_the_text_refers_to_them():
+    """`\\item[(i)]`: the paper says "the result of (ii)", so (ii) must stay,
+    and markdown's own number beside it would be a second label."""
+    html = article(enumerate_(item("(i)", "Compute H."), item("(ii)", "Invert H.")))
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == [
+        "* (i) Compute H.",
+        "* (ii) Invert H.",
+    ]
+
+
+def test_a_bullet_list_with_its_own_labels_keeps_them():
+    html = article(itemize(item("(a)", "First."), item("(b)", "Second.")))
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == ["* (a) First.", "* (b) Second."]
+
+
+def test_one_label_of_its_own_keeps_every_label_in_that_list():
+    """A list is drawn one way: dropping the plain labels and keeping the
+    odd one would number some items and not others."""
+    html = article(enumerate_(item("1.", "One."), item("2*.", "Two, starred.")))
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == [
+        "* 1. One.",
+        "* 2*. Two, starred.",
+    ]
+
+
+def test_each_list_is_decided_on_its_own():
+    html = article(
+        itemize(item("\u2022", "Plain.")),
+        enumerate_(item("(a)", "Labelled.")),
+    )
+
+    assert items_of(convert_arxiv_html(html, PAGE)) == ["* Plain.", "* (a) Labelled."]
+
+
+def test_a_nested_list_has_one_marker_per_item_too():
+    inner = itemize(item("\u2013", "Inner."))
+    html = article(itemize(item("\u2022", f'Outer.</p>{inner}<p class="ltx_p">')))
+
+    markers = items_of(convert_arxiv_html(html, PAGE))
+
+    assert markers == ["* Outer.", "+ Inner."]

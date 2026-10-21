@@ -28,7 +28,7 @@ from kennis.render.words import (
     joined,
     needs_an_index,
 )
-from kennis.retrieval import EVERY_SCOPE
+from kennis.scopes import EVERY_SCOPE
 
 RECENTS_HEADING = "Recent searches"
 
@@ -66,6 +66,71 @@ SEARCH_ACTION = "Search"
 # request, which is the point: the request is 12ms of a 412ms wait
 # and an indicator for it alone would never be seen. Concern #365.
 SEARCHING = "Searching"
+# The docs versions beside the search box, a document's other versions,
+# and a version folder in the tree (#489).
+VERSIONS_LABEL = "Versions"
+CURRENT_VERSION = "current"
+ALSO_HELD = "Also held"
+MAKE_CURRENT = "Search this version by default"
+MENU_REMOVE_VERSION = "Remove this version"
+REMOVE_VERSION_ACTION = "Remove"
+
+# Removing one document, from its menu in the tree.
+MENU_REMOVE = "Remove"
+
+REMOVE_DOCUMENT_ACTION = "Remove"
+
+
+def removing_document(title: str, collection: str) -> str:
+    """What the removal dialog says before the document goes."""
+    return (
+        f"'{title}' will be removed from {collection}. It stays in the "
+        "corpus history, and the Activity page can put it back."
+    )
+
+
+# Returning the corpus to a point in its history, from the Activity page.
+RETURN_HERE = "Return to this point"
+
+RETURN_ACTION = "Return the corpus to this point"
+
+RETURN_EXPLAINED = (
+    "Anything not yet recorded is recorded first, and the return is "
+    "recorded too, so returning to the point before it undoes it. The index "
+    "is left as it was built."
+)
+
+RETURNED_HEADING = "Return the corpus to a point"
+
+
+def returned(said: str) -> str:
+    """What a return did, as a sentence: `said` is `describe_returned`'s."""
+    return f"Returned {said}."
+
+
+RETURNED_INDEX = (
+    "Search still reads the index built before the return. Index the "
+    "collections to search what is held now."
+)
+
+INDEX_NOW = "Index now"
+
+PUT_BACK = "Put back"
+
+
+def removing_version(project: str, version: str, pages: int, *, current: bool) -> str:
+    """What the removal dialog says before anything is removed."""
+    said = (
+        f"Every page of {project} {version} will be removed from docs: "
+        f"{count_of(pages, 'document')}. It stays in the corpus history."
+    )
+    if current:
+        said += (
+            " It is the version searched by default, so the newest version "
+            "left becomes that."
+        )
+    return said
+
 
 SCOPE_LABEL = "Search in"
 
@@ -152,10 +217,15 @@ DETAIL_LABELS: Final[dict[str, str]] = {
     "project": "Project",
     "page": "Page",
     "version": "Version",
+    "release": "Release",
     "source": "Source",
     "converted": "Converted from",
+    # A note of the person's made from another document (#514).
+    "copied": "Copied from",
     "added": "Added",
     "index": "Search status",
+    # A pack's context file, which the project makes its own by copying.
+    "copy": "To make it this project's own",
 }
 
 # Whether the index holds a document, by `holdings.DocumentState`: the
@@ -335,6 +405,7 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("converting", "Converting documents"),
     ("adding", "Adding documents"),
     ("logging", "Log file"),
+    ("service", "Background service"),
 )
 KENNIS_SAVED = "Saved."
 KENNIS_UNCHANGED = "Nothing changed."
@@ -367,6 +438,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "logging.level": "Detail",
     "logging.max_bytes": "Size before a new file (bytes)",
     "logging.backup_count": "Old files kept",
+    "service.idle_minutes": "Stop when idle (minutes)",
 }
 # What each setting is for, in an info tip beside its name. The engine's
 # own description, which `config init` prints and the config file
@@ -439,6 +511,10 @@ SETTING_TIPS: Final[dict[str, str]] = {
     "logging.level": "How much kennis writes to its log file.",
     "logging.max_bytes": "The size at which the log starts a new file.",
     "logging.backup_count": "How many earlier log files are kept.",
+    "service.idle_minutes": (
+        "How long kennis keeps running with nothing to do. The next command "
+        "or window starts it again."
+    ),
 }
 
 
@@ -569,6 +645,9 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/sync": "Sync packs",
     "/pack": "Install a pack",
     "/palette": "Actions and places",
+    "/docs/remove-version": "Remove a version",
+    "/document/remove": "Remove a document",
+    "/corpus/return": "Return the corpus to a point",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -654,17 +733,6 @@ CHANGES_HEADING = "Corpus history"
 
 NO_CHANGES = "No changes yet."
 
-# What each kind of job is called where a person reads it: the strip,
-# the Activity page. The keys are the kinds `app.py` starts jobs under.
-JOB_KINDS: Final[dict[str, str]] = {
-    "add": "Add",
-    "index": "Index",
-    "sync": "Corpus sync",
-    "context-sync": "Project context sync",
-    "pack": "Pack install",
-    "backup": "Backup",
-}
-
 # What the status bar says while each kind of job runs, before the job
 # has reported a step of its own.
 JOB_DOING: Final[dict[str, str]] = {
@@ -672,11 +740,22 @@ JOB_DOING: Final[dict[str, str]] = {
     "index": "Indexing",
     "sync": "Syncing the corpus",
     "context-sync": "Syncing the project context",
+    "context": "Changing a project's context",
+    "context-index": "Indexing a project's context",
     "pack": "Installing a pack",
     "backup": "Backing up",
+    "remember": "Writing a note",
+    "copy": "Copying a document",
+    "move": "Moving a document",
+    "remove": "Removing a document",
+    "restore": "Putting a document back",
+    "return": "Returning the corpus to an earlier point",
+    "version": "Changing a docs version",
 }
 
 JOB_RUNNING = "running"
+
+JOB_QUEUED = "waiting"
 
 JOB_FINISHED = "finished"
 
@@ -769,6 +848,10 @@ CHANGE_KINDS: Final[dict[str, str]] = {
     "sync": "synced",
     "remember": "note saved in",
     "restore": "restored",
+    "version": "chose the version searched in",
+    "remove": "removed from",
+    "return": "returned",
+    "record": "recorded edits in",
 }
 
 
@@ -847,9 +930,10 @@ BUNDLE_NOT_COMMITTED = (
 
 NOTHING_MATERIALISED = "Installed. Run Sync to bring its documents in."
 
-BUSY_WITH_ANOTHER = "Another task is running. Try again when it finishes."
-
-CORPUS_BUSY_RETRY = "The corpus is busy. Nothing changed; try again in a moment."
+CHANGED_MEANWHILE_RETRY = (
+    "Something else changed the same documents while this was being prepared. "
+    "Nothing changed; run it again."
+)
 
 NOTHING_TO_ADD = "Nothing to add. Enter an ID, address or path, or choose a file."
 
@@ -922,6 +1006,8 @@ FIELD_LABELS: Final[dict[str, str]] = {
     "citekey": "Citekey",
     "group": "Group",
     "project": "Project",
+    "version": "Version",
+    "refresh": "Refresh held pages",
     "collection": "Collection",
     "max_pages": "Page limit",
     "max_depth": "Link depth limit",
@@ -944,6 +1030,17 @@ FIELD_TIPS: Final[dict[str, str]] = {
         "The name its pages are filed under in docs: one folder, with no "
         "groups inside it."
     ),
+    "version": (
+        "Which version of the documentation these pages are, such as 2.12 or "
+        "latest. Each version is kept in its own folder, and a search uses "
+        "the one added most recently."
+    ),
+    "refresh": (
+        "Ask the site again for each page already held, and update a page "
+        "whose text changed. A site that says when a page last changed is "
+        "asked only for the pages that did; any other is fetched again in "
+        "full and compared."
+    ),
     "max_depth": "How many links away from the start page kennis follows.",
 }
 
@@ -955,6 +1052,9 @@ EMPTY_MEANS: Final[dict[str, str]] = {
     "citekey": "author, year, title",
     "project": "taken from the address",
     "file_project": "none (docs needs one)",
+    "version": "taken from the address",
+    "file_version": "the project's current version",
+    "refresh": "pages already held are left as they are",
     "max_pages": "300",
     "max_depth": "5",
 }
@@ -1106,6 +1206,11 @@ def docs_input_refused(identifier: str, reason: str) -> str:
     typed gone."""
     if reason == "missing":
         return f"'{identifier}' is not a site address or an existing file."
+    if reason == "unversioned":
+        return (
+            f"'{identifier}' does not say which version of the documentation "
+            "it is. Enter a Version, such as latest."
+        )
     return (
         f"'{identifier}' is a file, so no project name can be made from it. "
         "Enter a Project name."
@@ -1113,6 +1218,13 @@ def docs_input_refused(identifier: str, reason: str) -> str:
 
 
 PROJECT_UNNAMED = "No project name can be made from this address. Enter a Project name."
+VERSION_UNNAMED = "The address names no version. Enter a Version, such as latest."
+
+
+def previewed_version(version: str) -> str:
+    return f"Pages will be filed under version '{version}'."
+
+
 CHECK_SITE = "Check site"
 # Words for each way `discovery_mode` answers.
 DISCOVERY_WORDS: Final[dict[str, str]] = {
@@ -1157,12 +1269,20 @@ def index_waiting(count: int) -> str:
     return f"{count} to index"
 
 
-# Where a note goes, by the form's value: the corpus's notes, or the
-# context bundle of the project the window was started in.
-REMEMBER_TARGETS: Final[tuple[tuple[str, str], ...]] = (
-    ("notes", "Notes"),
-    ("context", "Project context"),
-)
+# The search box's choice of whose context to search (14g).
+PROJECT_LABEL = "Which project's context"
+EVERY_PROJECT = "Every project"
+
+
+def remember_targets(projects: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """Where a note may go, by the form's value: the corpus's notes, or
+    one known project's context (14g)."""
+    return (
+        ("notes", "Notes"),
+        *((f"context:{project}", f"{project} context") for project in projects),
+    )
+
+
 INDEX_PREAMBLE = "Make new and changed documents searchable."
 
 INDEX_TIP = (
@@ -1224,17 +1344,16 @@ def job_crashed(crash: Exception) -> str:
     account there is of what happened; where the rest is kept is said, so
     the reader knows there is more than this line.
 
-    **And what to do next, which is the same thing again.** Each document
-    is written whole and what was written is committed as interrupted
-    (`operations.committed_if_interrupted`), and every operation a job runs
-    skips what is already there - an add finds the same content, a sync
-    converges, an index and a backup start over - so running it again
-    carries on rather than repeating.
+    **And what to do next, which is the same thing again.** A write to
+    the collections is prepared in a mirror and published only when it
+    finishes (14e, #507), so a task that stopped left them as they were;
+    an index and a backup are swapped in or renamed into place when whole.
+    Running it again starts over, reusing a conversion already made.
     """
     detail = str(crash) or type(crash).__name__
     return (
-        f"The task stopped: {detail}. Run it again to carry on from where it "
-        "stopped. Details are in the kennis log."
+        f"The task stopped: {detail}. Nothing it was doing was kept, so it "
+        "can be run again. Details are in the kennis log."
     )
 
 
@@ -1303,7 +1422,10 @@ REMEMBER_ACTION = "Save note"
 
 NOTHING_TO_REMEMBER = "Write something first."
 
-CORPUS_BUSY = "The corpus is busy. Your text is kept; try again in a moment."
+CHANGED_MEANWHILE = (
+    "Something else changed the notes while this was being written. Your text "
+    "is kept; save it again."
+)
 
 
 def describe_written(report: RememberReport, where: str) -> ShownOutcome:
@@ -1483,6 +1605,9 @@ STATE_WORDS: Final[dict[str, str]] = {
 ATTENTION_ONLY = "Show only what needs attention"
 
 MENU_OPEN = "Open"
+# A new note of the person's with the same text (#514): what a pack or a
+# site supplied is read-only, and the copy is the version they can edit.
+MENU_COPY = "Copy into my notes"
 MENU_MOVE = "Move to group"
 MENU_ADD_HERE = "Add here"
 MENU_INDEX = "Index this collection"
@@ -1596,6 +1721,7 @@ __all__ = [
     "ADD_TABS_LABEL",
     "ADD_TAB_ICONS",
     "ADD_TIPS",
+    "ALSO_HELD",
     "ANOTHER_GROUP",
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
@@ -1616,8 +1742,9 @@ __all__ = [
     "BLOCK_HEADING",
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
-    "BUSY_WITH_ANOTHER",
     "CANCEL",
+    "CHANGED_MEANWHILE",
+    "CHANGED_MEANWHILE_RETRY",
     "CHANGES_HEADING",
     "CHANGE_KINDS",
     "CHECK_SITE",
@@ -1635,8 +1762,6 @@ __all__ = [
     "COPIED_LABEL",
     "COPY_LABEL",
     "CORPUS_AT_LABEL",
-    "CORPUS_BUSY",
-    "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
     "CORPUS_CHANGED_HEADING",
     "CORPUS_CHANGED_LATER",
@@ -1648,12 +1773,14 @@ __all__ = [
     "CREDENTIAL_SET",
     "CREDENTIAL_UNSET",
     "CRUMBS_LABEL",
+    "CURRENT_VERSION",
     "DETAILS_HEADING",
     "DETAIL_LABELS",
     "DISCOVERY_WORDS",
     "EMPTY_MEANS",
     "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",
+    "EVERY_PROJECT",
     "FIELD_LABELS",
     "FIELD_TIPS",
     "GROUP_HINT",
@@ -1677,7 +1804,7 @@ __all__ = [
     "JOB_DOING",
     "JOB_FAILED",
     "JOB_FINISHED",
-    "JOB_KINDS",
+    "JOB_QUEUED",
     "JOB_RUNNING",
     "KENNIS_GROUPS",
     "KENNIS_HEADING",
@@ -1701,13 +1828,17 @@ __all__ = [
     "LOCKED",
     "LOCKED_HEADING",
     "LOOKING_UP",
+    "MAKE_CURRENT",
     "MARK_WITHHELD",
     "MATCHES_WITHHELD",
     "MEASURE_ICONS",
     "MENU_ADD_HERE",
+    "MENU_COPY",
     "MENU_INDEX",
     "MENU_MOVE",
     "MENU_OPEN",
+    "MENU_REMOVE",
+    "MENU_REMOVE_VERSION",
     "MODE_CHOICES",
     "MODE_DEFAULT",
     "MODE_LABEL",
@@ -1774,7 +1905,9 @@ __all__ = [
     "PROBLEM_CORPUS",
     "PROBLEM_HEADING",
     "PROGRESS_LABEL",
+    "PROJECT_LABEL",
     "PROJECT_UNNAMED",
+    "PUT_BACK",
     "QUIT",
     "QUIT_TITLE",
     "QUIT_WHILE_RUNNING",
@@ -1788,11 +1921,17 @@ __all__ = [
     "REMEMBER_ACTION",
     "REMEMBER_PLACEHOLDER",
     "REMEMBER_PREAMBLE",
-    "REMEMBER_TARGETS",
     "REMEMBER_TIP",
+    "REMOVE_DOCUMENT_ACTION",
+    "REMOVE_VERSION_ACTION",
     "REQUIRED",
     "RESIZE_LABELS",
     "RESULTS_HEADING",
+    "RETURNED_HEADING",
+    "RETURNED_INDEX",
+    "RETURN_ACTION",
+    "RETURN_EXPLAINED",
+    "RETURN_HERE",
     "SAVE",
     "SCOPE_LABEL",
     "SEARCHABLE",
@@ -1831,6 +1970,8 @@ __all__ = [
     "UPLOAD_SAID",
     "UPLOAD_TYPED",
     "UPLOAD_TYPED_PDF",
+    "VERSIONS_LABEL",
+    "VERSION_UNNAMED",
     "WELCOME",
     "WELCOME_ACTIONS",
     "WELCOME_HEADING",
@@ -1874,7 +2015,12 @@ __all__ = [
     "passage_label",
     "previewed_citekey",
     "previewed_project",
+    "previewed_version",
+    "remember_targets",
+    "removing_document",
+    "removing_version",
     "results_for",
+    "returned",
     "search_crumb",
     "search_hint_for",
     "searchable_short",

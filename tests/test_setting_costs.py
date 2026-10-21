@@ -54,6 +54,7 @@ EXPECTED = {
     "logging.level": ("next_start",),
     "logging.max_bytes": ("next_start",),
     "logging.backup_count": ("next_start",),
+    "service.idle_minutes": ("next_start",),
 }
 
 

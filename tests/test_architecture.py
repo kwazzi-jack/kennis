@@ -168,6 +168,50 @@ def test_engine_module_imports_no_interface(path: Path):
     assert not violations, f"{module_name_of(path)} imports {violations}"
 
 
+def protocol_modules() -> list[Path]:
+    return sorted((SOURCE_ROOT / "kennis" / "protocol").rglob("*.py"))
+
+
+# What the wire's own modules may import from kennis: the errors it writes
+# and reads, where the state directory is (for the service's record), and
+# itself. An allow-list rather than a list of what is forbidden, because
+# every client imports `protocol/`, and a client that imports the engine's
+# actors pays for them on every command (#499).
+ALLOWED_TO_THE_PROTOCOL = (
+    "kennis.engine.errors",
+    "kennis.engine.settings",
+    "kennis.protocol",
+)
+
+
+def test_the_protocol_has_modules_to_check():
+    """A walk over an empty tree passes for the wrong reason."""
+    assert protocol_modules()
+
+
+@pytest.mark.parametrize("path", protocol_modules(), ids=module_name_of)
+def test_protocol_module_imports_only_the_errors_and_itself(path: Path):
+    """The wire writes the engine's values without importing what makes
+    them: a value arrives already built, and its class is found among the
+    subclasses of the type the caller expects (14a)."""
+    imported = imported_modules(path)
+    violations = sorted(
+        name
+        for name in imported
+        if offends(name, "kennis")
+        and not any(offends(name, allowed) for allowed in ALLOWED_TO_THE_PROTOCOL)
+        and name != "kennis.engine"
+    )
+    interfaces = sorted(
+        name
+        for name in imported
+        for forbidden in FORBIDDEN_BY_THE_RENDERER
+        if offends(name, forbidden)
+    )
+    assert not violations, f"{module_name_of(path)} imports {violations}"
+    assert not interfaces, f"{module_name_of(path)} imports {interfaces}"
+
+
 def test_the_renderer_has_modules_to_check():
     """A walk over an empty tree passes for the wrong reason."""
     assert render_modules()
@@ -446,3 +490,173 @@ def test_a_test_does_not_write_to_the_real_log():
 
     assert log_dir() != Path(user_log_dir("kennis"))
     assert not log_dir().is_relative_to(Path.home() / ".local" / "state")
+
+
+def test_a_test_does_not_reach_a_host():
+    """A request a test did not mock fails the test, naming the address.
+
+    kennis catches `httpx.HTTPError` wherever a request may fail, so a test
+    reaching a real host whose answer did not matter passed - slowly, and
+    only while the host was up. The autouse `no_real_network` fixture
+    refuses every request outside loopback in a test not marked `network`,
+    with an exception no `except Exception` catches, and this is what fails
+    if it is removed. Concern #495.
+    """
+    import httpx
+
+    outcome = pytest.fail.Exception
+    with pytest.raises(outcome, match=r"example\.invalid"), httpx.Client() as client:
+        client.get("https://example.invalid/robots.txt")
+
+
+def test_a_command_does_not_start_a_real_service():
+    """Every connection is to an application in this process (#503).
+
+    A command that reached a started service would run its work outside
+    every monkeypatch and guard of the suite. The autouse
+    `service_in_this_process` fixture binds `connect` to an in-process
+    application, and this is what fails if it is removed.
+    """
+    from kennis.client import connection
+
+    # Asked of the function, never by calling it: called unpatched, it
+    # would start the very process this guards against.
+    assert connection.connect.__module__ != "kennis.client.connection"
+
+
+# Where the person works is a client's to know (#508). Every other module
+# is handed a bundle, because the service's own directory is whichever
+# client started it.
+_READS_THE_WORKING_DIRECTORY = {"cwd", "find_bundle", "workspace_root"}
+_CLIENTS = ("kennis.cli", "kennis.mcp")
+
+
+def working_directory_readers(path: Path) -> list[str]:
+    """The calls in `path` that read where the process runs."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        called = node.func
+        name = (
+            called.attr
+            if isinstance(called, ast.Attribute)
+            else called.id
+            if isinstance(called, ast.Name)
+            else ""
+        )
+        if name in _READS_THE_WORKING_DIRECTORY:
+            found.append(f"{name} at line {node.lineno}")
+    return found
+
+
+def is_client(path: Path) -> bool:
+    """A module of `cli` or `mcp`, matched by whole package name: a bare
+    prefix would take `kennis.client` for `kennis.cli`."""
+    name = module_name_of(path)
+    return any(name == client or name.startswith(f"{client}.") for client in _CLIENTS)
+
+
+def non_client_modules() -> list[Path]:
+    return [
+        path
+        for path in sorted((SOURCE_ROOT / "kennis").rglob("*.py"))
+        if not is_client(path)
+    ]
+
+
+def test_there_are_modules_that_are_not_clients():
+    assert len(non_client_modules()) > 50
+
+
+@pytest.mark.parametrize("path", non_client_modules(), ids=module_name_of)
+def test_only_a_client_reads_the_working_directory(path: Path):
+    assert working_directory_readers(path) == []
+
+
+# What a client reaches through the service and must not call itself (14c,
+# 14d): the sequences that take the corpus lock and commit, and the reads
+# the service answers. Written by hand, so a module or a name added to the
+# acting layer is a decision here too (#373). A project's bundle is the
+# service's too since 14e: what builds, writes or reads its index, and the
+# list of projects' writers. Finding the bundle from the working directory
+# and reading the list stay with the client, which alone has a working
+# directory (#508).
+_BUNDLE_ACTORS = {
+    "bundle_status",
+    "index_bundle",
+    "init_bundle",
+    "load_bundle_index",
+    "remember_in_bundle",
+    "removable_documents",
+    "reset_bundle",
+}
+_ACTING = {
+    "kennis.operations": None,
+    "kennis.holdings": None,
+    "kennis.finding": None,
+    "kennis.retrieval": {
+        "chunk_range",
+        "document_chunks",
+        "index_for",
+        "search_scope",
+        "sweep",
+    },
+    "kennis.writing": None,
+    "kennis.engine.locking": None,
+    "kennis.engine.pack.installed": {"list_installed", "remove_pack"},
+    "kennis.engine.pack.store": {"install_pack"},
+    "kennis.engine.context": _BUNDLE_ACTORS,
+    "kennis.engine.context.bundle": {"declare_packs", "init_bundle", "reset_bundle"},
+    "kennis.engine.context.index": {"index_bundle", "load_bundle_index"},
+    "kennis.engine.context.notes": {"remember_in_bundle"},
+    "kennis.engine.context.packs": None,
+    "kennis.engine.context.projects": {
+        "add_project",
+        "forget_project",
+        "note_project",
+        "record_project",
+    },
+}
+
+
+def client_modules() -> list[Path]:
+    return [
+        path
+        for path in sorted((SOURCE_ROOT / "kennis").rglob("*.py"))
+        if is_client(path)
+    ]
+
+
+def acting_imports(path: Path) -> list[str]:
+    """Every import in `path` of something a client must ask the service for."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in _ACTING:
+            forbidden = _ACTING[node.module]
+            for alias in node.names:
+                if forbidden is None or alias.name in forbidden:
+                    found.append(f"{node.module}.{alias.name} at line {node.lineno}")
+        elif isinstance(node, ast.Import):
+            found.extend(
+                f"{alias.name} at line {node.lineno}"
+                for alias in node.names
+                if alias.name in _ACTING and _ACTING[alias.name] is None
+            )
+    return found
+
+
+def test_there_are_client_modules():
+    assert len(client_modules()) > 20
+
+
+@pytest.mark.parametrize("path", client_modules(), ids=module_name_of)
+def test_a_client_asks_the_service_rather_than_acting(path: Path):
+    assert acting_imports(path) == []
+
+
+def test_client_is_not_taken_for_cli():
+    assert not is_client(SOURCE_ROOT / "kennis" / "client" / "api.py")
+    assert is_client(SOURCE_ROOT / "kennis" / "cli" / "group.py")

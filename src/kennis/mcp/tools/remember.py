@@ -27,14 +27,17 @@ user's version control.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Final
 
+from kennis.client import api
 from kennis.context import existing_corpus
+from kennis.engine.context.bundle import find_bundle
 from kennis.engine.corpus.layout import relative_to_corpus
-from kennis.engine.errors import InputError
+from kennis.engine.errors import ContextNotFound, InputError
 from kennis.engine.events import Outcome
+from kennis.engine.remember import INLINE_ORIGIN
 from kennis.render.words import index_state, needs_an_index
-from kennis.writing import write_context_note, write_note
 
 # The longest note this tool will write. Neither front end had a cap
 # before, and the command line does not need one: a person typing prose
@@ -92,13 +95,20 @@ def remember(
 def _into_notes(body: str, *, title: str | None, group: str | None) -> str:
     """The corpus path, and what to say about what it did.
 
-    The sequence - lock, write, index, commit - is
-    `kennis.writing.write_note`, shared with the graphical front end
-    because it is identical in both and neither owns it. What is left
-    here is the wording, which is this front end's.
+    The sequence - lock, write, index, commit - is the service's
+    `remember` (`kennis.writing.write_note`), the one every front end
+    reaches. What is left here is the wording, which is this front end's.
     """
-    report = write_note(body, title=title, group=group)
-    where = relative_to_corpus(report.path, existing_corpus().corpus_root)
+    corpus_root = existing_corpus().corpus_root
+    report = api.remember(
+        corpus_root,
+        body,
+        title=title,
+        group=group,
+        origin=INLINE_ORIGIN,
+        index=True,
+    ).result
+    where = relative_to_corpus(report.path, corpus_root)
     if report.outcome is Outcome.UNCHANGED:
         return f"already remembered: {report.title}  ({report.document_id})  {where}"
     # `unindexed` needs a command rather than a clause: the note is
@@ -128,12 +138,19 @@ def _into_notes(body: str, *, title: str | None, group: str | None) -> str:
 
 
 def _into_bundle(body: str, *, title: str | None, group: str | None) -> str:
-    """The bundle path: no corpus, no lock, no commit.
+    """The bundle path: written by the service, with no lock and no commit.
 
-    `kennis.writing.write_context_note` raises `ContextNotFound` when
-    there is no bundle here rather than falling back to notes.
+    Refused with `ContextNotFound` when there is no bundle here rather
+    than falling back to notes.
     """
-    note, bundle_name = write_context_note(body, title=title, group=group)
+    # The MCP server runs where its agent works (#508).
+    bundle = find_bundle(Path.cwd())
+    if bundle is None:
+        raise ContextNotFound
+    note = api.remember_in_context(
+        existing_corpus().corpus_root, bundle, body, title=title, group=group
+    )
+    bundle_name = bundle.name
     verb = (
         "already in this project" if note.outcome is Outcome.UNCHANGED else "remembered"
     )

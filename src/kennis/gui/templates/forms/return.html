@@ -1,0 +1,19 @@
+{# Returning the corpus to a point: what it would change, said first, by
+   document. A plain form, so the answer is a page saying what was done
+   and offering the index - with a script or without. #}
+<ul class="return-changes">
+{#- A line is the command line's too, which begins it in lower case. -#}
+{% for line in lines %}<li>{{ line[:1] | upper }}{{ line[1:] }}</li>{% endfor %}
+</ul>
+{% if not nothing %}
+<p class="role-muted">{{ return_explained }}</p>
+<form class="return-corpus" action="/corpus/return" method="post">
+  <input type="hidden" name="commit" value="{{ commit }}">
+  <div class="form-foot">
+    <a class="button" href="/activity" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ return_action }}</button>
+  </div>
+</form>
+{% else %}
+<div class="form-foot"><a class="button" href="/activity" data-close>{{ cancel_label }}</a></div>
+{% endif %}

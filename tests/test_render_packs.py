@@ -38,7 +38,6 @@ from kennis.engine.pack.validate import (
 )
 from kennis.render.packs import (
     describe_action,
-    describe_claim_needed,
     describe_damage,
     describe_declarations,
     describe_deferred,
@@ -46,7 +45,6 @@ from kennis.render.packs import (
     describe_install,
     describe_installed,
     describe_lost_source,
-    describe_moved,
     describe_outcome_of,
     describe_overlap,
     describe_problem,
@@ -55,6 +53,7 @@ from kennis.render.packs import (
     describe_removal,
     describe_sync,
     describe_sync_summary,
+    describe_undescribed,
     describe_unfetched,
     describe_unreadable,
     describe_unselected,
@@ -290,6 +289,21 @@ def test_a_changed_update_says_what_it_recorded():
     assert describe_recorded(result) == "2 files recorded"
 
 
+def test_an_update_counts_the_papers_it_described():
+    result = PackUpdate(
+        path=Path("p.ken.yml"), outcome="written", files=2, unselected=0, papers=1
+    )
+
+    assert describe_recorded(result) == "2 files and 1 paper recorded"
+
+
+def test_a_paper_left_without_a_citekey_is_named_with_the_way_out():
+    said = describe_undescribed(["arxiv:1101.1764", "doi:10.1/x"])
+
+    assert "arxiv:1101.1764 and doi:10.1/x" in said
+    assert "`citekey:`" in said
+
+
 def test_unselected_files_are_counted_without_a_pronoun():
     """ "5 files ... for it" is the agreement slip this wording avoids by
     not using the construction at all."""
@@ -519,16 +533,18 @@ def test_every_count_word_is_a_line_word():
     )
 
     assert described == (
-        "1 file added, 1 updated, 1 taken over, 1 removed, 1 unchanged, 2 left as yours"
+        "1 file added, 1 updated, 1 taken over, 1 removed, 1 unchanged, "
+        "1 copied as yours, 1 left as yours"
     )
 
 
-def test_a_file_kennis_declined_to_write_is_not_reported_as_unchanged():
-    """It is precisely a file kennis would have changed. Saying otherwise
-    would report the protection as if it were agreement."""
+def test_an_edited_file_is_reported_as_copied_rather_than_unchanged():
+    """The pack's text was put back and the edit became a note of the
+    person's (#514). "Unchanged" would hide both, and "left as yours" says
+    the edit stayed where it was, which it did not."""
     described = describe_sync(a_sync(keep=2, edited=1))
 
-    assert described == "2 files unchanged, 1 left as yours"
+    assert described == "2 files unchanged, 1 copied as yours"
 
 
 def test_a_bundle_where_everything_is_the_users_does_not_say_zero():
@@ -541,6 +557,12 @@ def test_the_corpus_counts_documents_rather_than_files():
     described = describe_sync(a_sync(write=2, keep=1), noun="document")
 
     assert described == "2 documents added, 1 unchanged"
+
+
+def test_the_commit_summary_names_an_edit_copied_out():
+    """The sync wrote a note of the person's and put the pack's text back
+    (#514); "nothing to change" in the history would be false."""
+    assert describe_sync_summary(a_sync(edited=1, keep=2)) == "1 edited"
 
 
 def test_the_commit_summary_names_only_what_changed():
@@ -563,14 +585,6 @@ def test_a_deferred_declaration_names_the_pack_that_lost():
     assert "2 files" in described
     assert "beta" in described
     assert "installed earlier" in described
-
-
-def test_the_edit_summary_says_how_to_keep_the_file_for_good():
-    """Reported every run otherwise, which is correct and eventually
-    tiresome - so the way out has to be said."""
-    described = describe_claim_needed(1)
-
-    assert "owner: user" in described
 
 
 def a_declaration(pack_id: str = "alpha") -> PackDeclaration:
@@ -680,26 +694,6 @@ def test_an_unfetched_declaration_is_named_and_not_counted_alone():
 
 def test_one_unfetched_declaration_takes_the_singular():
     assert describe_unfetched(("arxiv:1",)).startswith("1 declaration")
-
-
-def test_a_moved_file_is_named_with_both_paths():
-    """Both, because the declared address is how a pack refers to the
-    file and the path is where the reader will find it."""
-    said = describe_moved((("conventions/naming.md", "conventions/.naming.md"),))
-
-    assert "conventions/naming.md" in said
-    assert "conventions/.naming.md" in said
-
-
-def test_several_moved_files_are_counted_and_listed():
-    said = describe_moved(
-        (("a.md", ".a.md"), ("b.md", "kept/b.md")),
-    )
-
-    assert said.startswith("2 files")
-    assert "kept up to date where they are" in said
-    assert "a.md is at .a.md" in said
-    assert "b.md is at kept/b.md" in said
 
 
 # ---------------------------------------------------------------------------

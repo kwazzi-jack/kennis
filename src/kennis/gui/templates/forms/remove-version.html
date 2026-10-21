@@ -1,0 +1,12 @@
+{# Removing a docs version, said before anything goes (#489). The answer
+   is the docs branch of the pane redrawn, so the version is seen gone;
+   without a script the form posts and returns to the collection. #}
+<p>{{ removing }}</p>
+<form class="remove-version" action="/docs/remove-version" method="post" hx-post="/docs/remove-version" hx-target="#pane-branch-docs" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" data-closes-dialog>
+  <input type="hidden" name="project" value="{{ project }}">
+  <input type="hidden" name="version" value="{{ version }}">
+  <div class="form-foot">
+    <a class="button" href="/collection/docs" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ remove_version_action }}</button>
+  </div>
+</form>

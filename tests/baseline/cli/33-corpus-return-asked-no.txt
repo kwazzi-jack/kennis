@@ -1,0 +1,8 @@
+$ kennis corpus return <commit>
+--- exit 130
+--- stdout
+  ~ puts back 1 document: imaging
+  ~ removes 1 document: imaging
+Return the corpus to <commit>? [y/N]: n
+--- stderr
+Cancelled: nothing was changed

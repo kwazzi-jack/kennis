@@ -26,22 +26,29 @@ block that is not the last section is refused rather than truncated.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final, Literal, TypedDict
 
+import httpx
 import yaml
 
 from kennis import __version__
+from kennis.engine.corpus.add import ARXIV_DELAY_SECONDS
 from kennis.engine.errors import PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
+from kennis.engine.literature.citekeys import derive_citekey, unique_citekey
+from kennis.engine.literature.metadata import ArxivMetadata, lookup_arxiv_metadata
 from kennis.engine.pack.content import SourceContent, address_of, read_source
 from kennis.engine.pack.schema import (
     ContentSource,
     GeneratedContent,
+    GeneratedPaper,
     GeneratedSource,
+    LiteratureEntry,
     Pack,
     load_pack,
 )
@@ -67,10 +74,27 @@ class PackUpdate:
     # discarding a PDF an author meant to ship is the shape of mistake
     # nothing else here would catch. Concern #266.
     unselected: int
+    # Papers with a record of what `pack update` derived for them (#459).
+    papers: int = 0
+    # Papers left without a citekey, or whose arXiv lookup found nothing:
+    # `corpus sync` derives one at add time, against each corpus.
+    undescribed: tuple[str, ...] = ()
 
 
-def update_pack(path: Path, *, events: EventSink | None = None) -> PackUpdate:
+def update_pack(
+    path: Path,
+    *,
+    events: EventSink | None = None,
+    arxiv: httpx.Client | None = None,
+    request_delay_seconds: float | None = None,
+) -> PackUpdate:
     """Recompute the generated block of the pack at `path`.
+
+    **A paper is described here** when its entry leaves a field out: the
+    citekey, title, authors and year `corpus add` would derive, recorded so
+    every machine files it alike (#459). Only an entry lacking a field with
+    no record yet reaches arXiv, so a pack already described - or never
+    needing it - is still updated without the network.
 
     Raises `PackInvalid` when the file does not parse, when this kennis may
     not read it, when a declared source is not a directory, when a file
@@ -107,22 +131,146 @@ def update_pack(path: Path, *, events: EventSink | None = None) -> PackUpdate:
 
     content, unselected = _walked(path.parent, pack)
     previous = pack.generated.content if pack.generated is not None else None
+    papers, undescribed = _described(
+        pack,
+        pack.generated.literature if pack.generated is not None else {},
+        arxiv=arxiv,
+        delay=(
+            ARXIV_DELAY_SECONDS
+            if request_delay_seconds is None
+            else request_delay_seconds
+        ),
+    )
     _reported(events, previous, content, unselected, started)
-    if previous is not None and previous == content:
+    if (
+        pack.generated is not None
+        and previous == content
+        and pack.generated.literature == papers
+    ):
         return PackUpdate(
             path=path,
             outcome="unchanged",
             files=_counted(content),
             unselected=len(unselected),
+            papers=len(papers),
+            undescribed=undescribed,
         )
 
-    path.write_text(_spliced(text, content), encoding="utf-8", newline="\n")
+    path.write_text(_spliced(text, content, papers), encoding="utf-8", newline="\n")
     return PackUpdate(
         path=path,
         outcome="written",
         files=_counted(content),
         unselected=len(unselected),
+        papers=len(papers),
+        undescribed=undescribed,
     )
+
+
+_DESCRIBED: Final = ("citekey", "title", "authors", "year")
+
+
+def _described(
+    pack: Pack,
+    previous: dict[str, GeneratedPaper],
+    *,
+    arxiv: httpx.Client | None,
+    delay: float,
+) -> tuple[dict[str, GeneratedPaper], tuple[str, ...]]:
+    """A record for each paper whose entry leaves its citekey out.
+
+    **The citekey is the reason for the record**: it is the handle the
+    pack's prose cites and the one field that must agree on every machine.
+    An entry that gives one is fetched at sync as before, and arXiv fills
+    its title, authors and year there - so a pack written before this
+    never reaches a host from `pack update`. An entry without one has
+    whatever else it lacks recorded alongside.
+
+    A record from the last update that supplies every missing field is
+    kept as it is, so a citekey never moves once recorded. Those are
+    reserved first, so a newly described paper deriving the same citekey
+    is the one told apart. Only an arXiv identifier is looked up, because
+    that is all `corpus add` looks up: a DOI or a bibcode is described from
+    what its entry says.
+    """
+    taken = {entry.citekey for entry in pack.corpus.literature if entry.citekey}
+    papers: dict[str, GeneratedPaper] = {}
+    pending: list[tuple[LiteratureEntry, list[str]]] = []
+    for entry in pack.corpus.literature:
+        if entry.citekey is not None:
+            continue
+        lacking = [name for name in _DESCRIBED if getattr(entry, name) is None]
+        kept = previous.get(entry.key)
+        if kept is not None and all(
+            getattr(kept, name) is not None for name in lacking
+        ):
+            papers[entry.key] = GeneratedPaper(
+                **{name: getattr(kept, name) for name in lacking}
+            )
+            if kept.citekey is not None:
+                taken.add(kept.citekey)
+            continue
+        pending.append((entry, lacking))
+
+    undescribed: list[str] = []
+    lookups = 0
+    for entry, lacking in pending:
+        metadata: ArxivMetadata | None = None
+        # A citekey is derived from the other three, so a lookup is owed
+        # only when one of those is missing.
+        looked_up = entry.paper.kind == "arxiv" and lacking != ["citekey"]
+        if looked_up:
+            if lookups and delay:
+                time.sleep(delay)
+            lookups += 1
+            metadata = lookup_arxiv_metadata(entry.paper.value, client=arxiv)
+            if metadata is None:
+                # Nothing recorded: a citekey made from the entry's title
+                # alone is not the one `corpus add` makes once arXiv
+                # answers, and a sync would rename a held paper to it.
+                undescribed.append(entry.key)
+                continue
+        values = _values(entry, metadata, taken)
+        record = GeneratedPaper(
+            citekey=values["citekey"],
+            title=values["title"] if "title" in lacking else None,
+            authors=values["authors"] if "authors" in lacking else None,
+            year=values["year"] if "year" in lacking else None,
+        )
+        if record.citekey is None:
+            undescribed.append(entry.key)
+        if record != GeneratedPaper():
+            papers[entry.key] = record
+    return papers, tuple(undescribed)
+
+
+class _Values(TypedDict):
+    citekey: str | None
+    title: str | None
+    authors: str | None
+    year: int | None
+
+
+def _values(
+    entry: LiteratureEntry, metadata: ArxivMetadata | None, taken: set[str]
+) -> _Values:
+    """The four fields, the entry's own first, and a citekey derived from
+    them as `corpus add` derives one."""
+    title = entry.title or (metadata.title if metadata else None)
+    authors = entry.authors or (metadata.authors if metadata else None)
+    year = entry.year or (
+        int(metadata.year) if metadata and metadata.year.isdigit() else None
+    )
+    citekey = entry.citekey
+    if citekey is None and (title or authors):
+        citekey = unique_citekey(
+            derive_citekey(
+                authors=authors or "", year=str(year or ""), title=title or ""
+            ),
+            taken,
+        )
+        taken.add(citekey)
+    return {"citekey": citekey, "title": title, "authors": authors, "year": year}
 
 
 def _reported(
@@ -194,7 +342,7 @@ def _walked(root: Path, pack: Pack) -> tuple[GeneratedContent, list[str]]:
     directory, or a file that escapes the pack root.
     """
     unselected: list[str] = []
-    notes = [_entry(root, source, unselected) for source in pack.corpus.notes]
+    notes = [_entry(root, source, unselected) for source in pack.corpus.note_sources]
     context = [_entry(root, source, unselected) for source in pack.context]
     return GeneratedContent(notes=notes, context=context), unselected
 
@@ -226,11 +374,13 @@ def _counted(content: GeneratedContent) -> int:
     return sum(len(entry.files) for entry in [*content.notes, *content.context])
 
 
-def _spliced(text: str, content: GeneratedContent) -> str:
+def _spliced(
+    text: str, content: GeneratedContent, papers: dict[str, GeneratedPaper]
+) -> str:
     """The file with its generated block replaced, or gaining one."""
     anchor = _anchor(text)
     head = text if anchor is None else text[:anchor]
-    return head.rstrip("\n") + "\n\n" + _rendered(content)
+    return head.rstrip("\n") + "\n\n" + _rendered(content) + _rendered_papers(papers)
 
 
 def _anchor(text: str) -> int | None:
@@ -327,6 +477,25 @@ def _rendered(content: GeneratedContent) -> str:
             lines.append("        files:")
             for relative, digest in sorted(entry.files.items()):
                 lines.append(f'          "{relative}": "{digest}"')
+    return "\n".join(lines) + "\n"
+
+
+def _rendered_papers(papers: dict[str, GeneratedPaper]) -> str:
+    """The papers' records, below the content, and nothing when there are
+    none - so a pack declaring no paper this way keeps its exact bytes.
+
+    Each string through `json.dumps`: a JSON string is a YAML double-quoted
+    scalar, and its escapes keep the file ASCII whatever a title holds.
+    """
+    if not papers:
+        return ""
+    lines = ["  literature:"]
+    for key, paper in sorted(papers.items()):
+        lines.append(f"    {json.dumps(key)}:")
+        for name in _DESCRIBED:
+            value = getattr(paper, name)
+            if value is not None:
+                lines.append(f"      {name}: {json.dumps(value)}")
     return "\n".join(lines) + "\n"
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Final
 
 import numpy as np
 
@@ -33,8 +33,7 @@ from kennis.engine.rag.models import (
     SearchResult,
     combine_filters,
 )
-
-type Mode = Literal["hybrid", "dense", "bm25"]
+from kennis.engine.rag.modes import Mode
 
 # `score = sum 1 / (RRF_K + rank)`. The constant from the original paper; it
 # flattens the difference between adjacent high ranks, so being first in one

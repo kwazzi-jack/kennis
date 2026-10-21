@@ -6,7 +6,7 @@
     <span class="segmented" role="radiogroup" aria-labelledby="index-which-name">
     {#- What needs indexing is marked, and when one collection alone does,
         it is the one chosen: the bar's own Index button does the same. -#}
-    {%- set waiting = {} %}{% for row in pane_now().collections %}{% if row.waiting %}{% set _ = waiting.update({row.collection: row.waiting}) %}{% endif %}{% endfor %}
+    {%- set waiting = {} %}{% for row in pane_now(request).collections %}{% if row.waiting %}{% set _ = waiting.update({row.collection: row.waiting}) %}{% endif %}{% endfor %}
     {%- set only = (waiting | list | first) if (waiting | length) == 1 and not chosen else "" %}
     {%- set chosen = chosen or only %}
     <label><input type="radio" name="collection" value=""{% if not chosen %} checked{% endif %}>{{ index_every }}</label>

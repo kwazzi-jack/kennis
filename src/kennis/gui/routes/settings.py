@@ -19,7 +19,7 @@ from kennis.engine.backup import check_backup
 from kennis.engine.errors import (
     SettingsError,
 )
-from kennis.engine.settings import load_settings
+from kennis.engine.settings import config_path, load_settings, unknown_settings
 from kennis.engine.setup import apply_answers, validate_answer
 from kennis.gui import words
 from kennis.gui.configuration import (
@@ -57,6 +57,7 @@ from kennis.render.backup import (
     describe_folder,
     describe_verified,
 )
+from kennis.render.settings import describe_unknown_settings
 
 router = APIRouter()
 
@@ -117,7 +118,18 @@ def _kennis_section(
         "credential_set": words.CREDENTIAL_SET,
         "credential_unset": words.CREDENTIAL_UNSET,
         "converter_missing": words.CONVERTER_MISSING,
+        "unknown_settings": _unknown_settings_said(),
     }
+
+
+def _unknown_settings_said() -> str:
+    """The file's settings kennis does not read, or nothing (#480).
+
+    Read at drawing, so a save - which rewrites the file without them -
+    takes the notice away in the same answer.
+    """
+    keys = unknown_settings()
+    return describe_unknown_settings(keys, str(config_path())) if keys else ""
 
 
 def _backup_folder() -> Path | None:

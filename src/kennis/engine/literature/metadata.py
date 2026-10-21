@@ -22,10 +22,12 @@ from typing import Final
 
 import httpx
 
-from kennis.engine.bounded import get_bounded
+from kennis.engine.courtesy import get_politely
 from kennis.engine.literature.identifiers import normalize_arxiv_id
 
 _ATOM_API: Final = "https://export.arxiv.org/api/query"
+# A paper's own page, which carries its metadata in `citation_*` meta tags.
+_ABS_PAGE: Final = "https://arxiv.org/abs/"
 _ATOM_NAMESPACE: Final = {"atom": "http://www.w3.org/2005/Atom"}
 _USER_AGENT: Final = "kennis-literature"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
@@ -47,7 +49,27 @@ def lookup_arxiv_metadata(
 
     `client` is supplied by the caller so a test hands over a transport that
     never touches the network; left out, one is built and closed here.
+
+    The Atom API is asked first. When it fails for any reason, the paper's
+    abs page is asked instead (#288): arxiv.org has served it while the API
+    refused the same query, which left papers with no authors or year and
+    no way to repair them (#283, #287). One extra request, and only on the
+    path that has already failed.
+
+    **Both through `courtesy`, so each host's robots.txt decides** (#492).
+    On 2026-10-18 `export.arxiv.org` disallowed everything, so the API is
+    refused without being asked and the abs page is what answers.
     """
+    owned = client is None
+    active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
+    try:
+        return _from_atom(arxiv_id, active) or _from_abs_page(arxiv_id, active)
+    finally:
+        if owned:
+            active.close()
+
+
+def _from_atom(arxiv_id: str, client: httpx.Client) -> ArxivMetadata | None:
     entry = _entry({"id_list": arxiv_id, "max_results": "1"}, client=client)
     if entry is None:
         return None
@@ -73,19 +95,53 @@ def lookup_arxiv_metadata(
     )
 
 
-def resolve_doi_to_arxiv(doi: str, *, client: httpx.Client | None = None) -> str | None:
-    """The arXiv identifier of the preprint behind `doi`, if there is one.
+def _from_abs_page(arxiv_id: str, client: httpx.Client) -> ArxivMetadata | None:
+    """Title, authors and year from the `citation_*` meta tags of the
+    paper's abs page, or None.
 
-    A miss is not an error: the paper may simply never have been preprinted,
-    which the caller reports as needing a document supplied by hand instead.
+    The Highwire convention, which Google Scholar indexes, so arXiv keeps
+    it. Authors are kept as arXiv writes them there, `Surname, Given`:
+    BibTeX reads that form, and a citekey takes the part before the comma.
     """
-    entry = _entry({"search_query": f'doi:"{doi}"', "max_results": "1"}, client=client)
-    if entry is None:
+    from bs4 import BeautifulSoup
+
+    try:
+        response = get_politely(
+            client,
+            f"{_ABS_PAGE}{arxiv_id}",
+            user_agent=_USER_AGENT,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
         return None
-    identifier = entry.find("atom:id", _ATOM_NAMESPACE)
-    if identifier is None or not identifier.text:
+    # Anything but a page is not the paper's page, whatever it holds.
+    if "html" not in response.headers.get("content-type", ""):
         return None
-    return normalize_arxiv_id(identifier.text)
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    def tagged(name: str) -> list[str]:
+        return [
+            " ".join(str(tag.get("content", "")).split())
+            for tag in soup.find_all("meta", attrs={"name": name})
+        ]
+
+    # The page must be the paper asked for, as the feed's entry must.
+    answered = tagged("citation_arxiv_id")
+    if not answered or normalize_arxiv_id(answered[0]) != (
+        normalize_arxiv_id(arxiv_id) or arxiv_id
+    ):
+        return None
+    titles = [title for title in tagged("citation_title") if title]
+    if not titles:
+        return None
+    dates = tagged("citation_date")
+    return ArxivMetadata(
+        title=titles[0],
+        authors=" and ".join(name for name in tagged("citation_author") if name),
+        year=dates[0][:4] if dates and dates[0][:4].isdigit() else "",
+    )
 
 
 def _entry(
@@ -95,8 +151,12 @@ def _entry(
     owned = client is None
     active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
     try:
-        response = get_bounded(
-            active, _ATOM_API, params=params, timeout=_REQUEST_TIMEOUT_SECONDS
+        response = get_politely(
+            active,
+            _ATOM_API,
+            user_agent=_USER_AGENT,
+            params=params,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPError:

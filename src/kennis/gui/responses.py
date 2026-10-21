@@ -22,20 +22,23 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 
 from kennis.context import Context, existing_corpus
-from kennis.engine.context.index import CONTEXT_COLLECTION
+from kennis.engine.context.groups import CONTEXT_COLLECTION
+from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import project_versions
 from kennis.engine.errors import (
     KennisError,
 )
 from kennis.engine.history.history import HistoryEntry
 from kennis.gui import words
 from kennis.gui.icons import icon
-from kennis.gui.jobs import Job
 from kennis.gui.layout import SIZES, sizes_of
 from kennis.gui.pages import (
     ShownOutcome,
+    ShownVersionProject,
+    shown_version_choices,
 )
-from kennis.gui.pane import Pane, pane_now
+from kennis.gui.pane import Pane, pane_now, present_projects
 from kennis.gui.preferences import (
     preferences_of,
 )
@@ -43,9 +46,9 @@ from kennis.holdings import (
     last_change,
     revision,
 )
-from kennis.retrieval import (
-    EVERY_SCOPE,
-)
+from kennis.render.words import JOB_KINDS
+from kennis.scopes import EVERY_SCOPE
+from kennis.service.jobs import Job
 
 _HERE: Final = Path(__file__).parent
 
@@ -109,6 +112,24 @@ def _inspector_state(request: Request) -> str:
 TEMPLATES.env.globals["preferences"] = preferences_of
 
 
+def _version_choices(request: Request) -> list[ShownVersionProject]:
+    """The docs versions the search box offers, ticked by the address.
+
+    A function of the request rather than a value in `_frame`, because
+    the box is on every page and not every route builds its context
+    there, and because what is ticked is what this address asked (#489).
+    """
+    try:
+        root = existing_corpus().corpus_root
+    except KennisError:
+        return []
+    held = project_versions(Collection(root=root, name="docs").path)
+    return shown_version_choices(held, request.query_params.getlist("version"))
+
+
+TEMPLATES.env.globals["version_choices"] = _version_choices
+
+
 # The open book, carried whole as a `data:` address rather than served:
 # the locked page is answered without the token every static file needs,
 # and the stopped page is drawn as the server exits, so neither could
@@ -145,7 +166,7 @@ TEMPLATES.env.globals.update(
         "size_bounds": SIZES,
         "resize_labels": words.RESIZE_LABELS,
         "job_doing": words.JOB_DOING,
-        "job_kinds": words.JOB_KINDS,
+        "job_kinds": JOB_KINDS,
         "job_details": words.JOB_DETAILS,
         "open_as_page": words.OPEN_AS_PAGE,
         "pane_now": pane_now,
@@ -160,7 +181,6 @@ TEMPLATES.env.globals.update(
         "index_now": words.index_now,
         "index_now_label": words.INDEX_NOW,
         "sync_corpus_label": words.SYNC_CORPUS_ACTION,
-        "sync_context_label": words.SYNC_CONTEXT_ACTION,
         "copy_label": words.COPY_LABEL,
         "copied_label": words.COPIED_LABEL,
         "cancel_label": words.CANCEL,
@@ -174,6 +194,8 @@ TEMPLATES.env.globals.update(
         "title_label": words.TITLE_LABEL,
         "group_label": words.GROUP_LABEL,
         "target_label": words.TARGET_LABEL,
+        "project_label": words.PROJECT_LABEL,
+        "every_project": words.EVERY_PROJECT,
         "pack_path_label": words.PACK_PATH_LABEL,
         "index_which_label": words.INDEX_WHICH_LABEL,
         "problem_back": words.PROBLEM_BACK,
@@ -183,7 +205,8 @@ TEMPLATES.env.globals.update(
         "packs_heading": words.PACKS_HEADING,
         "documents_held": words.documents_held,
         "index_every": words.INDEX_EVERY,
-        "remember_targets": words.REMEMBER_TARGETS,
+        # A function, because the projects vary: a note may go to any.
+        "remember_targets": lambda: words.remember_targets(present_projects()),
         # Every job's outcome redraws these where the page has them (#457).
         "shell_redraws": (
             ("strip-status", "/strip/status"),
@@ -241,6 +264,11 @@ TEMPLATES.env.globals.update(
         "search_action": words.SEARCH_ACTION,
         "search_key_title": words.SEARCH_KEY_TITLE,
         "searching": words.SEARCHING,
+        "versions_label": words.VERSIONS_LABEL,
+        "current_version": words.CURRENT_VERSION,
+        "also_held": words.ALSO_HELD,
+        "make_current": words.MAKE_CURRENT,
+        "menu_remove_version": words.MENU_REMOVE_VERSION,
         # The Add dialog's words, global because its fragments - a
         # preview, a block, a chooser - are drawn by routes of their own.
         "add_tabs_label": words.ADD_TABS_LABEL,
@@ -386,6 +414,8 @@ def refused_in_the_form(request: Request, place: str, problem: str) -> HTMLRespo
 
 
 def job_state(job: Job) -> str:
+    if job.state == "queued":
+        return words.JOB_QUEUED
     if not job.done.is_set():
         return words.JOB_RUNNING
     return words.JOB_FAILED if job.failed else words.JOB_FINISHED
@@ -484,9 +514,10 @@ def refused(
     """A refusal inside the panel, not as a page.
 
     The form the person filled in is still on the page behind this, and
-    replacing the page would lose what they typed. `CorpusBusy` is the
-    case that makes it matter: something else is writing, nothing was
-    changed, and the answer is to try again in a moment. A job that
+    replacing the page would lose what they typed. `PublishRefused` is
+    the case that makes it matter: something else changed the same
+    documents meanwhile, nothing was changed, and the answer is to run it
+    again. A job that
     failed says so in the error role, which the status bar reads as its
     state.
     """

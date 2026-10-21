@@ -12,6 +12,7 @@ there. Only `http` and `https` are ever requested.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Final
 from urllib.parse import urljoin, urlsplit
 
@@ -53,6 +54,7 @@ def get_within(
     *,
     origin: str,
     limit: int | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> httpx.Response:
     """GET `url`, following redirects only while they stay on `origin`, and
     reading no more than `limit` bytes of what comes back.
@@ -67,7 +69,11 @@ def get_within(
         if origin_of(target) != origin.lower():
             raise OffSite(f"'{target}' is not on {origin}")
         with client.stream(
-            "GET", target, timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=False
+            "GET",
+            target,
+            headers=headers,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+            follow_redirects=False,
         ) as response:
             location = response.headers.get("location")
             if not response.is_redirect or not location:
