@@ -8,6 +8,7 @@ fixture binds to an in-process application for the test's corpus (#503).
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -109,7 +110,17 @@ def test_a_job_behind_another_says_so_before_it_begins(
     app = service_in_this_process.app(corpus)
     release = threading.Event()
     app.state.jobs.start("index", lambda events: release.wait(30), lane=CORPUS_LANE)
-    threading.Timer(0.2, release.set).start()
+
+    def released_once_the_add_waits() -> None:
+        # On the second job's arrival, not after a fixed time: a slow
+        # runner submitted the add after a 0.2 s timer had already let the
+        # first job go, and the add had nothing to wait behind (#533).
+        deadline = time.monotonic() + 30
+        while len(app.state.jobs.unfinished()) < 2 and time.monotonic() < deadline:
+            threading.Event().wait(0.01)
+        release.set()
+
+    threading.Thread(target=released_once_the_add_waits, daemon=True).start()
 
     call(
         connection.connect(corpus),

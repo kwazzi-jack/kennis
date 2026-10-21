@@ -263,6 +263,7 @@ def ran(runner: CliRunner, scratch: Path, one: Step) -> str:
         f"--- stdout\n{result.stdout}"
         f"--- stderr\n{result.stderr}",
         scratch,
+        plain_text=True,
     )
 
 

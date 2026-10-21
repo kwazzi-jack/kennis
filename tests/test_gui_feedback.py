@@ -158,11 +158,16 @@ def test_the_stream_reports_elapsed_time_while_a_job_runs():
     jobs = Jobs()
     holding = threading.Event()
     job = jobs.start("add", lambda events: holding.wait(20))
-    releaser = threading.Timer(2.6, holding.set)
-    releaser.start()
 
+    # Released by the second tick, not by a timer: a stream that began late
+    # on a slow runner would see one tick before a fixed release (#533).
     began = time.monotonic()
-    ticks = [item for item in jobs.stream(job) if isinstance(item, Elapsed)]
+    ticks: list[Elapsed] = []
+    for item in jobs.stream(job):
+        if isinstance(item, Elapsed):
+            ticks.append(item)
+            if len(ticks) == 2:
+                holding.set()
     took = time.monotonic() - began
 
     assert len(ticks) >= 2

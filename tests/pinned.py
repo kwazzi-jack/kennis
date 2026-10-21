@@ -102,10 +102,13 @@ _DATE = re.compile(
 )
 
 
-def normalised(text: str, scratch: Path) -> str:
+def normalised(text: str, scratch: Path, *, plain_text: bool = False) -> str:
     """The output with what cannot be pinned replaced by a placeholder.
 
     The folder first, because it contains digits the other patterns match.
+    `plain_text` for the command line's answers, in which a backslash on
+    Windows is always a separator; never for JSON, where a backslash
+    begins an escape such as a newline's.
     """
     for spelling in {str(scratch), scratch.as_posix(), str(scratch.resolve())}:
         text = text.replace(spelling, "<scratch>")
@@ -113,8 +116,10 @@ def normalised(text: str, scratch: Path) -> str:
     text = _INSIDE_SCRATCH.sub(lambda found: found[0].replace("\\", "/"), text)
     # And so is one relative to it, as `backups\kennis-corpus.7z` on
     # Windows. Only there, because elsewhere a backslash is not a separator
-    # and nothing the scenario prints holds one (#532).
-    if os.sep != "/":
+    # and nothing the scenario prints holds one (#532); and only in plain
+    # text, because in the MCP server's JSON it turned every escaped newline
+    # into a slash and an n (#533).
+    if plain_text and os.sep != "/":
         text = text.replace(os.sep, "/")
     text = _DATE.sub("<date>", text)
     text = _HASH.sub("<commit>", text)

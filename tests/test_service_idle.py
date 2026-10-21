@@ -13,6 +13,10 @@ from kennis.service.idle import IdleTimer
 
 QUIET = 0.2
 WAIT = 10.0
+# What a measured interval may fall short by: Windows' monotonic clock moves
+# in ticks of about 15.6 ms, and a 0.2 s timer once measured 0.188 s there
+# (#533). Elsewhere it is a nanosecond.
+TICK = time.get_clock_info("monotonic").resolution
 
 
 def fired_after(timer: IdleTimer, gone: threading.Event) -> float:
@@ -28,7 +32,7 @@ def test_a_quiet_service_leaves_after_its_time():
 
     elapsed = fired_after(timer, gone)
 
-    assert elapsed >= QUIET
+    assert elapsed >= QUIET - TICK
 
 
 def test_it_does_not_leave_while_work_is_unfinished():
@@ -76,7 +80,7 @@ def test_activity_counts_the_quiet_period_from_now():
     last = time.monotonic()
 
     assert gone.wait(WAIT)
-    assert time.monotonic() - last >= PATIENT
+    assert time.monotonic() - last >= PATIENT - TICK
 
 
 def test_a_stopped_timer_never_fires():
