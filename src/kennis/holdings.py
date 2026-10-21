@@ -48,6 +48,7 @@ from kennis.engine.history.outofband import OutOfBandChange, detect_changes
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.installed import InstalledPack, list_installed
 from kennis.engine.rag.index import published_files, read_manifest
+from kennis.publishing import reading
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,7 @@ class Holding:
         return self.freshness.state == "in step" and not self.freshness.added
 
 
+@reading
 def holdings(context: Context) -> list[Holding]:
     """Every collection, in the order the schema names them.
 
@@ -113,6 +115,7 @@ _HELD: dict[Path, tuple[CorpusState, list[Holding]]] = {}
 _HELD_GUARD = threading.Lock()
 
 
+@reading
 def corpus_state(context: Context) -> CorpusState:
     """Everything a holding is computed from, cheaply enough to ask each time.
 
@@ -148,6 +151,7 @@ def _stamp(path: Path) -> tuple[int, int] | None:
     return (found.st_mtime_ns, found.st_size)
 
 
+@reading
 def contents_of(
     context: Context, collection: str, *, state: CorpusState | None = None
 ) -> CollectionContents:
@@ -186,6 +190,7 @@ def _holding(
     )
 
 
+@reading
 def freshness_of(
     context: Context, repository: Repository, collection: str
 ) -> Freshness | None:
@@ -237,6 +242,7 @@ class DocumentMarks:
         return ""
 
 
+@reading
 def document_marks(context: Context, collection: str) -> DocumentMarks:
     """Per-document freshness for one collection, by the same rule as
     `freshness_of`, with `indexed=manifest.documents` for the same
@@ -259,11 +265,13 @@ def document_marks(context: Context, collection: str) -> DocumentMarks:
     )
 
 
+@reading
 def installed_packs(context: Context) -> tuple[InstalledPack, ...]:
     """Every pack in the store, or nothing when there is no store yet."""
     return tuple(list_installed(context.corpus_root).packs)
 
 
+@reading
 def revision(context: Context) -> str | None:
     """The commit the corpus is at, or None before its first.
 
@@ -274,6 +282,7 @@ def revision(context: Context) -> str | None:
     return Repository(context.corpus_root).head()
 
 
+@reading
 def last_change(context: Context) -> HistoryEntry | None:
     """The corpus's newest commit, or None before its first.
 
@@ -313,6 +322,7 @@ class CorpusStatus:
     changes: list[OutOfBandChange]
 
 
+@reading
 def corpus_status(context: Context) -> CorpusStatus:
     repository = Repository(context.corpus_root)
     return CorpusStatus(
@@ -349,6 +359,7 @@ class CollectionTree:
     entries: list[TreeEntry]
 
 
+@reading
 def corpus_tree(context: Context, collection: str | None) -> list[CollectionTree]:
     """The corpus as the directories it really is, each document with its
     handle; a collection with no folder is left out.
@@ -389,6 +400,7 @@ def corpus_tree(context: Context, collection: str | None) -> list[CollectionTree
     return trees
 
 
+@reading
 def history_of(
     context: Context, collection: str | None, limit: int
 ) -> list[HistoryEntry]:
@@ -398,12 +410,14 @@ def history_of(
     )
 
 
+@reading
 def docs_versions(context: Context) -> dict[str, ProjectVersions]:
     """Every docs project that has versions, with the versions held and the
     current one."""
     return project_versions(Collection(root=context.corpus_root, name="docs").path)
 
 
+@reading
 def version_pages(context: Context, project: str, version: str) -> int:
     """How many pages removing one docs version would remove, or the refusal
     naming the versions held: said before anything is removed."""
@@ -412,6 +426,7 @@ def version_pages(context: Context, project: str, version: str) -> int:
     )
 
 
+@reading
 def return_preview(context: Context, commit: str) -> ReturnChanges:
     """What returning the corpus to `commit` would put back, remove and
     change, said before it is done."""

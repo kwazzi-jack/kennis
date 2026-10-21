@@ -80,7 +80,7 @@ def replace_file(
                 stream.write(data)
         if read_only:
             make_read_only(Path(temporary))
-        _make_writable(path)
+        make_writable(path)
         os.replace(temporary, path)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
@@ -89,15 +89,36 @@ def replace_file(
 
 def make_read_only(path: Path) -> None:
     """Take every write permission off `path`; on Windows, set its
-    read-only attribute, which is what `chmod` reaches there."""
-    path.chmod(stat.S_IMODE(path.stat().st_mode) & ~_WRITE_BITS)
+    read-only attribute, which is what `chmod` reaches there.
+
+    A file with another hard link is given its own copy first: the mode
+    belongs to the file and not to the name, so sealing a link would seal
+    every other name for it too - the corpus's own file, when `path` is in
+    a staging mirror (`engine/staging.py`).
+    """
+    status = path.stat()
+    if status.st_nlink > 1:
+        _unlinked(path)
+    path.chmod(stat.S_IMODE(status.st_mode) & ~_WRITE_BITS)
+
+
+def _unlinked(path: Path) -> None:
+    """Replace `path` with a copy of itself, so it shares nothing."""
+    handle, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    os.close(handle)
+    try:
+        shutil.copy2(path, temporary)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def remove_file(path: Path, *, missing_ok: bool = False) -> None:
     """Delete a file, read-only or not."""
     if missing_ok and not path.exists():
         return
-    _make_writable(path)
+    make_writable(path)
     path.unlink(missing_ok=missing_ok)
 
 
@@ -112,7 +133,7 @@ def remove_tree(path: Path, *, ignore_errors: bool = False) -> None:
                 return
             raise error
         try:
-            _make_writable(Path(name))
+            make_writable(Path(name))
             function(name)
         except OSError:
             if not ignore_errors:
@@ -126,7 +147,7 @@ def remove_tree(path: Path, *, ignore_errors: bool = False) -> None:
 _WRITE_BITS = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
 
 
-def _make_writable(path: Path) -> None:
+def make_writable(path: Path) -> None:
     """Give the owner write permission back, where it was taken away."""
     try:
         mode = stat.S_IMODE(path.stat().st_mode)

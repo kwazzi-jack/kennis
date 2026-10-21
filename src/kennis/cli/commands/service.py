@@ -83,8 +83,8 @@ def watch_command(task_id: str) -> None:
 def stop_command() -> None:
     """Stop the service, unless it is running a task.
 
-    A task would end wherever it was - inside the corpus lock, or before
-    its commit - so the service refuses and keeps running.
+    A task stopped part way keeps nothing of what it did, so the service
+    refuses rather than throw that work away, and keeps running.
     """
     corpus_root = existing_corpus().corpus_root
     record = find_service(corpus_root)

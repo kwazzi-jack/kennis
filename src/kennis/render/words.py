@@ -386,19 +386,6 @@ def describe_busy_indexes(collections: Sequence[str]) -> str:
     )
 
 
-def describe_uncommitted_build() -> str:
-    """A build that finished while something else held the corpus.
-
-    The index is published and searchable; only its commit waits. Said
-    rather than swallowed, because a corpus whose history does not
-    mention an index it has is a corpus somebody will wonder about.
-    """
-    return (
-        "the corpus was busy, so this index is published but not yet "
-        "committed; the next write records it"
-    )
-
-
 def needs_an_index(outcome: IndexOutcome) -> bool:
     """Whether the note that was just written is findable.
 
@@ -429,6 +416,8 @@ JOB_KINDS: Final[dict[str, str]] = {
     "index": "Index",
     "sync": "Corpus sync",
     "context-sync": "Project context sync",
+    "context": "Project context change",
+    "context-index": "Project context index",
     "pack": "Pack install",
     "backup": "Backup",
     "remember": "Note",
@@ -439,6 +428,17 @@ JOB_KINDS: Final[dict[str, str]] = {
     "return": "Return",
     "version": "Docs version change",
 }
+
+
+def put_back_at_start(operation: str) -> str:
+    """The service found a write a killed service left half made, and put
+    the corpus back as it was before it (14e, #507)."""
+    name = JOB_KINDS.get(operation, operation).lower()
+    article = "an" if name[:1] in "aeiou" else "a"
+    return (
+        f"The kennis service stopped part way through {article} {name} and has "
+        "put the corpus back as it was before it. Run it again."
+    )
 
 
 def waiting_for(behind: str, ahead: int) -> str:

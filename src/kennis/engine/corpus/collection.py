@@ -54,10 +54,10 @@ class Collection:
     """The documents under one collection of a corpus.
 
     Nothing is cached: `documents()` walks and re-validates on every call.
-    That is the right default while a command invocation holds the corpus lock
-    for its whole run, and it means a caller can never read a document that
-    was deleted underneath it. An index is what makes repeated reads cheap,
-    and it arrives with search.
+    That is the right default for an operation preparing in a mirror
+    nobody else writes to (14e), and it means a caller can never read a
+    document that was deleted underneath it. An index is what makes repeated
+    reads cheap, and it arrives with search.
     """
 
     root: Path

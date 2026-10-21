@@ -42,7 +42,8 @@ PROJECTS_FILENAME: Final = "projects.json"
 _SCHEMA_VERSION: Final = 1
 # The list is a few hundred bytes and is written in a moment, so a second
 # writer - another corpus's service, or a command - waits rather than being
-# refused, unlike the corpus lock.
+# refused, as the corpus lock does (14e). Bounded, because nothing here
+# should take longer.
 _LOCK_SECONDS: Final = 10.0
 
 _logger = logging.getLogger(__name__)

@@ -15,6 +15,7 @@ keep the service alive.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -49,6 +50,24 @@ def _keep_running() -> None:
     """The default `on_stop`, for an application nobody launched."""
 
 
+class Recovered:
+    """The operation the service put back at its start (`staging.recover`),
+    told to the first client that asks and to no other (#507)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._operation: str | None = None
+
+    def put(self, operation: str | None) -> None:
+        with self._lock:
+            self._operation = operation
+
+    def take(self) -> str | None:
+        with self._lock:
+            operation, self._operation = self._operation, None
+            return operation
+
+
 def build_service_app(
     token: str,
     corpus_root: Path,
@@ -64,6 +83,7 @@ def build_service_app(
     """
     app = build_app(token, on_quit=on_stop)
     app.state.corpus_root = corpus_root
+    app.state.recovered = Recovered()
     app.state.on_stop = on_stop
     app.state.jobs = Jobs(on_change=idle.touch if idle is not None else None)
     app.include_router(api.router)
@@ -72,4 +92,8 @@ def build_service_app(
     return app
 
 
-__all__ = ["CountingRequests", "build_service_app"]
+__all__ = [
+    "CountingRequests",
+    "Recovered",
+    "build_service_app",
+]

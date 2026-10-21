@@ -29,10 +29,12 @@ from filelock import FileLock
 
 import kennis.finding
 import kennis.holdings
+import kennis.operations
 import kennis.retrieval
 from kennis.cli.__main__ import main
 from kennis.context import Context, existing_corpus
 from kennis.engine.context.bundle import find_bundle
+from kennis.engine.context.status import bundle_status
 from kennis.engine.corpus.add import AddOptions
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.errors import KennisError, NothingToIndex
@@ -46,7 +48,7 @@ from kennis.protocol.wire import Json, dump, load, load_error, wire_name
 from kennis.service.api import PREFIX
 from kennis.service.app import build_service_app
 from kennis.service.calls import OPERATIONS, Operation
-from kennis.service.jobs import CORPUS_LANE, INDEX_LANE, context_lane
+from kennis.service.jobs import CORPUS_LANE, INDEX_LANE, PROJECTS_LANE, context_lane
 from pinned import pin
 
 TOKEN = "a-test-token"
@@ -58,8 +60,16 @@ EXPECTED_OPERATIONS = frozenset(
         # Writes, each a job in a lane.
         "add",
         "add_in_groups",
+        "add_project",
         "back_up",
         "copy_document",
+        "copy_pack_file",
+        "declare_packs",
+        "forget_project",
+        "index_bundle",
+        "init_bundle",
+        "remember_in_context",
+        "reset_bundle",
         "index",
         "install_pack",
         "make_version_current",
@@ -73,6 +83,7 @@ EXPECTED_OPERATIONS = frozenset(
         "sync_bundle",
         "sync_corpus",
         # Reads, answered on the request.
+        "bundle_status",
         "contents",
         "docs_versions",
         "document_marks",
@@ -83,6 +94,7 @@ EXPECTED_OPERATIONS = frozenset(
         "pack_listing",
         "read_document",
         "read_passage",
+        "reset_preview",
         "return_preview",
         "revision",
         "search_scope",
@@ -169,6 +181,46 @@ def a_pack_s_note(scene: Scene) -> Mapping[str, object]:
     return {"handle": "convention"}
 
 
+def bundle_of(scene: Scene) -> Path:
+    return scene.scratch / "project" / ".context"
+
+
+def a_pack_s_context_file(scene: Scene) -> Mapping[str, object]:
+    """A pack with one context file, installed, for a project to copy."""
+    root = scene.scratch / "context-provider"
+    (root / "context").mkdir(parents=True)
+    (root / "context" / "solving.md").write_text("Solve per scan.\n", "utf-8")
+    declaration = root / "solver.ken.yml"
+    declaration.write_text(
+        "kennis:\n  schema_version: 1\npack:\n  id: solver\n"
+        '  name: "a solver"\n  version: "0.1.0"\n'
+        "context:\n  - source: context/\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    for arguments in (
+        ["pack", "update", str(declaration)],
+        ["pack", "add", str(declaration)],
+    ):
+        answered = runner.invoke(main, arguments)
+        assert answered.exit_code == 0, answered.output
+    return {"bundle": bundle_of(scene), "reference": "solver/solving.md"}
+
+
+def a_bundle_with_a_note(scene: Scene) -> Mapping[str, object]:
+    answered = CliRunner().invoke(main, ["remember", "--context", "Solve per scan."])
+    assert answered.exit_code == 0, answered.output
+    return {"bundle": bundle_of(scene)}
+
+
+def a_known_project(scene: Scene) -> Mapping[str, object]:
+    answered = CliRunner().invoke(
+        main, ["context", "add", str(scene.scratch / "project")]
+    )
+    assert answered.exit_code == 0, answered.output
+    return {"name": "project"}
+
+
 def installed(scene: Scene) -> Mapping[str, object]:
     answered = CliRunner().invoke(
         main, ["pack", "add", str(scene.scratch / "provider/provider.ken.yml")]
@@ -220,7 +272,20 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "remove_version": lambda scene: {"project": "tool", "version": "1.0"},
     "restore_document": removed_first,
     "return_corpus": lambda scene: {"commit": scene.first_commit},
-    "sync_bundle": lambda scene: {"bundle": scene.scratch / "project" / ".context"},
+    "sync_bundle": lambda scene: {"bundle": bundle_of(scene)},
+    "init_bundle": lambda scene: {"folder": scene.scratch / "project"},
+    "index_bundle": a_bundle_with_a_note,
+    "declare_packs": lambda scene: {"bundle": bundle_of(scene), "added": ("provider",)},
+    "copy_pack_file": a_pack_s_context_file,
+    "reset_bundle": lambda scene: {"bundle": bundle_of(scene)},
+    "remember_in_context": lambda scene: {
+        "bundle": bundle_of(scene),
+        "text": "This project calibrates per scan.",
+    },
+    "add_project": lambda scene: {"folder": scene.scratch / "project"},
+    "forget_project": a_known_project,
+    "bundle_status": lambda scene: {"bundle": bundle_of(scene)},
+    "reset_preview": lambda scene: {"bundle": bundle_of(scene)},
     "sync_corpus": lambda scene: {},
     "contents": lambda scene: {"collection": "notes"},
     "docs_versions": lambda scene: {},
@@ -283,6 +348,10 @@ DIRECT: dict[str, Callable[[Context], object]] = {
         context, "calibration", None, chunks=ChunkRange(start=0, stop=2)
     ),
     "revision": kennis.holdings.revision,
+    "bundle_status": lambda context: bundle_status(find_bundle(Path.cwd()) or Path()),
+    "reset_preview": lambda context: kennis.operations.what_a_reset_removes(
+        find_bundle(Path.cwd()) or Path()
+    ),
     "search_scope": lambda context: kennis.retrieval.search_scope(
         "notes", "calibration", bundle=None
     ),
@@ -533,7 +602,19 @@ def test_each_write_runs_in_its_own_lane(scene: Scene, name: str):
     a note behind every build, which is what the two lanes exist to stop
     (#330). Written by hand rather than read from the table."""
     bundle = scene.scratch / "project" / ".context"
-    expected = {"index": INDEX_LANE, "sync_bundle": context_lane(str(bundle))}
+    in_the_bundle = context_lane(str(bundle))
+    expected = {
+        "index": INDEX_LANE,
+        "sync_bundle": in_the_bundle,
+        "init_bundle": in_the_bundle,
+        "index_bundle": in_the_bundle,
+        "declare_packs": in_the_bundle,
+        "copy_pack_file": in_the_bundle,
+        "reset_bundle": in_the_bundle,
+        "remember_in_context": in_the_bundle,
+        "add_project": PROJECTS_LANE,
+        "forget_project": PROJECTS_LANE,
+    }
     operation = OPERATIONS[name]
     arguments = CALLS[name](scene) if name != "restore_document" else {}
 

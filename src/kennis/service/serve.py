@@ -32,6 +32,7 @@ from filelock import Timeout
 
 from kennis import __version__
 from kennis.engine.settings import load_settings
+from kennis.engine.staging import recover
 from kennis.gui.app import new_token
 from kennis.logs import start_logging
 from kennis.protocol.record import (
@@ -41,6 +42,7 @@ from kennis.protocol.record import (
     write_record,
 )
 from kennis.protocol.spawn import NO_CORPUS, holds_a_corpus
+from kennis.publishing import exclusively
 from kennis.service.app import build_service_app
 from kennis.service.idle import IdleTimer
 
@@ -100,6 +102,18 @@ def run_service(corpus_root: Path) -> int:
 
 def _serve(corpus_root: Path) -> int:
     start_logging()
+    # Before anything can be asked of it: a publish a killed service left
+    # half done is put back, and what such a process leaves behind cleared
+    # (14e, #507). The owner lock says no other service is writing.
+    with exclusively(corpus_root):
+        undone = recover(corpus_root)
+    if undone is not None:
+        _LOG.warning(
+            "the service for %s found a write (%s) left half made by a stopped "
+            "service and put the corpus back as it was before it",
+            corpus_root,
+            undone,
+        )
     stopping = threading.Event()
     settings = load_settings()
 
@@ -109,6 +123,7 @@ def _serve(corpus_root: Path) -> int:
     idle = IdleTimer(settings.service.idle_minutes * 60, busy, stopping.set)
     token = new_token()
     app = build_service_app(token, corpus_root, on_stop=stopping.set, idle=idle)
+    app.state.recovered.put(undone)
     server = uvicorn.Server(
         uvicorn.Config(
             app,

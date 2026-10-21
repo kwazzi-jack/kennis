@@ -29,8 +29,12 @@ from kennis.engine.settings import state_dir
 
 
 @pytest.fixture(autouse=True)
-def no_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def no_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """And a corpus, whose service acts on a bundle (14e)."""
     monkeypatch.delenv("KENNIS_CONTEXT_DIR", raising=False)
+    monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
+    initialised = CliRunner().invoke(main, ["corpus", "init"])
+    assert initialised.exit_code == 0, initialised.output
 
 
 def a_project(root: Path) -> Path:

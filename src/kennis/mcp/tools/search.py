@@ -25,18 +25,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from kennis.client import api
-from kennis.context import resolve_context
+from kennis.context import existing_corpus
 from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.index import CONTEXT_COLLECTION
 from kennis.engine.context.projects import present_bundles, project_named
-from kennis.protocol.spawn import holds_a_corpus
 from kennis.render.hits import (
     ScoreStyle,
     best_lexical,
     rendered_hit,
     score_style_for,
 )
-from kennis.retrieval import search_scope
 
 # What a tool answers with when a scope holds nothing for this question.
 # A sentence rather than an empty string: an agent handed "" cannot tell
@@ -140,28 +138,17 @@ def _searched(
     # look for one.
     bundle = find_bundle(Path.cwd())
     others = _other_projects(projects, here=bundle)
-    corpus_root = resolve_context().corpus_root
-    if holds_a_corpus(corpus_root):
-        hits = api.search_scope(
-            corpus_root,
-            collection,
-            question,
-            top_k=top_k,
-            versions=versions,
-            bundle=bundle,
-            others=others,
-        )
-    else:
-        # No corpus, so no service to own one; a bundle is the person's
-        # own and is searched here, as `kennis search` does (#510, 14g).
-        hits = search_scope(
-            collection,
-            question,
-            top_k,
-            versions=versions,
-            bundle=bundle,
-            others=others,
-        )
+    # No corpus, no service: refused with `kennis corpus init`, which
+    # fastmcp gives the agent as the tool's error (14e).
+    hits = api.search_scope(
+        existing_corpus().corpus_root,
+        collection,
+        question,
+        top_k=top_k,
+        versions=versions,
+        bundle=bundle,
+        others=others,
+    )
     if not hits:
         return _NOTHING
     # The degraded flag is dropped rather than printed. A command line

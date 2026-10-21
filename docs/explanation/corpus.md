@@ -57,7 +57,8 @@ which is the point of the identifier being surrogate.
 
 ## One writer at a time
 
-A corpus takes a file lock for any operation that writes, with a zero
-timeout. A second caller is told the corpus is busy rather than left blocking
-on it, because a command that appears to hang is worse than one that declines
-and explains. There is no background service.
+One process writes to a corpus: the kennis service, which every command,
+window and agent asks (see [The kennis service](service.md)). A write is
+prepared out of sight and then placed and committed whole, so history holds
+one commit per operation and never half of one. A second write waits for
+the first rather than being refused.

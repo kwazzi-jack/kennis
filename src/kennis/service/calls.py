@@ -25,6 +25,16 @@ from kennis import finding, operations, retrieval, writing
 from kennis import holdings as held
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
+from kennis.engine.context import bundle as bundles
+from kennis.engine.context import projects as known
+from kennis.engine.context.bundle import BUNDLE_DIRNAME, BundleCreated
+from kennis.engine.context.notes import BundleNote
+from kennis.engine.context.packs import copy_pack_file as copied_into_bundle
+from kennis.engine.context.projects import Project
+from kennis.engine.context.reset import BundleReset
+from kennis.engine.context.reset import reset_bundle as reset_the_bundle
+from kennis.engine.context.status import BundleStatus
+from kennis.engine.context.status import bundle_status as status_of_bundle
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.collection import CollectionContents
@@ -46,10 +56,17 @@ from kennis.holdings import (
     DocumentMarks,
     Holding,
 )
-from kennis.operations import GroupBlock, IndexBuild, RemovedVersion, ReturnedCorpus
+from kennis.operations import (
+    BundleIndexBuild,
+    BundleResetPreview,
+    GroupBlock,
+    IndexBuild,
+    RemovedVersion,
+    ReturnedCorpus,
+)
 from kennis.render.hits import Hit
 from kennis.retrieval import Sweep
-from kennis.service.jobs import CORPUS_LANE, INDEX_LANE, context_lane
+from kennis.service.jobs import CORPUS_LANE, INDEX_LANE, PROJECTS_LANE, context_lane
 
 # The parameters the service fills and a client may never name.
 SERVICE_PARAMETERS: Final = frozenset({"events", "restored"})
@@ -65,6 +82,17 @@ def _in_the_index_lane(arguments: Mapping[str, object]) -> str:
 
 def _in_the_bundle_s_lane(arguments: Mapping[str, object]) -> str:
     return context_lane(str(arguments["bundle"]))
+
+
+def _in_the_folder_s_bundle_lane(arguments: Mapping[str, object]) -> str:
+    """`context init` names the folder; its bundle is the lane."""
+    return context_lane(str(Path(str(arguments["folder"])) / BUNDLE_DIRNAME))
+
+
+def _in_the_projects_lane(arguments: Mapping[str, object]) -> str:
+    """The list of projects is the state directory's, not the corpus's, so
+    adding to it does not wait behind an add of forty papers."""
+    return PROJECTS_LANE
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,9 +248,61 @@ def sync_corpus(*, events: EventSink, restored: list[OutOfBandChange]) -> Corpus
     )
 
 
+# A project's bundle (14e): in the person's repository, so no lock and no
+# commit, and each bundle in its own lane.
+
+
+def init_bundle(folder: Path) -> BundleCreated:
+    return bundles.init_bundle(folder)
+
+
+def index_bundle(bundle: Path, *, events: EventSink) -> BundleIndexBuild:
+    return operations.index_a_bundle(existing_corpus(), bundle, events=events)
+
+
+def declare_packs(
+    bundle: Path,
+    added: tuple[str, ...] = (),
+    dropped: tuple[str, ...] = (),
+    clear: bool = False,
+) -> tuple[str, ...]:
+    return operations.declare_bundle_packs(bundle, added, dropped, clear=clear)
+
+
+def copy_pack_file(bundle: Path, reference: str) -> Path:
+    return copied_into_bundle(bundle, existing_corpus().corpus_root, reference)
+
+
+def reset_bundle(bundle: Path) -> BundleReset:
+    return reset_the_bundle(bundle)
+
+
+def remember_in_context(
+    bundle: Path, text: str, title: str | None = None, group: str | None = None
+) -> BundleNote:
+    note, _ = writing.write_context_note(text, title=title, group=group, bundle=bundle)
+    return note
+
+
+def add_project(folder: Path) -> Project:
+    return known.add_project(folder)
+
+
+def forget_project(name: str) -> Project:
+    return known.forget_project(name)
+
+
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
+
+
+def bundle_status(bundle: Path) -> BundleStatus:
+    return status_of_bundle(bundle)
+
+
+def reset_preview(bundle: Path) -> BundleResetPreview:
+    return operations.what_a_reset_removes(bundle)
 
 
 def status() -> CorpusStatus:
@@ -348,7 +428,16 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(restore_document, kind="restore"),
         Operation(return_corpus, kind="return"),
         Operation(sync_bundle, kind="context-sync", lane=_in_the_bundle_s_lane),
+        Operation(init_bundle, kind="context", lane=_in_the_folder_s_bundle_lane),
+        Operation(index_bundle, kind="context-index", lane=_in_the_bundle_s_lane),
+        Operation(declare_packs, kind="context", lane=_in_the_bundle_s_lane),
+        Operation(copy_pack_file, kind="context", lane=_in_the_bundle_s_lane),
+        Operation(reset_bundle, kind="context", lane=_in_the_bundle_s_lane),
+        Operation(remember_in_context, kind="remember", lane=_in_the_bundle_s_lane),
+        Operation(add_project, kind="context", lane=_in_the_projects_lane),
+        Operation(forget_project, kind="context", lane=_in_the_projects_lane),
         Operation(sync_corpus, kind="sync"),
+        Operation(bundle_status),
         Operation(contents),
         Operation(docs_versions),
         Operation(document_marks),
@@ -359,6 +448,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(last_change),
         Operation(read_document),
         Operation(read_passage),
+        Operation(reset_preview),
         Operation(return_preview),
         Operation(revision),
         Operation(search_scope),

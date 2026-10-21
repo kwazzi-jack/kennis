@@ -29,6 +29,7 @@ from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
+from kennis.engine.frontmatter import split_frontmatter
 from kennis.gui import words
 from kennis.gui.app import new_token
 from kennis.render.words import JOB_KINDS
@@ -336,6 +337,18 @@ def _wait_for_htmx(page: playwright.Page, selector: str) -> None:
     )
 
 
+def _wait_for_focus_to_settle(page: playwright.Page, form: str) -> None:
+    """Until htmx has settled the swap that drew `form`, which is when it
+    focuses the swap's `[autofocus]` field: some 20 ms after the field
+    exists, so a second field filled in that gap had its text typed into
+    the first. The note's group arrived as part of its text, filed with no
+    group, and the new group's row never appeared (#522). One settle task
+    processes the swapped element and then focuses, synchronously, so the
+    form carrying htmx's data means the focus has already moved. `form`
+    must match only the new form, never the one it replaced."""
+    _wait_for_htmx(page, form)
+
+
 def _open_branch(page: playwright.Page, collection: str) -> None:
     # Opened by its `<details>`, not by a click: the row's name is a link.
     page.evaluate(
@@ -387,6 +400,7 @@ def test_a_note_in_a_new_group_appears_in_the_open_branch(
     _open_branch(page, "notes")
     page.click("a[href='/remember']")
     page.wait_for_selector("#dialog textarea[name=text]", timeout=_WAIT_MS)
+    _wait_for_focus_to_settle(page, "#dialog form")
     page.fill("#dialog textarea[name=text]", "Rivers carry sediment.")
     page.fill("#dialog input[name=group]", "earth / rivers ")
 
@@ -706,6 +720,7 @@ def test_a_refused_add_keeps_the_dialog_and_what_was_typed(
     page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
     page.click("#dialog a.tab[href*='kind=group']")
     page.wait_for_selector("#dialog textarea[name=lines-1]", timeout=_WAIT_MS)
+    _wait_for_focus_to_settle(page, "#dialog form:has(textarea[name=lines-1])")
     page.fill("#dialog input[name=group-1]", "instruments")
     page.fill("#dialog textarea[name=lines-1]", "a-note.md")
 
@@ -853,7 +868,10 @@ def test_a_file_chosen_in_the_browsers_picker_is_added(
             break
         page.wait_for_timeout(100)
     [document] = added
-    assert "from: upload:beam-model.md" in document.read_text(encoding="utf-8")
+    frontmatter, _ = split_frontmatter(document.read_text(encoding="utf-8"))
+    source = frontmatter["source"]
+    assert isinstance(source, dict)
+    assert source["from"] == "upload:beam-model.md"
 
 
 def test_what_was_chosen_in_the_picker_is_said_back_and_can_be_cleared(

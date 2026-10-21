@@ -93,6 +93,19 @@ def test_hello_says_whose_corpus_and_which_kennis(client: TestClient, corpus: Pa
     assert said["busy"] is False
 
 
+def test_hello_tells_a_recovery_at_start_once(app: FastAPI, client: TestClient):
+    """The first client after a start that put back a half-made publish is
+    told which operation it was; the next is told nothing (#507)."""
+    assert client.get(f"{PREFIX}/hello", headers=BEARER).json()["recovered"] is None
+    app.state.recovered.put("add")
+
+    first = client.get(f"{PREFIX}/hello", headers=BEARER).json()
+    second = client.get(f"{PREFIX}/hello", headers=BEARER).json()
+
+    assert first["recovered"] == "add"
+    assert second["recovered"] is None
+
+
 def test_the_api_has_routes_to_check(app: FastAPI):
     """A walk over no routes passes for the wrong reason."""
     assert len(api_routes(app)) >= 2

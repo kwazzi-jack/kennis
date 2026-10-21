@@ -14,8 +14,8 @@ from kennis.engine.context.projects import project_named
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.errors import (
     ContextNotFound,
-    CorpusBusy,
     KennisError,
+    PublishRefused,
 )
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui import words
@@ -63,9 +63,9 @@ def _remembered(
 
     Every domain failure becomes an outcome rather than a page: the
     text the person typed is still in the box, and replacing the page
-    would lose it. `CorpusBusy` is the case that makes this matter -
-    a `corpus index` running in a terminal refuses this write, and it
-    is worth retrying rather than worth an error page.
+    would lose it. `PublishRefused` is the case that makes this matter -
+    another write changed the notes while this one was prepared, and it
+    is worth saving again rather than worth an error page.
     """
     if not text.strip():
         return ShownOutcome(message=words.NOTHING_TO_REMEMBER, role="role-warning")
@@ -91,8 +91,8 @@ def _remembered(
         return replace(
             written, notes=tuple(describe_change(change) for change in restored)
         )
-    except CorpusBusy:
-        return ShownOutcome(message=words.CORPUS_BUSY, role="role-warning")
+    except PublishRefused:
+        return ShownOutcome(message=words.CHANGED_MEANWHILE, role="role-warning")
     except KennisError as error:
         return ShownOutcome(
             message=str(error), role="role-error", resolution=error.resolution

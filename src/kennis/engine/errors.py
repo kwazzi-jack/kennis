@@ -81,24 +81,22 @@ class ContextNotFound(KennisError):
     default_resolution = "kennis context init"
 
 
-class CorpusBusy(KennisError):
-    """Another kennis process holds the corpus lock.
+class PublishRefused(KennisError):
+    """Another write changed what this one prepared against while it was
+    preparing, so publishing would overwrite it. Nothing was placed (14e).
 
-    The lock is taken with a zero timeout, so a second caller is told the
-    corpus is busy rather than left blocking on it.
-    """
+    The one write that is refused rather than kept waiting, because waiting
+    would not help: what it prepared is out of date, and running it again
+    prepares against what is there now."""
 
-    default_message = "the corpus is in use by another kennis process"
-    default_resolution = "kennis corpus status"
+    default_message = "the corpus changed while this was being prepared"
 
 
 class IndexBusy(KennisError):
     """Another kennis process is rebuilding this collection's index.
 
-    Distinct from `CorpusBusy` because the two guard different things
-    and degrade differently. A busy *corpus* means a document write
-    cannot happen at all. A busy *index* means the documents are
-    writable and only the rebuild has to wait - which is why
+    The documents are writable while an index is rebuilt; only the
+    rebuild has to wait - which is why
     `remember` writes the note and reports the index as deferred
     rather than losing it. Design section 16, concern #167.
     """
@@ -110,8 +108,7 @@ class IndexBusy(KennisError):
 class CorpusExists(KennisError):
     """`corpus init` was asked for where a corpus already is.
 
-    Not `CorpusBusy`, which it was: busy says another process holds the
-    lock and to try again, and initialising again would discard the
+    Not a refusal to try again: initialising again would discard the
     history the first one made.
     """
 
@@ -122,11 +119,9 @@ class CorpusExists(KennisError):
 class HistoryUnwritable(KennisError):
     """Git refused to record a change kennis made.
 
-    Not `CorpusBusy`, which it was: that says another process holds the
-    lock and nothing was changed, so the front ends offer a retry. Here the
-    documents were already written and only their commit failed, for a
-    reason git states - which is carried in the message - and retrying
-    meets the same reason again.
+    The failure is git's, for a reason it states - carried in the message -
+    and retrying meets the same reason again. A publish that fails here is
+    rolled back (14e), so the documents are as they were.
     """
 
     default_message = "the corpus history could not be written"

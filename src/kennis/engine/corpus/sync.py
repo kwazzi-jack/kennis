@@ -139,8 +139,13 @@ def sync_corpus(
     client: httpx.Client | None = None,
     request_delay_seconds: float | None = None,
     unpaywall_email: str = "",
+    store_root: Path | None = None,
 ) -> CorpusSync:
     """Converge the corpus with every installed pack.
+
+    `store_root` is the corpus whose pack store is read, when the
+    collections at `corpus_root` are a mirror of it being prepared
+    (`engine/staging.py`); the corpus itself by default.
 
     Three sections, resolved by the same table and materialised three
     ways: notes are copied out of the store, papers are fetched by
@@ -156,10 +161,11 @@ def sync_corpus(
     raised before anything is written or fetched.
     """
     started = time.monotonic()
-    packs = list_installed(corpus_root).packs
+    store = store_root or corpus_root
+    packs = list_installed(store).packs
     refuse_damaged_packs(packs)
 
-    notes = _notes_plan(corpus_root, packs)
+    notes = _notes_plan(corpus_root, store, packs)
     papers = _literature_plan(corpus_root, packs)
     projects = _docs_plan(corpus_root, packs)
     _refuse_what_cannot_be_classified(notes, papers, projects)
@@ -360,14 +366,16 @@ def _unreadable_in(collection: Collection) -> tuple[str, ...]:
     )
 
 
-def _notes_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
+def _notes_plan(
+    corpus_root: Path, store: Path, packs: tuple[InstalledPack, ...]
+) -> _Plan:
     """The store's notes and the ones declared by address, resolved together.
 
     One table for both, because both are notes a pack owns and `_held`
     finds either by the address in its `source.from`. A link's address is
     marked `url:`, so it cannot be a file's path in the store.
     """
-    union = declared_content(corpus_root, packs, "notes")
+    union = declared_content(store, packs, "notes")
     declarations = dict(union.declarations)
     deferred = list(union.deferred)
     entries: dict[str, Entry] = {}

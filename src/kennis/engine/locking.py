@@ -18,24 +18,28 @@ true as built**: kennis shells out one git command at a time, so
 git's lock protects git's index for the length of one command and
 nothing between commands. The corpus lock stays.
 
-**`timeout=0` on both, so a second caller is told rather than left
-waiting.** A command that blocks gives the user a terminal that has
-stopped with nothing said and nothing to press; one that refuses
-gives them a sentence and their prompt back. There is no background
-service to queue behind.
+**The corpus lock waits; an index lock refuses.** Every write is the
+service's (14e), which takes the corpus lock only to publish, together
+with its in-process lock (`kennis/publishing.py`); the only other holder
+can be another kennis process, and waiting for it is what the service
+does with every other write. An index build that finds another under
+way records it as busy instead (#167), because waiting would put a
+note's index behind a rebuild of minutes.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Final
 
 from filelock import FileLock, Timeout
 
-from kennis.engine.errors import CorpusBusy, IndexBusy
+from kennis.engine.errors import IndexBusy
+
+_logger = logging.getLogger(__name__)
 
 # Hidden and suffixed, so `.gitignore` can name it and nothing mistakes it
 # for a document: it lives inside the repository the corpus is.
@@ -52,48 +56,31 @@ def lock_path(root: Path | str) -> Path:
     return Path(root) / _LOCK_FILE
 
 
-# Whether a corpus lock taken here waits for its holder. Context-local
-# rather than an argument, because the choice belongs to where the work runs
-# - a service job in its lane - and not to each of the dozen places an
-# operation takes the lock, nor to the request that built its context.
-_WAITING: Final[ContextVar[bool]] = ContextVar("waiting_for_the_corpus", default=False)
-
-
-@contextmanager
-def waiting_for_the_corpus() -> Iterator[None]:
-    """Inside this block, a corpus lock waits for its holder to let go.
-
-    **Waiting is the service's** (14b): it runs every write in a lane, in
-    the order they were asked for, so a write that finds the corpus held
-    was asked for after the holder and should follow it rather than be
-    lost. A command run on its own, and a request answered on its own
-    thread, have nobody to queue behind and are told at once.
-    """
-    token = _WAITING.set(True)
-    try:
-        yield
-    finally:
-        _WAITING.reset(token)
-
-
 @contextmanager
 def corpus_lock(root: Path | str) -> Iterator[None]:
-    """Hold the corpus at `root` for the duration of the block.
+    """Hold the corpus at `root` for the duration of the block, waiting
+    for another process that holds it to let go.
 
-    Raises `CorpusBusy` immediately if another process holds it, unless
-    inside `waiting_for_the_corpus`, when it blocks until the holder lets
-    go. The lock is released when the block ends, including when it ends
-    by raising - a command that failed must not leave the corpus locked.
+    Taken only by `publishing.exclusively`: two `FileLock`s for one path
+    in one process exclude each other, so a second, nested here, would
+    wait for the first for ever. The lock is released when the block ends,
+    including when it ends by raising.
+
+    **A wait is logged before it begins.** The holder is another process,
+    and a service waiting for it at its start answers no client, each of
+    which gives up and points at the log - which then has to say why.
     """
     path = lock_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(str(path), timeout=-1 if _WAITING.get() else 0)
+    lock = FileLock(str(path), timeout=-1)
     try:
+        lock.acquire(timeout=0)
+    except Timeout:
+        _logger.warning(
+            "another kennis process holds the corpus at %s; waiting for it to finish",
+            root,
+        )
         lock.acquire()
-    except Timeout as timed_out:
-        raise CorpusBusy(
-            f"another kennis command is using the corpus at {Path(root)}"
-        ) from timed_out
     try:
         yield
     finally:
@@ -137,5 +124,4 @@ __all__ = [
     "index_lock",
     "index_lock_path",
     "lock_path",
-    "waiting_for_the_corpus",
 ]

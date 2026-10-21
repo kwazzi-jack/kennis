@@ -24,7 +24,6 @@ from kennis.cli.commands.corpus import report_restored
 from kennis.cli.sink import DisplaySink, say_waiting
 from kennis.client import api
 from kennis.context import existing_corpus
-from kennis.engine.context import remember_in_bundle
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import Outcome
 from kennis.engine.remember import INLINE_ORIGIN, RememberReport
@@ -91,9 +90,9 @@ def remember_command(
 def _remember_in_context(
     body: str, *, title: str | None, group: str | None, no_index: bool
 ) -> None:
-    """The bundle path: no corpus, no lock, and no commit.
+    """The bundle path: written by the service, with no lock and no commit.
 
-    The corpus one takes `corpus_lock` and ends in `Repository.commit`.
+    The corpus one is published and ends in `Repository.commit`.
     Neither applies here. The bundle lives inside a repository kennis does
     not own, so committing to it would take over the user's version control
     - the design says the bundle is committed with the project "if the user
@@ -106,8 +105,9 @@ def _remember_in_context(
         raise display.CliError(
             "--no-index has nothing to skip for --context; a bundle is not indexed yet."
         )
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
-    note = remember_in_bundle(bundle, body, title=title, group=group)
+    note = api.remember_in_context(corpus_root, bundle, body, title=title, group=group)
     if note.outcome is Outcome.UNCHANGED:
         display.operation(
             "Unchanged",

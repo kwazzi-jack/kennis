@@ -43,6 +43,7 @@ from typing import Literal
 import httpx
 
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.corpus.conversions import KeptConversions, conversions_root
 from kennis.engine.corpus.converters import Converter, default_converter
 from kennis.engine.corpus.document import read_document, write_document
 from kennis.engine.corpus.ids import (
@@ -404,7 +405,9 @@ def add_notes(
         _binary_candidates(item.identifier for item in resolved.items),
         record,
         options,
-        converter or default_converter(),
+        KeptConversions(
+            converter or default_converter(), conversions_root(collection.root)
+        ),
         sink,
     )
 
@@ -864,7 +867,9 @@ def add_literature(
         ),
         record,
         options,
-        converter or default_converter(),
+        KeptConversions(
+            converter or default_converter(), conversions_root(collection.root)
+        ),
         sink,
     )
 

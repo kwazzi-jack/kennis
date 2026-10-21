@@ -352,8 +352,11 @@ def test_an_unrecognised_owner_refuses_before_anything_is_fetched(
     installed(corpus, tmp_path, body=PAPER)
     synced(corpus)
     path = papers_in(corpus)[0].md_path
+    written = path.read_text()
+    # Quoted since #529, because the value holds a colon.
+    assert 'owner: "pack:alpha"' in written
     path.write_text(
-        path.read_text().replace("owner: pack:alpha", "owner: managed_by:alpha"),
+        written.replace('owner: "pack:alpha"', 'owner: "managed_by:alpha"'),
         encoding="utf-8",
     )
 

@@ -47,6 +47,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kennis.engine.corpus.layout import published_corpus
 from kennis.engine.errors import SettingsError
 
 _ENVIRONMENT_PREFIX: Final = "KENNIS"
@@ -443,9 +444,10 @@ def own_directories(corpus_root: Path) -> tuple[Path, ...]:
     Nothing in them is ever a source to add: the corpus would be copied into
     itself, the configuration holds API keys in `credentials.toml`, and the
     state holds the reader's search history - each a supported format, and
-    each, once added, a document an agent can read.
+    each, once added, a document an agent can read. Asked from a mirror an
+    operation prepares in, the corpus is the one mirrored, which holds it.
     """
-    return (corpus_root, config_dir(), state_dir(), log_dir())
+    return (published_corpus(corpus_root), config_dir(), state_dir(), log_dir())
 
 
 def overriding_variable(key: str) -> str | None:

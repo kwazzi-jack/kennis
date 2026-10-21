@@ -578,16 +578,46 @@ def test_only_a_client_reads_the_working_directory(path: Path):
 # What a client reaches through the service and must not call itself (14c,
 # 14d): the sequences that take the corpus lock and commit, and the reads
 # the service answers. Written by hand, so a module or a name added to the
-# acting layer is a decision here too (#373). `writing.write_context_note`
-# and `retrieval`'s searches stay, for a bundle alone (#510, until 14g).
+# acting layer is a decision here too (#373). A project's bundle is the
+# service's too since 14e: what builds, writes or reads its index, and the
+# list of projects' writers. Finding the bundle from the working directory
+# and reading the list stay with the client, which alone has a working
+# directory (#508).
+_BUNDLE_ACTORS = {
+    "bundle_status",
+    "index_bundle",
+    "init_bundle",
+    "load_bundle_index",
+    "remember_in_bundle",
+    "removable_documents",
+    "reset_bundle",
+}
 _ACTING = {
     "kennis.operations": None,
     "kennis.holdings": None,
     "kennis.finding": None,
+    "kennis.retrieval": {
+        "chunk_range",
+        "document_chunks",
+        "index_for",
+        "search_scope",
+        "sweep",
+    },
+    "kennis.writing": None,
     "kennis.engine.locking": None,
-    "kennis.writing": {"write_note"},
     "kennis.engine.pack.installed": {"list_installed", "remove_pack"},
     "kennis.engine.pack.store": {"install_pack"},
+    "kennis.engine.context": _BUNDLE_ACTORS,
+    "kennis.engine.context.bundle": {"declare_packs", "init_bundle", "reset_bundle"},
+    "kennis.engine.context.index": {"index_bundle", "load_bundle_index"},
+    "kennis.engine.context.notes": {"remember_in_bundle"},
+    "kennis.engine.context.packs": None,
+    "kennis.engine.context.projects": {
+        "add_project",
+        "forget_project",
+        "note_project",
+        "record_project",
+    },
 }
 
 

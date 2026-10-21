@@ -17,7 +17,7 @@ import click
 from kennis.cli import display
 from kennis.cli.group import KennisCommand
 from kennis.client import api
-from kennis.context import existing_corpus, resolve_context
+from kennis.context import existing_corpus
 from kennis.engine.context import (
     CONTEXT_COLLECTION,
 )
@@ -53,7 +53,6 @@ from kennis.retrieval import (
     SCOPE_NAMES,
     Skipped,
     Sweep,
-    sweep,
 )
 
 _MODES: Final[tuple[str, ...]] = get_args(Mode.__value__)
@@ -199,35 +198,21 @@ def search_command(
     others = present_bundles() if all_projects else ()
     filters = _filters(group if group is not None else project)
 
-    corpus_root = resolve_context().corpus_root
-    if (corpus_root / ".git").is_dir():
-        found = api.sweep(
-            corpus_root,
-            question,
-            scopes=selected,
-            named=named,
-            top_k=top_k,
-            filters=filters,
-            mode=mode,
-            versions=versions,
-            bundle=bundle,
-            others=others,
-        )
-    else:
-        # No corpus, so no service to own one: a search inside a project
-        # still works on a machine that never ran `corpus init`, and the
-        # bundle is the person's own, so it is read here (14c).
-        found = sweep(
-            question,
-            scopes=selected,
-            named=named,
-            top_k=top_k,
-            filters=filters,
-            mode=mode,
-            versions=versions,
-            bundle=bundle,
-            others=others,
-        )
+    # No corpus, no service to search with: refused, naming `corpus init`,
+    # even inside a project, because nothing searches a bundle but the
+    # service (14e).
+    found = api.sweep(
+        existing_corpus().corpus_root,
+        question,
+        scopes=selected,
+        named=named,
+        top_k=top_k,
+        filters=filters,
+        mode=mode,
+        versions=versions,
+        bundle=bundle,
+        others=others,
+    )
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))
 

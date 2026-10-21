@@ -58,6 +58,9 @@ def hello(request: Request) -> JSONResponse:
             "corpus": str(request.app.state.corpus_root),
             "pid": os.getpid(),
             "busy": bool(request.app.state.jobs.unfinished()),
+            # Once, to whichever client asks first after a start that put
+            # back a publish a killed service left half done.
+            "recovered": request.app.state.recovered.take(),
         }
     )
 
@@ -67,7 +70,8 @@ def stop(request: Request) -> JSONResponse:
     """Stop once this answer is sent, unless a job is queued or running.
 
     Refused then, as the window's Quit is (#420): a job is a daemon thread
-    and would die wherever it is, inside the corpus lock or before a commit.
+    and would die wherever it is, and everything it prepared would be lost
+    (14e); one killed while publishing is put back at the next start.
     """
     if request.app.state.jobs.unfinished():
         return JSONResponse({"error": dump_error(ServiceBusy())}, status_code=409)

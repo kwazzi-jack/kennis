@@ -21,28 +21,13 @@ from kennis.engine.context import (
     CONTEXT_COLLECTION,
     LANDING_FILENAME,
     BundleCreated,
-    bundle_status,
     find_bundle,
-    index_bundle,
-    index_root_for,
-    init_bundle,
-    removable_documents,
-    reset_bundle,
     workspace_root,
 )
-from kennis.engine.context.bundle import declare_packs, declared_packs
-from kennis.engine.context.packs import copy_pack_file
-from kennis.engine.context.projects import (
-    add_project,
-    forget_project,
-    known_projects,
-    project_named,
-)
+from kennis.engine.context.bundle import declared_packs
+from kennis.engine.context.projects import known_projects, project_named
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.errors import ContextNotFound
-from kennis.engine.rag.binding import binding_from, chunk_parameters
-from kennis.engine.rag.embedding import ModelBinding
-from kennis.engine.settings import Settings, load_settings
 from kennis.render.packs import (
     describe_bundle_sync,
     describe_declared,
@@ -83,10 +68,12 @@ def init_command(here: bool, packs: tuple[str, ...]) -> None:
     file that was deleted is written again, and anything you added is left
     alone.
     """
-    created = init_bundle(Path.cwd() if here else workspace_root(Path.cwd()))
+    corpus_root = existing_corpus().corpus_root
+    folder = Path.cwd() if here else workspace_root(Path.cwd())
+    created = api.init_bundle(corpus_root, folder)
     _report_init(created)
     if packs:
-        declared = declare_packs(created.path, packs)
+        declared = api.declare_packs(corpus_root, created.path, packs)
         display.detail("+", f"declares {', '.join(declared)}")
 
 
@@ -139,22 +126,20 @@ def index_command_for_context(project: str | None) -> None:
     settings, and their embedding model if they configured one. A clone
     gets the documents and runs this command once.
     """
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle() if project is None else project_named(project).bundle
-    settings = load_settings()
-    model = context_model(settings)
+    with reporting() as events:
+        built = api.index_bundle(
+            corpus_root, bundle, events=events, on_waiting=say_waiting
+        )
+    # Said after the build rather than before it: the service chose the
+    # model from its settings, and only its answer can say which.
     display.using(
-        f"{model.kind} {model.model}"
-        if model
+        f"{built.model_kind} {built.model_name}"
+        if built.model_kind
         else "lexical search only, which is what a bundle is indexed with"
     )
-    with reporting() as events:
-        report = index_bundle(
-            bundle,
-            chunking=chunk_parameters(settings.chunking),
-            model=model,
-            events=events,
-            embed_batch_size=settings.embedding.batch_size,
-        )
+    report = built.report
     display.operation(
         "Indexed",
         f"{count_of(report.document_count, 'document')} as "
@@ -184,8 +169,8 @@ def sync_command_for_context() -> None:
     **Offline**, and **kennis does not commit**: the bundle is in your
     repository.
     """
-    bundle = require_bundle()
     corpus_root = existing_corpus().corpus_root
+    bundle = require_bundle()
     with DisplaySink() as shown:
         result = api.sync_bundle(
             corpus_root, bundle, events=shown, on_waiting=say_waiting
@@ -244,14 +229,12 @@ def packs_command_for_context(
     """
     if declare_none and (packs or dropped):
         raise display.CliError("pass --none alone: it clears the declaration.")
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
     if packs or dropped or declare_none:
-        kept = (
-            ()
-            if declare_none
-            else [pack for pack in declared_packs(bundle) if pack not in dropped]
+        declared = api.declare_packs(
+            corpus_root, bundle, packs, dropped, clear=declare_none
         )
-        declared = declare_packs(bundle, [*kept, *packs])
         display.operation("Declared", ", ".join(declared) if declared else "no packs")
         return
     declared = declared_packs(bundle)
@@ -271,8 +254,9 @@ def copy_command_for_context(reference: str) -> None:
     bundle with you as its owner. This project then searches your copy
     in place of the pack's file; other projects still read the pack's.
     """
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
-    written = copy_pack_file(bundle, existing_corpus().corpus_root, reference)
+    written = api.copy_pack_file(corpus_root, bundle, reference)
     display.operation("Copied", written.relative_to(bundle.parent).as_posix())
     display.next_step("kennis context index")
 
@@ -308,7 +292,7 @@ def list_command_for_context() -> None:
 def add_command_for_context(folder: Path) -> None:
     """List a project kennis has not touched yet: a folder holding a
     `.context/` bundle, or the bundle itself."""
-    added = add_project(folder.resolve())
+    added = api.add_project(existing_corpus().corpus_root, folder)
     display.operation("Added", f"{added.name}, {added.bundle.parent}")
 
 
@@ -317,7 +301,7 @@ def add_command_for_context(folder: Path) -> None:
 def forget_command_for_context(name: str) -> None:
     """Take a project off the list. Its files are not touched; kennis lists
     it again the next time it touches its bundle."""
-    forgotten = forget_project(name)
+    forgotten = api.forget_project(existing_corpus().corpus_root, name)
     display.operation("Forgot", f"{forgotten.name}, {forgotten.bundle.parent}")
 
 
@@ -331,7 +315,8 @@ def status_command_for_context() -> None:
     records no commit and the comparison is made against the document
     digests the index stored instead.
     """
-    status = bundle_status(require_bundle())
+    corpus_root = existing_corpus().corpus_root
+    status = api.bundle_status(corpus_root, require_bundle())
     display.operation("Context", str(status.path))
     # "Holds" rather than "Documents", which would print `Documents 3
     # documents`. `corpus status` gets away with the shape because its verb
@@ -387,15 +372,14 @@ def reset_command(yes: bool) -> None:
     A file with a header kennis cannot read counts as yours. The two
     mistakes do not cost the same.
     """
+    corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
     # Asked, not restated. The prompt has to offer exactly what the reset
     # will take, and a second copy of the rule here is a copy that can
     # stop matching - as it did when the engine widened to see a file the
     # user had hidden.
-    owned = [
-        path.relative_to(bundle).as_posix() for path in removable_documents(bundle)
-    ]
-    has_index = index_root_for(bundle).is_dir()
+    preview = api.reset_preview(corpus_root, bundle)
+    owned, has_index = list(preview.owned), preview.has_index
     if not owned and not has_index:
         display.guidance("nothing to remove - everything here is yours")
         return
@@ -407,7 +391,7 @@ def reset_command(yes: bool) -> None:
         # prompt says what will go rather than asking in the abstract.
         click.confirm(f"Remove {_what_goes(owned, has_index)}?", abort=True)
 
-    report = reset_bundle(bundle)
+    report = api.reset_bundle(corpus_root, bundle)
     # Documents first, each under its own heading, and the index last with
     # the command that rebuilds it beside it. The other order put a hint
     # about the index above the list of documents it had nothing to do with.
@@ -420,23 +404,6 @@ def reset_command(yes: bool) -> None:
     if report.index_removed:
         display.operation("Removed", "the context index")
         display.next_step("kennis context index", note="to build it again")
-
-
-def context_model(settings: Settings) -> ModelBinding | None:
-    """The embedding model a bundle index is built with, if any.
-
-    One line of policy, named so it can be asked directly: without a name it
-    is only observable through a command that builds an index, and on a
-    machine with no embedding backend both answers look identical from
-    there.
-
-    `binding_from` answers `model=None` when the backend is `none`, so
-    asking for hybrid without a backend yields a lexical index rather than a
-    failure - the corpus behaves the same way.
-    """
-    if settings.retrieval.context_method == "bm25":
-        return None
-    return binding_from(settings.chunking, settings.embedding).model
 
 
 def _what_goes(owned: list[str], has_index: bool) -> str:
@@ -466,4 +433,4 @@ def require_bundle() -> Path:
     return bundle
 
 
-__all__ = ["context_group", "context_model", "require_bundle"]
+__all__ = ["context_group", "require_bundle"]

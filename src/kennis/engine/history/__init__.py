@@ -12,6 +12,7 @@ from kennis.engine.history.git import GitResult, git, git_binary
 from kennis.engine.history.history import (
     HistoryEntry,
     RestoredDocument,
+    document_path_at,
     read_history,
     restore_document,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "Repository",
     "RestoredDocument",
     "detect_changes",
+    "document_path_at",
     "git",
     "git_binary",
     "index_freshness",

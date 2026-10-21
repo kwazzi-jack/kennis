@@ -22,15 +22,17 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from held import MOMENT, held_for_a_moment
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.add import AddOptions
 from kennis.engine.corpus.layout import index_root
-from kennis.engine.errors import CorpusBusy, IndexBusy
+from kennis.engine.errors import IndexBusy
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import corpus_lock, index_lock, index_lock_path
 from kennis.engine.rag.index import read_manifest
 from kennis.operations import add_documents, build_indexes
+from kennis.publishing import exclusively
 from kennis.writing import write_note
 
 
@@ -195,14 +197,18 @@ def test_a_note_written_with_no_contention_is_indexed(isolated: Path):
     assert report.index_outcome == "indexed"
 
 
-def test_a_write_is_still_refused_when_the_corpus_itself_is_busy(isolated: Path):
-    """The degradation is about the index, not about the documents.
-    Two processes writing documents at once is the thing the corpus
-    lock exists to prevent, and this unit does not relax it."""
+def test_a_write_waits_while_the_corpus_itself_is_held(isolated: Path):
+    """The degradation is about the index, not about the documents. Two
+    writes publishing at once is the thing the corpus lock exists to
+    prevent, so a note waits for a publish under way (14e) - and lands."""
     context = existing_corpus()
 
-    with corpus_lock(context.corpus_root), pytest.raises(CorpusBusy):
-        write_note(existing_corpus(), "Solved per scan, not per field.", title="Solver")
+    with held_for_a_moment(context.corpus_root) as hold:
+        report = write_note(context, "Solved per scan, not per field.", title="Solver")
+        finished = time.monotonic()
+
+    assert finished >= hold.released
+    assert report.path.is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -211,14 +217,17 @@ def test_a_write_is_still_refused_when_the_corpus_itself_is_busy(isolated: Path)
 
 
 class AsksAnotherThreadForTheCorpus:
-    """An `EventSink` that finds out, from elsewhere, whether the
-    corpus lock is free at the moment an event is emitted.
+    """An `EventSink` that finds out, from elsewhere, whether the corpus
+    can be held to publish at the moment an event is emitted.
 
-    **From another thread**, because `filelock` is reentrant per
-    process: asking from the build's own thread would succeed whether
-    the build held the corpus or not, and the test would pass without
-    testing anything.
+    **From another thread**, because the hold is reentrant per thread:
+    asking from the build's own thread would succeed whether the build
+    held the corpus or not. A hold that is not taken within `_PROMPTLY`
+    counts as not free; the asking thread then takes it once the build
+    lets go, and is joined there.
     """
+
+    _PROMPTLY = 2.0
 
     def __init__(self, corpus_root: Path) -> None:
         self._corpus_root = corpus_root
@@ -228,27 +237,23 @@ class AsksAnotherThreadForTheCorpus:
         answer: list[bool] = []
 
         def ask() -> None:
-            try:
-                with corpus_lock(self._corpus_root):
-                    answer.append(True)
-            except CorpusBusy:
-                answer.append(False)
+            with exclusively(self._corpus_root):
+                answer.append(True)
 
-        asking = threading.Thread(target=ask)
+        asking = threading.Thread(target=ask, daemon=True)
         asking.start()
-        asking.join(timeout=10)
-        self.free.extend(answer)
+        asking.join(timeout=self._PROMPTLY)
+        self.free.append(bool(answer))
 
 
 def test_a_build_does_not_hold_the_corpus_while_it_runs(isolated: Path):
     """The change that makes the deferral possible, asserted from
     inside the build rather than around it.
 
-    If `build_indexes` kept the corpus lock for its duration, a note
-    written during one would still be refused with `CorpusBusy` and
-    the index lock would never be reached - so the deferral could
-    never happen and the test above would be testing a path no caller
-    takes.
+    If `build_indexes` held the corpus for its duration, a note written
+    during one would wait for the whole build and the index lock would
+    never be reached - so the deferral could never happen and the test
+    above would be testing a path no caller takes.
     """
     context = existing_corpus()
     add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
@@ -285,35 +290,47 @@ def test_one_busy_index_does_not_abandon_the_others(isolated: Path):
     assert [index.collection for index in result.built] == ["docs"]
 
 
-def test_a_build_that_could_not_commit_still_published(isolated: Path):
-    """A build costs minutes and a commit costs milliseconds. Failing
-    the whole command at the last step would throw away the expensive
-    part for the cheap one, so the index is published and history
-    waits for the next write."""
+def test_a_build_whose_commit_meets_a_held_corpus_waits_and_commits(
+    isolated: Path,
+):
+    """A build costs minutes and a commit milliseconds, so the commit waits
+    for a publish under way rather than giving up (14e): history records
+    the index, after the holder has let go."""
     context = existing_corpus()
     add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
     taken = threading.Event()
-    release = threading.Event()
+    released: list[float] = []
 
     def hold_the_corpus() -> None:
-        with corpus_lock(context.corpus_root):
+        with exclusively(context.corpus_root):
             taken.set()
-            release.wait(30)
+            time.sleep(MOMENT)
+        released.append(time.monotonic())
 
     watcher = HoldsTheCorpusFromTheFirstEvent(hold_the_corpus, taken)
     try:
         result = build_indexes(context, "notes", events=watcher)
+        finished = time.monotonic()
     finally:
-        release.set()
         watcher.join()
 
-    assert result.committed is False
+    assert released and finished >= released[0]
     assert [index.collection for index in result.built] == ["notes"]
     assert read_manifest(index_root(context.corpus_root), "notes") is not None
+    subject = subprocess.run(
+        ["git", "log", "-1", "--format=%s"],
+        cwd=context.corpus_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+        check=True,
+    ).stdout
+    assert subject.startswith("index(notes)")
 
 
 class HoldsTheCorpusFromTheFirstEvent:
-    """Takes the corpus lock from another thread once a build starts.
+    """Holds the corpus from another thread once a build starts.
 
     The build releases the corpus before it runs and takes it again to
     commit, so this occupies the gap - which is the only way to reach

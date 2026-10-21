@@ -14,6 +14,11 @@ gitignores it and a clone runs `kennis context index` once.
 kennis context init
 ```
 
+A bundle is written and indexed by the kennis service, which belongs to a
+corpus, so this needs one on the machine: run `kennis corpus init` first if
+there is none. It is offline and takes a moment. The bundle itself stays in
+your project and is never copied into the corpus.
+
 It walks up from where you are to the nearest `.git` and creates the bundle
 at the workspace root, so running the command three directories deep does
 not bury it there. The path is reported for that reason. `--here` overrides

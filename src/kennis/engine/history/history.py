@@ -175,7 +175,7 @@ def restore_document(
     against the corpus on disk, because the document being restored is often
     one that is no longer there - which is the case a restore exists for.
     """
-    path = _path_at(repository, commit, document_id)
+    path = document_path_at(repository, commit, document_id)
     if path is None:
         raise DocumentNotFound(
             f"no document with identifier '{document_id}' existed at {commit[:12]}",
@@ -189,7 +189,9 @@ def restore_document(
     return RestoredDocument(document_id=document_id, path=path, commit=commit)
 
 
-def _path_at(repository: Repository, commit: str, document_id: str) -> str | None:
+def document_path_at(
+    repository: Repository, commit: str, document_id: str
+) -> str | None:
     """The path of the document carrying `document_id`, as of `commit`.
 
     Read from the tree rather than searched for with `git log -S`: the latter

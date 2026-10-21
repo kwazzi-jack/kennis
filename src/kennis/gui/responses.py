@@ -516,9 +516,10 @@ def refused(
     """A refusal inside the panel, not as a page.
 
     The form the person filled in is still on the page behind this, and
-    replacing the page would lose what they typed. `CorpusBusy` is the
-    case that makes it matter: something else is writing, nothing was
-    changed, and the answer is to try again in a moment. A job that
+    replacing the page would lose what they typed. `PublishRefused` is
+    the case that makes it matter: something else changed the same
+    documents meanwhile, nothing was changed, and the answer is to run it
+    again. A job that
     failed says so in the error role, which the status bar reads as its
     state.
     """

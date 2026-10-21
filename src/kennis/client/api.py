@@ -17,6 +17,11 @@ from typing import cast
 from kennis.client import connection
 from kennis.client.calls import Answered, call
 from kennis.engine.backup import BackupReport
+from kennis.engine.context.bundle import BundleCreated
+from kennis.engine.context.notes import BundleNote
+from kennis.engine.context.projects import Project
+from kennis.engine.context.reset import BundleReset
+from kennis.engine.context.status import BundleStatus
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.collection import CollectionContents
@@ -33,7 +38,13 @@ from kennis.engine.rag.search import ChunkRange
 from kennis.engine.remember import RememberReport
 from kennis.finding import DocumentRead, Found, PassageRead
 from kennis.holdings import CollectionTree, CorpusStatus
-from kennis.operations import IndexBuild, RemovedVersion, ReturnedCorpus
+from kennis.operations import (
+    BundleIndexBuild,
+    BundleResetPreview,
+    IndexBuild,
+    RemovedVersion,
+    ReturnedCorpus,
+)
 from kennis.protocol.progress import Began, Queued
 from kennis.render.hits import Hit
 from kennis.retrieval import Sweep
@@ -414,6 +425,134 @@ def sync_bundle(
     )
 
 
+# A project's bundle (14e). Each path is sent absolute: the service runs
+# elsewhere (#508).
+
+
+def init_bundle(corpus_root: Path, folder: Path) -> BundleCreated:
+    return _write(
+        corpus_root,
+        "init_bundle",
+        {"folder": folder.resolve()},
+        BundleCreated,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def index_bundle(
+    corpus_root: Path,
+    bundle: Path,
+    *,
+    events: EventSink | None = None,
+    on_waiting: Waiting | None = None,
+) -> BundleIndexBuild:
+    return _write(
+        corpus_root,
+        "index_bundle",
+        {"bundle": bundle.resolve()},
+        BundleIndexBuild,
+        events=events,
+        on_waiting=on_waiting,
+    ).result
+
+
+def declare_packs(
+    corpus_root: Path,
+    bundle: Path,
+    added: Sequence[str] = (),
+    dropped: Sequence[str] = (),
+    *,
+    clear: bool = False,
+) -> tuple[str, ...]:
+    answered = call(
+        connection.connect(corpus_root),
+        "declare_packs",
+        {
+            "bundle": bundle.resolve(),
+            "added": tuple(added),
+            "dropped": tuple(dropped),
+            "clear": clear,
+        },
+        returns=tuple[str, ...],
+    )
+    return cast(tuple[str, ...], answered.result)
+
+
+def copy_pack_file(corpus_root: Path, bundle: Path, reference: str) -> Path:
+    return _write(
+        corpus_root,
+        "copy_pack_file",
+        {"bundle": bundle.resolve(), "reference": reference},
+        Path,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def reset_bundle(corpus_root: Path, bundle: Path) -> BundleReset:
+    return _write(
+        corpus_root,
+        "reset_bundle",
+        {"bundle": bundle.resolve()},
+        BundleReset,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def remember_in_context(
+    corpus_root: Path,
+    bundle: Path,
+    text: str,
+    *,
+    title: str | None = None,
+    group: str | None = None,
+) -> BundleNote:
+    return _write(
+        corpus_root,
+        "remember_in_context",
+        {"bundle": bundle.resolve(), "text": text, "title": title, "group": group},
+        BundleNote,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def add_project(corpus_root: Path, folder: Path) -> Project:
+    return _write(
+        corpus_root,
+        "add_project",
+        {"folder": folder.resolve()},
+        Project,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def forget_project(corpus_root: Path, name: str) -> Project:
+    return _write(
+        corpus_root,
+        "forget_project",
+        {"name": name},
+        Project,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def bundle_status(corpus_root: Path, bundle: Path) -> BundleStatus:
+    return _read(
+        corpus_root, "bundle_status", {"bundle": bundle.resolve()}, BundleStatus
+    )
+
+
+def reset_preview(corpus_root: Path, bundle: Path) -> BundleResetPreview:
+    return _read(
+        corpus_root, "reset_preview", {"bundle": bundle.resolve()}, BundleResetPreview
+    )
+
+
 def remember(
     corpus_root: Path,
     text: str,
@@ -462,13 +601,20 @@ def back_up(
 __all__ = [
     "Written",
     "add",
+    "add_project",
     "back_up",
+    "bundle_status",
     "contents",
     "copy_document",
+    "copy_pack_file",
+    "declare_packs",
     "docs_versions",
+    "forget_project",
     "found",
     "history",
     "index",
+    "index_bundle",
+    "init_bundle",
     "install_pack",
     "make_version_current",
     "move_document",
@@ -476,9 +622,12 @@ __all__ = [
     "read_document",
     "read_passage",
     "remember",
+    "remember_in_context",
     "remove_document",
     "remove_pack",
     "remove_version",
+    "reset_bundle",
+    "reset_preview",
     "restore_document",
     "return_corpus",
     "return_preview",

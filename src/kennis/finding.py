@@ -24,8 +24,10 @@ from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import DocumentNotFound, SearchUnavailable
 from kennis.engine.rag.index import load_index
 from kennis.engine.rag.search import ChunkRange, DocumentSpan, read_span
+from kennis.publishing import reading
 
 
+@reading
 def resolve_document(
     context: Context, handle: str, collection: str | None
 ) -> tuple[Collection, Document]:
@@ -73,6 +75,7 @@ class Found:
     document: Document
 
 
+@reading
 def found_document(context: Context, handle: str, collection: str | None) -> Found:
     """`resolve_document` as a value that crosses the wire."""
     where, document = resolve_document(context, handle, collection)
@@ -88,6 +91,7 @@ class DocumentRead:
     text: str
 
 
+@reading
 def read_document(
     context: Context, handle: str, collection: str | None, *, frontmatter: bool
 ) -> DocumentRead:
@@ -109,6 +113,7 @@ class PassageRead:
     span: DocumentSpan
 
 
+@reading
 def read_passage(
     context: Context, handle: str, collection: str | None, *, chunks: ChunkRange
 ) -> PassageRead:

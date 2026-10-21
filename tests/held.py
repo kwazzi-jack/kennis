@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kennis.engine.locking import corpus_lock
+from kennis.publishing import exclusively
 
 MOMENT: Final = 0.4
 _PATIENCE: Final = 30.0
@@ -39,12 +39,12 @@ class Hold:
 
 @contextmanager
 def held_for_a_moment(corpus: Path) -> Iterator[Hold]:
-    """The corpus lock held elsewhere from entry until `MOMENT` later."""
+    """The corpus held to publish elsewhere from entry until `MOMENT` later."""
     holding = threading.Event()
     hold = Hold()
 
     def hold_it() -> None:
-        with corpus_lock(corpus):
+        with exclusively(corpus):
             holding.set()
             threading.Event().wait(MOMENT)
         hold.released = time.monotonic()

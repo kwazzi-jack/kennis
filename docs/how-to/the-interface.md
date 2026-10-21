@@ -13,10 +13,12 @@ kennis serves a local web interface and opens it in your own browser.
 There is no separate window: everything the interface does happens in
 the tab.
 
-**Closing the tab does not stop kennis.** Use **Quit** at the end of the
-bar, or press Ctrl-C in the terminal that ran `kennis gui`. Quit refuses
-while an add, an index or a sync is running, because stopping then would
-cut the operation off part of the way through.
+The tab is served by the [kennis service](../explanation/service.md), which
+`kennis gui` starts if it is not running; the command then returns.
+**Closing the tab does not stop kennis**, and need not: the service stops by
+itself when idle. **Quit** at the end of the bar stops it now. Quit refuses
+while an add, an index or a sync is queued or running, because that work
+would be lost.
 
 On a remote machine - a cluster login node, say - forward the port and
 open the address on your own computer:
@@ -29,30 +31,27 @@ kennis gui --no-browser
 machine with no display may start a text browser such as `lynx` in the
 terminal instead.
 
-## One window at a time
+## One window, many tabs
 
-Only one `kennis gui` runs at a time. Running it again while one is open
-says when that one started and which version of kennis it is, and then:
+Every tab, and every `kennis gui`, opens the same service, so two tabs show
+the same corpus and the same running tasks. After upgrading kennis,
 
-- in a terminal, asks **Open it, replace it, or cancel?** - open is the
-  default, and brings back the window that is already running, which is
-  also the way back in after the browser has been closed;
-- with `--replace`, stops the open one and starts a new one, which is what
-  to do after upgrading kennis;
-- from a script or a pipe, opens the one that is already running, or with
-  `--no-browser` prints its address.
+```
+kennis gui --replace
+```
 
-A window running an add, an index or a sync is not replaced, for the same
-reason Quit refuses then.
+stops the running service and starts one from the new version. It refuses
+while a task is queued or running.
 
 ## The address and the token
 
-The command prints something like this and then blocks until you close it:
+The command prints something like this and returns:
 
 ```text
-Serving the kennis interface
+Opened the kennis window
   + http://127.0.0.1:41287/?token=cQ6Nr53qZECwtkvA7QyWRjowELeIlbcZkETGEwOv7Nw
-The token is in the address and lasts for this run only.
+The token is in the address, and lasts as long as the service runs.
+It stops by itself when idle, and the next command starts it again.
 ```
 
 Three things about that address are deliberate.
@@ -70,8 +69,8 @@ can reach 127.0.0.1. Cluster login nodes have other people on them. The
 token arrives once in the address and is then held in a cookie, so it is
 not on every request line and not sitting in the address bar to be copied
 into a chat window by accident. It is also written, with the address, to
-`gui.json` in kennis's state directory, readable by your account alone, so
-that a second `kennis gui` can open this window or stop it. Other accounts
+the service's record in kennis's state directory, readable by your account
+alone, which is how every command finds the service. Other accounts
 cannot read that file, and a program running as you could read the corpus
 itself.
 
@@ -156,13 +155,14 @@ Each operation runs in the background and reports in the strip at the
 bottom of every page, so a document conversion or a documentation crawl
 shows what it is doing rather than appearing to hang.
 
-**One operation runs at a time.** A second is refused and told which one is
-in the way. That is not an arbitrary limit: kennis takes one corpus-wide
-lock per operation, so a second would be refused anyway.
+**A second operation waits its turn.** It is queued behind the one running,
+and the strip says what it is waiting for. An index build and a note do not
+wait for each other.
 
-**A busy corpus is something to try again, not an error.** If a terminal is
-indexing while you press Add, the interface says the corpus is busy and
-that nothing was changed.
+**An operation that fails changes nothing.** What it did is placed in the
+corpus only when it finishes, so the corpus is as it was and the operation
+can be run again. If another write changed the same documents meanwhile,
+the interface says so and that nothing was changed.
 
 ## When an add is refused
 

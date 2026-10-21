@@ -450,6 +450,8 @@ JOB_DOING = {
     "index": "Indexing",
     "sync": "Syncing the corpus",
     "context-sync": "Syncing the project context",
+    "context": "Changing a project's context",
+    "context-index": "Indexing a project's context",
     "pack": "Installing a pack",
     "backup": "Backing up",
     "remember": "Writing a note",

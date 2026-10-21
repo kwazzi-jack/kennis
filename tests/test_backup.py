@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import py7zr
 import pytest
 from click.testing import CliRunner
 
+from held import held_for_a_moment
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.backup import (
@@ -27,15 +29,15 @@ from kennis.engine.backup import (
     restore_backup,
     write_backup,
 )
+from kennis.engine.corpus.conversions import conversions_root
 from kennis.engine.errors import (
     BackupRefused,
     BackupUnreadable,
-    CorpusBusy,
     NothingToIndex,
 )
 from kennis.engine.events import Progress, Recorder
-from kennis.engine.locking import corpus_lock
 from kennis.engine.rag.index import load_index
+from kennis.engine.staging import journal_path, staging_root
 from kennis.operations import back_up_corpus
 
 PASSWORD = "correct horse battery staple"
@@ -102,6 +104,24 @@ def test_the_members_are_the_corpus_and_its_history_but_not_the_index(corpus: Pa
     )
     assert "corpus/.kennis.lock" not in names
     assert all(name.startswith("corpus/") for name in names)
+
+
+def test_what_kennis_keeps_only_while_it_works_is_left_out(corpus: Path):
+    """A mirror being prepared in, a journal, and conversions kept for a
+    retry live in `.git` but are no part of the corpus (#525): a kept
+    conversion can be the text of a document a failed add never added."""
+    mirror = staging_root(corpus) / "a-mirror" / "notes"
+    mirror.mkdir(parents=True)
+    (mirror / "half.md").write_text("Half prepared.\n", encoding="utf-8")
+    kept = conversions_root(corpus)
+    kept.mkdir(parents=True)
+    (kept / "mineru-abc.json").write_text("{}", encoding="utf-8")
+    journal_path(corpus).write_text("{}", encoding="utf-8")
+
+    names = {name for _, name in members_of(corpus)}
+
+    assert not [name for name in names if "kennis-" in name], sorted(names)
+    assert "corpus/.git/HEAD" in names
 
 
 def test_a_symbolic_link_is_neither_followed_nor_stored(corpus: Path, tmp_path: Path):
@@ -328,13 +348,17 @@ def test_a_restore_refuses_a_name_outside_the_corpus(tmp_path: Path, name: str):
 # ---------------------------------------------------------------------------
 
 
-def test_the_operation_holds_the_corpus(corpus: Path, folder: Path):
+def test_the_backup_waits_for_a_publish_under_way(corpus: Path, folder: Path):
+    """It holds the corpus to read, so it starts only once a publish has
+    finished and never archives one half placed."""
     context = existing_corpus()
 
-    with corpus_lock(corpus), pytest.raises(CorpusBusy):
+    with held_for_a_moment(corpus) as hold:
         back_up_corpus(context, folder, PASSWORD)
+        finished = time.monotonic()
 
-    assert list(folder.iterdir()) == []
+    assert finished >= hold.released
+    assert len(list(folder.iterdir())) == 1
 
 
 # ---------------------------------------------------------------------------

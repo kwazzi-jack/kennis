@@ -113,7 +113,6 @@ from kennis.render.packs import (
 from kennis.render.refusals import refusal_fact, remedies_for_refusal
 from kennis.render.words import (
     describe_busy_indexes,
-    describe_uncommitted_build,
     group_name,
 )
 from kennis.retrieval import Sweep
@@ -555,6 +554,7 @@ def shown_recents(searches: Sequence[Search]) -> list[ShownRecent]:
                 f"/?q={quote(search.query)}&scope={quote(search.scope)}"
                 + (f"&mode={quote(search.mode)}" if search.mode else "")
                 + versions_query(search.versions)
+                + (f"&project={quote(search.project)}" if search.project else "")
             ),
         )
         for search in searches
@@ -1691,8 +1691,6 @@ def shown_index(built: IndexBuild) -> ShownJob:
         notes.append(describe_busy_indexes(built.busy))
     elif not built.built:
         notes.append(words.NOTHING_TO_INDEX)
-    if not built.committed:
-        notes.append(describe_uncommitted_build())
     return ShownJob(
         headline=words.indexed_headline(built),
         items=tuple(

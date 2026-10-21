@@ -113,6 +113,7 @@ nav:
       - What a document is: explanation/documents.md
       - The corpus is a git repository: explanation/corpus.md
       - Three layers: explanation/architecture.md
+      - The kennis service: explanation/service.md
   - Reference:
       - Commands: reference/cli.md
       - Configuration: reference/configuration.md

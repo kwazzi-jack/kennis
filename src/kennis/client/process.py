@@ -46,6 +46,17 @@ _POLL_SECONDS: Final = 0.05
 _HELLO_SECONDS: Final = 5.0
 
 
+_RECOVERY_LISTENERS: list[Callable[[str], None]] = []
+
+
+def tell_of_recovery(listener: Callable[[str], None]) -> None:
+    """Have `listener` told the operation a service put back at its start,
+    when this process is the first client to ask (#507). The command line
+    prints it; the MCP server, whose stdout is the wire, leaves it to the
+    log. One listener per process: a later one replaces it."""
+    _RECOVERY_LISTENERS[:] = [listener]
+
+
 def hello(record: ServiceRecord) -> dict[str, object] | None:
     """The service's answer to who it is, or None when it does not answer."""
     try:
@@ -59,6 +70,12 @@ def hello(record: ServiceRecord) -> dict[str, object] | None:
     if answer.status_code != 200:
         return None
     document: dict[str, object] = answer.json()
+    # Told once by the service, so passed on from whichever hello hears it:
+    # the one that waits for a new service to answer is usually the first.
+    recovered = document.get("recovered")
+    if isinstance(recovered, str):
+        for listener in _RECOVERY_LISTENERS:
+            listener(recovered)
     return document
 
 
@@ -174,4 +191,5 @@ __all__ = [
     "hello",
     "start_detached",
     "stop_service",
+    "tell_of_recovery",
 ]

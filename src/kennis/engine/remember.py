@@ -109,6 +109,11 @@ def remember(
 ) -> RememberReport:
     """Write `text` into the notes collection, and index it if it can.
 
+    A caller writing into a mirror being prepared (`engine/staging.py`)
+    passes `index=False` and calls `index_note` on the corpus once the
+    note is published (#525 item 2): the mirror has no index, and an index
+    built before the publish names a note a failed publish never placed.
+
     `binding` arrives as a value rather than being read from settings here,
     which is concern #87's rule: an engine that consults a global is an
     engine two callers cannot use differently in one process.
@@ -162,8 +167,7 @@ def remember(
         group=options.group,
     )
 
-    outcome, chunks = _index(
-        collection,
+    outcome, chunks = index_note(
         corpus_root,
         document_id=document_id,
         binding=binding,
@@ -183,8 +187,7 @@ def remember(
     )
 
 
-def _index(
-    collection: Collection,
+def index_note(
     corpus_root: Path,
     *,
     document_id: str,
@@ -194,7 +197,10 @@ def _index(
     repository: Repository | None,
     events: EventSink | None,
 ) -> tuple[IndexOutcome, int]:
-    """Rebuild the collection's index, when there is already one to rebuild."""
+    """Rebuild the notes index with `document_id` in it, when there is
+    already one to rebuild, and say what happened and how many chunks the
+    note has."""
+    collection = Collection(root=corpus_root, name="notes")
     root = index_root(corpus_root)
     if not wanted:
         return "skipped", 0
@@ -292,6 +298,7 @@ __all__ = [
     "IndexOutcome",
     "RememberOptions",
     "RememberReport",
+    "index_note",
     "remember",
     "title_for",
     "titled_body",

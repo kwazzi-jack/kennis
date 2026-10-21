@@ -45,13 +45,23 @@ repeating from a document.
 ## The command line decides the layout
 
 `kennis.cli` handles arguments, indentation, colour and terminal width. It is
-one front end and is not privileged - the MCP server planned for a later
-version is another, and a graphical interface would be a third.
+one front end and is not privileged: the MCP server is another and the
+graphical interface a third. None of the three imports another.
 
 This is why a colour is named by role rather than by hue. `identifier`,
 `md_fence`, `operation` are roles; the theme maps them to one of the eight
 standard ANSI colours, never a 256-colour index and never a hex value, so
 kennis's output resolves against whatever palette you have set.
+
+## One process acts
+
+The three front ends do not run the engine themselves. Each is a client of
+the [kennis service](service.md), the one process per corpus that reads and
+writes it, and asks it for one typed operation at a time. A test holds that
+`cli` and `mcp` import nothing from the layer that acts. So a search typed
+in a terminal, asked by an agent and run in the window is one function in
+one process, and two writes from different front ends queue rather than
+collide.
 
 ## Why it is worth the discipline
 

@@ -71,7 +71,6 @@ from kennis.render.words import (
     describe_held_versions,
     describe_return_changes,
     describe_returned,
-    describe_uncommitted_build,
     remedies_for,
 )
 
@@ -771,8 +770,6 @@ def index_command(collection: str | None) -> None:
     elif result.documents == 0:
         display.note("nothing to index")
         display.next_step("kennis corpus add --help", note="to see what it takes")
-    if not result.committed:
-        display.guidance(describe_uncommitted_build())
 
 
 # ---------------------------------------------------------------------------

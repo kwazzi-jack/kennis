@@ -12,29 +12,34 @@ was extracted hid that `writing.py` had no commit coverage at all.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from kennis import operations
+from held import held_for_a_moment
+from kennis import operations, writing
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.corpus.add import AddOptions, add_notes
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.errors import CorpusBusy
+from kennis.engine.corpus.layout import index_root
 from kennis.engine.events import Outcome
 from kennis.engine.history.git import git
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
-from kennis.engine.locking import corpus_lock
+from kennis.engine.rag.index import read_manifest
+from kennis.engine.staging import staging_root
 from kennis.operations import (
     add_documents,
     build_indexes,
     restore_hand_deletions,
+    return_corpus_to,
     synchronise_bundle,
 )
+from kennis.publishing import exclusively
 from kennis.writing import write_note
 
 
@@ -81,16 +86,19 @@ def test_adding_takes_the_lock_writes_and_commits(isolated: Path):
     assert Repository(context.corpus_root).is_clean()
 
 
-def test_adding_is_refused_while_the_corpus_is_busy(isolated: Path):
-    """`timeout=0`, so a second writer is told rather than left with a
-    terminal that has stopped. The graphical interface presents this as
-    a state to retry from, not as an error page."""
+def test_adding_waits_for_a_publish_under_way_and_then_lands(isolated: Path):
+    """The corpus held to publish by another write: the add is not refused
+    (14e), and it finishes only after the holder lets go."""
     context = existing_corpus()
 
-    with corpus_lock(context.corpus_root), pytest.raises(CorpusBusy):
+    with held_for_a_moment(context.corpus_root) as hold:
         add_documents(
             context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions()
         )
+        finished = time.monotonic()
+
+    assert finished >= hold.released
+    assert only_note(context.corpus_root).is_file()
 
 
 def test_a_hand_deletion_is_restored_before_the_commit_is_made(isolated: Path):
@@ -141,18 +149,19 @@ def test_writing_a_note_restores_a_hand_deletion_first(isolated: Path):
     assert not [line for line in touched if line.startswith("D\t")], touched
 
 
-def test_an_add_that_fails_part_way_commits_what_it_wrote_as_its_own(
+def test_an_add_that_fails_part_way_leaves_the_corpus_as_it_was(
     isolated: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Without this the next command's `git add --all .` commits the add's
-    documents under the next command's name."""
+    """All or nothing (14e, #507): a document written before the failure
+    was written in the mirror, which is discarded, so the corpus, its
+    history and its working tree are as they were and no mirror is left."""
     context = existing_corpus()
+    before = Repository(context.corpus_root).head()
 
-    def writes_then_fails(*arguments: object, **options: object) -> object:
-        add_notes(
-            Collection(root=context.corpus_root, name="notes"),
-            [str(a_source(isolated, "trees.md"))],
-        )
+    def writes_then_fails(
+        target: Collection, identifiers: list[str], options: AddOptions, **rest: object
+    ) -> object:
+        add_notes(target, [str(a_source(isolated, "trees.md"))])
         raise OSError(28, "No space left on device")
 
     monkeypatch.setitem(operations._ADDERS, "notes", writes_then_fails)
@@ -160,17 +169,18 @@ def test_an_add_that_fails_part_way_commits_what_it_wrote_as_its_own(
     with pytest.raises(OSError):
         add_documents(context, "notes", ["anything"], AddOptions())
 
+    assert Repository(context.corpus_root).head() == before
     assert Repository(context.corpus_root).is_clean()
-    subject = git(["log", "-1", "--format=%s"], cwd=context.corpus_root).stdout
-    assert subject.strip() == f"add(notes): {operations.INTERRUPTED}"
+    assert not list((context.corpus_root / "notes").rglob("*.md"))
+    assert not any(staging_root(context.corpus_root).glob("*"))
 
 
-def test_running_an_interrupted_add_again_carries_on_from_where_it_stopped(
+def test_running_a_failed_add_again_adds_everything(
     isolated: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """What the window and the terminal tell the reader to do after a
-    failure part-way. The document written before it is found again by
-    its content, so the second run adds only what the first did not."""
+    failure part-way: nothing of the first run was kept, so the second
+    adds both documents."""
     context = existing_corpus()
     first, second = a_source(isolated, "first.md"), a_source(isolated, "second.md")
     real = operations._ADDERS["notes"]
@@ -189,7 +199,7 @@ def test_running_an_interrupted_add_again_carries_on_from_where_it_stopped(
     again = add_documents(context, "notes", [str(first), str(second)], AddOptions())
 
     assert [outcome.outcome for outcome in again.outcomes] == [
-        Outcome.UNCHANGED,
+        Outcome.ADDED,
         Outcome.ADDED,
     ]
 
@@ -221,7 +231,7 @@ def test_the_restore_reports_what_it_put_back(isolated: Path):
     add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
     only_note(context.corpus_root).unlink()
 
-    with corpus_lock(context.corpus_root):
+    with exclusively(context.corpus_root):
         restored = restore_hand_deletions(context)
 
     assert len(restored) == 1
@@ -291,3 +301,131 @@ def test_the_collection_an_add_writes_to_is_the_one_asked_for(isolated: Path):
 
     assert Collection(root=context.corpus_root, name="notes").contents().documents
     assert not Collection(root=context.corpus_root, name="docs").contents().documents
+
+
+def changed_by(corpus_root: Path, commit: str) -> list[str]:
+    return git(
+        ["show", "--name-only", "--format=", commit], cwd=corpus_root
+    ).stdout.split()
+
+
+def subjects(corpus_root: Path, count: int) -> list[str]:
+    return git(["log", f"-{count}", "--format=%s"], cwd=corpus_root).stdout.split("\n")[
+        :count
+    ]
+
+
+@pytest.mark.parametrize("write", ["add", "note", "index", "return"])
+def test_a_hand_edit_is_recorded_before_the_write_under_its_own_name(
+    isolated: Path, write: str
+):
+    """#525 item 3 (Brian, 2026-10-21): the write's commit carries only what
+    the write did, and what someone changed by hand is recorded first, as
+    `return` already does - so history says who made each change."""
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
+    edited = only_note(context.corpus_root)
+    edited.write_text(edited.read_text("utf-8") + "\nAn edit by hand.\n", "utf-8")
+    edited_name = edited.relative_to(context.corpus_root).as_posix()
+
+    point = Repository(context.corpus_root).head()
+    assert point is not None
+    if write == "add":
+        add_documents(
+            context, "notes", [str(a_source(isolated, "elms.md"))], AddOptions()
+        )
+    elif write == "note":
+        write_note(context, "Elms suffered from disease.", title="Elms")
+    elif write == "index":
+        build_indexes(context, "notes")
+    else:
+        return_corpus_to(context, point)
+
+    newest, recorded = subjects(context.corpus_root, 2)
+    assert recorded == "record(corpus): what was not yet recorded"
+    assert newest.startswith(
+        {
+            "add": "add(notes)",
+            "note": "remember(notes)",
+            "index": "index(notes)",
+            "return": "return(corpus)",
+        }[write]
+    )
+    assert changed_by(context.corpus_root, "HEAD~1") == [edited_name]
+    if write != "return":
+        # A return to the point before the edit puts the file back, which
+        # is its own commit's business; the edit is still kept, in HEAD~1.
+        assert edited_name not in changed_by(context.corpus_root, "HEAD")
+    assert Repository(context.corpus_root).is_clean()
+
+
+def test_a_clean_corpus_gets_no_record_commit(isolated: Path):
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
+
+    write_note(context, "Elms suffered from disease.", title="Elms")
+
+    assert not any(
+        subject.startswith("record(") for subject in subjects(context.corpus_root, 5)
+    )
+
+
+def test_a_note_whose_publish_fails_is_not_in_the_index(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """#525 item 2 (Brian, 2026-10-21): the index is built after the note is
+    published. Built before, a failed publish left the index naming a note
+    that was not on disk, and a search found a hit nobody could open."""
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
+    build_indexes(context, "notes")
+    root = index_root(context.corpus_root)
+    before = read_manifest(root, "notes")
+    assert before is not None
+
+    def refused(*arguments: object, **options: object) -> object:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(writing, "publish", refused)
+    with pytest.raises(OSError):
+        write_note(context, "Elms suffered from disease.", title="Elms")
+
+    after = read_manifest(root, "notes")
+    assert after is not None
+    assert after.documents == before.documents
+
+
+def test_a_note_whose_index_fails_is_held_and_says_it_is_not_indexed(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The failure the new order allows: published, then not indexed. The
+    note is held and committed, and the report says `unindexed` - not
+    `deferred`, whose words say another build holds the index."""
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
+    build_indexes(context, "notes")
+
+    def failing(*arguments: object, **options: object) -> object:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(writing, "index_note", failing)
+    report = write_note(context, "Elms suffered from disease.", title="Elms")
+
+    assert report.index_outcome == "unindexed"
+    assert report.path.exists()
+    assert subjects(context.corpus_root, 1)[0].startswith("remember(notes)")
+    assert Repository(context.corpus_root).is_clean()
+
+
+def test_a_published_note_is_indexed_and_says_so(isolated: Path):
+    context = existing_corpus()
+    add_documents(context, "notes", [str(a_source(isolated, "trees.md"))], AddOptions())
+    build_indexes(context, "notes")
+
+    report = write_note(context, "Elms suffered from disease.", title="Elms")
+
+    assert report.index_outcome == "indexed"
+    assert report.chunk_count == 1
+    manifest = read_manifest(index_root(context.corpus_root), "notes")
+    assert manifest is not None
+    assert any("Elms" in name for name in manifest.documents)

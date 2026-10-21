@@ -15,11 +15,9 @@ another is `queued`, and its history says so first, so whoever is watching
 can say what it is waiting for. Two lanes are what #167 asked for: a note
 written during a rebuild is not behind the rebuild.
 
-**The lock is still taken by the operation**, inside the call, so it is
-held for exactly as long as the work runs. A job runs inside
-`waiting_for_the_corpus`, so a write that finds the corpus held - by a
-build's brief commit, by a terminal - waits for it rather than refusing:
-it was asked for after the holder.
+**The lock is taken by the operation**, inside the call, and only to
+publish (14e): an operation prepares in a mirror holding nothing, and a
+publish that finds the corpus held waits its turn.
 """
 
 from __future__ import annotations
@@ -37,7 +35,6 @@ from typing import Final
 from kennis.engine.errors import KennisError
 from kennis.engine.events import Event, EventSink
 from kennis.engine.history.outofband import OutOfBandChange
-from kennis.engine.locking import waiting_for_the_corpus
 from kennis.logs import FanOut, LogSink
 from kennis.protocol.progress import Began, Elapsed, Queued
 
@@ -58,6 +55,8 @@ _ELAPSED_EVERY_SECONDS: Final = 1.0
 # The lanes every corpus has. A bundle's lane is named for the bundle.
 CORPUS_LANE: Final = "corpus"
 INDEX_LANE: Final = "index"
+# The list of known projects, under the state directory (14e).
+PROJECTS_LANE: Final = "projects"
 
 
 def context_lane(bundle: str) -> str:
@@ -183,8 +182,7 @@ def _run(job: Job, work: Callable[[EventSink], object]) -> None:
     # that closes its connection when the page is closed. Concern #326.
     sink = FanOut(_HistorySink(job), LogSink())
     try:
-        with waiting_for_the_corpus():
-            job.result = work(sink)
+        job.result = work(sink)
     except KennisError as error:
         # Every domain failure becomes the job's answer. A thread that
         # raised would lose it: nothing is waiting on this thread to
@@ -344,6 +342,7 @@ class Jobs:
 __all__ = [
     "CORPUS_LANE",
     "INDEX_LANE",
+    "PROJECTS_LANE",
     "Job",
     "JobEvent",
     "Jobs",

@@ -29,6 +29,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -289,7 +290,8 @@ def test_the_history_records_no_results(corpus: Path, client: TestClient):
 
     written = json.loads(history.history_path().read_text(encoding="utf-8"))
 
-    # `versions` is what was asked, like `scope`, not what was found.
+    # `versions` and `project` are what was asked, like `scope`, not what
+    # was found.
     assert set(written[0]) == {
         "query",
         "scope",
@@ -298,6 +300,7 @@ def test_the_history_records_no_results(corpus: Path, client: TestClient):
         "capped",
         "at",
         "versions",
+        "project",
     }
 
 
@@ -387,3 +390,57 @@ def test_a_search_the_browser_fetched_ahead_is_not_recorded(
 
     assert answer.status_code == 200
     assert history.recent() == []
+
+
+def test_a_search_filtered_to_a_project_is_offered_again_filtered(
+    corpus: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Offering a search again repeats the one that ran (#519, as #382 for
+    the mode): without the project, a search of one project's notes came
+    back as a search of every project."""
+    project = corpus / "rivers"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    run = CliRunner()
+    assert run.invoke(main, ["context", "init"]).exit_code == 0
+    assert (
+        run.invoke(main, ["remember", "--context", "River gains silt."]).exit_code == 0
+    )
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
+    admitted(client)
+
+    client.get("/hits", params={"q": "gains", "scope": "context", "project": "rivers"})
+
+    recent = history.recent()
+    assert [search.project for search in recent] == ["rivers"]
+    page = client.get("/", params={"scope": "context"})
+    recents = BeautifulSoup(page.text, "html.parser").select("#recents a[href]")
+    # The offered link itself, not the page: the project pane carries
+    # `project=rivers` in links of its own.
+    assert [anchor["href"] for anchor in recents] == [
+        "/?q=gains&scope=context&project=rivers"
+    ]
+
+
+def test_an_entry_written_before_projects_were_kept_reads_as_every_project(
+    corpus: Path,
+):
+    """The reader's own file, older than the field: read, not emptied."""
+    history.history_path().parent.mkdir(parents=True, exist_ok=True)
+    history.history_path().write_text(
+        json.dumps(
+            [
+                {
+                    "query": "gains",
+                    "scope": "context",
+                    "mode": "",
+                    "hits": 1,
+                    "capped": False,
+                    "at": 1.0,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert [search.project for search in history.recent()] == [""]

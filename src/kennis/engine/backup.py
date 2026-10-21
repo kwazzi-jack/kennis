@@ -33,11 +33,13 @@ from typing import Final
 
 import py7zr
 
+from kennis.engine.corpus.conversions import conversions_root
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import BackupRefused, BackupUnreadable
 from kennis.engine.events import EventSink, OperationFinished, Progress
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import lock_path
+from kennis.engine.staging import journal_path, staging_root
 
 BACKUP_NAME: Final = "kennis-corpus.7z"
 _TOP: Final = "corpus"
@@ -86,14 +88,23 @@ def members_of(corpus_root: Path) -> list[Member]:
     """Every directory and regular file the backup holds, in a stable order.
 
     Directories are members too, so a restored `.git` has the empty
-    directories git expects. Not `index/`, which is rebuilt, and
-    not the lock file, which is
-    a fact about a running process rather than about the corpus. **A
+    directories git expects. Not `index/`, which is rebuilt, nor the lock
+    file or what `.git` holds only while kennis works, which are facts
+    about a running process rather than about the corpus. **A
     symbolic link is neither followed nor stored**: kennis never writes one,
     and following one could put a file from outside the corpus into a
     backup that is about to leave the machine.
     """
-    excluded = {index_root(corpus_root), lock_path(corpus_root)}
+    excluded = {
+        index_root(corpus_root),
+        lock_path(corpus_root),
+        # Kept in `.git` only while kennis works (14e, #525): a mirror being
+        # prepared in, a publish's journal, and conversions kept for a
+        # retry - text of documents a failed add may never have added.
+        staging_root(corpus_root),
+        journal_path(corpus_root),
+        conversions_root(corpus_root),
+    }
     members: list[Member] = []
     for directory, folders, files in os.walk(corpus_root, followlinks=False):
         here = Path(directory)

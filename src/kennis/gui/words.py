@@ -740,6 +740,8 @@ JOB_DOING: Final[dict[str, str]] = {
     "index": "Indexing",
     "sync": "Syncing the corpus",
     "context-sync": "Syncing the project context",
+    "context": "Changing a project's context",
+    "context-index": "Indexing a project's context",
     "pack": "Installing a pack",
     "backup": "Backing up",
     "remember": "Writing a note",
@@ -928,7 +930,10 @@ BUNDLE_NOT_COMMITTED = (
 
 NOTHING_MATERIALISED = "Installed. Run Sync to bring its documents in."
 
-CORPUS_BUSY_RETRY = "The corpus is busy. Nothing changed; try again in a moment."
+CHANGED_MEANWHILE_RETRY = (
+    "Something else changed the same documents while this was being prepared. "
+    "Nothing changed; run it again."
+)
 
 NOTHING_TO_ADD = "Nothing to add. Enter an ID, address or path, or choose a file."
 
@@ -1339,17 +1344,16 @@ def job_crashed(crash: Exception) -> str:
     account there is of what happened; where the rest is kept is said, so
     the reader knows there is more than this line.
 
-    **And what to do next, which is the same thing again.** Each document
-    is written whole and what was written is committed as interrupted
-    (`operations.committed_if_interrupted`), and every operation a job runs
-    skips what is already there - an add finds the same content, a sync
-    converges, an index and a backup start over - so running it again
-    carries on rather than repeating.
+    **And what to do next, which is the same thing again.** A write to
+    the collections is prepared in a mirror and published only when it
+    finishes (14e, #507), so a task that stopped left them as they were;
+    an index and a backup are swapped in or renamed into place when whole.
+    Running it again starts over, reusing a conversion already made.
     """
     detail = str(crash) or type(crash).__name__
     return (
-        f"The task stopped: {detail}. Run it again to carry on from where it "
-        "stopped. Details are in the kennis log."
+        f"The task stopped: {detail}. Nothing it was doing was kept, so it "
+        "can be run again. Details are in the kennis log."
     )
 
 
@@ -1418,7 +1422,10 @@ REMEMBER_ACTION = "Save note"
 
 NOTHING_TO_REMEMBER = "Write something first."
 
-CORPUS_BUSY = "The corpus is busy. Your text is kept; try again in a moment."
+CHANGED_MEANWHILE = (
+    "Something else changed the notes while this was being written. Your text "
+    "is kept; save it again."
+)
 
 
 def describe_written(report: RememberReport, where: str) -> ShownOutcome:
@@ -1736,6 +1743,8 @@ __all__ = [
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
     "CANCEL",
+    "CHANGED_MEANWHILE",
+    "CHANGED_MEANWHILE_RETRY",
     "CHANGES_HEADING",
     "CHANGE_KINDS",
     "CHECK_SITE",
@@ -1753,8 +1762,6 @@ __all__ = [
     "COPIED_LABEL",
     "COPY_LABEL",
     "CORPUS_AT_LABEL",
-    "CORPUS_BUSY",
-    "CORPUS_BUSY_RETRY",
     "CORPUS_CHANGED",
     "CORPUS_CHANGED_HEADING",
     "CORPUS_CHANGED_LATER",

@@ -12,7 +12,6 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from kennis.engine.errors import CorpusBusy
 from kennis.engine.events import EventSink
 from kennis.engine.locking import corpus_lock
 from kennis.protocol.progress import Began, Queued
@@ -113,8 +112,8 @@ def test_a_job_with_nothing_ahead_records_no_wait():
 
 
 def test_a_job_waits_for_a_corpus_held_elsewhere(tmp_path: Path):
-    """A lane's job runs inside `waiting_for_the_corpus`: the corpus held by
-    another - a terminal, a build's brief commit - is waited for."""
+    """The corpus held by another - another kennis process, a build's brief
+    commit - is waited for, since the lock waits for its holder (14e)."""
     jobs = Jobs()
     taken = threading.Event()
 
@@ -140,31 +139,6 @@ def test_a_job_waits_for_a_corpus_held_elsewhere(tmp_path: Path):
     assert job.done.wait(WAIT)
     assert job.error is None and taken.is_set()
     elsewhere.join(WAIT)
-
-
-def test_outside_a_job_the_corpus_is_still_refused(tmp_path: Path):
-    """The waiting is the job's, not the process's."""
-    jobs = Jobs()
-    release = threading.Event()
-    started = threading.Event()
-
-    def holder(events: EventSink) -> None:
-        with corpus_lock(tmp_path):
-            started.set()
-            release.wait(WAIT)
-
-    jobs.start("add", holder)
-    assert started.wait(WAIT)
-    try:
-        refused = False
-        try:
-            with corpus_lock(tmp_path):
-                pass
-        except CorpusBusy:
-            refused = True
-        assert refused
-    finally:
-        release.set()
 
 
 def test_unfinished_lists_queued_and_running_and_tells_its_listener():

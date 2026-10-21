@@ -225,6 +225,7 @@ def _hits_context(
                 hits=found_count,
                 capped=capped,
                 versions=chosen,
+                project=project,
             )
     except KennisError as error:
         context["problem"] = str(error)

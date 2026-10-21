@@ -13,7 +13,9 @@ history of both, encrypted with AES-256 under a password you type each
 time. The file names inside it are encrypted too, so the folder shows one
 file and nothing about what is in it. The working copy of the search
 index is left out, because the history already holds it, and a restore
-checks it out again.
+checks it out again. So is what kennis keeps only while it works: the copy
+a task prepares its changes in, and the conversions it keeps for a day so
+that a failed add need not convert again.
 
 Two consequences are worth stating plainly:
 
@@ -95,8 +97,8 @@ written beside the previous one under a temporary name, opened again with
 the same password and tested, and only then renamed over it. A backup that
 fails at any point leaves the last good one exactly as it was.
 
-The corpus is locked while the backup is written, so a note added from
-another window waits rather than landing half in the archive.
+A write cannot be placed while the backup is written, so a note added from
+another window lands before or after the archive, never half in it.
 
 ## Check a backup
 

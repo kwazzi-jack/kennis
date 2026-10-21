@@ -27,8 +27,8 @@ from kennis.engine.corpus.add import AddReport
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import (
-    CorpusBusy,
     KennisError,
+    PublishRefused,
     UnknownCollection,
 )
 from kennis.engine.events import EventSink
@@ -425,7 +425,7 @@ def _outcome(request: Request, job: Job) -> _Outcome:
 
     The state is decided here once and written onto the headline as
     `data-state`, which `progress.js` reads: `failed`, `attention` when the
-    reader has something to do or to see - a busy corpus to try again, a
+    reader has something to do or to see - a write to run again, a
     choice, a command, an item that failed - or `done`.
     """
     if job.crash is not None:
@@ -434,9 +434,10 @@ def _outcome(request: Request, job: Job) -> _Outcome:
             refused(request, said, role="role-error", state="failed"), "failed", said
         )
     if job.error is not None:
-        busy = isinstance(job.error, CorpusBusy)
-        said = words.CORPUS_BUSY_RETRY if busy else str(job.error)
-        # Busy is something to try again, not a failure of the job.
+        busy = isinstance(job.error, PublishRefused)
+        said = words.CHANGED_MEANWHILE_RETRY if busy else str(job.error)
+        # Prepared against what changed meanwhile: something to run again,
+        # not a failure of the job.
         state = "attention" if busy else "failed"
         answer = refused(
             request,

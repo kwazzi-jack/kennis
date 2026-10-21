@@ -13,8 +13,10 @@ import click
 
 from kennis.cli import display
 from kennis.client.calls import JobDetached
+from kennis.client.process import tell_of_recovery
 from kennis.engine.errors import KennisError
 from kennis.logs import log_path
+from kennis.render.words import put_back_at_start
 
 
 class KennisCommand(click.Command):
@@ -51,6 +53,9 @@ class KennisGroup(click.Group):
     command_class = KennisCommand
 
     def invoke(self, ctx: click.Context) -> object:
+        tell_of_recovery(
+            lambda operation: display.warning(put_back_at_start(operation))
+        )
         try:
             return super().invoke(ctx)
         except click.Abort as aborted:

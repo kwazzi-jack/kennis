@@ -735,7 +735,9 @@ def test_reading_a_document_that_is_not_there_says_which_command_to_run(
 
 
 @pytest.fixture
-def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: Path) -> Path:
+    """A project beside a corpus, whose service acts on its bundle (14e)."""
+    del corpus
     root = tmp_path / "project"
     root.mkdir()
     monkeypatch.chdir(root)
@@ -980,20 +982,17 @@ def test_read_explains_why_it_does_not_take_a_context_handle(
     assert "open it with your own tools" in result.output
 
 
-def test_a_sweep_works_on_a_machine_with_no_corpus(workspace: Path, run: CliRunner):
-    """A bundle belongs to a project and a corpus is machine-global. If the
-    default sweep required a corpus, `kennis search` inside a project would
-    be unusable until an unrelated global store had been created."""
-    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
-
-    result = run.invoke(main, ["search", "four-minute chunks"])
-
-    assert result.exit_code == 0, result.output
-    assert hits_in(result.output, "context") >= 1
+@pytest.fixture
+def workspace_without_a_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    root = tmp_path / "project"
+    root.mkdir()
+    monkeypatch.chdir(root)
+    monkeypatch.delenv("KENNIS_CONTEXT_DIR", raising=False)
+    return root
 
 
 def test_a_named_corpus_collection_still_requires_a_corpus(
-    workspace: Path, run: CliRunner
+    workspace_without_a_corpus: Path, run: CliRunner
 ):
     result = run.invoke(main, ["search", "anything", "--collection", "notes"])
 
@@ -1002,7 +1001,7 @@ def test_a_named_corpus_collection_still_requires_a_corpus(
 
 
 def test_nothing_to_search_at_all_names_what_is_missing(
-    workspace: Path, run: CliRunner
+    workspace_without_a_corpus: Path, run: CliRunner
 ):
     """`kennis corpus index` is the fix for an unindexed corpus and fails on
     a machine that has none, so printing it here would hand the reader a
@@ -1012,22 +1011,6 @@ def test_nothing_to_search_at_all_names_what_is_missing(
     assert result.exit_code != 0
     assert "kennis corpus init" in result.output
     assert "kennis corpus index" not in result.output
-
-
-def test_a_sweep_with_no_corpus_says_nothing_about_the_corpus(
-    workspace: Path, run: CliRunner
-):
-    """`kennis corpus index` fails on a machine with no corpus, so printing
-    it as the fix hands the reader a second error. Nothing is printed at
-    all: nobody believes a store they have never created was searched, and
-    a line about it above every answer is noise."""
-    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
-
-    result = run.invoke(main, ["search", "four-minute chunks"])
-
-    assert result.exit_code == 0, result.output
-    assert "kennis corpus index" not in result.output
-    assert "not searched" not in result.output
 
 
 def test_a_sweep_outside_a_project_says_nothing_about_a_bundle(

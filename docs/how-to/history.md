@@ -23,7 +23,9 @@ kennis corpus status
 
 This compares the corpus on disk against what kennis last recorded, so it
 catches edits you made in your editor. The corpus is ordinary markdown and
-you are allowed to do that.
+you are allowed to do that. The next change kennis makes records your
+edits first, as their own commit named `record(corpus)`, so the history
+never puts them under the name of an add or a note.
 
 It also reports whether each collection's index is in step with its
 documents. If it is not, reindex:
@@ -115,12 +117,12 @@ is a commit, so it is recoverable through `restore` at an earlier commit.
 In the window, a document's menu in the tree has **Remove**, which asks
 first. The Activity page then lists the removal with **Put back**.
 
-## When the corpus is busy
+## When another write is running
 
-A corpus takes a file lock for any operation that writes, with a zero
-timeout. A second command is told the corpus is busy rather than left
-hanging, because a command that appears to have frozen is worse than one that
-declines and says why.
+A write that arrives while another runs waits for it and says what it is
+waiting behind. A write that fails or is stopped part of the way through
+changes nothing, so it can simply be run again. See
+[The kennis service](../explanation/service.md).
 
 ## The log
 
