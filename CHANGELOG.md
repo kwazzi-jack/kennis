@@ -1,3 +1,19 @@
+## v0.11.0 (2026-10-21)
+
+### Feat
+
+- **service**: make every write to the corpus all or nothing, published whole and recovered after a crash
+
+### Fix
+
+- **service**: replace a service whose installed code differs from the client's, not only its version
+- **service**: wait briefly for the owner lock so a starting service does not take another process's probe for a service
+- **windows**: print a moved document's place with forward slashes, quote frontmatter strings in single quotes, and refuse read-only files in every test as windows does
+
+### Perf
+
+- **cli**: import only what a command uses, so every command starts in about half the time
+
 ## v0.10.0 (2026-10-20)
 
 ### Feat
