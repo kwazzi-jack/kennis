@@ -17,7 +17,7 @@ requires-python = ">=3.12,<3.15"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Environment :: Web Environment",
     "Intended Audience :: Science/Research",
