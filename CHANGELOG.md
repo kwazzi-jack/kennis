@@ -1,3 +1,9 @@
+## v0.12.1 (2026-10-27)
+
+### Feat
+
+- **pack**: edit pack files from the command line, describe papers by doi and fetch in parallel
+
 ## v0.12.0 (2026-10-22)
 
 ## v0.11.0 (2026-10-21)
