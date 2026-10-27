@@ -13,8 +13,12 @@ disallows everything. Neither figure is written here; both are read.
 
 **Process-wide state, deliberately.** The window runs jobs and previews on
 threads of one process, and a host does not care which of them is asking.
-One lock per origin holds the wait and the request together, so two threads
-cannot both decide the host is free. A test clears it with `forget_hosts`.
+A host whose robots.txt names a `Crawl-delay` is asked one request at a
+time: one lock holds the wait and the request together, so two threads
+cannot both decide the host is free. A host that names none is asked up to
+`PARALLEL_REQUESTS` at once (Brian, 2026-10-27), which is what lets a run
+of DOI lookups wait for Crossref once rather than once each. A test clears
+the hosts with `forget_hosts`.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 from kennis.engine.bounded import get_bounded
+from kennis.engine.parallel import PARALLEL_REQUESTS
 
 # The longest `Crawl-delay` honoured. A host asking for more is still read,
 # this slowly: a minute a request looks no different from a hung add.
@@ -60,7 +65,10 @@ class _Host:
     read_at: float
     # When this origin was last asked anything, robots.txt included.
     last_request: float
+    # Guards the rules and the turn; held across a request only while the
+    # host asks for a delay, as `one_at_a_time`.
     lock: threading.Lock
+    several: threading.BoundedSemaphore
 
 
 _hosts: dict[str, _Host] = {}
@@ -125,6 +133,7 @@ def get_politely(
     user_agent: str,
     timeout: float,
     params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
     follow_redirects: bool | None = None,
 ) -> httpx.Response:
     """GET `url` if its host's robots.txt allows it, once its delay has passed.
@@ -135,17 +144,21 @@ def get_politely(
     """
     origin = _origin_of(url)
     host = _host_for(client, origin)
+    target = url if not params else str(httpx.URL(url, params=params))
     with host.lock:
-        target = url if not params else str(httpx.URL(url, params=params))
-        if not host.rules.can_fetch(user_agent, target):
-            raise Disallowed(f"{origin}'s robots.txt does not allow '{url}'")
-        _wait_turn(host, crawl_delay(host.rules, user_agent))
+        allowed = host.rules.can_fetch(user_agent, target)
+        delay = crawl_delay(host.rules, user_agent)
+    if not allowed:
+        raise Disallowed(f"{origin}'s robots.txt does not allow '{url}'")
+    with host.lock if delay else host.several:
+        _wait_turn(host, delay)
         try:
             return get_bounded(
                 client,
                 url,
                 timeout=timeout,
                 params=params,
+                headers=headers,
                 follow_redirects=follow_redirects,
             )
         finally:
@@ -170,6 +183,7 @@ def _host_for(client: httpx.Client, origin: str) -> _Host:
                 read_at=-_RULES_LIFETIME_SECONDS,
                 last_request=-MAX_CRAWL_DELAY_SECONDS,
                 lock=threading.Lock(),
+                several=threading.BoundedSemaphore(PARALLEL_REQUESTS),
             )
             _hosts[origin] = host
     with host.lock:

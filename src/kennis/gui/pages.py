@@ -59,9 +59,17 @@ from kennis.engine.pack.installed import list_installed
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Chunk
+from kennis.engine.refusals import Refusal, wanted_paper
 from kennis.gui import words
 from kennis.gui.history import Search
-from kennis.gui.repairs import Repair, WayOut, repairs_for, ways_out_for
+from kennis.gui.repairs import (
+    OPEN_THE_PAPER,
+    Repair,
+    WayOut,
+    repairs_for,
+    supply_address,
+    ways_out_for,
+)
 from kennis.gui.stream import MARKERS, SYNC_MARKERS
 from kennis.holdings import (
     DocumentMarks,
@@ -111,7 +119,7 @@ from kennis.render.packs import (
     describe_unfetched,
     describe_why_unfetched,
 )
-from kennis.render.refusals import refusal_fact, remedies_for_refusal
+from kennis.render.refusals import paper_page, refusal_fact, remedies_for_refusal
 from kennis.render.words import (
     ScoreStyle,
     describe_busy_indexes,
@@ -1576,6 +1584,9 @@ class ShownJob:
     # Whether to offer the syncs, after an install that brought nothing
     # into the corpus yet.
     sync_after: bool = False
+    # The dialog asking for the papers kennis could not fetch, opened once
+    # by `progress.js` when the job ends in front of the reader.
+    ask: str | None = None
 
     @property
     def single(self) -> tuple[ShownItem, ...]:
@@ -1636,10 +1647,17 @@ class OutcomeGroup:
 
 
 def shown_add(report: AddReport) -> ShownJob:
-    """An add, with a repair beneath every refusal that has one."""
+    """An add, with a repair beneath every refusal that has one, and the
+    papers kennis could not fetch asked for."""
     items = tuple(_shown_outcome(outcome) for outcome in report.outcomes)
     added = report.counts.get(Outcome.ADDED, 0)
+    wanted = [
+        paper
+        for paper in (wanted_paper(outcome.refusal) for outcome in report.outcomes)
+        if paper is not None
+    ]
     return ShownJob(
+        ask=supply_address("user", wanted) if wanted else None,
         headline=words.added_headline(added, report),
         items=items,
         # A sentence rather than `kennis corpus index`, because the
@@ -1718,11 +1736,17 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
         notes.extend(
             describe_kept_copy(original, copy) for original, copy in result.copied
         )
+    wanted: list[ShownItem] = []
+    papers: list[tuple[str, str]] = []
     if result.failed:
         notes.append(describe_unfetched(result.failed))
-        notes.extend(
-            describe_why_unfetched(address, refusal) for address, refusal in result.why
-        )
+        for address, refusal in result.why:
+            paper = wanted_paper(refusal)
+            if paper is None:
+                notes.append(describe_why_unfetched(address, refusal))
+                continue
+            papers.append(paper)
+            wanted.append(_shown_wanted(address, refusal, paper))
     if result.deferred:
         notes.append(describe_deferred(result.deferred))
     acted = any(action.verdict in ACTING for action in result.actions)
@@ -1731,19 +1755,39 @@ def shown_corpus_sync(result: CorpusSync) -> ShownJob:
     return ShownJob(
         headline=capitalised(describe_sync(result.counts, noun="document")),
         role="role-added" if acted else "role-muted",
-        items=tuple(
-            ShownItem(
-                marker=SYNC_MARKERS.get(action.verdict, ">"),
-                # Where the document is, not the pack's address for it.
-                name=result.places.get(action.address, action.address),
-                outcome=action.verdict,
-                detail=describe_outcome_of(action),
-            )
-            for action in result.actions
+        items=(
+            *wanted,
+            *(
+                ShownItem(
+                    marker=SYNC_MARKERS.get(action.verdict, ">"),
+                    # Where the document is, not the pack's address for it.
+                    name=result.places.get(action.address, action.address),
+                    outcome=action.verdict,
+                    detail=describe_outcome_of(action),
+                )
+                for action in result.actions
+            ),
         ),
         notes=tuple(notes),
         next_steps=tuple(steps),
         index_after=acted,
+        ask=supply_address("pack", papers) if papers else None,
+    )
+
+
+def _shown_wanted(address: str, refusal: Refusal, paper: tuple[str, str]) -> ShownItem:
+    """A pack's paper kennis could not fetch: its page, and the dialog for
+    it alone, so closing the dialog by mistake is not the end of it."""
+    kind, value = paper
+    return ShownItem(
+        marker=MARKERS[Outcome.FAILED],
+        name=address,
+        outcome=Outcome.FAILED.value,
+        detail=refusal_fact(refusal),
+        ways=(
+            WayOut(OPEN_THE_PAPER, paper_page(kind, value), outside=True),
+            WayOut(words.CHOOSE_THE_FILE, supply_address("pack", [paper])),
+        ),
     )
 
 

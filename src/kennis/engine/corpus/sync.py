@@ -37,6 +37,7 @@ import httpx
 from kennis.engine.corpus.add import (
     ARXIV_DELAY_SECONDS,
     AddOptions,
+    AddReport,
     Uniqueness,
     add_docs,
     add_literature,
@@ -56,7 +57,7 @@ from kennis.engine.corpus.schema import (
     Source,
     SourceFormat,
 )
-from kennis.engine.errors import DocumentInvalid, KennisError
+from kennis.engine.errors import DocumentInvalid, InputError, KennisError
 from kennis.engine.events import (
     Event,
     EventSink,
@@ -75,7 +76,14 @@ from kennis.engine.pack.installed import (
     refuse_damaged_packs,
 )
 from kennis.engine.pack.resolve import Action, Declaration, Existing, Verdict, resolve
-from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, NoteLink, Pack
+from kennis.engine.pack.schema import (
+    DocsEntry,
+    LiteratureEntry,
+    NoteFile,
+    NoteLink,
+    Pack,
+)
+from kennis.engine.pack.store import pack_root
 from kennis.engine.refusals import Quoted, Refusal
 from kennis.engine.remember import title_for
 
@@ -179,6 +187,7 @@ def sync_corpus(
         notes,
         papers,
         projects,
+        store=store,
         arxiv=arxiv,
         client=client,
         request_delay_seconds=request_delay_seconds,
@@ -200,6 +209,54 @@ def sync_corpus(
         failed=failed,
         why=tuple(why.items()),
         places=places,
+    )
+
+
+def supply_paper(
+    corpus_root: Path,
+    address: str,
+    path: Path,
+    *,
+    events: EventSink | None = None,
+    arxiv: httpx.Client | None = None,
+    client: httpx.Client | None = None,
+    store_root: Path | None = None,
+) -> AddReport:
+    """Add the paper a pack declares at `address` from a file the person
+    supplied, because no copy kennis may fetch exists (Brian, 2026-10-26).
+
+    Filed as the sync would have filed the fetched text - the declaring
+    pack's owner and digest, its citekey and group - so the next sync finds
+    it held at that digest and keeps it. The pack owns it, so it goes with
+    the pack's other papers. `store_root` is as for `sync_corpus`.
+
+    Raises `InputError` when no installed pack declares `address`, or the
+    corpus holds that paper already.
+    """
+    store = store_root or corpus_root
+    packs = list_installed(store).packs
+    refuse_damaged_packs(packs)
+    plan = _literature_plan(corpus_root, packs)
+    declaration = plan.declarations.get(address)
+    if declaration is None:
+        raise InputError(f"no installed pack declares {address}")
+    if address in plan.held:
+        raise InputError(f"the corpus already holds {address}")
+    entry = plan.entries[address]
+    assert isinstance(entry, LiteratureEntry)
+    return add_literature(
+        Collection(root=corpus_root, name="literature"),
+        [str(path)],
+        AddOptions(
+            identifier=entry.identifier or entry.paper.value,
+            citekey=entry.citekey,
+            group=_paper_group(declaration, entry),
+            owner=f"pack:{declaration.pack_id}",
+            pack_sha256=declaration.digest,
+        ),
+        arxiv=arxiv,
+        client=client,
+        events=events,
     )
 
 
@@ -230,7 +287,7 @@ def _places(
 
 
 # A declaration whose content is the entry itself rather than a file.
-type Entry = LiteratureEntry | DocsEntry | NoteLink
+type Entry = LiteratureEntry | DocsEntry | NoteLink | NoteFile
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,7 +406,7 @@ def _declared_group(plan: _Plan, declaration: Declaration) -> str:
     entry = plan.entries.get(declaration.address)
     if isinstance(entry, LiteratureEntry):
         return _paper_group(declaration, entry)
-    if isinstance(entry, NoteLink):
+    if isinstance(entry, (NoteLink, NoteFile)):
         return "/".join(part for part in (declaration.pack_id, entry.group) if part)
     return _note_group(declaration)
 
@@ -397,6 +454,18 @@ def _notes_plan(
                 store_path=None,
             )
             entries[note.key] = note
+        for shipped in one.declaration.corpus.note_files:
+            if shipped.key in declarations:
+                if declarations[shipped.key].pack_id != one.state.pack_id:
+                    deferred.append((shipped.key, one.state.pack_id))
+                continue
+            declarations[shipped.key] = Declaration(
+                address=shipped.key,
+                pack_id=one.state.pack_id,
+                digest=_file_digest(shipped, one.state.files),
+                store_path=pack_root(store, one.state.pack_id) / shipped.file,
+            )
+            entries[shipped.key] = shipped
     collection = Collection(root=corpus_root, name="notes")
     held = _held(collection)
     return _Plan(
@@ -415,6 +484,7 @@ def _carried_out(
     papers: _Plan,
     projects: _Plan,
     *,
+    store: Path,
     arxiv: httpx.Client | None,
     client: httpx.Client | None,
     request_delay_seconds: float | None,
@@ -456,6 +526,7 @@ def _carried_out(
         _fetched_literature(
             corpus_root,
             papers,
+            store=store,
             arxiv=arxiv,
             client=client,
             request_delay_seconds=request_delay_seconds,
@@ -469,6 +540,7 @@ def _carried_out(
         _crawled_docs(
             corpus_root,
             projects,
+            store=store,
             client=client,
             # The figure is arXiv's pacing; a docs host gets its own
             # default. Zero still passes: it is a caller that contacts
@@ -535,6 +607,7 @@ def _fetched_literature(
     corpus_root: Path,
     plan: _Plan,
     *,
+    store: Path,
     arxiv: httpx.Client | None,
     client: httpx.Client | None,
     request_delay_seconds: float | None,
@@ -576,13 +649,20 @@ def _fetched_literature(
         if fetched and delay:
             time.sleep(delay)
         fetched += 1
+        # The pack's copy of the paper when it ships one; the address, when
+        # it gives one, read as the paper the identifier names; otherwise
+        # the identifier, fetched as it is.
+        if entry.file is not None:
+            source = str(pack_root(store, declaration.pack_id) / entry.file)
+        elif entry.url is not None:
+            source = entry.url
+        else:
+            source = action.address
         report = add_literature(
             collection,
-            # The address, when the pack gives one, read as the paper the
-            # identifier names; otherwise the identifier, fetched as it is.
-            [entry.url] if entry.url is not None else [action.address],
+            [source],
             AddOptions(
-                identifier=entry.identifier if entry.url is not None else None,
+                identifier=entry.identifier if source != action.address else None,
                 # The pack's citekey, not a derived one. It is the handle
                 # the provider's own prose cites, so a document that
                 # arrived under a citekey kennis invented would answer to
@@ -591,6 +671,7 @@ def _fetched_literature(
                 group=_paper_group(declaration, entry),
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
+                pack_store=pack_root(store, declaration.pack_id),
                 request_delay_seconds=request_delay_seconds,
                 unpaywall_email=unpaywall_email,
             ),
@@ -614,6 +695,7 @@ def _crawled_docs(
     corpus_root: Path,
     plan: _Plan,
     *,
+    store: Path,
     client: httpx.Client | None,
     request_delay_seconds: float | None,
     events: EventSink | None,
@@ -643,15 +725,29 @@ def _crawled_docs(
             continue
         entry = plan.entries[action.address]
         assert isinstance(entry, DocsEntry)
+        # A site is crawled from its address; local pages are read from the
+        # pack's copies in the store.
+        sources = (
+            [entry.base_url]
+            if entry.base_url is not None
+            else [
+                str(pack_root(store, declaration.pack_id) / page)
+                for page in entry.pages
+            ]
+        )
         report = add_docs(
             collection,
-            [entry.base_url],
+            sources,
             AddOptions(
                 project=entry.project,
                 version=entry.version,
                 exclude=tuple(entry.exclude),
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
+                pack_store=pack_root(store, declaration.pack_id),
+                # A held local page is otherwise reported unchanged and kept
+                # as it was, so a page the provider changed never arrived.
+                refresh=entry.base_url is None,
                 request_delay_seconds=request_delay_seconds,
             ),
             client=client,
@@ -766,9 +862,9 @@ def _literature_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Pl
     """
     declarations, entries = _declared(
         packs,
-        listed=lambda pack: [
+        listed=lambda pack, files: [
             (literature_key(entry), _literature_digest(entry), entry)
-            for entry in map(completed_entry(pack), pack.corpus.literature)
+            for entry in pack.corpus.literature
         ],
     )
     collection = Collection(root=corpus_root, name="literature")
@@ -805,8 +901,9 @@ def _docs_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
     """
     declarations, entries = _declared(
         packs,
-        listed=lambda pack: [
-            (entry.project, _docs_digest(entry), entry) for entry in pack.corpus.docs
+        listed=lambda pack, files: [
+            (entry.project, _docs_digest(entry, files), entry)
+            for entry in pack.corpus.docs
         ],
     )
     collection = Collection(root=corpus_root, name="docs")
@@ -830,7 +927,9 @@ def _docs_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
 def _declared(
     packs: tuple[InstalledPack, ...],
     *,
-    listed: Callable[[Pack], list[tuple[str, str, LiteratureEntry | DocsEntry]]],
+    listed: Callable[
+        [Pack, dict[str, str]], list[tuple[str, str, LiteratureEntry | DocsEntry]]
+    ],
 ) -> tuple[dict[str, Declaration], dict[str, Entry]]:
     """The union of one declaration section, incumbent first.
 
@@ -846,7 +945,7 @@ def _declared(
     for one in ordered:
         if one.declaration is None:
             continue
-        for key, digest, entry in listed(one.declaration):
+        for key, digest, entry in listed(one.declaration, one.state.files):
             if key in declarations:
                 continue
             declarations[key] = Declaration(
@@ -875,30 +974,6 @@ def _declared_existing(key: str, document: Document) -> Existing:
         written_digest=None,
         pack_digest=document.frontmatter.source.pack_sha256,
     )
-
-
-def completed_entry(pack: Pack) -> Callable[[LiteratureEntry], LiteratureEntry]:
-    """Each of this pack's papers with what `pack update` recorded for it.
-
-    The entry's own fields first; the record holds only what the entry
-    left out (#459). Completed before digesting, so the digest, the add
-    and a rename all see one entry.
-    """
-    recorded = pack.generated.literature if pack.generated is not None else {}
-
-    def completed(entry: LiteratureEntry) -> LiteratureEntry:
-        record = recorded.get(entry.key)
-        if record is None:
-            return entry
-        return entry.model_copy(
-            update={
-                name: getattr(record, name)
-                for name in ("citekey", "title", "authors", "year")
-                if getattr(entry, name) is None and getattr(record, name) is not None
-            }
-        )
-
-    return completed
 
 
 def literature_key(entry: LiteratureEntry) -> str:
@@ -940,6 +1015,7 @@ def _literature_digest(entry: LiteratureEntry) -> str:
                 # Where the text is fetched from is part of what was
                 # declared: a corrected address is a declaration that moved.
                 entry.url or "",
+                entry.file or "",
             ]
         ).encode("utf-8")
     )
@@ -953,14 +1029,29 @@ def _link_digest(note: NoteLink) -> str:
     )
 
 
-def _docs_digest(entry: DocsEntry) -> str:
-    """The fields of a documentation project's declaration, digested."""
+def _docs_digest(entry: DocsEntry, files: dict[str, str]) -> str:
+    """The fields of a documentation project's declaration, digested.
+
+    For local pages, each page's path and checksum in the store as well, so
+    a changed page is a project that moved and is added again.
+    """
     # The version only when given, so a declaration written before it
     # existed keeps its digest and is not crawled again for nothing.
-    fields = [entry.project, entry.base_url, *sorted(entry.exclude)]
+    fields = [entry.project, entry.base_url or "", *sorted(entry.exclude)]
     if entry.version is not None:
         fields.append(f"version={entry.version}")
+    fields.extend(f"{page}={files.get(page, '')}" for page in entry.pages)
     return content_digest("\n".join(fields).encode("utf-8"))
+
+
+def _file_digest(note: NoteFile, files: dict[str, str]) -> str:
+    """A shipped note's checksum in the store, with its declared title and
+    group: a changed file, title or group is a declaration that moved."""
+    return content_digest(
+        "\n".join(
+            [files.get(note.file, ""), note.title or "", note.group or ""]
+        ).encode("utf-8")
+    )
 
 
 def _held(collection: Collection) -> dict[str, tuple[Existing, Document]]:
@@ -1077,10 +1168,12 @@ def _content_of(
     # A content declaration always has one; only a paper, a documentation
     # project or a note declared by address, which a fetch resolves, does not.
     assert declaration.store_path is not None
+    named = entry.title if isinstance(entry, NoteFile) else None
     if declaration.store_path.suffix.lower() not in _MARKDOWN_SUFFIXES:
         converted = convert_local_file(declaration.store_path)
         return _NoteContent(
-            title=converted.source_name
+            title=named
+            or converted.source_name
             or converted.suggested_title
             or title_for(converted.markdown),
             body=converted.markdown,
@@ -1089,7 +1182,7 @@ def _content_of(
     content = declaration.store_path.read_text(encoding="utf-8")
     shipped, body = split_frontmatter(content)
     declared_title = shipped.get("title")
-    title = str(declared_title) if declared_title else title_for(body)
+    title = named or (str(declared_title) if declared_title else title_for(body))
     return _NoteContent(title=title, body=body, format="markdown")
 
 
@@ -1193,5 +1286,6 @@ __all__ = [
     "OPERATION",
     "ORIGIN_SCHEME",
     "CorpusSync",
+    "supply_paper",
     "sync_corpus",
 ]

@@ -1,7 +1,7 @@
-$ kennis pack remove provider
+$ kennis pack uninstall provider
 --- exit 0
 --- stdout
-Removed provider
+Uninstalled provider
   - 1 file dropped from the store
 nothing this pack supplied has been removed: the corpus keeps its documents until the next sync, and
 each project keeps its content until it is synchronised there

@@ -67,6 +67,9 @@
               },
               {
                 "$ref": "#/$defs/NoteLink"
+              },
+              {
+                "$ref": "#/$defs/NoteFile"
               }
             ]
           },
@@ -82,14 +85,29 @@
       "description": "A documentation site the pack declares, crawled from `base_url`.",
       "properties": {
         "base_url": {
-          "title": "Base Url",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url"
         },
         "exclude": {
           "items": {
             "type": "string"
           },
           "title": "Exclude",
+          "type": "array"
+        },
+        "pages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pages",
           "type": "array"
         },
         "project": {
@@ -110,15 +128,14 @@
         }
       },
       "required": [
-        "project",
-        "base_url"
+        "project"
       ],
       "title": "DocsEntry",
       "type": "object"
     },
     "GeneratedBlock": {
       "additionalProperties": false,
-      "description": "Written by `pack update`; never hand-edited.\n\n`at` and `by` are restamped only when a digest actually changed, so a\nprovider rebuild that altered nothing leaves the file byte-identical and\nthe fast path of section 5 step 2 keeps its short circuit.",
+      "description": "Written by `pack update`; never hand-edited. Checksums alone, which\nare a lock file's job: what a person might want to read or change - a\npaper's citekey - is written into its entry instead.\n\n`at` and `by` are restamped only when a digest actually changed, so a\nprovider rebuild that altered nothing leaves the file byte-identical and\nthe fast path of section 5 step 2 keeps its short circuit.",
       "properties": {
         "at": {
           "title": "At",
@@ -131,11 +148,11 @@
         "content": {
           "$ref": "#/$defs/GeneratedContent"
         },
-        "literature": {
+        "files": {
           "additionalProperties": {
-            "$ref": "#/$defs/GeneratedPaper"
+            "type": "string"
           },
-          "title": "Literature",
+          "title": "Files",
           "type": "object"
         }
       },
@@ -166,62 +183,6 @@
         }
       },
       "title": "GeneratedContent",
-      "type": "object"
-    },
-    "GeneratedPaper": {
-      "additionalProperties": false,
-      "description": "What `pack update` derived for a paper, in the fields its entry left\nout. Every machine reads the same record, so a paper is filed under the\nsame citekey wherever the pack is installed.",
-      "properties": {
-        "authors": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Authors"
-        },
-        "citekey": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Citekey"
-        },
-        "title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Title"
-        },
-        "year": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Year"
-        }
-      },
-      "title": "GeneratedPaper",
       "type": "object"
     },
     "GeneratedSource": {
@@ -275,7 +236,7 @@
     },
     "LiteratureEntry": {
       "additionalProperties": false,
-      "description": "A paper the pack declares, fetched over the network rather than copied.\n\nThe citekey is a handle for humans - it goes in a `.bib`, in prose and in\na read call. The **identifier** is the identity, which is why one is\nrequired and why section 5 keys the diff on it: correcting a citekey\nagainst an unchanged identifier is a rename, not a delete and a refetch.\nIt may be left out when `url` names the paper, as an arXiv address does.\n\n**Only the identifier is required**, as `corpus add 1101.1764` needs\nnothing else (#459). `kennis pack update` derives what an entry leaves\nout - citekey, title, authors, year - as the add would, and records it\nin the generated block; a field the entry gives is never overridden.\n\n**One identifier field**, which takes an arXiv identifier, a DOI or an\nADS bibcode and is read as whichever it is. Three fields, one per kind,\nasked an author which kind a paper's identifier was and then which wins\nwhen two were given.\n\n`url` is where the text is, when the identifier alone does not reach it.\nThe document found there must not name a different paper.\n\n`group` is a folder inside the pack's own, `literature/<pack id>/`,\nand may hold folders of its own.",
+      "description": "A paper the pack declares, fetched over the network rather than copied.\n\nThe citekey is a handle for humans - it goes in a `.bib`, in prose and in\na read call. The **identifier** is the identity, which is why one is\nrequired and why section 5 keys the diff on it: correcting a citekey\nagainst an unchanged identifier is a rename, not a delete and a refetch.\nIt may be left out when `url` names the paper, as an arXiv address does.\n\n**Only the identifier is required**, as `corpus add 1101.1764` needs\nnothing else (#459). `kennis pack update` derives what an entry leaves\nout - citekey, title, authors, year - as the add would, and writes it\ninto the entry, as `uv add` writes into `pyproject.toml` (Brian,\n2026-10-26); a field the entry gives is never overridden.\n\n**One identifier field**, which takes an arXiv identifier, a DOI or an\nADS bibcode and is read as whichever it is. Three fields, one per kind,\nasked an author which kind a paper's identifier was and then which wins\nwhen two were given.\n\n`url` is where the text is, when the identifier alone does not reach it.\nThe document found there must not name a different paper.\n\n`group` is a folder inside the pack's own, `literature/<pack id>/`,\nand may hold folders of its own.",
       "properties": {
         "authors": {
           "anyOf": [
@@ -300,6 +261,18 @@
           ],
           "default": null,
           "title": "Citekey"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
         },
         "group": {
           "anyOf": [
@@ -363,6 +336,45 @@
         }
       },
       "title": "LiteratureEntry",
+      "type": "object"
+    },
+    "NoteFile": {
+      "additionalProperties": false,
+      "description": "One note the pack ships as a file, converted at `corpus sync` as\n`corpus add -n <file>` converts it (Brian, 2026-10-26).\n\nA `source:` folder ships a tree; this ships one file and may name it.\nEach of the three notes models forbids the others' keys, so an entry is\nexactly one of them. `group` is a folder inside `notes/<pack id>/`.",
+      "properties": {
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "title": "NoteFile",
       "type": "object"
     },
     "NoteLink": {

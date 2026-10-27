@@ -21,7 +21,11 @@
     Array.prototype.forEach.call(hooks, function (hook) {
       var target = document.getElementById(hook.dataset.redrawId);
       if (!target || !window.htmx) { return; }
+      // The part is the request's source as well as its target: with no
+      // source htmx files every request under `<body>`, whose queue sends
+      // the first and the latest and drops the rest (#539).
       window.htmx.ajax("GET", hook.dataset.redrawRoute, {
+        source: target,
         target: target,
         swap: "outerHTML",
       });

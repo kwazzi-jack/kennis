@@ -502,7 +502,7 @@ def test_sync_writes_a_packs_notes_into_the_corpus(
 ):
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["corpus", "sync"])
 
@@ -518,7 +518,7 @@ def test_sync_records_one_commit_naming_what_it_did(
     del isolated
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
 
     history = run.invoke(main, ["corpus", "history"])
@@ -534,7 +534,7 @@ def test_sync_names_each_document_where_it_is(
 ):
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     synced = run.invoke(main, ["corpus", "sync"])
 
@@ -554,7 +554,7 @@ def test_a_sync_that_changed_nothing_adds_no_commit(
     del isolated
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     before = run.invoke(main, ["corpus", "history"]).output.count("\n")
 
@@ -569,7 +569,7 @@ def test_sync_names_the_index_command_when_something_changed(
     del isolated
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["corpus", "sync"])
 
@@ -588,7 +588,7 @@ def test_a_synced_note_is_searchable_after_indexing(
         run,
         files={"notes/one.md": "Calibration runs in four-minute chunks.\n"},
     )
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 
@@ -608,7 +608,7 @@ def test_an_edited_document_is_kept_as_a_note_and_named_by_both_ids(
     initialised(run)
     provider = tmp_path / "provider"
     path = a_notes_pack(provider, run, files={"notes/one.md": "First.\n"})
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     document_id = sole_id(run)
     written = next((isolated / "notes").rglob("*.md"))
@@ -618,7 +618,7 @@ def test_an_edited_document_is_kept_as_a_note_and_named_by_both_ids(
     )
 
     path = a_notes_pack(provider, run, files={"notes/one.md": "Second.\n"})
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     result = run.invoke(main, ["corpus", "sync"])
 
     assert result.exit_code == 0, result.output
@@ -636,7 +636,7 @@ def test_corpus_copy_names_the_new_note(run: CliRunner, isolated: Path, tmp_path
     del isolated
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["corpus", "sync"]).exit_code == 0
     document_id = sole_id(run)
 
@@ -654,7 +654,7 @@ def test_sync_waits_while_another_writer_holds_the_corpus(
     """Waits rather than being refused (14b), and then does its work."""
     initialised(run)
     path = a_notes_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     with held_for_a_moment(isolated) as hold:
         result = run.invoke(main, ["corpus", "sync"])

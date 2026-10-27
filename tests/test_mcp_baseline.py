@@ -103,7 +103,7 @@ SETUP: tuple[tuple[str, ...], ...] = (
     ("corpus", "init"),
     ("corpus", "add", "-n", "sources/calibration.md", "sources/imaging.md"),
     ("corpus", "add", "-d", "--project", "tool", "--version", "1.0", "sources/page.md"),
-    ("pack", "add", "provider/provider.ken.yml"),
+    ("pack", "install", "provider/provider.ken.yml"),
     ("corpus", "sync"),
     ("corpus", "index"),
 )

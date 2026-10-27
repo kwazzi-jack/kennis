@@ -73,7 +73,7 @@ type SourceFormat = Literal[
 
 # Who may overwrite or delete a document: `user` means yours, never touched by
 # anything; `pack:<id>` means the named pack's, and is what makes
-# `pack remove <id>` possible at all.
+# `pack uninstall <id>` possible at all.
 #
 # An unrecognised value is corruption, not a compatibility case. A document
 # carrying an older field's vocabulary is refused with the document named:

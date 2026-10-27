@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
@@ -82,12 +82,14 @@ from kennis.engine.corpus.schema import (
 )
 from kennis.engine.docs.discover import discover_pages, page_key
 from kennis.engine.docs.fetch import (
+    FetchedPage,
     Validators,
     convert_page,
     fetch_page,
     fetch_page_if_changed,
 )
 from kennis.engine.docs.http import USER_AGENT as DOCS_USER_AGENT
+from kennis.engine.docs.http import origin_of
 from kennis.engine.docs.sites import (
     DocsSite,
     project_name_from_url,
@@ -107,8 +109,8 @@ from kennis.engine.errors import (
 )
 from kennis.engine.events import (
     Diagnostic,
+    DiscardingSink,
     DocumentSkipped,
-    Event,
     EventSink,
     ItemFinished,
     ItemStarted,
@@ -135,8 +137,12 @@ from kennis.engine.literature.identifiers import (
     looks_like_bibtex,
     parse_bibtex_file,
 )
-from kennis.engine.literature.metadata import lookup_arxiv_metadata
+from kennis.engine.literature.metadata import (
+    lookup_arxiv_metadata,
+    lookup_doi_metadata,
+)
 from kennis.engine.literature.unpaywall import open_copy_of
+from kennis.engine.parallel import PARALLEL_REQUESTS, fetched_in_parallel
 from kennis.engine.refusals import (
     AmbiguousIdentity,
     BibliographyIncomplete,
@@ -219,6 +225,10 @@ class AddOptions:
     # recorded so the next sync can tell a changed declaration from an
     # unchanged one without refetching. Set only by `corpus sync`.
     pack_sha256: str | None = None
+    # The declaring pack's folder in the store, when that pack ships the
+    # file being added (Brian, 2026-10-26). The one place inside kennis's
+    # own files an add may read from. Set only by `corpus sync`.
+    pack_store: Path | None = None
 
     def __post_init__(self) -> None:
         # Both name a directory beneath the collection. Here as well as at
@@ -270,13 +280,6 @@ class AddReport:
         for outcome in self.outcomes:
             tally[outcome.outcome] = tally.get(outcome.outcome, 0) + 1
         return tally
-
-
-class _DiscardingSink:
-    """The sink a caller gets when it wants only the report."""
-
-    def emit(self, event: Event) -> None:
-        return None
 
 
 @dataclass
@@ -390,17 +393,18 @@ def add_notes(
     against nothing.
     """
     options = options or AddOptions()
-    sink: EventSink = events or _DiscardingSink()
+    sink: EventSink = events or DiscardingSink()
     started_at = time.monotonic()
 
     resolved = resolve_inputs(
         identifiers,
         extra_file_types=options.extra_file_types,
         kept_out=own_directories(collection.root),
+        admitted=_admitted(options),
     )
     record = Uniqueness.of(collection)
     _report_problems(record, sink)
-    outcomes: list[AddOutcome] = _skipped(resolved, sink)
+    outcomes: list[AddOutcome] = reported_skips(resolved, sink)
     plan = _plan_binaries(
         _binary_candidates(item.identifier for item in resolved.items),
         record,
@@ -600,7 +604,7 @@ def _report_problems(record: Uniqueness, sink: EventSink) -> None:
         )
 
 
-def _skipped(resolved: ResolvedInputs, sink: EventSink) -> list[AddOutcome]:
+def reported_skips(resolved: ResolvedInputs, sink: EventSink) -> list[AddOutcome]:
     """Files the walk declined, reported rather than dropped in silence."""
     outcomes: list[AddOutcome] = []
     for skip in resolved.skipped:
@@ -828,17 +832,18 @@ def add_literature(
             resolution="kennis corpus add --help",
         )
     delay = _delay_for(options, ARXIV_DELAY_SECONDS)
-    sink: EventSink = events or _DiscardingSink()
+    sink: EventSink = events or DiscardingSink()
     started_at = time.monotonic()
 
     resolved = resolve_inputs(
         identifiers,
         extra_file_types=options.extra_file_types,
         kept_out=own_directories(collection.root),
+        admitted=_admitted(options),
     )
     record = Uniqueness.of(collection)
     _report_problems(record, sink)
-    outcomes: list[AddOutcome] = _skipped(resolved, sink)
+    outcomes: list[AddOutcome] = reported_skips(resolved, sink)
 
     papers, refused = _papers_of(resolved)
     outcomes.extend(refused)
@@ -1105,6 +1110,19 @@ def _add_paper(
     converted, _ = _converted_for(paper, identity, options, plan, arxiv, client)
     if isinstance(converted, AddOutcome):
         return converted
+    if chosen.kind == "doi" and not (
+        identity.title and identity.authors and identity.year
+    ):
+        # Asked only once there is text to store: a DOI with none is refused
+        # whatever its registry says, and the request would be for nothing.
+        identity = _described_by_registry(identity, arxiv)
+        if not identity.authors:
+            sink.emit(
+                Diagnostic(
+                    severity=Severity.WARNING,
+                    detail=MetadataUnavailable(identifier=paper.identifier),
+                )
+            )
 
     by_checksum = duplicate_of(record, converted)
     if by_checksum is not None:
@@ -1194,8 +1212,9 @@ def _enrich(
 
     **Nothing is resolved into anything else.** An arXiv identifier is looked
     up for its metadata, because a citekey needs authors and a year; a DOI
-    and a bibcode are recorded as given. What the user named is what the
-    document will be.
+    is described by its registry later, once the paper's text is in hand
+    (`_described_by_registry`), and a bibcode is recorded as given. What the
+    user named is what the document will be.
 
     All the identifiers a paper carries are still recorded, because identity
     is what duplicate detection runs on: a `.bib` entry naming both a DOI and
@@ -1239,6 +1258,25 @@ def _duplicate_identity(record: Uniqueness, identity: _Identity) -> str | None:
         if existing is not None:
             return existing
     return None
+
+
+def _described_by_registry(
+    identity: _Identity, client: httpx.Client | None
+) -> _Identity:
+    """`identity` with what its DOI's registry says filling what it lacks
+    (Brian, 2026-10-26), as `_enrich` fills an arXiv paper's from arXiv.
+    What a `.bib` entry gave is kept; a registry that cannot answer leaves
+    the identity as it was."""
+    assert identity.doi is not None
+    metadata = lookup_doi_metadata(identity.doi, client=client)
+    if metadata is None:
+        return identity
+    return replace(
+        identity,
+        title=identity.title or metadata.title,
+        authors=identity.authors or metadata.authors,
+        year=identity.year or metadata.year,
+    )
 
 
 def _converted_for(
@@ -1608,11 +1646,19 @@ class _Page:
     # Seconds to wait before fetching it, when its site asked for longer
     # than the batch's own delay.
     pace: float | None = None
+    # The site's answer, fetched with the other pages before any is written.
+    fetched: _Fetched | None = None
 
     @property
     def identifier(self) -> str:
         """What this page is called in the event stream and the report."""
         return self.url or (str(self.path) if self.path else self.key)
+
+
+def _admitted(options: AddOptions) -> tuple[Path, ...]:
+    """Where in kennis's own files this add may read: a pack's store
+    folder, for a sync adding what the pack ships, and nowhere otherwise."""
+    return () if options.pack_store is None else (options.pack_store,)
 
 
 def add_docs(
@@ -1640,7 +1686,7 @@ def add_docs(
     never touches the network; left out, one is built and closed here.
     """
     options = options or AddOptions()
-    sink: EventSink = events or _DiscardingSink()
+    sink: EventSink = events or DiscardingSink()
     started_at = time.monotonic()
 
     record = Uniqueness.of(collection)
@@ -1655,17 +1701,27 @@ def add_docs(
         pages, outcomes = _pages_of(
             identifiers, options, active, delay, sink, docs_root=collection.path
         )
+        done = 0
+
+        def advance(_: object, __: object) -> None:
+            nonlocal done
+            done += 1
+            sink.emit(Progress(operation="add", completed=done, total=len(pages)))
+
+        pages = _fetched_ahead(
+            pages, record, active, options, delay=delay, on_fetched=advance
+        )
         requested = 0
-        for position, page in enumerate(pages):
-            # Pacing belongs here rather than in the crawl alone: the Sphinx
-            # and sitemap paths know every page up front and would otherwise
-            # request all of them back to back, which is the traffic pattern
-            # the delay exists to avoid. A page that costs no request - one
-            # the crawl already downloaded, a local file, or one already
-            # held - costs no wait either: a re-crawl of a held site slept
-            # before every page it then skipped.
+        for page in pages:
+            # A file fetched whole is the one page still asked for here, one
+            # at a time, because it may be a PDF for the converter. A page
+            # that costs no request - fetched ahead, downloaded by the crawl,
+            # a local file, or already held - costs no wait: a re-crawl of a
+            # held site once slept before every page it then skipped.
             wait = page.pace if page.pace is not None else delay
-            if _requests(page, record, refresh=options.refresh):
+            if page.fetched is None and _requests(
+                page, record, refresh=options.refresh
+            ):
                 if requested and wait:
                     time.sleep(wait)
                 requested += 1
@@ -1685,10 +1741,10 @@ def add_docs(
             # report, where it can be counted and capped. So a loop that
             # emits only item events leaves the bar at zero for as long as it
             # runs - which for twenty pages at the politeness delay is over a
-            # minute of a bar that looks stuck.
-            sink.emit(
-                Progress(operation="add", completed=position + 1, total=len(pages))
-            )
+            # minute of a bar that looks stuck. A page fetched ahead was
+            # counted when it arrived.
+            if page.fetched is None:
+                advance(page, None)
     finally:
         if owned:
             active.close()
@@ -1733,7 +1789,7 @@ def _pages_of(
         docs_root=docs_root,
     )
     if unusable is not None:
-        raise _docs_input_refused(*unusable)
+        raise docs_input_refused(*unusable)
 
     for identifier in identifiers:
         if looks_like_url(identifier) and names_a_file(identifier):
@@ -1766,7 +1822,7 @@ def _pages_of(
 
         path = Path(identifier).expanduser()
         if options.project is None:
-            raise _docs_input_refused(identifier, "unnamed")
+            raise docs_input_refused(identifier, "unnamed")
         project = validate_project_name(options.project)
         pages.append(
             _Page(
@@ -1847,7 +1903,7 @@ def unusable_docs_input(
     return None
 
 
-def _docs_input_refused(identifier: str, reason: DocsInputProblem) -> InputError:
+def docs_input_refused(identifier: str, reason: DocsInputProblem) -> InputError:
     if reason == "missing":
         return InputError(
             f"'{identifier}' is neither a documentation site nor a file that exists"
@@ -1930,6 +1986,97 @@ def _pages_of_site(
         )
         for page in found.pages
     ]
+
+
+def _fetched_ahead(
+    pages: list[_Page],
+    record: Uniqueness,
+    client: httpx.Client,
+    options: AddOptions,
+    *,
+    delay: float,
+    on_fetched: Callable[[object, object], None],
+) -> list[_Page]:
+    """`pages`, each that will ask its site for itself carrying the site's
+    answer, asked for together (Brian, 2026-10-27).
+
+    kennis's own `delay` spaces the starts of two requests to a site, with
+    up to `PARALLEL_REQUESTS` in flight; a site whose robots.txt asks for
+    longer (`pace` above `delay`) is asked one page at a time, that long
+    after each, as before. A refresh asks with the validators the held page
+    carries, as `_refreshed_page` would. A file fetched whole is left to the
+    loop, since it may be a PDF for the converter; so is a held page whose
+    validators cannot be read, which the loop reports.
+    """
+    ahead: dict[int, Validators | None] = {}
+    for position, page in enumerate(pages):
+        if (
+            page.url is None
+            or page.whole_file
+            or not _requests(page, record, refresh=options.refresh)
+        ):
+            continue
+        existing = record.identities.get(
+            natural_key_for_docs(
+                project=page.project, version=page.version, page=page.key
+            )
+        )
+        if existing is None:
+            ahead[position] = None
+            continue
+        held = _held_validators(record.paths.get(existing))
+        if held is not None:
+            ahead[position] = held
+
+    by_site: dict[str, list[int]] = {}
+    for position in ahead:
+        url = pages[position].url
+        assert url is not None
+        by_site.setdefault(origin_of(url), []).append(position)
+
+    fetched = list(pages)
+    for positions in by_site.values():
+        pace = max(
+            (pages[position].pace or delay for position in positions), default=delay
+        )
+
+        def fetch(position: int) -> _Fetched:
+            url = pages[position].url
+            assert url is not None
+            held = ahead[position]
+            try:
+                if held is None:
+                    return _Fetched(page=fetch_page(client, url))
+                return _Fetched(page=fetch_page_if_changed(client, url, held))
+            except KennisError as error:
+                return _Fetched(page=None, error=error)
+
+        answers = fetched_in_parallel(
+            positions,
+            fetch,
+            workers=1 if pace > delay else PARALLEL_REQUESTS,
+            spacing=pace,
+            on_fetched=on_fetched,
+        )
+        for position, answer in zip(positions, answers, strict=True):
+            fetched[position] = replace(pages[position], fetched=answer)
+    return fetched
+
+
+def _held_validators(held_path: Path | None) -> Validators | None:
+    """The validators a held page carries, or None when it cannot be read
+    as a documentation page."""
+    if held_path is None:
+        return None
+    try:
+        frontmatter = read_document(held_path, collection="docs").frontmatter
+    except KennisError:
+        return None
+    if not isinstance(frontmatter, DocsFrontmatter):
+        return None
+    return Validators(
+        etag=frontmatter.docs.etag, last_modified=frontmatter.docs.last_modified
+    )
 
 
 def _requests(page: _Page, record: Uniqueness, *, refresh: bool) -> bool:
@@ -2021,6 +2168,13 @@ def _converted_page(
 
     if page.html is not None:
         markdown, validators = convert_page(page.html, page.url), Validators()
+    elif page.fetched is not None:
+        if page.fetched.error is not None:
+            raise page.fetched.error
+        if page.fetched.page is None:
+            raise _NotModified
+        markdown = page.fetched.page.markdown
+        validators = page.fetched.page.validators
     else:
         fetched = (
             fetch_page_if_changed(client, page.url, held)
@@ -2042,6 +2196,20 @@ def _converted_page(
 
 class _NotModified(Exception):
     """The site answered that the copy held is still current."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Fetched:
+    """One page's answer, asked for with the other pages of its site.
+
+    `page` is None when the site answered that the copy held is current;
+    `error` is why the page could not be read, raised when the page is
+    converted, so its outcome reads as it did when each page was fetched
+    in turn.
+    """
+
+    page: FetchedPage | None
+    error: KennisError | None = None
 
 
 def _refreshed_page(

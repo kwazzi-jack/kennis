@@ -35,8 +35,19 @@ To fetch by identifier without a local file:
 kennis corpus add arxiv:1101.1764 -l
 ```
 
-Override a derived citekey with `--citekey`, and a detected title with
-`--title`.
+A citekey is derived from the paper's first author, title and year, which
+arXiv gives for an arXiv identifier and the DOI's registry for a DOI, asked
+through doi.org once the paper's text is in hand. Override a derived
+citekey with `--citekey`, and a detected title with `--title`.
+
+A paper with no copy kennis may fetch - behind a publisher, or an arXiv
+paper arXiv has no rendering of - is refused, with its page named. On a
+terminal, `corpus add` then asks for each one: follow the page, download the
+paper through your institution's access if you have it, and give the path
+(Tab completes it). Enter skips that paper; Ctrl-C skips the rest. The file
+is added as `corpus add <file> -l --identifier <its identifier>` would add
+it. A pipe or a script is never asked, and the refusal says the same thing
+in words.
 
 kennis asks arXiv only what its `robots.txt` files allow, as often as they
 ask. On 2026-10-18 `arxiv.org` asked for 15 seconds between requests and

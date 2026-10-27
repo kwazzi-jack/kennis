@@ -605,7 +605,7 @@ _ACTING = {
     },
     "kennis.writing": None,
     "kennis.engine.locking": None,
-    "kennis.engine.pack.installed": {"list_installed", "remove_pack"},
+    "kennis.engine.pack.installed": {"list_installed", "uninstall_pack"},
     "kennis.engine.pack.store": {"install_pack"},
     "kennis.engine.context": _BUNDLE_ACTORS,
     "kennis.engine.context.bundle": {"declare_packs", "init_bundle", "reset_bundle"},

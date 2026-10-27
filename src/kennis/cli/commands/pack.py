@@ -1,32 +1,43 @@
 """`kennis pack`: knowledge that arrives from outside, as data.
 
 **Two roles, told apart by their object** (design section 9). `init`,
-`update` and `validate` act on a `.ken.yml` at a path - authoring, which is
-what a provider does in its own release pipeline. `add`, `remove`, `list`
-and `status` act on the installed store - consuming. `validate` serves both.
+`add`, `remove`, `update` and `validate` act on a `.ken.yml` at a path -
+authoring, which is what a provider does in its own release pipeline.
+`install`, `uninstall`, `list` and `status` act on the installed store -
+consuming. `validate` serves both.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final, cast
 
 import click
 
 from kennis.cli import display
+from kennis.cli.adding import destination_named, refuse_foreign_options, report_add
 from kennis.cli.group import KennisCommand, KennisGroup
+from kennis.cli.paths import anchored
 from kennis.cli.sink import DisplaySink, reporting, say_waiting
 from kennis.client import api
-from kennis.context import existing_corpus
+from kennis.context import existing_corpus, resolve_context
+from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.pack.versions import DEFAULT_VERSION
 
 if TYPE_CHECKING:
+    from kennis.engine.corpus.add import AddReport
+    from kennis.engine.pack.editing import Destination
     from kennis.engine.pack.installed import (
         InstalledPack,
         PackListing,
     )
     from kennis.engine.pack.update import PackUpdate
     from kennis.engine.pack.validate import PackReport
+
+# What a pack declares, as `--collection` takes it: the corpus's three and a
+# project's context. Built here rather than imported from `editing`, which
+# loads the add path and so every command with it (#536).
+DESTINATIONS: Final = (*COLLECTION_NAMES, "context")
 
 _DIGEST_KINDS = frozenset({"digest-mismatch", "digest-absent", "undigested"})
 
@@ -45,9 +56,9 @@ def pack_group() -> None:
     """Author and check a pack of knowledge."""
 
 
-@pack_group.command(name="add", cls=KennisCommand)
+@pack_group.command(name="install", cls=KennisCommand)
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-def add_command(path: Path) -> None:
+def install_command(path: Path) -> None:
     """Install a pack into this machine's store.
 
     **Meant to be called by the provider**, from its own sync command, on
@@ -140,15 +151,202 @@ def init_command(
     display.detail("+", f"{identifier} {version}")
 
 
+@pack_group.command(name="add", cls=KennisCommand)
+@click.argument("inputs", nargs=-1, required=True)
+@click.option(
+    "--collection",
+    type=click.Choice(DESTINATIONS),
+    help="What the entries are. One kind, never several.",
+)
+@click.option("-n", "--notes", "notes", is_flag=True, help="Shorthand for notes.")
+@click.option(
+    "-l", "--literature", "literature", is_flag=True, help="Shorthand for literature."
+)
+@click.option("-d", "--docs", "docs", is_flag=True, help="Shorthand for docs.")
+@click.option("-c", "--context", "context", is_flag=True, help="Shorthand for context.")
+@click.option("--title", help="Title for a single document, overriding what is found.")
+@click.option(
+    "--group", help="Subdirectory within the pack's folder of the collection."
+)
+@click.option("--identifier", help="arXiv id, DOI or bibcode. Literature only.")
+@click.option("--citekey", help="Citekey to use instead of a derived one.")
+@click.option("--project", help="The docs project a page belongs to. Docs only.")
+@click.option(
+    "--version",
+    "docs_version",
+    help=(
+        "Which version of the documentation the pages are, such as 2.12 or "
+        "latest. Read from the address when not given. Docs only."
+    ),
+)
+@click.option(
+    "--pack",
+    "pack_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="The pack file. The one *.ken.yml here when not given.",
+)
+def add_command(
+    inputs: tuple[str, ...],
+    collection: str | None,
+    notes: bool,
+    literature: bool,
+    docs: bool,
+    context: bool,
+    title: str | None,
+    group: str | None,
+    identifier: str | None,
+    citekey: str | None,
+    project: str | None,
+    docs_version: str | None,
+    pack_path: Path | None,
+) -> None:
+    """Declare papers, documentation, notes or context in a pack file.
+
+    Anything `kennis corpus add` takes, and each input is added or refused
+    on its own as there. A local file or folder is copied into the pack
+    under `files/` and named relative to the pack file, so the pack still
+    works on another machine. The file is edited in place - comments and
+    layout stay - and its generated block is brought up to date.
+    """
+    from kennis.engine.corpus.add import AddOptions
+    from kennis.engine.pack.editing import add_to_pack, find_pack_file
+    from kennis.engine.settings import own_directories
+    from kennis.render.packs import describe_copied
+
+    destination = destination_named(
+        collection,
+        {"notes": notes, "literature": literature, "docs": docs, "context": context},
+        offered=DESTINATIONS,
+    )
+    refuse_foreign_options(
+        destination,
+        identifier=identifier,
+        citekey=citekey,
+        project=project,
+        docs_version=docs_version,
+    )
+    path = pack_path or find_pack_file(Path.cwd())
+    with reporting() as events:
+        addition = add_to_pack(
+            path,
+            # `destination_named` returns one of `offered`.
+            cast("Destination", destination),
+            anchored(inputs),
+            AddOptions(
+                title=title,
+                group=group,
+                identifier=identifier,
+                citekey=citekey,
+                project=project,
+                version=docs_version,
+            ),
+            # Never a source, though no corpus need exist: the pack would
+            # publish what is in them.
+            kept_out=own_directories(resolve_context().corpus_root),
+            events=events,
+        )
+    report_add(
+        _with_citekeys(addition.report, addition.update),
+        noun="entry",
+        plural="entries",
+    )
+    for relative in addition.copied:
+        display.detail(">", describe_copied(relative))
+    if addition.update is None:
+        return
+    _say_what_the_update_did(addition.update, described=False)
+    display.next_step(f"kennis pack install {path}", note="to install this version")
+
+
+@pack_group.command(name="remove", cls=KennisCommand)
+@click.argument("names", nargs=-1, required=True)
+@click.option(
+    "--pack",
+    "pack_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="The pack file. The one *.ken.yml here when not given.",
+)
+@click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
+def remove_command(names: tuple[str, ...], pack_path: Path | None, yes: bool) -> None:
+    """Take entries out of a pack file.
+
+    Each name is a citekey, an identifier, an address, a documentation
+    project, a shipped file's path or a source folder. A copy `pack add`
+    made under `files/` that no entry names any more is deleted; nothing
+    else in the pack is.
+    """
+    from kennis.engine.pack.editing import (
+        entries_named,
+        find_pack_file,
+        remove_from_pack,
+    )
+    from kennis.render.packs import describe_deleted
+
+    path = pack_path or find_pack_file(Path.cwd())
+    if not yes:
+        # The pack's history is the author's, so this is a courtesy - but a
+        # removal deletes the copies only this entry named, and that is
+        # worth one keystroke, as it is for `corpus remove`.
+        listed = ", ".join(entries_named(path, names))
+        click.confirm(f"Remove {listed} from {path.name}?", abort=True)
+    with reporting() as events:
+        edit = remove_from_pack(path, names, events=events)
+    display.operation("Removed", f"{path.name}")
+    for name in edit.removed:
+        display.detail("-", name)
+    for relative in edit.deleted:
+        display.detail("-", describe_deleted(relative))
+    _say_what_the_update_did(edit.update)
+    display.next_step(f"kennis pack install {path}", note="to install this version")
+
+
+def _with_citekeys(report: AddReport, update: PackUpdate | None) -> AddReport:
+    """`report` with each paper the update described named with the citekey
+    it was given, so the paper is one line rather than two (Brian,
+    2026-10-27). A paper is named by its entry's key, which is what the
+    update names it by."""
+    from dataclasses import replace
+
+    from kennis.render.packs import describe_described
+
+    citekeys = dict(update.described) if update is not None else {}
+    return replace(
+        report,
+        outcomes=[
+            replace(outcome, title=describe_described(outcome.title, citekey))
+            if outcome.title is not None
+            and (citekey := citekeys.get(outcome.title)) is not None
+            else outcome
+            for outcome in report.outcomes
+        ],
+    )
+
+
+def _say_what_the_update_did(
+    result: PackUpdate | None, *, described: bool = True
+) -> None:
+    """What the update after an edit did. The block's file count only when
+    the pack ships files, since an edit's answer is the entries; `described`
+    is False where the papers were already named with their citekeys."""
+    from kennis.render.packs import describe_recorded
+
+    if result is None:
+        return
+    if result.files:
+        display.detail("=", describe_recorded(result))
+    _say_the_rest(result, described=described)
+
+
 @pack_group.command(name="update", cls=KennisCommand)
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 def update_command(path: Path) -> None:
     """Recompute a pack's generated block from the content it names.
 
     A paper declared without a `citekey` is described here, as `corpus add`
-    would describe it - looked up on arXiv when its identifier is one - and
-    the citekey recorded, so every machine files it alike. A paper already
-    described is not looked up again.
+    would describe it - looked up on arXiv or at its DOI's registry - and
+    the citekey, title, authors and year it lacks are written into its
+    entry, so every machine files it alike. An entry with a citekey is not
+    looked up.
 
     **Run this after changing any file the pack ships**, and before
     `pack validate`. A pack whose digests disagree with its files is
@@ -166,22 +364,29 @@ def update_command(path: Path) -> None:
     if result.outcome == "unchanged":
         display.operation("Unchanged", f"{path}")
         display.detail("=", describe_recorded(result))
-        _say_what_was_left(result)
+        _say_the_rest(result)
         return
     display.operation("Updated", f"{path}")
     display.detail("+", describe_recorded(result))
-    _say_what_was_left(result)
+    _say_the_rest(result)
 
 
-def _say_what_was_left(result: PackUpdate) -> None:
-    """Files in a declared source that no pattern took.
+def _say_the_rest(result: PackUpdate, *, described: bool = True) -> None:
+    """Each paper described and the citekey it was given; then files in a
+    declared source that no pattern took, and papers left undescribed.
 
-    Reported on an unchanged run as well, because that is the run where it
-    matters most: an author who has just added a `.csv` to the source and
-    been told "Unchanged" has no other way to find out why.
+    The leftovers are reported on an unchanged run as well, because that is
+    the run where it matters most: an author who has just added a `.csv` to
+    the source and been told "Unchanged" has no other way to find out why.
     """
-    from kennis.render.packs import describe_undescribed, describe_unselected
+    from kennis.render.packs import (
+        describe_described,
+        describe_undescribed,
+        describe_unselected,
+    )
 
+    for key, citekey in result.described if described else ():
+        display.detail("+", describe_described(key, citekey))
     if result.unselected:
         display.detail(">", describe_unselected(result.unselected))
     if result.undescribed:
@@ -275,7 +480,7 @@ def list_command(*, as_json: bool) -> None:
 
     The listing is the whole answer, so it is a listing and not a report:
     the pack id leads, because it is the column you copy out of and hand
-    to `pack remove`.
+    to `pack uninstall`.
 
     `--json` is for a provider asking whether its pack is held, so the
     rows stay free to change for a person (#401 reversed). No corpus is
@@ -327,7 +532,7 @@ def _report_unreadable(listing: PackListing) -> None:
 
     display.note(describe_unreadable(listing.unreadable))
     for name in listing.unreadable:
-        display.next_step(f"kennis pack remove {name}")
+        display.next_step(f"kennis pack uninstall {name}")
 
 
 @pack_group.command(name="status", cls=KennisCommand)
@@ -371,7 +576,7 @@ def _report_damage(installed: InstalledPack) -> None:
     display.detail("!", damage)
     source = Path(installed.state.source_path)
     if source.is_file():
-        display.next_step(f"kennis pack add {source}")
+        display.next_step(f"kennis pack install {source}")
     else:
         display.hint(describe_lost_source(installed))
 
@@ -395,9 +600,9 @@ def _report_overlaps(listing: PackListing) -> None:
         display.detail("~", describe_overlap(overlap))
 
 
-@pack_group.command(name="remove", cls=KennisCommand)
+@pack_group.command(name="uninstall", cls=KennisCommand)
 @click.argument("pack_id")
-def remove_command(pack_id: str) -> None:
+def uninstall_command(pack_id: str) -> None:
     """Drop a pack from this machine's store.
 
     **It reaches the store and nothing else.** Documents already in the
@@ -405,16 +610,19 @@ def remove_command(pack_id: str) -> None:
     checked out - kennis keeps no registry of your projects, so it cannot
     reach them. They converge when each one is next synchronised.
     """
-    from kennis.render.packs import describe_removal, describe_what_remove_cannot_reach
+    from kennis.render.packs import (
+        describe_removal,
+        describe_what_uninstall_cannot_reach,
+    )
 
     corpus_root = existing_corpus().corpus_root
     with DisplaySink() as shown:
-        removal = api.remove_pack(
+        removal = api.uninstall_pack(
             corpus_root, pack_id, events=shown, on_waiting=say_waiting
         ).result
-    display.operation("Removed", removal.pack_id)
+    display.operation("Uninstalled", removal.pack_id)
     display.detail("-", describe_removal(removal))
-    display.guidance(describe_what_remove_cannot_reach())
+    display.guidance(describe_what_uninstall_cannot_reach())
     # Named because the limit above is otherwise only a statement of
     # helplessness: kennis cannot reach the user's projects, and the user
     # can. The corpus it *can* reach, so that one is named too.

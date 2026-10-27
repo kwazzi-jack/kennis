@@ -1,4 +1,4 @@
-"""The pack store: `kennis pack add`. Milestone 7 unit 5.
+"""The pack store: `kennis pack install`. Milestone 7 unit 5.
 
 Design sections 5 (steps 1, 2, 2a and 5) and 8. The property most of this
 file is about is the fourth fast-path condition - that a store which does
@@ -93,7 +93,7 @@ def test_the_state_records_what_the_fast_path_compares(corpus: Path, provider: P
 
 def test_first_applied_at_survives_a_later_install(corpus: Path, provider: Path):
     """Section 5: it is the tie-break when two packs declare the same thing,
-    and `applied_at` cannot be, because a provider calls `pack add` on every
+    and `applied_at` cannot be, because a provider calls `pack install` on every
     run and most-recent-wins would flip ownership in a loop and rewrite the
     same documents forever.
 

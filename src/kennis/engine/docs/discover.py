@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass, field, replace
 from fnmatch import fnmatch
@@ -37,6 +36,7 @@ import httpx
 from kennis.engine.courtesy import crawl_delay, robots_for
 from kennis.engine.docs.http import USER_AGENT, get_within
 from kennis.engine.docs.sites import DocsSite
+from kennis.engine.parallel import PARALLEL_REQUESTS, Spacing, fetched_in_parallel
 
 _REQUEST_TIMEOUT_SECONDS: Final = 30
 
@@ -152,6 +152,9 @@ def discover_pages(
             robots,
             mode=mode,
             delay=paced,
+            # The site asked for longer than kennis's own pacing, so it is
+            # asked one page at a time.
+            one_at_a_time=paced > delay,
             max_pages=max_pages,
             max_depth=max_depth,
         )
@@ -206,12 +209,20 @@ def crawl_site(
     max_pages: int = _MAX_PAGES,
     max_depth: int = _MAX_DEPTH,
     delay: float = _FETCH_DELAY_SECONDS,
+    one_at_a_time: bool = False,
 ) -> Crawled:
     """A bounded, breadth-first, robots-respecting walk from `base_url`.
 
     Scope is same-origin **and** same-path-prefix. Same-origin alone would
     sweep a project's blog and marketing pages in beside its documentation,
     which is a difference of kind rather than of degree once it is indexed.
+
+    The front of the queue is fetched together, up to `PARALLEL_REQUESTS`
+    with their starts `delay` apart, and the answers are read in queue
+    order, so a crawl finds what it found one page at a time and in the same
+    order (2026-10-27). A batch is no larger than the pages and requests the
+    limits still allow. `one_at_a_time` is for a site whose robots.txt asks
+    for its own delay: one request, then `delay`, as before.
     """
     origin = _origin_of(base_url)
     prefix = path_prefix if path_prefix is not None else _path_prefix_of(base_url)
@@ -228,50 +239,102 @@ def crawl_site(
     # Every request counts, not only those that found a page: a page of a
     # thousand dead links was a thousand requests, unpaced and uncounted.
     attempts = 0
-    while queue and len(found) < max_pages and attempts < max_pages * 3:
-        url, depth = queue.pop(0)
-        key = _normalized(url)
-        if key in visited:
-            continue
-        visited.add(key)
-        if not robots.can_fetch(USER_AGENT, url):
-            continue
-
-        if attempts and delay:
-            time.sleep(delay)
-        attempts += 1
-        try:
-            response = get_within(client, url, origin=origin)
-            response.raise_for_status()
-        except httpx.HTTPError:
-            continue
-        if "html" not in response.headers.get("content-type", ""):
-            continue
-        # Where the page really is, after any redirect: its links are
-        # relative to that, and a site's root redirecting to `/en/latest/`
-        # resolved every link one level too high.
-        landed = str(response.url)
-        if landed != url and (
-            not _in_scope(_normalized(landed), origin, prefix)
-            or not robots.can_fetch(USER_AGENT, landed)
-        ):
-            continue
-
-        found.append(url)
-        html[url] = response.text
-        if depth >= max_depth:
-            continue
-
-        for link in _links_in(response.text, landed):
-            normalized = _normalized(link)
-            if normalized in queued or normalized in visited:
+    requests_allowed = max_pages * 3
+    workers = 1 if one_at_a_time else PARALLEL_REQUESTS
+    pacing = Spacing(delay, one_at_a_time=one_at_a_time)
+    while queue and len(found) < max_pages and attempts < requests_allowed:
+        room = min(workers, max_pages - len(found), requests_allowed - attempts)
+        batch: list[tuple[str, int]] = []
+        while queue and len(batch) < room:
+            url, depth = queue.pop(0)
+            key = _normalized(url)
+            if key in visited:
                 continue
-            if not _in_scope(normalized, origin, prefix):
-                continue
-            queued.add(normalized)
-            queue.append((link, depth + 1))
+            visited.add(key)
+            if robots.can_fetch(USER_AGENT, url):
+                batch.append((url, depth))
+        attempts += len(batch)
+        answers = fetched_in_parallel(
+            batch,
+            lambda item: _page_answer(client, item[0], origin),
+            workers=workers,
+            spacing=pacing,
+        )
+        for (url, depth), response in zip(batch, answers, strict=True):
+            _read_crawled(
+                url,
+                depth,
+                response,
+                robots=robots,
+                origin=origin,
+                prefix=prefix,
+                max_depth=max_depth,
+                walk=_Walk(found, html, queue, queued, visited),
+            )
 
     return Crawled(urls=found, html=html)
+
+
+@dataclass(frozen=True, slots=True)
+class _Walk:
+    """What a crawl has found so far and what it has still to ask for."""
+
+    found: list[str]
+    html: dict[str, str]
+    queue: list[tuple[str, int]]
+    queued: set[str]
+    visited: set[str]
+
+
+def _page_answer(client: httpx.Client, url: str, origin: str) -> httpx.Response | None:
+    """The site's answer for one page, or None when it gave none worth
+    reading."""
+    try:
+        response = get_within(client, url, origin=origin)
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return None
+    return response
+
+
+def _read_crawled(
+    url: str,
+    depth: int,
+    response: httpx.Response | None,
+    *,
+    robots: RobotFileParser,
+    origin: str,
+    prefix: str,
+    max_depth: int,
+    walk: _Walk,
+) -> None:
+    """One crawled page's answer: kept when it is an HTML page in scope, and
+    its links queued when it is above the depth limit."""
+    if response is None or "html" not in response.headers.get("content-type", ""):
+        return
+    # Where the page really is, after any redirect: its links are relative
+    # to that, and a site's root redirecting to `/en/latest/` resolved every
+    # link one level too high.
+    landed = str(response.url)
+    if landed != url and (
+        not _in_scope(_normalized(landed), origin, prefix)
+        or not robots.can_fetch(USER_AGENT, landed)
+    ):
+        return
+
+    walk.found.append(url)
+    walk.html[url] = response.text
+    if depth >= max_depth:
+        return
+
+    for link in _links_in(response.text, landed):
+        normalized = _normalized(link)
+        if normalized in walk.queued or normalized in walk.visited:
+            continue
+        if not _in_scope(normalized, origin, prefix):
+            continue
+        walk.queued.add(normalized)
+        walk.queue.append((link, depth + 1))
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +478,7 @@ def _generic_pages(
     *,
     mode: str,
     delay: float,
+    one_at_a_time: bool,
     max_pages: int,
     max_depth: int,
 ) -> Discovery:
@@ -439,6 +503,7 @@ def _generic_pages(
             max_pages=max_pages,
             max_depth=max_depth,
             delay=delay,
+            one_at_a_time=one_at_a_time,
         )
         urls = crawled.urls
         html = crawled.html

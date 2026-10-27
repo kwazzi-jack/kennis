@@ -30,6 +30,7 @@ wrong with it.
 from __future__ import annotations
 
 import re
+from collections.abc import Hashable
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Final
 
@@ -42,6 +43,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from yaml.nodes import MappingNode, ScalarNode
 
 from kennis.engine.docs.versions import checked_version, version_in_address
 from kennis.engine.errors import InputError, PackInvalid
@@ -71,6 +73,24 @@ def is_pack_id(value: str) -> bool:
 
 
 _FORBID: Final = ConfigDict(extra="forbid")
+
+
+def _inside_the_pack(value: str, *, named: str) -> str:
+    """A path a pack declares, relative to the pack file and inside it.
+
+    Both flavours, not the host's `Path`: a pack is written on one platform
+    and installed on another. `/etc/passwd` has no drive and is relative to
+    Windows; `C:\\x` and `..\\x` are one filename to Linux. An anchor is a
+    drive, a root, or both (#385, #403).
+    """
+    flavours = (PurePosixPath(value), PureWindowsPath(value))
+    if any(path.anchor for path in flavours):
+        raise ValueError(f"'{value}' is absolute; a {named} is relative to the pack")
+    if value.startswith("~"):
+        raise ValueError(f"'{value}' names a home directory, not the pack")
+    if any(".." in path.parts for path in flavours):
+        raise ValueError(f"'{value}' leaves the pack root")
+    return value
 
 
 def _checked_group(value: str | None) -> str | None:
@@ -132,8 +152,9 @@ class LiteratureEntry(BaseModel):
 
     **Only the identifier is required**, as `corpus add 1101.1764` needs
     nothing else (#459). `kennis pack update` derives what an entry leaves
-    out - citekey, title, authors, year - as the add would, and records it
-    in the generated block; a field the entry gives is never overridden.
+    out - citekey, title, authors, year - as the add would, and writes it
+    into the entry, as `uv add` writes into `pyproject.toml` (Brian,
+    2026-10-26); a field the entry gives is never overridden.
 
     **One identifier field**, which takes an arXiv identifier, a DOI or an
     ADS bibcode and is read as whichever it is. Three fields, one per kind,
@@ -153,6 +174,10 @@ class LiteratureEntry(BaseModel):
     title: str | None = None
     identifier: str | None = None
     url: str | None = None
+    # The paper's document shipped in the pack, relative to the pack file:
+    # for a paper whose text no address reaches, such as one behind a
+    # publisher (Brian, 2026-10-26). Excludes `url`.
+    file: str | None = None
     group: str | None = None
     authors: str | None = None
     # An int, because `year_min` filtering compares numerically and a string
@@ -199,8 +224,23 @@ class LiteratureEntry(BaseModel):
             raise ValueError(f"'{value}' is not an http or https address")
         return value
 
+    @field_validator("file")
+    @classmethod
+    def _a_file_in_the_pack(cls, value: str | None) -> str | None:
+        return None if value is None else _inside_the_pack(value, named="file")
+
     @model_validator(mode="after")
     def _names_a_paper(self) -> LiteratureEntry:
+        if self.url is not None and self.file is not None:
+            raise ValueError(
+                "give `url` or `file`, not both: each says where the paper's text is"
+            )
+        if self.file is not None and self.identifier is None:
+            raise ValueError(
+                "a paper shipped as a file needs `identifier`, an arXiv "
+                "identifier, a DOI or an ADS bibcode, which says which paper "
+                "it is"
+            )
         if self.identifier is None and (
             self.url is None or identifier_if_reference(self.url) is None
         ):
@@ -236,7 +276,11 @@ class DocsEntry(BaseModel):
     model_config = _FORBID
 
     project: str
-    base_url: str
+    # The site, crawled from here; or `pages`, files shipped in the pack and
+    # filed into the project as `corpus add -d <file>` files one. Exactly
+    # one of the two.
+    base_url: str | None = None
+    pages: list[str] = Field(default_factory=list)
     # Which version of the documentation, filed as `docs/<project>/<version>/`
     # (#489). Read from `base_url` when it is left out; a pack whose address
     # names none must say.
@@ -253,8 +297,25 @@ class DocsEntry(BaseModel):
         except InputError as error:
             raise ValueError(str(error)) from error
 
+    @field_validator("pages")
+    @classmethod
+    def _pages_in_the_pack(cls, value: list[str]) -> list[str]:
+        return [_inside_the_pack(page, named="page") for page in value]
+
     @model_validator(mode="after")
     def _has_a_version(self) -> DocsEntry:
+        if (self.base_url is None) == (not self.pages):
+            raise ValueError(
+                "give `base_url`, the site to crawl, or `pages`, files in the "
+                "pack - exactly one of the two"
+            )
+        if self.base_url is None:
+            if self.version is None:
+                raise ValueError(
+                    "local pages name no version of the documentation: add "
+                    "`version:`, such as `version: latest`"
+                )
+            return self
         if self.version is None and version_in_address(self.base_url) is None:
             raise ValueError(
                 f"'{self.base_url}' names no version of the documentation: "
@@ -294,18 +355,7 @@ class ContentSource(BaseModel):
     @field_validator("source")
     @classmethod
     def _stays_under_the_pack_root(cls, value: str) -> str:
-        # Both flavours, not the host's `Path`: a pack is written on one
-        # platform and installed on another. `/etc/passwd` has no drive and
-        # is relative to Windows; `C:\x` and `..\x` are one filename to
-        # Linux. An anchor is a drive, a root, or both (#385, #403).
-        flavours = (PurePosixPath(value), PureWindowsPath(value))
-        if any(path.anchor for path in flavours):
-            raise ValueError(f"'{value}' is absolute; a source is relative to the pack")
-        if value.startswith("~"):
-            raise ValueError(f"'{value}' names a home directory, not the pack")
-        if any(".." in path.parts for path in flavours):
-            raise ValueError(f"'{value}' leaves the pack root")
-        return value
+        return _inside_the_pack(value, named="source")
 
     @field_validator("group")
     @classmethod
@@ -353,6 +403,38 @@ class NoteLink(BaseModel):
         return f"url:{self.url}"
 
 
+class NoteFile(BaseModel):
+    """One note the pack ships as a file, converted at `corpus sync` as
+    `corpus add -n <file>` converts it (Brian, 2026-10-26).
+
+    A `source:` folder ships a tree; this ships one file and may name it.
+    Each of the three notes models forbids the others' keys, so an entry is
+    exactly one of them. `group` is a folder inside `notes/<pack id>/`.
+    """
+
+    model_config = _FORBID
+
+    file: str
+    title: str | None = None
+    group: str | None = None
+
+    @field_validator("file")
+    @classmethod
+    def _a_file_in_the_pack(cls, value: str) -> str:
+        return _inside_the_pack(value, named="file")
+
+    @field_validator("group")
+    @classmethod
+    def _stays_inside_the_packs_folder(cls, value: str | None) -> str | None:
+        return _checked_group(value)
+
+    @property
+    def key(self) -> str:
+        """What a sync diffs this declaration on: the path, marked as a
+        file so it cannot collide with an address inside a `source:`."""
+        return f"file:{self.file}"
+
+
 class CorpusSection(BaseModel):
     """The three corpus collections a pack may declare."""
 
@@ -360,7 +442,7 @@ class CorpusSection(BaseModel):
 
     literature: list[LiteratureEntry] = Field(default_factory=list)
     docs: list[DocsEntry] = Field(default_factory=list)
-    notes: list[ContentSource | NoteLink] = Field(default_factory=list)
+    notes: list[ContentSource | NoteLink | NoteFile] = Field(default_factory=list)
 
     @property
     def note_sources(self) -> list[ContentSource]:
@@ -371,6 +453,11 @@ class CorpusSection(BaseModel):
     def note_links(self) -> list[NoteLink]:
         """The notes the pack declares by address, fetched at sync."""
         return [entry for entry in self.notes if isinstance(entry, NoteLink)]
+
+    @property
+    def note_files(self) -> list[NoteFile]:
+        """The notes the pack ships one file at a time."""
+        return [entry for entry in self.notes if isinstance(entry, NoteFile)]
 
 
 class GeneratedSource(BaseModel):
@@ -397,21 +484,10 @@ class GeneratedContent(BaseModel):
     notes: list[GeneratedSource] = Field(default_factory=list)
 
 
-class GeneratedPaper(BaseModel):
-    """What `pack update` derived for a paper, in the fields its entry left
-    out. Every machine reads the same record, so a paper is filed under the
-    same citekey wherever the pack is installed."""
-
-    model_config = _FORBID
-
-    citekey: str | None = None
-    title: str | None = None
-    authors: str | None = None
-    year: int | None = None
-
-
 class GeneratedBlock(BaseModel):
-    """Written by `pack update`; never hand-edited.
+    """Written by `pack update`; never hand-edited. Checksums alone, which
+    are a lock file's job: what a person might want to read or change - a
+    paper's citekey - is written into its entry instead.
 
     `at` and `by` are restamped only when a digest actually changed, so a
     provider rebuild that altered nothing leaves the file byte-identical and
@@ -420,11 +496,27 @@ class GeneratedBlock(BaseModel):
 
     model_config = _FORBID
 
+    @model_validator(mode="before")
+    @classmethod
+    def _no_paper_records(cls, data: object) -> object:
+        """Name what to do with a block written before papers were described
+        in their entries. No compatibility before 1.0, so it is refused,
+        with the way out rather than "extra inputs are not permitted"."""
+        if isinstance(data, dict) and "literature" in data:
+            raise ValueError(
+                "'generated.literature' is no longer kept: `kennis pack "
+                "update` writes each paper's citekey, title, authors and year "
+                "into its entry. Delete the block's `literature:` and run "
+                "`kennis pack update`"
+            )
+        return data
+
     at: str
     by: str
     content: GeneratedContent = Field(default_factory=GeneratedContent)
-    # Keyed by the entry's key, `arxiv:1101.1764` (#459).
-    literature: dict[str, GeneratedPaper] = Field(default_factory=dict)
+    # The checksum of every file a `file:` or `pages:` names, by its path
+    # relative to the pack file.
+    files: dict[str, str] = Field(default_factory=dict)
 
 
 class Pack(BaseModel):
@@ -439,6 +531,54 @@ class Pack(BaseModel):
     # Absent until `pack update` has run, so nothing downstream may assume it.
     generated: GeneratedBlock | None = None
 
+    @property
+    def shipped_files(self) -> tuple[str, ...]:
+        """Every path a `file:` or `pages:` names, in declaration order:
+        papers, then notes, then documentation pages."""
+        return (
+            *(entry.file for entry in self.corpus.literature if entry.file),
+            *(entry.file for entry in self.corpus.note_files),
+            *(page for entry in self.corpus.docs for page in entry.pages),
+        )
+
+
+class _RepeatedKey(yaml.YAMLError):
+    def __init__(self, key: Hashable, first_line: int, second_line: int) -> None:
+        super().__init__(f"{key!r} is given twice")
+        self.key = key
+        self.first_line = first_line
+        self.second_line = second_line
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """`safe_load`'s loader, refusing a mapping that gives a key twice.
+
+    PyYAML keeps the last of two equal keys in silence (#547), and YAML 1.2
+    requires them unique. The keys are compared as written, before
+    `flatten_mapping` expands `<<`, so a merged key overridden once is YAML's
+    override and not a repeat; `<<` itself is passed over because it has no
+    constructor of its own, being only an instruction to `flatten_mapping`.
+    """
+
+    def construct_mapping(
+        self, node: MappingNode, deep: bool = False
+    ) -> dict[Hashable, Any]:
+        seen: dict[Hashable, int] = {}
+        for key_node, _ in node.value:
+            if not isinstance(key_node, ScalarNode) or key_node.value == "<<":
+                continue
+            key = self.construct_object(key_node)
+            line = key_node.start_mark.line + 1
+            if key in seen:
+                raise _RepeatedKey(key, seen[key], line)
+            seen[key] = line
+        return super().construct_mapping(node, deep=deep)
+
+
+def read_yaml(text: str) -> object:
+    """The YAML document `text` holds, refusing a key given twice."""
+    return yaml.load(text, Loader=_UniqueKeyLoader)
+
 
 def load_pack(text: str) -> Pack:
     """Parse and validate the text of a `.ken.yml` file.
@@ -450,7 +590,13 @@ def load_pack(text: str) -> Pack:
     for one question.
     """
     try:
-        document = yaml.safe_load(text)
+        document = read_yaml(text)
+    except _RepeatedKey as repeated:
+        raise PackInvalid(
+            f"`{repeated.key}` is given twice in one mapping, on lines "
+            f"{repeated.first_line} and {repeated.second_line}; YAML allows a "
+            "key once, so delete the one you do not mean"
+        ) from repeated
     except yaml.YAMLError as error:
         raise PackInvalid(f"this is not YAML: {error}") from error
     if not isinstance(document, dict):
@@ -492,16 +638,17 @@ __all__ = [
     "DocsEntry",
     "GeneratedBlock",
     "GeneratedContent",
-    "GeneratedPaper",
     "GeneratedSource",
     "JsonSchema",
     "KennisHeader",
     "LiteratureEntry",
+    "NoteFile",
     "NoteLink",
     "Pack",
     "PackIdentity",
     "is_pack_id",
     "load_pack",
+    "read_yaml",
     "schema_document",
     "schema_path",
 ]

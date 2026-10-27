@@ -28,7 +28,7 @@ from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.intake import convert_local_file, uploaded_as
 from kennis.engine.events import EventSink
-from kennis.engine.literature.metadata import ArxivMetadata
+from kennis.engine.literature.metadata import PaperMetadata
 from kennis.engine.settings import load_settings
 from kennis.gui import words
 from kennis.gui.app import build_app
@@ -441,9 +441,9 @@ def test_the_group_tab_draws_two_blocks_to_start(client: TestClient):
 def lookups(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     asked: list[str] = []
 
-    def answered(arxiv_id: str, *, client: object = None) -> ArxivMetadata:
+    def answered(arxiv_id: str, *, client: object = None) -> PaperMetadata:
         asked.append(arxiv_id)
-        return ArxivMetadata(
+        return PaperMetadata(
             title="A Paper About Calibration", authors="Brian Welman", year="2024"
         )
 
@@ -1387,7 +1387,7 @@ def test_a_value_still_kenniss_follows_a_changed_identifier(
     titles = {"2409.19750": "First Paper", "2501.00001": "Second Paper"}
     monkeypatch.setattr(
         "kennis.engine.corpus.preview.lookup_arxiv_metadata",
-        lambda arxiv_id, *, client=None: ArxivMetadata(
+        lambda arxiv_id, *, client=None: PaperMetadata(
             title=titles[arxiv_id], authors="Brian Welman", year="2024"
         ),
     )
@@ -1519,7 +1519,7 @@ def test_the_field_being_typed_in_is_not_redrawn(
 def five_authors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "kennis.engine.corpus.preview.lookup_arxiv_metadata",
-        lambda arxiv_id, *, client=None: ArxivMetadata(
+        lambda arxiv_id, *, client=None: PaperMetadata(
             title="A Paper About Calibration",
             authors="Ada One and Bo Two and Cy Three and Di Four and Ed Five",
             year="2024",

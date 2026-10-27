@@ -1,7 +1,7 @@
 """A pack's context, searched where it lives (14g, #513).
 
 A pack's `context:` content is advice for the projects that use the pack.
-It is kept once, in the store `kennis pack add` fills, and a project that
+It is kept once, in the store `kennis pack install` fills, and a project that
 declares the pack searches it there: nothing is copied into a project, so
 a pack's release reaches every project at once, no project's repository
 changes for text it did not write, and a search across projects meets each

@@ -1,0 +1,27 @@
+{# The papers kennis could not fetch, each with its page and the browser's
+   own picker. The page opens in a tab that cannot reach back into kennis
+   and is not told where the reader came from (11e). Cancel closes the
+   dialog, and every paper is skipped; a paper left empty is skipped. #}
+<p class="role-muted">{{ supply_preamble }}{% if owner == "pack" %} {{ supply_for_the_pack }}{% endif %}</p>
+<form action="/supply" method="post" enctype="multipart/form-data" hx-post="/supply" hx-encoding="multipart/form-data" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]" data-closes-dialog>
+  <div id="supply-problem" class="form-problem" role="alert"></div>
+  <input type="hidden" name="owner" value="{{ owner }}">
+  <ul class="supply-papers">
+    {% for paper in papers %}
+    <li>
+      <input type="hidden" name="paper-{{ loop.index0 }}" value="{{ paper.reference }}">
+      <p class="supply-paper"><span class="role-muted">{{ paper.label }}</span> <code>{{ paper.value }}</code> <a class="button" href="{{ paper.page }}" target="_blank" rel="noopener noreferrer">{{ icon("arrow-up-right") }}{{ open_the_paper }}</a></p>
+      <span class="uploads"{% for case, said in upload_said.items() %} data-said-{{ case }}="{{ said }}"{% endfor %}>
+        <span class="upload-buttons">
+          <label class="upload-button">{{ icon("file-plus") }}<span class="upload-label">{{ choose_the_file }}</span><input type="file" name="file-{{ loop.index0 }}"></label>
+        </span>
+        <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="link upload-clear" data-upload-clear hidden>{{ upload_clear }}</button></span>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("file-plus") }}{{ supply_action }}</button>
+  </div>
+</form>

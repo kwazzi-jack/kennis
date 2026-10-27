@@ -133,6 +133,20 @@
           // What else the outcome changed - the strip, the pane, a
           // backup's section - asked for again where this page has it.
           if (window.kennisRedraw) { window.kennisRedraw(outcome); }
+          // Papers kennis could not fetch are asked for here, where the job
+          // has just ended in front of the reader, and nowhere else: an
+          // outcome drawn later by the server never reaches this, so the
+          // question is not asked again on every page. A dialog the reader
+          // already has open is left alone.
+          var ask = outcome.querySelector("[data-ask-route]");
+          var slot = document.getElementById("dialog");
+          if (ask && slot && window.htmx && !slot.querySelector("dialog[open]")) {
+            window.htmx.ajax("GET", ask.dataset.askRoute, {
+              source: slot,
+              target: slot,
+              swap: "innerHTML",
+            });
+          }
         })
         .catch(function () {
           // The operation still happened; only this page's account of

@@ -310,7 +310,10 @@ def test_a_refreshed_page_is_paced_like_a_new_one(
 
     add_docs(docs, [BASE], paced, client=site.client())
 
-    assert slept == [0.5]
+    # One wait, of what is left of the delay once the first request has
+    # started (2026-10-27, requests to a site overlap).
+    assert len(slept) == 1
+    assert 0 < slept[0] <= 0.5
 
 
 def test_a_refresh_keeps_a_page_in_its_version(docs: Collection):

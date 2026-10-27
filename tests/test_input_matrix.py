@@ -39,6 +39,14 @@ def papers(tmp_path: Path) -> Collection:
     return Collection(root=tmp_path / "corpus", name="literature")
 
 
+def unknown_to_doi_org() -> httpx.Client:
+    """A registry that does not know the paper: a DOI paper added from a
+    file is described by doi.org, and these tests are about the file."""
+    return httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404))
+    )
+
+
 def serving(content: bytes | str, content_type: str) -> httpx.Client:
     """A server answering every request with one body and one content type."""
 
@@ -198,6 +206,7 @@ def test_literature_accepts_a_url_with_an_identifier(papers: Collection):
         papers,
         ["https://example.com/paper"],
         AddOptions(identifier="10.1093/mnras/stab1234", request_delay_seconds=0),
+        arxiv=unknown_to_doi_org(),
         client=serving(HTML_PAGE, "text/html"),
     )
 
@@ -300,6 +309,7 @@ def test_literature_takes_the_same_local_kinds_as_notes(
         papers,
         [str(a_file(tmp_path, name))],
         AddOptions(identifier="10.1093/mnras/stab1234", request_delay_seconds=0),
+        arxiv=unknown_to_doi_org(),
     )
 
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]
@@ -316,6 +326,7 @@ def test_literature_takes_a_directory(papers: Collection, tmp_path: Path):
         papers,
         [str(directory)],
         AddOptions(identifier="10.1093/mnras/stab1234", request_delay_seconds=0),
+        arxiv=unknown_to_doi_org(),
     )
 
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED]

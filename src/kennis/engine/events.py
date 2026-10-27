@@ -249,6 +249,13 @@ class EventSink(Protocol):
     def emit(self, event: Event) -> None: ...
 
 
+class DiscardingSink:
+    """The sink a caller gets when it wants only the report."""
+
+    def emit(self, event: Event) -> None:
+        return None
+
+
 class Recorder:
     """An `EventSink` that keeps everything, so a test can assert what an
     operation reported without driving a front end."""

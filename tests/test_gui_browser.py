@@ -394,6 +394,38 @@ def test_an_add_here_redraws_the_open_branch_and_is_not_news(
     assert not page.evaluate("document.getElementById('corpus-changed').open")
 
 
+def test_a_finished_job_redraws_every_part_it_names(
+    page: playwright.Page, tmp_path: Path
+) -> None:
+    """The window added 17 pages and the pane still said "docs 0": the
+    outcome named eight parts, and htmx queued every redraw on `<body>`,
+    sending the first and the last (#539). The count is the second part,
+    and nothing else redraws it; the branch test above watches the last."""
+    chosen = tmp_path / "elsewhere" / "rivers.md"
+    chosen.parent.mkdir()
+    chosen.write_text("# Rivers\n\nRivers carry sediment.\n", encoding="utf-8")
+    before = page.inner_text("#pane-documents")
+
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] input[name=upload][multiple]',
+        timeout=_WAIT_MS,
+    )
+    page.set_input_files("#dialog input[name=upload][multiple]", str(chosen))
+    page.click("#dialog .choices label:has(input[value=notes])")
+    _wait_for_htmx(page, "#dialog form")
+    page.click("#dialog form[action='/add'] button[type=submit]")
+    page.wait_for_selector(".strip .job[data-state='done']", timeout=_WAIT_MS)
+
+    page.wait_for_function(
+        "before => document.getElementById('pane-documents').innerText !== before",
+        arg=before,
+        timeout=_WAIT_MS,
+    )
+
+
 def test_a_note_in_a_new_group_appears_in_the_open_branch(
     page: playwright.Page,
 ) -> None:
@@ -956,11 +988,11 @@ def test_the_paper_preview_fills_the_fields_and_an_edit_unmarks_one(
 ) -> None:
     """Out of band, so htmx must process the redraw it did not target;
     and the mark follows the reader's edit, which only a browser runs."""
-    from kennis.engine.literature.metadata import ArxivMetadata
+    from kennis.engine.literature.metadata import PaperMetadata
 
     monkeypatch.setattr(
         "kennis.engine.corpus.preview.lookup_arxiv_metadata",
-        lambda arxiv_id, *, client=None: ArxivMetadata(
+        lambda arxiv_id, *, client=None: PaperMetadata(
             title="A Paper About Calibration", authors="Brian Welman", year="2024"
         ),
     )
@@ -997,11 +1029,11 @@ def test_a_slow_lookup_says_it_is_looking_until_it_answers(
     arXiv answered, and nothing said a lookup was under way."""
     import time
 
-    from kennis.engine.literature.metadata import ArxivMetadata
+    from kennis.engine.literature.metadata import PaperMetadata
 
-    def slowly(arxiv_id: str, *, client: object = None) -> ArxivMetadata:
+    def slowly(arxiv_id: str, *, client: object = None) -> PaperMetadata:
         time.sleep(1.5)
-        return ArxivMetadata(title="Slow Paper", authors="Ada One", year="2024")
+        return PaperMetadata(title="Slow Paper", authors="Ada One", year="2024")
 
     monkeypatch.setattr("kennis.engine.corpus.preview.lookup_arxiv_metadata", slowly)
     page.goto(page.url.split("?")[0])
@@ -1015,3 +1047,45 @@ def test_a_slow_lookup_says_it_is_looking_until_it_answers(
     # Waited for, not read at once: htmx drops its request class just after
     # the swap, and in a loaded suite the read landed between the two.
     page.wait_for_selector("#add-looking", state="hidden", timeout=_WAIT_MS)
+
+
+def test_a_sync_that_could_not_fetch_a_paper_asks_for_it_once(
+    page: playwright.Page, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Brian, 2026-10-26: a paper with no open copy is asked for when the
+    sync ends - its page, a word about institutional access, the browser's
+    own picker - and Cancel skips it. Asked when the job ends in front of
+    the reader and not again: the next page draws the outcome in the strip
+    and must not open the dialog a second time."""
+    import kennis.gui.routes.jobs as job_routes
+    from kennis.engine.corpus.sync import CorpusSync
+    from kennis.engine.refusals import NoPublisherText
+
+    doi = "10.48479/bhpj-nz95"
+    unfetched = CorpusSync(
+        actions=(),
+        counts={},
+        deferred=(),
+        copied=(),
+        failed=(f"doi:{doi}",),
+        why=((f"doi:{doi}", NoPublisherText(kind="doi", value=doi)),),
+    )
+
+    def synchronised(context: object, **kwargs: object) -> CorpusSync:
+        return unfetched
+
+    monkeypatch.setattr(job_routes, "synchronise_corpus", synchronised)
+
+    page.click("a.action[href='/sync']")
+    _wait_for_htmx(page, "#dialog form[action='/sync']")
+    page.click("#dialog form[action='/sync'] button[type=submit]")
+    asked = "#dialog dialog[open] form[action='/supply']"
+    page.wait_for_selector(asked, timeout=_WAIT_MS)
+    assert doi in page.inner_text("#dialog dialog[open]")
+    assert page.locator("#dialog dialog[open] input[type=file]").count() == 1
+
+    page.click("#dialog dialog[open] a.button[data-close]")
+    page.wait_for_selector("#dialog dialog", state="detached", timeout=_WAIT_MS)
+    page.reload()
+    page.wait_for_selector(".strip .job[data-state]", timeout=_WAIT_MS)
+    assert page.locator("#dialog dialog").count() == 0

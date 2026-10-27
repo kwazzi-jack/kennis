@@ -1,6 +1,6 @@
 """Installing a pack into the machine-global store. Design sections 5 and 8.
 
-`pack add` does no network I/O. It updates a **declaration**: the pack file
+`pack install` does no network I/O. It updates a **declaration**: the pack file
 as handed, the content it names, and a `state.json` recording what was
 applied. Converging the corpus documents with that declaration is
 `corpus sync`'s job and materialising the context into a workspace is
@@ -23,7 +23,7 @@ the next sync would see a pack declaring nothing and delete every document
 it owns. So a store that does not verify is not believed.
 
 **Repair here is simpler than section 5 step 2a reads**, because that step
-is written for a caller with nothing in hand. `pack add` is handed a live
+is written for a caller with nothing in hand. `pack install` is handed a live
 pack file with its content beside it, so a store that fails verification is
 re-copied from what is in hand and the only difference is the word in the
 report. Refusing is for `corpus sync` and `context sync`, which are handed
@@ -54,7 +54,7 @@ PACKS_DIRNAME: Final = "packs"
 STATE_FILENAME: Final = "state.json"
 DECLARATION_FILENAME: Final = "pack.ken.yml"
 
-OPERATION: Final = "pack-add"
+OPERATION: Final = "pack-install"
 
 # What the corpus `.gitignore` must hold for the store to stay out of the
 # corpus history, and the sentence saying why, so a reader of that file does
@@ -90,7 +90,7 @@ class PackState:
     file_sha256: str
     files: dict[str, str]
     # Immutable. The tie-break when two packs declare the same item, and it
-    # cannot be `applied_at`: a provider calls `pack add` on every run, so
+    # cannot be `applied_at`: a provider calls `pack install` on every run, so
     # most-recent-wins would flip ownership in a loop and rewrite documents
     # forever. Section 5, step 4.
     first_applied_at: str
@@ -276,6 +276,7 @@ def _installed(
         make_read_only(staging / DECLARATION_FILENAME)
         for folder, declarations in _declared(pack).items():
             files.update(_copied(path.parent, staging, folder, declarations))
+        files.update(_copied_files(path.parent, staging, pack))
     _write_state(root, pack, digest, files, path, previous)
     return files
 
@@ -319,6 +320,22 @@ def _copied(
         # sync until the pack is added again.
         make_read_only(target)
         digests[f"{folder.strip('/')}/{relative}"] = found[relative]
+    return digests
+
+
+def _copied_files(origin: Path, staging: Path, pack: Pack) -> dict[str, str]:
+    """Every file a `file:` or `pages:` names, at the same path in the store.
+
+    `validate_pack` has already refused one that is missing, a link, or
+    changed since `pack update` recorded it, so each is read once here.
+    """
+    digests: dict[str, str] = {}
+    for relative in dict.fromkeys(pack.shipped_files):
+        target = staging / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(origin / relative, target)
+        make_read_only(target)
+        digests[relative] = content_digest(target.read_bytes())
     return digests
 
 
@@ -378,7 +395,7 @@ def _ensure_ignored(corpus_root: Path) -> None:
 
     Written here rather than only in the `corpus init` template, because a
     corpus created before packs existed has no such line and the first
-    `corpus add` after a `pack add` would commit the whole store.
+    `corpus add` after a `pack install` would commit the whole store.
     """
     path = corpus_root / ".gitignore"
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""

@@ -43,12 +43,15 @@ def get_bounded(
     *,
     timeout: float,
     params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
     follow_redirects: bool | None = None,
     limit: int | None = None,
     deadline: float | None = None,
 ) -> httpx.Response:
     """GET `url` as `client.get` would, read within `limit` and `deadline`."""
     options: dict[str, Any] = {"timeout": timeout, "params": params}
+    if headers is not None:
+        options["headers"] = headers
     if follow_redirects is not None:
         options["follow_redirects"] = follow_redirects
     with client.stream("GET", url, **options) as response:

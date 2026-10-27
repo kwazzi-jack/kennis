@@ -38,6 +38,7 @@ window's search page.
 |---|---|---|
 | adding an arXiv paper | `arxiv.org`, `ar5iv.labs.arxiv.org`, and `export.arxiv.org` for its `robots.txt` alone | the arXiv identifier, and your IP address |
 | adding a paper by DOI, with an email set | `api.unpaywall.org` | the DOI and your email address |
+| adding a paper by DOI with its text in hand, or `pack update` for a DOI entry with no citekey | `doi.org`, which redirects to the registry that issued the DOI - `api.crossref.org` or `data.crosscite.org` | the DOI, and your IP address |
 | adding a documentation site or a file by address | the site you name | the pages requested, with a User-Agent naming kennis |
 | `corpus sync` with a pack installed | the sources the pack names | the same as adding each one by hand |
 | the first index with the default backend | `huggingface.co` | the model's name, as for any model download |

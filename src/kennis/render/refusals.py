@@ -27,10 +27,13 @@ from typing import Final
 from urllib.parse import quote
 
 from kennis.engine.refusals import (
+    AlreadyDeclared,
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentifierNeeded,
     IdentityMismatch,
     KennisOwn,
+    NameTaken,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -157,6 +160,18 @@ def describe_refusal(refusal: Refusal) -> str:
             return "kennis's own files, which are never added to the corpus"
         case UnsupportedFormat(suffix=suffix):
             return f"unsupported file type '{suffix}'"
+        case AlreadyDeclared(named=named):
+            return f"this pack already declares {named}"
+        case IdentifierNeeded(named=named):
+            return (
+                f"'{named}' does not say which paper it is; supply its arXiv "
+                f"identifier, DOI or ADS bibcode with --identifier"
+            )
+        case NameTaken(named=named, copy=copy):
+            return (
+                f"{copy} is already in the pack and is not '{named}'; rename "
+                f"one of them"
+            )
 
 
 def refusal_fact(refusal: Refusal) -> str:
@@ -194,6 +209,8 @@ def refusal_fact(refusal: Refusal) -> str:
         case NoArxivText(named=named, declined=declined):
             said = f" ({declined})" if declined else ""
             return f"arXiv has no rendering of '{named}' to fetch{said}"
+        case IdentifierNeeded(named=named):
+            return f"'{named}' does not say which paper it is"
         case (
             Quoted()
             | SameContent()
@@ -206,6 +223,8 @@ def refusal_fact(refusal: Refusal) -> str:
             | SymlinkSkipped()
             | KennisOwn()
             | UnsupportedFormat()
+            | AlreadyDeclared()
+            | NameTaken()
         ):
             # Nothing in these to type: the sentence is the fact.
             return describe_refusal(refusal)
@@ -241,6 +260,9 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             | SymlinkSkipped()
             | KennisOwn()
             | UnsupportedFormat()
+            | AlreadyDeclared()
+            | IdentifierNeeded()
+            | NameTaken()
         ):
             return ()
 
@@ -320,9 +342,53 @@ def _no_publisher_text(
     return said
 
 
+# Asking for a paper kennis could not fetch, once the job that tried is
+# done (Brian, 2026-10-26). The page is named because the person may be
+# able to download the paper there when kennis may not.
+PATH_QUESTION: Final = "Path to the file you downloaded, or Enter to skip: "
+
+
+def describe_asking(count: int) -> str:
+    """The line above the questions."""
+    return (
+        f"{count_of(count, 'paper')} had no copy kennis may fetch; give a "
+        "file you downloaded for each, or press Enter to skip it"
+    )
+
+
+def describe_wanted_paper(kind: str, value: str) -> str:
+    """Which paper is wanted, and where to look for it."""
+    return (
+        f"{_paper_name(kind, value)}: its page is {paper_page(kind, value)}, "
+        "where you may be able to download it through your institution's "
+        "access"
+    )
+
+
+def describe_skipped_paper(*, again: bool) -> str:
+    """What an empty answer did."""
+    if again:
+        return "skipped; the next sync asks again"
+    return "skipped"
+
+
+def describe_not_a_file(answer: str) -> str:
+    return f"'{answer}' is not a file"
+
+
+def _paper_name(kind: str, value: str) -> str:
+    named = {"doi": "the DOI", "arxiv": "the arXiv paper", "bibcode": "the ADS bibcode"}
+    return f"{named.get(kind, kind)} {value}"
+
+
 __all__ = [
+    "PATH_QUESTION",
     "choices_for_refusal",
+    "describe_asking",
+    "describe_not_a_file",
     "describe_refusal",
+    "describe_skipped_paper",
+    "describe_wanted_paper",
     "paper_page",
     "refusal_fact",
     "remedies_for_refusal",

@@ -124,7 +124,7 @@ def test_context_packs_sets_the_declaration(project: Path):
 def test_context_packs_adds_to_the_declaration_rather_than_replacing_it(
     project: Path,
 ):
-    """A command printed for one pack - after `pack add`, or by a sync -
+    """A command printed for one pack - after `pack install`, or by a sync -
     must not drop the packs a project already uses."""
     bundle = init_bundle(project).path
     declare_packs(bundle, ["casa"])

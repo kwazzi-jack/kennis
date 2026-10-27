@@ -166,8 +166,8 @@ def install_pack(path: Path, *, events: EventSink) -> PackInstall:
     return operations.install_a_pack(existing_corpus(), path, events=events)
 
 
-def remove_pack(pack_id: str, *, events: EventSink) -> PackRemoval:
-    return operations.remove_a_pack(existing_corpus(), pack_id, events=events)
+def uninstall_pack(pack_id: str, *, events: EventSink) -> PackRemoval:
+    return operations.uninstall_a_pack(existing_corpus(), pack_id, events=events)
 
 
 def make_version_current(project: str, version: str) -> None:
@@ -240,6 +240,18 @@ def return_corpus(commit: str) -> ReturnedCorpus:
 
 def sync_bundle(bundle: Path, *, events: EventSink) -> BundleSync:
     return operations.synchronise_bundle(bundle, existing_corpus(), events=events)
+
+
+def supply_paper(
+    address: str,
+    path: Path,
+    *,
+    events: EventSink,
+    restored: list[OutOfBandChange],
+) -> AddReport:
+    return operations.supply_a_pack_paper(
+        existing_corpus(), address, path, events=events, restored=restored
+    )
 
 
 def sync_corpus(*, events: EventSink, restored: list[OutOfBandChange]) -> CorpusSync:
@@ -423,7 +435,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(move_document, kind="move"),
         Operation(remember, kind="remember"),
         Operation(remove_document, kind="remove"),
-        Operation(remove_pack, kind="pack"),
+        Operation(uninstall_pack, kind="pack"),
         Operation(remove_version, kind="version"),
         Operation(restore_document, kind="restore"),
         Operation(return_corpus, kind="return"),
@@ -436,6 +448,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(remember_in_context, kind="remember", lane=_in_the_bundle_s_lane),
         Operation(add_project, kind="context", lane=_in_the_projects_lane),
         Operation(forget_project, kind="context", lane=_in_the_projects_lane),
+        Operation(supply_paper, kind="add"),
         Operation(sync_corpus, kind="sync"),
         Operation(bundle_status),
         Operation(contents),

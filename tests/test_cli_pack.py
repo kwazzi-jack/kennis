@@ -244,7 +244,7 @@ def test_a_path_that_is_not_there_is_refused_by_the_argument(
 
 
 # ---------------------------------------------------------------------------
-# `pack add`
+# `pack install`
 # ---------------------------------------------------------------------------
 
 
@@ -253,7 +253,7 @@ def test_add_installs_a_pack_into_the_corpus_store(
 ):
     path = a_provider(tmp_path / "provider", run)
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert result.exit_code == 0, result.output
     assert "Installed" in result.output
@@ -267,7 +267,7 @@ def test_add_without_a_corpus_names_the_command_that_makes_one(
     way rather than each discovering it somewhere different."""
     path = a_provider(isolated / "provider", run)
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert result.exit_code != 0
     assert "kennis corpus init" in result.output
@@ -279,9 +279,9 @@ def test_a_second_add_says_nothing_changed(
     """A provider calls this on every run, so the common case is this one."""
     del corpus
     path = a_provider(tmp_path / "provider", run)
-    run.invoke(main, ["pack", "add", str(path)])
+    run.invoke(main, ["pack", "install", str(path)])
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert result.exit_code == 0, result.output
     assert "Unchanged" in result.output
@@ -294,10 +294,10 @@ def test_a_damaged_store_is_repaired_and_says_so(
     new" and "what was here was damaged" are different facts, and a reader
     seeing the second twice has something to investigate."""
     path = a_provider(tmp_path / "provider", run)
-    run.invoke(main, ["pack", "add", str(path)])
+    run.invoke(main, ["pack", "install", str(path)])
     deleted_by_hand(corpus / "packs" / "boepie" / "notes" / "conventions.md")
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert "Repaired" in result.output
     assert (corpus / "packs" / "boepie" / "notes" / "conventions.md").is_file()
@@ -312,7 +312,7 @@ def test_add_does_not_name_a_command_that_does_not_exist(
     del corpus
     path = a_provider(tmp_path / "provider", run)
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert "arrive with a corpus sync" in result.output
     assert "kennis corpus sync" in result.output
@@ -325,9 +325,9 @@ def test_the_reminder_is_not_repeated_on_an_unchanged_add(
 ):
     del corpus
     path = a_provider(tmp_path / "provider", run)
-    run.invoke(main, ["pack", "add", str(path)])
+    run.invoke(main, ["pack", "install", str(path)])
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert result.exit_code == 0, result.output
     assert "arrive with a corpus sync" not in result.output
@@ -343,7 +343,7 @@ def test_a_pack_whose_digests_are_stale_installs_nothing(
         "Edited after the update.\n", encoding="utf-8"
     )
 
-    result = run.invoke(main, ["pack", "add", str(path)])
+    result = run.invoke(main, ["pack", "install", str(path)])
 
     assert result.exit_code != 0
     assert not (corpus / "packs" / "boepie").exists()
@@ -357,7 +357,7 @@ def test_add_waits_while_the_corpus_is_held_and_then_installs(
     path = a_provider(tmp_path / "provider", run)
 
     with held_for_a_moment(corpus) as hold:
-        result = run.invoke(main, ["pack", "add", str(path)])
+        result = run.invoke(main, ["pack", "install", str(path)])
         finished = time.monotonic()
 
     assert result.exit_code == 0, result.output
@@ -389,7 +389,7 @@ def a_second_provider(root: Path, run: CliRunner, *, identifier: str) -> Path:
 
 def test_list_names_every_installed_pack(run: CliRunner, corpus: Path, isolated: Path):
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["pack", "list"])
 
@@ -409,7 +409,7 @@ def test_status_reports_when_a_pack_was_added(
     run: CliRunner, corpus: Path, isolated: Path
 ):
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["pack", "status"])
 
@@ -425,8 +425,8 @@ def test_status_reports_an_overlap_and_names_the_owner(
     sentence printed once inside an automated run."""
     first = a_second_provider(isolated / "one", run, identifier="alpha")
     second = a_second_provider(isolated / "two", run, identifier="beta")
-    assert run.invoke(main, ["pack", "add", str(first)]).exit_code == 0
-    assert run.invoke(main, ["pack", "add", str(second)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(first)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(second)]).exit_code == 0
 
     result = run.invoke(main, ["pack", "status"])
 
@@ -439,7 +439,7 @@ def test_status_reports_a_store_that_does_not_verify(
     run: CliRunner, corpus: Path, isolated: Path
 ):
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     deleted_by_hand(corpus / "packs" / "boepie" / "notes" / "conventions.md")
 
     result = run.invoke(main, ["pack", "status"])
@@ -448,25 +448,25 @@ def test_status_reports_a_store_that_does_not_verify(
     assert "not believed" in result.output
 
 
-def test_remove_drops_the_pack_and_says_what_it_did_not_reach(
+def test_uninstall_drops_the_pack_and_says_what_it_did_not_reach(
     run: CliRunner, corpus: Path, isolated: Path
 ):
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
-    result = run.invoke(main, ["pack", "remove", "boepie"])
+    result = run.invoke(main, ["pack", "uninstall", "boepie"])
 
     assert result.exit_code == 0, result.output
-    assert "Removed" in result.output
+    assert "Uninstalled" in result.output
     assert "nothing this pack supplied has been removed" in result.output
     assert "kennis corpus sync" in result.output
     assert not (corpus / "packs" / "boepie").exists()
 
 
-def test_removing_a_pack_that_is_not_there_fails_with_the_command_to_run(
+def test_uninstalling_a_pack_that_is_not_there_fails_with_the_command_to_run(
     run: CliRunner, corpus: Path
 ):
-    result = run.invoke(main, ["pack", "remove", "nosuch"])
+    result = run.invoke(main, ["pack", "uninstall", "nosuch"])
 
     assert result.exit_code != 0
     assert "nosuch" in result.output
@@ -479,10 +479,10 @@ def test_remove_waits_while_another_command_holds_the_corpus(
     """A mutation, so it takes the lock every other mutation takes - and
     waits for it through the service rather than being refused (14b)."""
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     with held_for_a_moment(corpus) as hold:
-        result = run.invoke(main, ["pack", "remove", "boepie"])
+        result = run.invoke(main, ["pack", "uninstall", "boepie"])
         finished = time.monotonic()
 
     assert result.exit_code == 0, result.output
@@ -508,7 +508,7 @@ def test_list_prints_the_same_holdings_line_the_mcp_block_does(
         encoding="utf-8",
     )
     assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["pack", "list"])
 
@@ -523,7 +523,7 @@ def test_list_still_leads_with_the_id_and_the_version(
     the id is the column a reader copies out of and hands to `pack
     remove`, and the version answers how much of it there is."""
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["pack", "list"])
 
@@ -539,7 +539,7 @@ def test_the_holdings_line_is_indented_past_the_id_column(
     from another pack id, which is what running the command showed and no
     assertion about content could have."""
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     lines = [
         line
@@ -561,7 +561,7 @@ def test_list_as_json_is_one_document_the_model_validates(
     run: CliRunner, corpus: Path, isolated: Path
 ):
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["pack", "list", "--json"])
 
@@ -586,7 +586,7 @@ def test_list_as_json_says_what_a_hand_written_reader_would_expect(
     are, and boepie does not import kennis. This is the hand-written
     statement of the contract (#373)."""
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     document = json.loads(run.invoke(main, ["pack", "list", "--json"]).stdout)
 
@@ -622,10 +622,10 @@ def test_list_as_json_with_nothing_installed_is_an_empty_list(
 def test_list_as_json_names_an_unreadable_directory_and_prints_no_advice(
     run: CliRunner, corpus: Path, isolated: Path
 ):
-    """The human listing follows an unreadable directory with `pack remove`
+    """The human listing follows an unreadable directory with `pack uninstall`
     advice. In the document it is a field, and stdout carries nothing else."""
     path = a_provider(isolated / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     (pack_root(corpus, "boepie") / STATE_FILENAME).unlink()
 
     result = run.invoke(main, ["pack", "list", "--json"])
@@ -694,7 +694,7 @@ def test_list_as_json_from_a_real_process_is_parseable(
         encoding="utf-8",
     )
     assert run.invoke(main, ["pack", "update", str(path)]).exit_code == 0
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     # A real command reaches a real service (14c), so the service is
     # stopped here whatever the assertions say.

@@ -140,6 +140,28 @@ def sync_corpus(
     )
 
 
+def supply_paper(
+    corpus_root: Path,
+    address: str,
+    path: Path,
+    *,
+    events: EventSink | None = None,
+    on_waiting: Waiting | None = None,
+) -> Written[AddReport]:
+    """A pack's paper a sync could not fetch, added from `path` as the
+    pack's own."""
+    from kennis.engine.corpus.add import AddReport
+
+    return _write(
+        corpus_root,
+        "supply_paper",
+        {"address": address, "path": path},
+        AddReport,
+        events=events,
+        on_waiting=on_waiting,
+    )
+
+
 def index(
     corpus_root: Path,
     collection: str | None,
@@ -435,7 +457,7 @@ def install_pack(
     )
 
 
-def remove_pack(
+def uninstall_pack(
     corpus_root: Path,
     pack_id: str,
     *,
@@ -446,7 +468,7 @@ def remove_pack(
 
     return _write(
         corpus_root,
-        "remove_pack",
+        "uninstall_pack",
         {"pack_id": pack_id},
         PackRemoval,
         events=events,
@@ -698,7 +720,6 @@ __all__ = [
     "remember",
     "remember_in_context",
     "remove_document",
-    "remove_pack",
     "remove_version",
     "reset_bundle",
     "reset_preview",
@@ -707,9 +728,11 @@ __all__ = [
     "return_preview",
     "search_scope",
     "status",
+    "supply_paper",
     "sweep",
     "sync_bundle",
     "sync_corpus",
     "tree",
+    "uninstall_pack",
     "version_pages",
 ]

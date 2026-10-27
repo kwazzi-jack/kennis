@@ -641,8 +641,10 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # and POST /document/remove and /corpus/return, POST /corpus/restore; 55th:
 # GET /pack/{id}/{address}, a pack's context file (14g); and POST
 # /context-sync gone, because the window copies no pack into a project (14g);
-# and POST /copy, a document copied into a note of the person's (14g, #514)
-EXPECTED_ROUTES = 55
+# and POST /copy, a document copied into a note of the person's (14g, #514);
+# 56th and 57th: GET and POST /supply, the papers kennis could not fetch
+# (#542)
+EXPECTED_ROUTES = 57
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

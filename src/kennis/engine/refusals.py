@@ -213,6 +213,44 @@ class UnsupportedFormat:
     suffix: str
 
 
+@dataclass(frozen=True, slots=True)
+class AlreadyDeclared:
+    """An entry the pack file already declares, met by `pack add`.
+
+    A pack's duplicate, as `SamePaper` is a collection's: nothing is
+    written, so the outcome is unchanged. `named` is the entry by the name
+    an author would use for it - a citekey or identifier, a project, an
+    address, a path relative to the pack.
+    """
+
+    code: ClassVar[str] = "already-declared"
+    named: str
+
+
+@dataclass(frozen=True, slots=True)
+class IdentifierNeeded:
+    """A paper for a pack, given as a file or an address that does not say
+    which paper it is.
+
+    A pack declares a paper by its identifier, because a sync must know
+    which paper an entry is before it reads anything; `corpus add` reads
+    the first page instead, which `pack add` does not convert to do.
+    """
+
+    code: ClassVar[str] = "identifier-needed"
+    named: str
+
+
+@dataclass(frozen=True, slots=True)
+class NameTaken:
+    """A local file whose copy in the pack would replace a different file
+    of the same name at `copy`, relative to the pack file."""
+
+    code: ClassVar[str] = "name-taken"
+    named: str
+    copy: str
+
+
 # Every way an item can end as something other than written. A union
 # rather than a string, so a front end switches on the refusal and
 # supplies its own words - and so `kennis gui` can build a form from the
@@ -234,14 +272,37 @@ type Refusal = (
     | SymlinkSkipped
     | KennisOwn
     | UnsupportedFormat
+    | AlreadyDeclared
+    | IdentifierNeeded
+    | NameTaken
 )
 
 
+def wanted_paper(refusal: Refusal | None) -> tuple[str, str] | None:
+    """The paper a downloaded file would answer, as `(kind, value)`.
+
+    A paper no open copy exists for, and an arXiv paper with no rendering:
+    the two refusals a person can fix by fetching the paper themselves,
+    through their institution say (Brian, 2026-10-26). Every other refusal
+    is not answered by a file, so each front end asks about these alone.
+    """
+    match refusal:
+        case NoPublisherText(kind=kind, value=value):
+            return kind, value
+        case NoArxivText(arxiv_id=arxiv_id):
+            return "arxiv", arxiv_id
+        case _:
+            return None
+
+
 __all__ = [
+    "AlreadyDeclared",
     "AmbiguousIdentity",
     "BibliographyIncomplete",
+    "IdentifierNeeded",
     "IdentityMismatch",
     "KennisOwn",
+    "NameTaken",
     "NoArxivText",
     "NoIdentity",
     "NoPublisherText",
@@ -254,4 +315,5 @@ __all__ = [
     "SamePaper",
     "SymlinkSkipped",
     "UnsupportedFormat",
+    "wanted_paper",
 ]

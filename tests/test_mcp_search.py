@@ -236,7 +236,7 @@ def test_search_context_gives_a_declared_pack_s_hit_with_its_passage(
         encoding="utf-8",
     )
     assert run.invoke(main, ["pack", "update", str(manifest)]).exit_code == 0
-    assert run.invoke(main, ["pack", "add", str(manifest)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(manifest)]).exit_code == 0
     project = isolated / "project"
     project.mkdir()
     monkeypatch.chdir(project)

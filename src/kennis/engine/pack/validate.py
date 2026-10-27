@@ -32,7 +32,12 @@ from packaging.version import InvalidVersion, Version
 from kennis import __version__
 from kennis.engine.errors import PackInvalid
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
-from kennis.engine.pack.content import address_of, content_digest, read_source
+from kennis.engine.pack.content import (
+    address_of,
+    content_digest,
+    read_file,
+    read_source,
+)
 from kennis.engine.pack.schema import ContentSource, GeneratedSource, Pack, load_pack
 from kennis.engine.pack.versions import SCHEMA_VERSION
 from kennis.engine.refusals import Quoted
@@ -45,6 +50,8 @@ type ProblemKind = Literal[
     "digest-mismatch",
     "digest-absent",
     "undigested",
+    "file-missing",
+    "declared-twice",
 ]
 
 type RefusalKind = Literal["schema-too-new", "kennis-too-old"]
@@ -140,6 +147,7 @@ def validate_pack(path: Path, *, events: EventSink | None = None) -> PackReport:
     checked = pack.generated is not None
     for section, source in _content_sources(pack):
         problems.extend(_checked_source(root, section, source, pack))
+    problems.extend(_checked_shipped(root, pack))
     _reported(events, tuple(problems), None, path, started)
     return PackReport(
         path=path,
@@ -256,6 +264,53 @@ def _overlapping(pack: Pack) -> list[PackProblem]:
                             kind="overlapping-sources", path=first, other=second
                         )
                     )
+    return problems
+
+
+def _checked_shipped(root: Path, pack: Pack) -> list[PackProblem]:
+    """Every file a `file:` or `pages:` names, against `generated.files`.
+
+    Two findings no source has. A path two entries name is declared
+    twice, since each entry would deliver it. And a notes `file:` inside a
+    declared notes `source:` is an overlap, since the folder delivers it
+    too; across sections it is not, as for two sources.
+    """
+    problems: list[PackProblem] = []
+    seen: set[str] = set()
+    for relative in pack.shipped_files:
+        if relative in seen:
+            problems.append(PackProblem(kind="declared-twice", path=relative))
+        seen.add(relative)
+    for note in pack.corpus.note_files:
+        for source in pack.corpus.note_sources:
+            if _contains(source.source, note.file):
+                problems.append(
+                    PackProblem(
+                        kind="overlapping-sources", path=source.source, other=note.file
+                    )
+                )
+    recorded = pack.generated.files if pack.generated is not None else None
+    for relative in dict.fromkeys(pack.shipped_files):
+        found = read_file(root, relative)
+        if found.state == "missing":
+            problems.append(PackProblem(kind="file-missing", path=relative))
+        elif found.state == "escaping":
+            problems.append(PackProblem(kind="escapes-root", path=relative))
+        elif found.state == "symlink":
+            problems.append(PackProblem(kind="symlink", path=relative))
+        elif recorded is None:
+            continue
+        elif relative not in recorded:
+            problems.append(PackProblem(kind="undigested", path=relative))
+        elif recorded[relative] != found.digest:
+            problems.append(
+                PackProblem(
+                    kind="digest-mismatch",
+                    path=relative,
+                    recorded=recorded[relative],
+                    actual=found.digest,
+                )
+            )
     return problems
 
 

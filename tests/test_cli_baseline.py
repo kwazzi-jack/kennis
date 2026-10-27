@@ -185,7 +185,7 @@ SCENARIO: tuple[Step, ...] = (
     ),
     step("pack-update", "pack", "update", "provider.ken.yml", folder="provider"),
     step("pack-validate", "pack", "validate", "provider.ken.yml", folder="provider"),
-    step("pack-add", "pack", "add", "provider/provider.ken.yml"),
+    step("pack-install", "pack", "install", "provider/provider.ken.yml"),
     step("pack-list", "pack", "list"),
     step("pack-list-json", "pack", "list", "--json"),
     step("pack-status", "pack", "status"),
@@ -210,7 +210,7 @@ SCENARIO: tuple[Step, ...] = (
     ),
     step("search-everywhere", "search", "calibration", folder="project"),
     step("context-reset", "context", "reset", typed="y\n", folder="project"),
-    step("pack-remove", "pack", "remove", "provider"),
+    step("pack-uninstall", "pack", "uninstall", "provider"),
     step("backup-check-unset", "backup", "check"),
     step(
         "backup-create",

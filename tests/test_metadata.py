@@ -14,7 +14,9 @@ import httpx
 
 from kennis.engine.literature.citekeys import derive_citekey
 from kennis.engine.literature.metadata import (
+    PaperMetadata,
     lookup_arxiv_metadata,
+    lookup_doi_metadata,
 )
 
 ENTRY = """<?xml version="1.0" encoding="UTF-8"?>
@@ -284,3 +286,135 @@ def test_a_response_that_is_not_a_page_is_nothing():
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
     assert lookup_arxiv_metadata("1101.1764", client=client) is None
+
+
+# ---------------------------------------------------------------------------
+# A DOI, described by its registry (Brian, 2026-10-26)
+# ---------------------------------------------------------------------------
+
+# The shapes doi.org's content negotiation answered on 2026-10-26: Crossref
+# gives print and online dates, DataCite only `issued`.
+CROSSREF_CSL = {
+    "DOI": "10.1017/pasa.2025.10128",
+    "title": "The Dawes review 13: A new look at the dynamic radio sky",
+    "author": [
+        {"family": "Murphy", "given": "Tara"},
+        {"family": "Kaplan", "given": "David L."},
+    ],
+    "issued": {"date-parts": [[2025, 12, 2]]},
+    "published-print": {"date-parts": [[2026]]},
+}
+DATACITE_CSL = {
+    "DOI": "10.48479/BHPJ-NZ95",
+    "title": "RFI at u=0 in MeerKAT observations",
+    "author": [{"family": "Maccagni", "given": "Filippo Marcello"}],
+    "issued": {"date-parts": [[2022]]},
+}
+
+
+def registry(
+    answer: object, status: int = 200, seen: list[httpx.Request] | None = None
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if seen is not None:
+            seen.append(request)
+        if isinstance(answer, str):
+            return httpx.Response(status, text=answer)
+        return httpx.Response(
+            status,
+            json=answer,
+            headers={"content-type": "application/vnd.citationstyles.csl+json"},
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_doi_is_described_by_its_registry_through_doi_org():
+    seen: list[httpx.Request] = []
+
+    metadata = lookup_doi_metadata(
+        "10.1017/pasa.2025.10128", client=registry(CROSSREF_CSL, seen=seen)
+    )
+
+    assert metadata == PaperMetadata(
+        title="The Dawes review 13: A new look at the dynamic radio sky",
+        authors="Murphy, Tara and Kaplan, David L.",
+        year="2026",
+    )
+    [request] = seen
+    assert str(request.url) == "https://doi.org/10.1017/pasa.2025.10128"
+    assert request.headers["accept"] == "application/vnd.citationstyles.csl+json"
+
+
+def test_the_year_is_the_issue_s_and_else_when_it_was_issued():
+    metadata = lookup_doi_metadata("10.48479/bhpj-nz95", client=registry(DATACITE_CSL))
+
+    assert metadata is not None
+    assert metadata.year == "2022"
+
+
+def test_a_registry_s_citekey_is_the_one_its_authors_and_year_give():
+    metadata = lookup_doi_metadata(
+        "10.1017/pasa.2025.10128", client=registry(CROSSREF_CSL)
+    )
+
+    assert metadata is not None
+    citekey = derive_citekey(
+        authors=metadata.authors, year=metadata.year, title=metadata.title
+    )
+    assert citekey.startswith("murphy") and citekey.endswith("2026")
+
+
+def test_a_collaboration_is_named_as_the_registry_writes_it():
+    answer = {
+        **DATACITE_CSL,
+        "title": ["A title given as a list", "A subtitle"],
+        "author": [{"literal": "MeerKAT Collaboration"}, {"family": "Healy"}],
+    }
+
+    metadata = lookup_doi_metadata("10.48479/bhpj-nz95", client=registry(answer))
+
+    assert metadata is not None
+    assert metadata.title == "A title given as a list"
+    assert metadata.authors == "MeerKAT Collaboration and Healy"
+
+
+def test_an_answer_for_another_doi_is_not_this_paper():
+    assert (
+        lookup_doi_metadata("10.1093/mnrasl/slaf009", client=registry(CROSSREF_CSL))
+        is None
+    )
+
+
+def test_a_doi_the_registry_cannot_describe_is_nothing_rather_than_an_error():
+    untitled = {key: value for key, value in CROSSREF_CSL.items() if key != "title"}
+
+    assert lookup_doi_metadata("10.1/x", client=registry({}, status=404)) is None
+    assert (
+        lookup_doi_metadata("10.1/x", client=registry("<html>not json</html>")) is None
+    )
+    assert lookup_doi_metadata("10.1/x", client=registry(["a", "list"])) is None
+    assert (
+        lookup_doi_metadata("10.1017/pasa.2025.10128", client=registry(untitled))
+        is None
+    )
+    assert lookup_doi_metadata("10.1/x", client=client_that_fails()) is None
+
+
+def test_a_no_break_space_inside_a_name_is_an_ordinary_space():
+    """Crossref sends `de\\u00a0Blok` and `S \\u00a0J`, measured on
+    10.1093/mnras/stae382 and 10.1093/mnrasl/slaf009 on 2026-10-26."""
+    answer = {
+        **CROSSREF_CSL,
+        "author": [
+            {"family": "de\u00a0Blok", "given": "W J G"},
+            {"family": "Perkins", "given": "S \u00a0J"},
+        ],
+    }
+
+    metadata = lookup_doi_metadata("10.1017/pasa.2025.10128", client=registry(answer))
+
+    assert metadata is not None
+    assert metadata.authors == "de Blok, W J G and Perkins, S J"

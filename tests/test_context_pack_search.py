@@ -82,7 +82,7 @@ def installed(
     tmp_path: Path, identifier: str = "alpha", files: dict[str, str] | None = None
 ) -> None:
     path = a_pack(tmp_path / "providers" / identifier, identifier, files)
-    answered = CliRunner().invoke(main, ["pack", "add", str(path)])
+    answered = CliRunner().invoke(main, ["pack", "install", str(path)])
     assert answered.exit_code == 0, answered.output
 
 

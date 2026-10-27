@@ -64,6 +64,7 @@ from kennis.engine.corpus.moving import move_target, refuse_regrouping_docs
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.corpus.sync import (
     CorpusSync,
+    supply_paper,
     sync_corpus,
 )
 from kennis.engine.docs.versions import (
@@ -90,7 +91,7 @@ from kennis.engine.history.outofband import (
     restore_deletions,
 )
 from kennis.engine.history.repository import Repository
-from kennis.engine.pack.installed import PackRemoval, remove_pack
+from kennis.engine.pack.installed import PackRemoval, uninstall_pack
 from kennis.engine.pack.store import PackInstall, install_pack
 from kennis.engine.rag.binding import binding_from, chunk_parameters
 from kennis.engine.rag.embedding import ModelBinding
@@ -680,7 +681,7 @@ def synchronise_corpus(
 
     Uses the network: a pack's papers are fetched by identifier and its
     documentation sites are crawled, which is what separates this from
-    `kennis pack add`.
+    `kennis pack install`.
     """
 
     def synced(staged: Context, sink: EventSink | None) -> CorpusSync:
@@ -700,6 +701,38 @@ def synchronise_corpus(
         operation="sync",
         scope="corpus",
         summary=lambda result: describe_sync_summary(result.counts),
+        events=events,
+        restored=restored,
+    )
+
+
+def supply_a_pack_paper(
+    context: Context,
+    address: str,
+    path: Path,
+    *,
+    events: EventSink | None = None,
+    restored: list[OutOfBandChange] | None = None,
+) -> AddReport:
+    """Add a pack's paper from a file the person supplied, after a sync
+    could not fetch it: restore, add in a mirror, publish. The pack owns
+    it, as it owns what a sync fetches (Brian, 2026-10-26)."""
+
+    def supplied(staged: Context, sink: EventSink | None) -> AddReport:
+        return supply_paper(
+            staged.corpus_root,
+            address,
+            path,
+            events=sink,
+            store_root=context.corpus_root,
+        )
+
+    return _prepared_then_published(
+        context,
+        supplied,
+        operation="add",
+        scope="literature",
+        summary=lambda report: outcome_summary(report.counts),
         events=events,
         restored=restored,
     )
@@ -812,7 +845,7 @@ def install_a_pack(
         return install_pack(context.corpus_root, path, events=events)
 
 
-def remove_a_pack(
+def uninstall_a_pack(
     context: Context, pack_id: str, *, events: EventSink | None = None
 ) -> PackRemoval:
     """Drop a pack from the store: lock, remove.
@@ -822,7 +855,7 @@ def remove_a_pack(
     them. The lock is taken because a sync reads the store while holding it.
     """
     with exclusively(context.corpus_root):
-        return remove_pack(context.corpus_root, pack_id, events=events)
+        return uninstall_pack(context.corpus_root, pack_id, events=events)
 
 
 def back_up_corpus(
@@ -863,12 +896,13 @@ __all__ = [
     "move_a_document",
     "record_what_was_not_recorded",
     "remove_a_document",
-    "remove_a_pack",
     "remove_docs_version",
     "restore_a_document",
     "restore_hand_deletions",
     "return_corpus_to",
+    "supply_a_pack_paper",
     "synchronise_bundle",
     "synchronise_corpus",
+    "uninstall_a_pack",
     "what_a_reset_removes",
 ]

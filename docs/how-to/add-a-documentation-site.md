@@ -270,9 +270,12 @@ kennis reads a site the way a well-behaved crawler does:
   refuses to serve the file (status 401 or 403) is treated as forbidding
   everything, and one whose server fails is treated as asking kennis not to
   read it now.
-- **It goes slowly.** One request at a time, at least 0.2 seconds apart,
-  or as far apart as the site's `Crawl-delay` asks, up to 30 seconds. A
-  page already held costs no request at all, unless you refresh it.
+- **It goes at a measured pace.** At most four requests at once, each
+  starting at least 0.2 seconds after the one before, so a site sees no
+  more than five requests a second. A site whose `robots.txt` names a
+  `Crawl-delay` is asked one request at a time, that far apart, up to 30
+  seconds. A page already held costs no request at all, unless you
+  refresh it.
 - **It stays in scope.** One site, one folder, and the limits above.
 
 `robots.txt` says what automated access a site allows. It does not settle

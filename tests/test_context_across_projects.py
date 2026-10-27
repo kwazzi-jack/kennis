@@ -78,7 +78,7 @@ def installed(tmp_path: Path, identifier: str = "alpha") -> None:
         encoding="utf-8",
     )
     update_pack(path)
-    answered = CliRunner().invoke(main, ["pack", "add", str(path)])
+    answered = CliRunner().invoke(main, ["pack", "install", str(path)])
     assert answered.exit_code == 0, answered.output
 
 

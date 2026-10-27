@@ -1,4 +1,4 @@
-$ kennis pack add provider/provider.ken.yml
+$ kennis pack install provider/provider.ken.yml
 --- exit 0
 --- stdout
 Installed provider

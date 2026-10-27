@@ -1,6 +1,6 @@
 """Reading the pack store, and removing from it. Design sections 5, 8 and 9.
 
-`pack add` writes a store and nothing could look at it. This module is the
+`pack install` writes a store and nothing could look at it. This module is the
 reading half: what is installed, what each pack recorded, whether the
 store still holds what it says it holds, and which two packs declare the
 same item.
@@ -10,11 +10,11 @@ step 4 is explicit about it: an overlap mentioned inside an automated
 `provider sync` that nobody is reading is close to silence, so it belongs
 to `pack status`, which a user runs when they want to know. The incumbent
 is the pack with the earliest `first_applied_at`, which is immutable -
-`applied_at` cannot serve, because a provider calls `pack add` on every
+`applied_at` cannot serve, because a provider calls `pack install` on every
 run and most-recent-wins would flip ownership in a loop.
 
 **Removing reaches the store and nothing else.** Section 9: kennis keeps
-no registry of the projects a user has, so `pack remove` cannot clean
+no registry of the projects a user has, so `pack uninstall` cannot clean
 `.context/` in N checkouts, and those converge on their own next sync.
 Corpus documents are the same: this module drops the declaration, and
 converging the documents with what is left is a sync's job.
@@ -37,7 +37,7 @@ from kennis.engine.pack.store import PackState
 if TYPE_CHECKING:
     from kennis.engine.pack.schema import ContentSource
 
-OPERATION: Final = "pack-remove"
+OPERATION: Final = "pack-uninstall"
 
 type OverlapKind = Literal["literature", "docs", "notes", "context"]
 
@@ -99,7 +99,7 @@ class Overlap:
 
 @dataclass(frozen=True, slots=True)
 class PackRemoval:
-    """What `remove_pack` dropped.
+    """What `uninstall_pack` dropped.
 
     `recorded` is False for a partial install - a directory whose state
     file was gone - where `files` is 0 because nothing said what was
@@ -283,7 +283,7 @@ class DeclaredContent:
 
     Section 5 step 6: a sync converges with the **union** of every
     installed pack's declarations, not with one pack against disk. So
-    `pack remove A` for an item B also declares leaves B's declaration
+    `pack uninstall A` for an item B also declares leaves B's declaration
     standing, and the next sync re-materialises the document as B's.
 
     `deferred` holds the `(address, pack_id)` pairs that lost: they are
@@ -365,7 +365,7 @@ def declared_content(
     return DeclaredContent(declarations=declarations, deferred=tuple(sorted(deferred)))
 
 
-def remove_pack(
+def uninstall_pack(
     corpus_root: Path, pack_id: str, *, events: EventSink | None = None
 ) -> PackRemoval:
     """Drop one pack from the store.
@@ -423,5 +423,5 @@ __all__ = [
     "list_installed",
     "overlaps_between",
     "refuse_damaged_packs",
-    "remove_pack",
+    "uninstall_pack",
 ]

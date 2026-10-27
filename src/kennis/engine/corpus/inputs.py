@@ -116,6 +116,7 @@ def resolve_inputs(
     *,
     extra_file_types: Sequence[str] = (),
     kept_out: Sequence[Path] = (),
+    admitted: Sequence[Path] = (),
 ) -> ResolvedInputs:
     """Expand every argument into the concrete identifiers the add path acts on.
 
@@ -128,12 +129,21 @@ def resolve_inputs(
     refused; a walk or a pattern that reaches one passes it by and says so.
     Before this, adding the folder that held the corpus copied the corpus
     into itself, and the search history beside it became a note.
+
+    `admitted` is the one exception: a pack's folder in the store, from
+    which `corpus sync` adds the files that pack ships. Only an argument
+    naming a file inside it is admitted, never a walk into it.
     """
     kept = tuple(path.resolve() for path in kept_out)
+    allowed = tuple(path.resolve() for path in admitted)
     resolved = ResolvedInputs()
     for argument in arguments:
         expanded = Path(argument).expanduser()
-        if (expanded.is_dir() or expanded.is_file()) and _within(expanded, kept):
+        if (
+            (expanded.is_dir() or expanded.is_file())
+            and _within(expanded, kept)
+            and not (expanded.is_file() and _within(expanded, allowed))
+        ):
             raise InputError(
                 f"'{argument}' is among kennis's own files - its corpus, "
                 "configuration, state or log - which are never added"

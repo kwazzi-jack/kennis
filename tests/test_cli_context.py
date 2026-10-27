@@ -835,7 +835,7 @@ def test_sync_writes_nothing_of_a_pack_and_says_what_the_project_uses(
 ):
     """A pack's context is searched in the store (14g, #513)."""
     path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
@@ -884,7 +884,7 @@ def test_a_declared_pack_s_content_is_searchable_with_no_copy(
         run,
         files={"content/one.md": "Calibration runs in four-minute chunks.\n"},
     )
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     result = run.invoke(main, ["search", "four-minute chunks"])
@@ -910,7 +910,7 @@ def test_sync_in_a_project_declaring_nothing_offers_each_installed_pack(
 ):
     del synced
     path = a_context_pack(tmp_path / "provider", run)
-    assert run.invoke(main, ["pack", "add", str(path)]).exit_code == 0
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
 

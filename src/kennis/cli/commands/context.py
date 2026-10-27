@@ -154,7 +154,7 @@ def index_command_for_context(project: str | None) -> None:
 def sync_command_for_context() -> None:
     """Check this project's bundle against the packs it declares.
 
-    A pack's context is searched where `kennis pack add` stored it, so
+    A pack's context is searched where `kennis pack install` stored it, so
     nothing is copied into the project. A copy an earlier kennis made is
     removed, unless you edited it: then it is yours, and this project
     searches it in place of the pack's file. Says which declared packs

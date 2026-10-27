@@ -180,9 +180,17 @@ A first page offering two arXiv identifiers gets one radio button per
 identifier. kennis does not choose, because choosing would be deciding
 which paper it is.
 
-Where kennis cannot repair the refusal itself - a paper whose text sits
-behind a publisher needs a file only you can supply - it gives the sentence
-and the command, and no button that would not work.
+A paper whose text no open copy exists for - behind a publisher, or an
+arXiv paper with no rendering - needs a file only you can supply. When an
+add or a sync ends with such papers, the window opens **Papers kennis could
+not fetch**: each paper with a link to its page, where you may be able to
+download it through your institution's access, and a button that opens your
+browser's own file picker. **Add the files** adds every file you chose, in
+one job; a paper you leave empty is skipped, and **Cancel** skips them all.
+After a sync the paper is the pack's, filed as the sync would have filed it;
+after an add it is yours. The dialog opens once, when the job ends in front
+of you. Each paper stays in the job's outcome with **Choose the file**, so
+closing the dialog is not the end of it.
 
 ## Noticing that something changed
 

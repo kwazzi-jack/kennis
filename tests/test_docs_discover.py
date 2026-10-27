@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import threading
 from collections.abc import Iterator
 
 import httpx
@@ -765,3 +766,115 @@ def test_a_sitemap_is_held_to_the_page_limit():
     found = discover_pages(client, a_site(), max_pages=1)
 
     assert len(found.pages) == 1
+
+
+# ---------------------------------------------------------------------------
+# The crawl fetches the front of its queue together (2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def linking_with(
+    pages: dict[str, str],
+    *,
+    together: threading.Barrier | None = None,
+    waiting: frozenset[str] = frozenset(),
+) -> tuple[httpx.Client, list[int]]:
+    """`linking`, where each page in `waiting` waits at `together`, every
+    other page but the seed and robots.txt pauses briefly, and the most
+    requests in flight at once is recorded."""
+    inner = linking(pages)
+    lock = threading.Lock()
+    counts = [0, 0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == BASE or request.url.path.endswith("robots.txt"):
+            return inner.send(request)
+        with lock:
+            counts[0] += 1
+            counts[1] = max(counts[1], counts[0])
+        if together is not None and str(request.url) in waiting:
+            together.wait()
+        else:
+            threading.Event().wait(0.02)
+        with lock:
+            counts[0] -= 1
+        return inner.send(request)
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), counts
+
+
+TWO_CHILDREN = {
+    BASE: page("a.html", "b.html"),
+    "https://example.org/en/latest/a.html": page("c.html"),
+    "https://example.org/en/latest/b.html": page(),
+    "https://example.org/en/latest/c.html": page(),
+}
+
+
+def test_the_crawl_fetches_the_pages_it_has_queued_together():
+    """Each child's answer waits for the other's request, so a crawl asking
+    one page at a time fails the barrier. What it finds, and in what order,
+    is what the one-at-a-time crawl found."""
+    client, counts = linking_with(
+        TWO_CHILDREN,
+        together=threading.Barrier(2, timeout=5),
+        waiting=frozenset(
+            {
+                "https://example.org/en/latest/a.html",
+                "https://example.org/en/latest/b.html",
+            }
+        ),
+    )
+
+    found = crawl_site(
+        client, BASE, robots=robots_for(client, "https://example.org"), delay=0
+    )
+
+    assert found.urls == [
+        BASE,
+        "https://example.org/en/latest/a.html",
+        "https://example.org/en/latest/b.html",
+        "https://example.org/en/latest/c.html",
+    ]
+    assert counts[1] == 2
+
+
+def test_a_crawl_of_a_site_asking_for_a_delay_is_one_page_at_a_time():
+    client, counts = linking_with(TWO_CHILDREN)
+
+    crawl_site(
+        client,
+        BASE,
+        robots=robots_for(client, "https://example.org"),
+        delay=0,
+        one_at_a_time=True,
+    )
+
+    assert counts[1] == 1
+
+
+def test_the_crawl_never_asks_for_more_pages_than_its_limit_allows():
+    """Fetched in batches, a crawl must still stop where one page at a time
+    would have: a batch is no larger than the pages left to find."""
+    requested: list[str] = []
+    pages = {BASE: page(*[f"p{index}.html" for index in range(10)])}
+    for index in range(10):
+        pages[f"https://example.org/en/latest/p{index}.html"] = page()
+    inner = linking(pages)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith("robots.txt"):
+            requested.append(str(request.url))
+        return inner.send(request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = crawl_site(
+        client,
+        BASE,
+        robots=robots_for(client, "https://example.org"),
+        max_pages=4,
+        delay=0,
+    )
+
+    assert len(found.urls) == 4
+    assert len(requested) == 4

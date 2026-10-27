@@ -8,6 +8,7 @@ of the site.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import httpx
@@ -412,8 +413,12 @@ def test_the_pages_of_a_site_are_spaced(
         client=sphinx_site(),
     )
 
-    # Two pages, so one wait: the first costs nothing to ask for.
-    assert slept == [0.5]
+    # Two pages, so one wait: the first costs nothing to ask for. The delay
+    # spaces the starts of the two requests (2026-10-27), so the wait is
+    # what is left of it once the first has started; the spacing itself is
+    # measured in `test_parallel.py`.
+    assert len(slept) == 1
+    assert 0 < slept[0] <= 0.5
 
 
 def test_a_page_the_crawl_already_holds_costs_no_wait(
@@ -672,3 +677,150 @@ def test_the_progress_bar_knows_the_total_before_it_starts(docs: Collection):
     first = next(event for event in events.events if isinstance(event, Progress))
     assert first.completed == 0
     assert first.total == 2
+
+
+# ---------------------------------------------------------------------------
+# Pages fetched together (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def site_counting(
+    robots: str, *, together: threading.Barrier | None = None
+) -> tuple[httpx.Client, list[int]]:
+    """`sphinx_site`, whose page requests wait at `together` and record the
+    most in flight at once."""
+    inner = sphinx_site(robots)
+    lock = threading.Lock()
+    counts = [0, 0]  # in flight now, most at once
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith(".html"):
+            return inner.send(request)
+        with lock:
+            counts[0] += 1
+            counts[1] = max(counts[1], counts[0])
+        if together is not None:
+            together.wait()
+        else:
+            # A real pause the patched `time.sleep` cannot shorten.
+            threading.Event().wait(0.02)
+        with lock:
+            counts[0] -= 1
+        return inner.send(request)
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), counts
+
+
+def test_the_pages_of_a_site_naming_no_crawl_delay_are_fetched_together(
+    docs: Collection,
+):
+    """Each page's answer waits for the other's request, so a site fetched
+    one page at a time fails the barrier rather than passing."""
+    client, counts = site_counting(
+        "User-agent: *\nAllow: /\n", together=threading.Barrier(2, timeout=5)
+    )
+
+    report = add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=client,
+    )
+
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.ADDED] * 2
+    assert sorted(pages_of(docs)) == ["guide/start", "index"]
+    assert counts[1] == 2
+
+
+def test_a_site_naming_a_crawl_delay_is_fetched_one_page_at_a_time(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.time.sleep", lambda seconds: slept.append(seconds)
+    )
+    client, counts = site_counting("User-agent: *\nCrawl-delay: 2\nAllow: /\n")
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0.5),
+        client=client,
+    )
+
+    assert counts[1] == 1
+    assert slept == [2.0]
+
+
+def test_a_refresh_asks_for_the_pages_together(docs: Collection):
+    options = AddOptions(project="example", request_delay_seconds=0)
+    add_docs(docs, [BASE], options, client=sphinx_site())
+    client, _ = site_counting(
+        "User-agent: *\nAllow: /\n", together=threading.Barrier(2, timeout=5)
+    )
+
+    report = add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0, refresh=True),
+        client=client,
+    )
+
+    assert [outcome.outcome for outcome in report.outcomes] == [Outcome.UNCHANGED] * 2
+
+
+def test_progress_advances_as_the_pages_arrive(docs: Collection):
+    recorder = Recorder()
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0),
+        client=sphinx_site(),
+        events=recorder,
+    )
+
+    progress = [
+        (event.completed, event.total)
+        for event in recorder.events
+        if isinstance(event, Progress)
+    ]
+    assert progress == [(0, 2), (1, 2), (2, 2)]
+
+
+def test_a_crawled_site_naming_a_crawl_delay_is_crawled_one_page_at_a_time(
+    docs: Collection, monkeypatch: pytest.MonkeyPatch
+):
+    """A site with neither a sitemap nor a Sphinx index is crawled; when its
+    robots.txt asks for a delay, discovery must tell the crawl so."""
+    monkeypatch.setattr("kennis.engine.corpus.add.time.sleep", lambda seconds: None)
+    lock = threading.Lock()
+    counts = [0, 0]
+    linked = a_page("Overview").replace(
+        "</div>", '<a href="one.html">1</a><a href="two.html">2</a></div>'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("robots.txt"):
+            return httpx.Response(200, text="User-agent: *\nCrawl-delay: 2\nAllow: /\n")
+        if path.endswith(("searchindex.js", "sitemap.xml")):
+            return httpx.Response(404)
+        with lock:
+            counts[0] += 1
+            counts[1] = max(counts[1], counts[0])
+        threading.Event().wait(0.02)
+        with lock:
+            counts[0] -= 1
+        html = linked if path.endswith("/latest/") else a_page(path)
+        return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+
+    add_docs(
+        docs,
+        [BASE],
+        AddOptions(project="example", request_delay_seconds=0.5, max_depth=1),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert len(docs.contents().documents) == 3
+    assert counts[1] == 1

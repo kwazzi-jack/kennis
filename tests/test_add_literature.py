@@ -704,6 +704,7 @@ def test_a_doi_is_not_answered_with_a_preprint(papers: Collection):
         arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
+    # Nor its registry: with no text to store, a description is wasted.
     assert not any("doi" in url for url in asked)
     assert [outcome.outcome for outcome in report.outcomes] == [Outcome.FAILED]
     assert papers.contents().documents == []
@@ -770,6 +771,82 @@ def test_a_doi_with_the_document_supplied_is_added(papers: Collection, tmp_path:
     held = papers.contents().documents[0]
     assert "The real text of the published version." in held.body
     assert held.frontmatter.bib.doi == "10.1093/mnras/stab1234"
+
+
+def test_a_doi_paper_s_citekey_comes_from_its_registry(
+    papers: Collection, tmp_path: Path
+):
+    """Brian, 2026-10-26: derived from the DOI's own metadata, as a bare
+    arXiv identifier's is from arXiv's, unless the person gives one."""
+    document = tmp_path / "paper.md"
+    document.write_text("# Some Heading\n\nThe text.\n", encoding="utf-8")
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        asked.append(str(request.url))
+        if request.url.host == "doi.org":
+            return httpx.Response(
+                200,
+                json={
+                    "DOI": "10.1093/mnrasl/slaf009",
+                    "title": "Mining the time axis with TRON",
+                    "author": [{"family": "Smirnov", "given": "O M"}],
+                    "issued": {"date-parts": [[2025, 1, 2]]},
+                },
+            )
+        return httpx.Response(404)
+
+    add_literature(
+        papers,
+        [str(document)],
+        AddOptions(identifier="doi:10.1093/mnrasl/slaf009"),
+        arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    held = papers.contents().documents[0]
+    assert isinstance(held.frontmatter, LiteratureFrontmatter)
+    assert held.frontmatter.bib.citekey == "smirnovMiningTimeAxis2025"
+    assert held.frontmatter.title == "Mining the time axis with TRON"
+    assert asked == ["https://doi.org/10.1093/mnrasl/slaf009"]
+
+
+def test_what_a_bib_entry_gives_wins_over_the_registry(
+    papers: Collection, tmp_path: Path
+):
+    document = tmp_path / "paper.md"
+    document.write_text("# Heading\n\nThe text.\n", encoding="utf-8")
+    bib = tmp_path / "refs.bib"
+    bib.write_text(
+        "@article{x,\n title={My Own Title},\n doi={10.1093/mnrasl/slaf009},\n"
+        f" file={{{document}}}\n}}\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "doi.org" and request.url.path != "/robots.txt":
+            return httpx.Response(
+                200,
+                json={
+                    "DOI": "10.1093/mnrasl/slaf009",
+                    "title": "The Registry's Title",
+                    "author": [{"family": "Smirnov", "given": "O M"}],
+                    "issued": {"date-parts": [[2025]]},
+                },
+            )
+        return httpx.Response(404)
+
+    add_literature(
+        papers,
+        [str(bib)],
+        arxiv=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    held = papers.contents().documents[0]
+    assert isinstance(held.frontmatter, LiteratureFrontmatter)
+    assert held.frontmatter.title == "My Own Title"
+    assert held.frontmatter.bib.authors == "Smirnov, O M"
 
 
 def test_the_papers_of_one_batch_are_spaced(

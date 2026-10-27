@@ -69,6 +69,16 @@ def describe_unselected(count: int) -> str:
     return f"{count_of(count, 'file')} matched no include pattern"
 
 
+def describe_copied(relative: str) -> str:
+    """A local file `pack add` copied into the pack."""
+    return f"copied into the pack as {relative}"
+
+
+def describe_deleted(relative: str) -> str:
+    """A copy `pack remove` deleted, because no entry names it any more."""
+    return f"deleted {relative}, which no entry names any more"
+
+
 def describe_verdict(report: PackReport) -> str:
     """What a clean check actually established.
 
@@ -86,11 +96,15 @@ def describe_verdict(report: PackReport) -> str:
 def describe_recorded(result: PackUpdate) -> str:
     """What an update wrote, or found it did not need to write."""
     counted = count_of(result.files, "file")
-    if result.papers:
-        counted = f"{counted} and {count_of(result.papers, 'paper')}"
     if result.outcome == "unchanged":
         return f"{counted} already recorded, so the file is untouched"
     return f"{counted} recorded"
+
+
+def describe_described(key: str, citekey: str) -> str:
+    """One paper `pack update` described, and the citekey written into its
+    entry: the handle the person cites it by from now on."""
+    return f"{key} as {citekey}"
 
 
 def describe_undescribed(keys: Sequence[str]) -> str:
@@ -127,6 +141,10 @@ def describe_problem(problem: PackProblem) -> str:
         )
     if problem.kind == "digest-absent":
         return f"{problem.path} has a recorded digest and is not in the pack"
+    if problem.kind == "file-missing":
+        return f"{problem.path} is declared and is not a file in the pack"
+    if problem.kind == "declared-twice":
+        return f"{problem.path} is named by two entries, so it would be added twice"
     return f"{problem.path} is in the pack and has no recorded digest"
 
 
@@ -176,7 +194,7 @@ def _short(digest: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Reading the store: `pack list`, `pack status`, `pack remove`
+# Reading the store: `pack list`, `pack status`, `pack uninstall`
 # ---------------------------------------------------------------------------
 
 # How a pack's kind of item is named to a reader. The engine's `OverlapKind`
@@ -304,7 +322,7 @@ def describe_lost_source(installed: InstalledPack) -> str:
 
 
 def describe_removal(removal: PackRemoval) -> str:
-    """What `pack remove` dropped from the store.
+    """What `pack uninstall` dropped from the store.
 
     A partial install is worded differently rather than as "0 files":
     nothing recorded what was in that directory, which is not the same
@@ -532,8 +550,8 @@ def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     )
 
 
-def describe_what_remove_cannot_reach() -> str:
-    """The sentence `pack remove` closes with.
+def describe_what_uninstall_cannot_reach() -> str:
+    """The sentence `pack uninstall` closes with.
 
     Section 9 states the limit and says it must be stated: kennis keeps no
     registry of the projects a user has, so it cannot clean `.context/` in
@@ -551,10 +569,13 @@ __all__ = [
     "describe_action",
     "describe_after_install",
     "describe_bundle_sync",
+    "describe_copied",
     "describe_damage",
     "describe_declarations",
     "describe_declared",
     "describe_deferred",
+    "describe_deleted",
+    "describe_described",
     "describe_holdings",
     "describe_install",
     "describe_installed",
@@ -578,7 +599,7 @@ __all__ = [
     "describe_unselected",
     "describe_update_needed",
     "describe_verdict",
-    "describe_what_remove_cannot_reach",
+    "describe_what_uninstall_cannot_reach",
     "describe_when",
     "describe_why_unfetched",
     "verdict_word",

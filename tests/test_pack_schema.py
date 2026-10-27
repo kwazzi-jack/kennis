@@ -333,6 +333,76 @@ def test_yaml_that_does_not_parse_is_refused_as_a_pack():
         a_pack("kennis:\n  schema_version: [unclosed\n")
 
 
+PAPERS = (
+    MINIMAL
+    + """
+corpus:
+  literature:
+    - identifier: "doi:10.1000/alpha"
+      title: "first"
+    - identifier: "doi:10.1000/beta"
+      title: "second"
+"""
+)
+
+
+def test_a_field_written_twice_in_one_entry_is_refused_naming_both_lines():
+    """#547: PyYAML keeps the last of two equal keys in silence, so a hand
+    edit leaving two `title:` lines would lose one without a word. YAML 1.2
+    requires a mapping's keys to be unique."""
+    repeated = PAPERS.replace(
+        'title: "first"\n', 'title: "first"\n      title: "again"\n'
+    )
+    assert repeated.count("title:") == 3
+
+    with pytest.raises(PackInvalid) as raised:
+        a_pack(repeated)
+
+    message = str(raised.value)
+    lines = repeated.splitlines()
+    first = lines.index('      title: "first"') + 1
+    assert (
+        f"`title` is given twice in one mapping, on lines {first} and {first + 1}"
+        in message
+    )
+
+
+def test_a_section_written_twice_is_refused():
+    """The worse case: a second `corpus:` would replace the whole first one."""
+    with pytest.raises(PackInvalid) as raised:
+        a_pack(PAPERS + "corpus:\n  notes: []\n")
+
+    assert "`corpus` is given twice" in str(raised.value)
+
+
+def test_the_same_key_in_two_entries_is_not_a_repeat():
+    pack = a_pack(PAPERS)
+
+    assert [entry.title for entry in pack.corpus.literature] == ["first", "second"]
+
+
+def test_a_merge_key_overridden_by_one_written_key_is_not_a_repeat():
+    """A key merged in by `<<` and then written once is YAML's override, not
+    a key written twice. The pack forbids unknown keys, so the anchor is the
+    first entry itself."""
+    merged = (
+        MINIMAL
+        + """
+corpus:
+  literature:
+    - &first
+      identifier: "doi:10.1000/alpha"
+      title: "first"
+    - <<: *first
+      title: "written"
+"""
+    )
+
+    pack = a_pack(merged)
+
+    assert [entry.title for entry in pack.corpus.literature] == ["first", "written"]
+
+
 def test_the_error_names_the_field_path():
     """Section 5 step 1: refuse naming the field path. A message that says
     only "invalid" makes the author hunt."""

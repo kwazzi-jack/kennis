@@ -3,6 +3,9 @@
    strip's status and the pane, which any job may have changed (#457).
    `progress.js` redraws each only where the page has it. #}
 {% for element, route in shown.redraws + shell_redraws + branch_redraws %}<span hidden data-redraw-id="{{ element }}" data-redraw-route="{{ route }}"></span>{% endfor %}
+{# The papers kennis could not fetch, asked for once by `progress.js` when
+   the job ends in front of the reader (Brian, 2026-10-26). #}
+{% if shown.ask %}<span hidden data-ask-route="{{ shown.ask }}"></span>{% endif %}
 {% macro item_row(item) %}
   <li class="role-{{ item.outcome }}">
     <span class="marker">{{ item.marker }}</span> {{ item.name }}

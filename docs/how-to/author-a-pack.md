@@ -20,7 +20,7 @@ somewhere else.
 
 The `--id` is the pack's identity, and it is stable forever: it names the
 pack's directory in kennis's store, it is the key that decides whether a
-second `pack add` is an update or a new pack, and it appears in every
+second `pack install` is an update or a new pack, and it appears in every
 document the pack owns as `owner: pack:boepie`. Lowercase letters, digits
 and dashes.
 
@@ -40,6 +40,9 @@ kennis did not write and has no history to restore them from.
 
 ## Declare what it ships
 
+You can write the file by hand, or let kennis write each entry - see
+[Add and remove entries](#add-and-remove-entries).
+
 Four sections, all optional. Two are **declarations**, fetched over the
 network when the pack is installed:
 
@@ -53,9 +56,16 @@ corpus:
       identifier: "10.1093/mnras/stab1234"
       url: "https://example.org/papers/welman2021.pdf"
       group: calibration
+    - citekey: maccagniRFIMeerKAT2022
+      identifier: "10.48479/bhpj-nz95"
+      file: files/literature/maccagni.pdf
   docs:
     - project: stimela
       base_url: "https://stimela.readthedocs.io/en/latest/"
+    - project: tron
+      version: latest
+      pages:
+        - files/docs/tron/usage.md
 ```
 
 A literature entry needs one thing: what the paper **is**. That is its
@@ -78,12 +88,25 @@ Where a paper's text comes from:
 - **A `url`**, when you give one, is downloaded and converted. The
   identifier is taken as fact: a document whose first page names a
   different paper is not filed, and the sync says what it found.
+- **A `file`**, a path relative to the pack file, is shipped with the pack
+  and converted at sync. Use it for a paper no address reaches, such as one
+  behind a publisher that you may share. `file` and `url` exclude each
+  other, and a paper given as a file still needs its `identifier`, because
+  the identifier is what says which paper it is.
 - **A DOI alone** is looked up on Unpaywall, but only once the person
   syncing has given it their email with `kennis config set
   literature.unpaywall_email`. Only the published paper is fetched; an
   authors' accepted manuscript is offered, never taken unasked.
 - **Anything else** has no copy kennis can reach. Nothing is written, and
-  the sync says where to download the paper and how to add it.
+  the sync says where to download the paper. On a terminal it then asks
+  for a file you downloaded, and the window opens a dialog with a file
+  picker for each such paper; the file you give is filed as the pack's
+  paper, so later syncs keep it. Skip it, and the next sync asks again.
+
+A docs entry is a site, crawled from `base_url`, or local `pages`, files
+shipped with the pack and filed into the project - exactly one of the two.
+Local pages have no address to read a version from, so they need
+`version:`.
 
 Two are **content**, shipped with the pack:
 
@@ -105,7 +128,7 @@ context:
 `notes` goes into the machine-global corpus; `context` goes into each
 project's `.context/` bundle.
 
-A notes entry is one of two shapes, whatever `kennis corpus add --notes`
+A notes entry is one of three shapes, whatever `kennis corpus add --notes`
 can add:
 
 - **`source:`**, a folder relative to the pack file. Markdown in it is
@@ -116,9 +139,72 @@ can add:
   as `corpus add --notes <url>` would. `title` names the note, or the
   page's own heading does; `group` is a folder inside the pack's own. An
   unchanged entry is not fetched again.
+- **`file:`**, one file relative to the pack file, converted when the pack
+  is synced. `title` and `group` as for `url:`. It may not sit inside a
+  notes `source:`, which would deliver it twice.
 
 The default `include` is `**/*.md`, so name any other kind you ship;
 `pack update` counts the files no pattern took.
+
+## Add and remove entries
+
+`kennis pack add` writes an entry for anything `kennis corpus add` accepts,
+into the one `*.ken.yml` in the working directory, or the file `--pack`
+names. Name the kind with `--collection` or its shorthand - `-l`, `-d`,
+`-n`, or `-c` for a project's context, which only a pack has - and give the
+options `corpus add` takes for it (`--title`, `--group`, `--identifier`,
+`--citekey`, `--project`, `--version`):
+
+```
+kennis pack add -l 2511.10785 --citekey murphyDawesReview2026
+kennis pack add -l doi:10.48479/bhpj-nz95
+kennis pack add -l ~/Downloads/maccagni.pdf --identifier 10.48479/bhpj-nz95
+kennis pack add -d https://tkp.readthedocs.io/en/latest/
+kennis pack add -d ~/notes/usage.md --project tron --version latest
+kennis pack add -n https://archive.example.org/report.pdf --title "Time smearing"
+kennis pack add -n ~/reports/
+kennis pack add -c ~/conventions.md
+```
+
+A DOI is accepted with or without `doi:`, and as a `https://doi.org/`
+address. **A local file or folder is copied into the pack**, under
+`files/<collection>/`, and named relative to the pack file, so the pack
+works on every machine that installs it; one already inside the pack is
+named where it is. A copy that would replace a different file of the same
+name is refused. A folder of notes or context becomes one `source:`
+whose `include` names every kind of file in it kennis converts, so files
+added to it later ship too; a pattern such as `'~/reports/*.md'` is
+expanded as `corpus add` expands one. Documentation pages are files, as
+for `corpus add -d`: a folder or a pattern is refused.
+
+**Each input is added or refused on its own**, as with `corpus add`, and
+the report has the same shape: `+` for an entry added, `=` for one the pack
+already declares, `!` for one refused, with the reason on its line - a file
+given as a paper without `--identifier`, say. The good inputs are written
+even when another is refused, and nothing is written when none was added.
+The file is edited in place: your comments, layout and key order stay, and
+each entry is added at the end of its section. kennis's own folders - the
+corpus, its configuration, state and log - are never shipped.
+
+`kennis pack remove` takes entries out, by citekey, identifier, address,
+docs project, shipped file or source folder. It names what it matched and
+asks first, as `corpus remove` does; `-y` does not ask:
+
+```
+kennis pack remove murphyDawesReview2026
+kennis pack remove 10.48479/bhpj-nz95
+kennis pack remove files/docs/tron/usage.md
+```
+
+A copy `pack add` made under `files/` that no entry names any more is
+deleted; nothing outside `files/` ever is. Both commands end by running
+`pack update`, so the generated block always agrees with the file.
+
+**The file is yours and kennis's both**, as `pyproject.toml` is yours and
+`uv`'s: the commands edit it, and so may you, by hand. Edit anything above
+the generated block; kennis keeps your comments, layout and key order when
+it writes, and refuses - naming what is wrong - a file that is not YAML or
+not a pack.
 
 ## Where it lands
 
@@ -147,15 +233,19 @@ file by its section, its source and its path within that source, so a file
 reachable through two sources would have two addresses and no single answer
 to "did this move".
 
-## Record the digests
+## Describe the papers and record the digests
 
 ```
 kennis pack update boepie.ken.yml
 ```
 
-This walks each source, honouring `include` and `exclude`, and writes the
-`generated:` block at the end of the file - a digest per shipped file, and
-a description of each paper declared without a `citekey`.
+This does two things. It describes each paper declared without a
+`citekey`, writing what it found into that paper's entry. And it walks each
+source, honouring `include` and `exclude`, and writes the `generated:`
+block at the end of the file - a digest per shipped file, and one for each
+file a `file:` or `pages:` names (under `files:`). The block holds
+checksums alone, as a lock file does; everything you might read or change
+is in the entries.
 
 A digest is the sha256 of the file with every CRLF line ending read as LF.
 Line endings are not content: Git for Windows checks files out with CRLF by
@@ -175,33 +265,55 @@ generated:
 ```
 
 A paper is described the way `corpus add` describes one. An arXiv paper is
-looked up on arXiv, and its citekey is made from the first author's
-surname, the title's leading words and the year; a DOI or a bibcode has no
-lookup, so its citekey is made from what the entry says. Only the fields
-the entry left out are recorded:
+looked up on arXiv and a DOI at its registry (Crossref, DataCite and the
+others behind doi.org), and the citekey is made from the first author's
+surname, the title's leading words and the year - a DOI's year being the
+issue's when the registry gives one. A bibcode has no lookup, because ADS
+needs a key kennis does not ask for, so its citekey is made from what the
+entry says. So `kennis pack add -l doi:10.1017/pasa.2025.10128` needs no
+`--citekey`, and says which one it gave:
+
+```
+Added 1 entry in 9.2s
+  + doi:10.1017/pasa.2025.10128 as murphyDawesReviewNew2026
+```
+
+A lookup is one request to the registry, and Crossref can take several
+seconds to answer one. So DOIs are looked up four at a time, since doi.org
+asks for no delay, and arXiv identifiers one at a time, as arXiv asks; while
+they are looked up, `pack add` and `pack update` draw a bar counting them.
+
+Only the fields the entry left out are written, at the head of the entry
+and before what you wrote:
 
 ```yaml
   literature:
-    "arxiv:1101.1764":
-      citekey: "smirnovRevisitingRadioInterferometer2011"
+    - citekey: "smirnovRevisitingRadioInterferometer2011"
       title: "Revisiting the radio interferometer measurement equation. I. A full-sky Jones formalism"
       authors: "Oleg M. Smirnov"
       year: 2011
+      identifier: "1101.1764"
 ```
 
-A paper already described is not looked up again, and its citekey never
-changes once recorded: a second paper that would derive the same one is
-given a letter instead. A paper arXiv cannot describe is named, and
-nothing is recorded for it, so each corpus makes its own citekey when it
+From then on the citekey is the entry's, so the paper is not looked up
+again and its citekey does not change unless you change it - which you may.
+A second paper that would derive the same citekey is given a letter
+instead. A paper arXiv or its registry cannot describe is named, and
+nothing is written for it, so each corpus makes its own citekey when it
 adds the paper. An entry that gives its `citekey` is never looked up, so
 a pack whose entries all do never reaches the network from `update`.
+
+A pack written by kennis 0.12 may hold `literature:` inside its generated
+block. That is refused now, with what to do: delete those lines and run
+`kennis pack update`, which looks each paper up again and writes it into its
+entry. A citekey derives the same way as before, so while the entries keep
+their order each paper gets the one it had.
 
 Two things about the block:
 
 - **The block must be the last section.** `update` replaces from the marker
-  comment to the end of the file, which is how everything above it -
-  including your comments and the schema line - survives byte for byte.
-  It refuses rather than replacing anything you put below it.
+  comment to the end of the file. It refuses rather than replacing anything
+  you put below it.
 - **A run that changes nothing writes nothing.** Not the same bytes: the
   file is not opened for writing at all. So calling `update` on every
   release build is free, and the pack file's own hash only moves when its
@@ -239,7 +351,7 @@ reporting the same "valid" for two different amounts of checking.
 ## Install it
 
 ```
-kennis pack add boepie.ken.yml
+kennis pack install boepie.ken.yml
 ```
 
 This is the call a provider makes from its own sync command, on every run.
@@ -247,7 +359,7 @@ It does no network I/O: it copies what the pack declares into this
 machine's store at `<corpus>/packs/<id>/`, beside the declaration itself
 and a `state.json` recording what was applied.
 
-**Installing is not applying.** `pack add` records what a provider
+**Installing is not applying.** `pack install` records what a provider
 declared; a **sync** converges a scope with what every installed pack
 declares. There is one per scope:
 
@@ -284,10 +396,10 @@ sync commands would act on.
 
 The store is **not** part of the corpus history. It is a cache of what a
 provider last handed over, re-supplied by that provider's next run, so
-`corpus init` gitignores `packs/` and `pack add` makes sure of it on a
+`corpus init` gitignores `packs/` and `pack install` makes sure of it on a
 corpus that predates the feature.
 
-`pack add` re-checks everything `pack validate` checks, including the
+`pack install` re-checks everything `pack validate` checks, including the
 digests, and installs nothing if any of it fails. `validate` is the
 provider's own check and nothing makes them run it.
 
@@ -315,7 +427,7 @@ It also resolves the two things a pack **declares** rather than ships:
 | `corpus.literature` | fetches each paper | `identifier`, with its kind |
 | `corpus.docs` | crawls each site | `project` |
 
-So this command uses the network, which `kennis pack add` deliberately
+So this command uses the network, which `kennis pack install` deliberately
 does not.
 
 **A paper is keyed on its identifier, never on its citekey.** Correcting
@@ -390,7 +502,7 @@ kennis pack list
 
 One line per pack: its id, its own version, and how many files the store
 holds for it. The id is the column you copy out of and hand to
-`kennis pack remove`.
+`kennis pack uninstall`.
 
 ```
 kennis pack status
@@ -417,7 +529,7 @@ provider last handed it over. A pack showing only one has not been
 re-applied since it was installed.
 
 **The owner is the earliest installation, never the most recent.** A
-provider calls `pack add` on every run, so deciding by the most recent one
+provider calls `pack install` on every run, so deciding by the most recent one
 would flip ownership back and forth and rewrite the same documents forever.
 The first timestamp is immutable for exactly this reason, so the answer is
 stable: re-adding a pack does not make it the owner of anything.
@@ -431,17 +543,17 @@ the same tree shipped to `context`: they land in different places.
 
 | line | what it means | what to do |
 |---|---|---|
-| `the stored content does not match what was recorded` | files under `packs/<id>/` are missing or changed | `kennis pack add <path>`, which `status` names when the source file is still there |
-| `N directories in the store with no readable state` | a half-written install: a directory with no `state.json` that parses | `kennis pack remove <name>` |
+| `the stored content does not match what was recorded` | files under `packs/<id>/` are missing or changed | `kennis pack install <path>`, which `status` names when the source file is still there |
+| `N directories in the store with no readable state` | a half-written install: a directory with no `state.json` that parses | `kennis pack uninstall <name>` |
 
 If the pack's source file is gone from this machine, `status` says so and
 names the path it was added from. There is nothing local to repair from
 then, and the answer is to run the provider that built it again.
 
-## Remove one
+## Uninstall one
 
 ```
-kennis pack remove boepie
+kennis pack uninstall boepie
 ```
 
 Drops that pack from the store: its declaration, its copied content and its

@@ -15,43 +15,25 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import click
 
 from kennis.cli import display
+from kennis.cli.adding import destination_named, refuse_foreign_options, report_add
 from kennis.cli.group import KennisGroup
 from kennis.cli.paths import anchored
-from kennis.cli.sink import DisplaySink, marker_for, say_waiting
+from kennis.cli.sink import DisplaySink, say_waiting
 from kennis.client import api
 from kennis.context import existing_corpus, resolve_context
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 
 if TYPE_CHECKING:
-    from kennis.engine.corpus.add import AddOutcome, AddReport
+    from kennis.engine.corpus.add import AddOptions, AddReport
     from kennis.engine.corpus.sync import CorpusSync
     from kennis.engine.errors import KennisError
     from kennis.engine.history.freshness import Freshness
     from kennis.engine.history.outofband import OutOfBandChange
-
-# Each collection's shorthand flag, for naming it back in an error. The
-# options themselves are declared literally on the command.
-_SHORTHANDS: Final[dict[str, str]] = {
-    "notes": "-n",
-    "literature": "-l",
-    "docs": "-d",
-}
-
-# Which options mean anything for which destination. `--project` is a docs
-# natural key and the other two establish a paper's identity, so each is a
-# usage error elsewhere rather than a flag that is quietly ignored.
-_COLLECTION_ONLY: Final[dict[str, str]] = {
-    "--project": "docs",
-    "--version": "docs",
-    "--refresh": "docs",
-    "--citekey": "literature",
-    "--identifier": "literature",
-}
 
 
 @click.group(name="corpus", cls=KennisGroup)
@@ -271,10 +253,12 @@ def add_command(
     from kennis.engine.corpus.add import AddOptions
 
     context = existing_corpus()
-    destination = _destination(
-        collection, notes=notes, literature=literature, docs=docs
+    destination = destination_named(
+        collection,
+        {"notes": notes, "literature": literature, "docs": docs},
+        offered=COLLECTION_NAMES,
     )
-    _refuse_foreign_options(
+    refuse_foreign_options(
         destination,
         identifier=identifier,
         citekey=citekey,
@@ -322,153 +306,40 @@ def add_command(
         )
 
     report_restored(written.restored)
-    _report_add(written.result)
-
-
-def _destination(
-    collection: str | None, *, notes: bool, literature: bool, docs: bool
-) -> str:
-    """The one collection this add writes to.
-
-    `--collection` here names a destination rather than a selection, so it is
-    a single choice and never `all`: a document is written to exactly one
-    collection. Naming one twice and differently is an error rather than a
-    precedence puzzle, because someone who typed both meant one of them and
-    kennis cannot tell which.
-    """
-    from kennis.engine.corpus.schema import COLLECTION_NAMES
-
-    chosen = [
-        name
-        for name, given in (
-            ("notes", notes),
-            ("literature", literature),
-            ("docs", docs),
+    report_add(written.result)
+    if destination == "literature":
+        _ask_for_what_the_add_could_not_fetch(
+            context.corpus_root, written.result, options
         )
-        if given
-    ]
-    if len(chosen) > 1:
-        flags = ", ".join(_SHORTHANDS[name] for name in chosen)
-        raise display.CliError(f"{flags} name different collections. Pass one of them.")
-    shorthand = chosen[0] if chosen else None
-
-    if collection is not None and shorthand is not None and collection != shorthand:
-        raise display.CliError(
-            f"--collection {collection} and {_SHORTHANDS[shorthand]} name "
-            f"different collections. Pass one of them."
-        )
-    destination = collection or shorthand
-    if destination is None:
-        raise display.CliError(
-            "name a collection: --collection "
-            f"{'|'.join(COLLECTION_NAMES)}, or -n/-l/-d."
-        )
-    return destination
 
 
-def _refuse_foreign_options(
-    destination: str,
-    *,
-    identifier: str | None,
-    citekey: str | None,
-    project: str | None,
-    docs_version: str | None,
-    refresh: bool = False,
+def _ask_for_what_the_add_could_not_fetch(
+    corpus_root: Path, report: AddReport, options: AddOptions
 ) -> None:
-    """Refuse an option that means nothing for the collection being written.
+    """On a terminal, a file for each paper with no open copy, added as
+    `corpus add -l <file> --identifier <it>` adds one (Brian, 2026-10-26)."""
+    from dataclasses import replace
 
-    Louder than ignoring it: `--citekey` on a notes add is someone expecting
-    a citekey to come out the other end, and silence would let them find that
-    out from the corpus instead.
-    """
-    supplied = {
-        "--identifier": identifier is not None,
-        "--citekey": citekey is not None,
-        "--project": project is not None,
-        "--version": docs_version is not None,
-        "--refresh": refresh,
-    }
-    for flag, given in supplied.items():
-        owner = _COLLECTION_ONLY[flag]
-        if given and owner != destination:
-            raise display.CliError(
-                f"{flag} applies to {owner} only, not to {destination}."
+    from kennis.cli.supplying import Wanted, ask_for_files, wanted_papers
+
+    def supplied(paper: Wanted, path: Path) -> None:
+        with DisplaySink() as shown:
+            written = api.add(
+                corpus_root,
+                "literature",
+                [str(path)],
+                replace(options, identifier=paper.value),
+                events=shown,
+                on_waiting=say_waiting,
             )
+        report_restored(written.restored)
+        report_add(written.result)
 
-
-def _report_add(report: AddReport) -> None:
-    """What the add did: one operation line, then the items beneath it.
-
-    Printed from the report rather than streamed from the event stream. A
-    docs add of three hundred pages would otherwise put three hundred lines
-    above the summary that was the answer; `display.details` caps them, and
-    the log has all of them either way.
-    """
-    from kennis.engine.events import Outcome
-    from kennis.render.words import conversion_cost, conversion_repairs, count_of
-
-    counts = report.counts
-    # The cost rides on the operation line rather than a line of its own: it
-    # is a property of what just happened, and a separate line would give a
-    # free local conversion a blank where a number used to be.
-    priced = conversion_cost(report.cost_cents)
-    repaired = conversion_repairs(report.repairs)
-    updated = counts.get(Outcome.CHANGED, 0)
-    display.operation(
-        "Added",
-        count_of(counts.get(Outcome.ADDED, 0), "document")
-        + (f", {updated} updated" if updated else "")
-        + (f", {priced}" if priced else "")
-        + (f", {repaired}" if repaired else ""),
-        elapsed=report.elapsed_seconds,
+    ask_for_files(
+        wanted_papers((None, outcome.refusal) for outcome in report.outcomes),
+        supplied,
+        asked_again=False,
     )
-    for outcome in Outcome:
-        named = [_named(item) for item in report.outcomes if item.outcome is outcome]
-        if named:
-            display.details(marker_for(outcome), named)
-    _report_remedies(report)
-
-
-def _named(item: AddOutcome) -> str:
-    """One detail line: what it was, and for a failure, why not.
-
-    Only failures carry their reason. A `+` line that also explained
-    itself would be noise, and an `=` line saying "identical content is
-    already in this collection" repeats what the marker already means.
-    A failure is the case where the name alone tells the user nothing
-    they can act on - until now the reason went only to the log, which
-    is the wrong place for one refused paper even if it is the right
-    one for three hundred refused pages. Concern #322.
-    """
-    from kennis.engine.events import Outcome
-    from kennis.render.refusals import describe_refusal
-
-    name = item.title or item.identifier
-    if item.outcome is not Outcome.FAILED or item.refusal is None:
-        return name
-    return f"{name} - {describe_refusal(item.refusal)}"
-
-
-def _report_remedies(report: AddReport) -> None:
-    """The commands that would resolve the failures, each one once.
-
-    Below the items rather than beside them: two papers refused the same
-    way share a remedy, and printing it twice invites the user to run it
-    twice.
-    """
-    from kennis.engine.events import Outcome
-    from kennis.render.refusals import choices_for_refusal, remedies_for_refusal
-
-    commands: dict[str, None] = {}
-    for item in report.outcomes:
-        if item.outcome is Outcome.FAILED and item.refusal is not None:
-            for command in (
-                *choices_for_refusal(item.refusal),
-                *remedies_for_refusal(item.refusal),
-            ):
-                commands.setdefault(command, None)
-    for command in commands:
-        display.hint(command)
 
 
 @corpus_group.command(name="sync")
@@ -476,10 +347,10 @@ def sync_command() -> None:
     """Converge the corpus with every installed pack.
 
     Three sections, materialised three ways. A pack's **notes** are
-    already in this machine's store, put there by `kennis pack add`, so
+    already in this machine's store, put there by `kennis pack install`, so
     they are copied. Its **papers** are fetched by identifier and its
     **documentation sites** are crawled, so this command uses the
-    network - which `kennis pack add` deliberately does not.
+    network - which `kennis pack install` deliberately does not.
 
     Nothing you own is touched. A pack's note you edited is put back as
     the pack has it, and your edit kept as a new note of yours, so none
@@ -501,8 +372,32 @@ def sync_command() -> None:
             describe_action(action, result.places.get(action.address)),
         )
     _report_what_a_sync_left(result)
-    if any(action.verdict in ACTING for action in result.actions):
+    supplied = _ask_for_what_the_sync_could_not_fetch(corpus_root, result)
+    if supplied or any(action.verdict in ACTING for action in result.actions):
         display.next_step("kennis corpus index")
+
+
+def _ask_for_what_the_sync_could_not_fetch(
+    corpus_root: Path, result: CorpusSync
+) -> int:
+    """On a terminal, a file for each pack paper with no open copy, added
+    as the pack's own (Brian, 2026-10-26)."""
+    from kennis.cli.supplying import Wanted, ask_for_files, wanted_papers
+
+    def supplied(paper: Wanted, path: Path) -> None:
+        assert paper.address is not None
+        with DisplaySink() as shown:
+            written = api.supply_paper(
+                corpus_root,
+                paper.address,
+                path,
+                events=shown,
+                on_waiting=say_waiting,
+            )
+        report_restored(written.restored)
+        report_add(written.result)
+
+    return ask_for_files(wanted_papers(result.why), supplied, asked_again=True)
 
 
 def _report_what_a_sync_left(result: CorpusSync) -> None:

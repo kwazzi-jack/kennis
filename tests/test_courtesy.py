@@ -10,6 +10,9 @@ The clock is the module's own, replaced here, so nothing sleeps.
 
 from __future__ import annotations
 
+import threading
+import time
+
 import httpx
 import pytest
 
@@ -17,6 +20,7 @@ from kennis.engine import courtesy
 from kennis.engine.courtesy import Disallowed, get_politely
 from kennis.engine.literature.fetch import fetch_paper
 from kennis.engine.literature.metadata import lookup_arxiv_metadata
+from kennis.engine.parallel import PARALLEL_REQUESTS
 
 AGENT = "kennis-test"
 
@@ -259,3 +263,105 @@ def test_rules_are_read_again_after_a_day(clock: Clock):
     get_politely(client, "https://daily.example.org/b", user_agent=AGENT, timeout=5)
 
     assert asked == ["/robots.txt", "/a", "/robots.txt", "/b"]
+
+
+# ---------------------------------------------------------------------------
+# Several at once, where the host asks for no delay (2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def asked_from_threads(client: httpx.Client, paths: list[str]) -> list[int]:
+    """Each path asked of one origin from its own thread; the statuses."""
+    statuses: list[int] = []
+    lock = threading.Lock()
+
+    def ask(path: str) -> None:
+        response = get_politely(
+            client, f"https://registry.example.org{path}", user_agent=AGENT, timeout=5
+        )
+        with lock:
+            statuses.append(response.status_code)
+
+    threads = [threading.Thread(target=ask, args=(path,)) for path in paths]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    return statuses
+
+
+def test_a_host_naming_no_crawl_delay_is_asked_several_at_once():
+    """doi.org's robots.txt is empty, and a lookup is Crossref's 1 to 10 s.
+    Each request waits for the other to be in flight, so a host asked one
+    at a time fails the barrier rather than passing."""
+    together = threading.Barrier(2, timeout=5)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        together.wait()
+        return httpx.Response(200)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    assert asked_from_threads(client, ["/a", "/b"]) == [200, 200]
+
+
+def test_a_host_naming_a_crawl_delay_is_asked_one_at_a_time(clock: Clock):
+    """arXiv asks for fifteen seconds between requests; parallel callers
+    must not turn that into several requests every fifteen seconds."""
+    lock = threading.Lock()
+    in_flight = 0
+    most = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, most
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nCrawl-delay: 15\n")
+        with lock:
+            in_flight += 1
+            most = max(most, in_flight)
+        time.sleep(0.02)
+        with lock:
+            in_flight -= 1
+        return httpx.Response(200)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    assert asked_from_threads(client, ["/a", "/b", "/c"]) == [200, 200, 200]
+    assert most == 1
+    assert clock.slept == [15.0, 15.0, 15.0]
+
+
+def test_no_more_than_the_parallel_requests_are_in_flight_to_one_host():
+    """Every request is held until the test lets them go. Once
+    `PARALLEL_REQUESTS` are in flight, a fifth must not start: the test
+    gives one a moment to, since an absence cannot be waited for, and a
+    host with no limit has all eight in flight long before then."""
+    changed = threading.Condition()
+    in_flight = 0
+    release = threading.Event()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        with changed:
+            in_flight += 1
+            changed.notify_all()
+        assert release.wait(10)
+        with changed:
+            in_flight -= 1
+        return httpx.Response(200)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    paths = [f"/{number}" for number in range(PARALLEL_REQUESTS * 2)]
+    asking = threading.Thread(target=asked_from_threads, args=(client, paths))
+    asking.start()
+    try:
+        with changed:
+            assert changed.wait_for(lambda: in_flight == PARALLEL_REQUESTS, 5)
+            assert not changed.wait_for(lambda: in_flight > PARALLEL_REQUESTS, 0.2)
+    finally:
+        release.set()
+        asking.join(timeout=10)

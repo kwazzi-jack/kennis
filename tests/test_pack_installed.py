@@ -1,6 +1,6 @@
 """Reading and removing the pack store. Milestone 7 unit 6.
 
-`pack add` writes a store nothing could look at. These are the three
+`pack install` writes a store nothing could look at. These are the three
 questions a user has about it afterwards - what is installed, what does it
 record, and how do I get rid of one - and the one question the design
 insists is *persistent* state rather than a line printed inside an
@@ -23,7 +23,7 @@ from kennis.engine.pack.installed import (
     declared_content,
     list_installed,
     overlaps_between,
-    remove_pack,
+    uninstall_pack,
 )
 from kennis.engine.pack.store import (
     STATE_FILENAME,
@@ -193,7 +193,7 @@ def test_two_packs_declaring_one_docs_project_overlap(corpus: Path, tmp_path: Pa
 
 def test_the_incumbent_is_the_earliest_first_applied_at(corpus: Path, tmp_path: Path):
     """Section 5 step 4: `applied_at` cannot be the tie-break, because a
-    provider calls `pack add` on every run and most-recent-wins would flip
+    provider calls `pack install` on every run and most-recent-wins would flip
     ownership in a loop."""
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha", body=DOCS))
     install_pack(corpus, a_provider(tmp_path / "b", identifier="beta", body=DOCS))
@@ -340,7 +340,7 @@ def test_a_pack_declaring_an_item_twice_is_not_an_overlap_with_itself(
 def test_remove_deletes_the_pack_directory(corpus: Path, tmp_path: Path):
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
 
-    remove_pack(corpus, "alpha")
+    uninstall_pack(corpus, "alpha")
 
     assert not pack_root(corpus, "alpha").exists()
 
@@ -349,7 +349,7 @@ def test_remove_leaves_the_other_packs_alone(corpus: Path, tmp_path: Path):
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
     install_pack(corpus, a_provider(tmp_path / "b", identifier="beta"))
 
-    remove_pack(corpus, "alpha")
+    uninstall_pack(corpus, "alpha")
 
     assert [one.state.pack_id for one in list_installed(corpus).packs] == ["beta"]
 
@@ -364,7 +364,7 @@ def test_remove_reports_how_much_it_dropped(corpus: Path, tmp_path: Path):
         ),
     )
 
-    removal = remove_pack(corpus, "alpha")
+    removal = uninstall_pack(corpus, "alpha")
 
     assert removal.pack_id == "alpha"
     assert removal.files == 2
@@ -375,7 +375,7 @@ def test_removing_a_pack_that_is_not_installed_refuses(corpus: Path):
     """Named rather than treated as a success: a typo in a pack id would
     otherwise report that the thing the user meant is gone."""
     with pytest.raises(PackNotInstalled) as raised:
-        remove_pack(corpus, "nosuch")
+        uninstall_pack(corpus, "nosuch")
 
     assert "nosuch" in str(raised.value)
     assert raised.value.resolution == "kennis pack list"
@@ -387,7 +387,7 @@ def test_a_partial_install_can_still_be_removed(corpus: Path, tmp_path: Path):
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
     (pack_root(corpus, "alpha") / STATE_FILENAME).unlink()
 
-    removal = remove_pack(corpus, "alpha")
+    removal = uninstall_pack(corpus, "alpha")
 
     # `recorded` and not just `files`: 0 here means nothing said what was
     # in that directory, which is a different claim from it being empty.
@@ -402,18 +402,18 @@ def test_remove_reports_through_the_event_stream(corpus: Path, tmp_path: Path):
     install_pack(corpus, a_provider(tmp_path / "a", identifier="alpha"))
     events = Recorder()
 
-    remove_pack(corpus, "alpha", events=events)
+    uninstall_pack(corpus, "alpha", events=events)
 
     assert events.outcomes() == {"alpha": Outcome.REMOVED}
     finished = events.events_of_type(OperationFinished)
-    assert [event.operation for event in finished] == ["pack-remove"]
+    assert [event.operation for event in finished] == ["pack-uninstall"]
 
 
 def test_a_refused_removal_reports_nothing(corpus: Path):
     events = Recorder()
 
     with pytest.raises(PackNotInstalled):
-        remove_pack(corpus, "nosuch", events=events)
+        uninstall_pack(corpus, "nosuch", events=events)
 
     assert events.events == []
 
@@ -563,7 +563,7 @@ def test_the_union_carries_one_declaration_per_address(corpus: Path, tmp_path: P
 
 def test_a_declaration_points_at_the_file_in_the_store(corpus: Path, tmp_path: Path):
     """A sync reads content from the store, never from the provider's
-    checkout: the checkout may be gone, and the store is what `pack add`
+    checkout: the checkout may be gone, and the store is what `pack install`
     verified."""
     install_pack(
         corpus,
@@ -638,7 +638,7 @@ def test_two_packs_declaring_one_address_resolve_to_the_incumbent(
 def test_removing_the_incumbent_leaves_the_other_packs_declaration_standing(
     corpus: Path, tmp_path: Path
 ):
-    """The sentence step 6 exists for: `pack remove A` for an item B also
+    """The sentence step 6 exists for: `pack uninstall A` for an item B also
     declares must not make the item vanish, because B still declares it."""
     body = "context:\n  - source: content/\n"
     install_pack(
@@ -660,7 +660,7 @@ def test_removing_the_incumbent_leaves_the_other_packs_declaration_standing(
         ),
     )
 
-    remove_pack(corpus, "alpha")
+    uninstall_pack(corpus, "alpha")
 
     union = declared_content(corpus, list_installed(corpus).packs, "context")
     assert union.declarations["one.md"].pack_id == "beta"

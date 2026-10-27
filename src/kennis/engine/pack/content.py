@@ -26,7 +26,7 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from kennis.engine._glob import globstar_regex
 
@@ -121,6 +121,38 @@ def read_source(root: Path, source: ContentSource) -> SourceContent:
     )
 
 
+type ShippedState = Literal["present", "missing", "symlink", "escaping"]
+
+
+@dataclass(frozen=True, slots=True)
+class ShippedFile:
+    """What one path a `file:` or `pages:` names is, as a fact.
+
+    `digest` is None unless the file is `present`. A symlink inside the
+    pack and one leading out of it are told apart as `read_source` tells
+    them apart: the second is the zip-slip shape, the first untidy.
+    """
+
+    path: str
+    state: ShippedState
+    digest: str | None = None
+
+
+def read_file(root: Path, relative: str) -> ShippedFile:
+    """One shipped file, read by the rules a source's walk follows."""
+    path = root / relative
+    if path.is_symlink():
+        state: ShippedState = "symlink" if resolves_inside(path, root) else "escaping"
+        return ShippedFile(path=relative, state=state)
+    if not path.is_file():
+        return ShippedFile(path=relative, state="missing")
+    if not resolves_inside(path, root):
+        return ShippedFile(path=relative, state="escaping")
+    return ShippedFile(
+        path=relative, state="present", digest=content_digest(path.read_bytes())
+    )
+
+
 def address_of(source: str, relative: str) -> str:
     """A file's path relative to the pack root, for reporting."""
     return (PurePosixPath(source.strip("/")) / relative).as_posix()
@@ -181,9 +213,12 @@ def _excluded(relative: str, source: ContentSource) -> bool:
 
 
 __all__ = [
+    "ShippedFile",
+    "ShippedState",
     "SourceContent",
     "address_of",
     "content_digest",
+    "read_file",
     "read_source",
     "resolves_inside",
     "selects",

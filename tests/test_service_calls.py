@@ -76,10 +76,11 @@ EXPECTED_OPERATIONS = frozenset(
         "move_document",
         "remember",
         "remove_document",
-        "remove_pack",
+        "uninstall_pack",
         "remove_version",
         "restore_document",
         "return_corpus",
+        "supply_paper",
         "sync_bundle",
         "sync_corpus",
         # Reads, answered on the request.
@@ -173,7 +174,7 @@ def a_pack_s_note(scene: Scene) -> Mapping[str, object]:
     to have a version of their own (#514)."""
     runner = CliRunner()
     for arguments in (
-        ["pack", "add", str(scene.scratch / "provider/provider.ken.yml")],
+        ["pack", "install", str(scene.scratch / "provider/provider.ken.yml")],
         ["corpus", "sync"],
     ):
         answered = runner.invoke(main, arguments)
@@ -200,7 +201,7 @@ def a_pack_s_context_file(scene: Scene) -> Mapping[str, object]:
     runner = CliRunner()
     for arguments in (
         ["pack", "update", str(declaration)],
-        ["pack", "add", str(declaration)],
+        ["pack", "install", str(declaration)],
     ):
         answered = runner.invoke(main, arguments)
         assert answered.exit_code == 0, answered.output
@@ -223,10 +224,33 @@ def a_known_project(scene: Scene) -> Mapping[str, object]:
 
 def installed(scene: Scene) -> Mapping[str, object]:
     answered = CliRunner().invoke(
-        main, ["pack", "add", str(scene.scratch / "provider/provider.ken.yml")]
+        main, ["pack", "install", str(scene.scratch / "provider/provider.ken.yml")]
     )
     assert answered.exit_code == 0, answered.output
     return {"pack_id": "provider"}
+
+
+def a_pack_s_paper_by_hand(scene: Scene) -> Mapping[str, object]:
+    """A pack declaring a paper with no open copy, and the file a person
+    downloaded for it."""
+    root = scene.scratch / "paper-provider"
+    root.mkdir()
+    pack = root / "papers.ken.yml"
+    pack.write_text(
+        "kennis:\n  schema_version: 1\n"
+        'pack:\n  id: papers\n  name: p\n  version: "1.0.0"\n'
+        "corpus:\n  literature:\n"
+        "    - citekey: maccagniRFIMeerKAT2022\n"
+        '      identifier: "10.48479/bhpj-nz95"\n',
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    for arguments in (["pack", "update", str(pack)], ["pack", "install", str(pack)]):
+        answered = runner.invoke(main, arguments)
+        assert answered.exit_code == 0, answered.output
+    downloaded = scene.scratch / "maccagni.md"
+    downloaded.write_text("# RFI at u=0\n\nDownloaded by hand.\n", encoding="utf-8")
+    return {"address": "doi:10.48479/bhpj-nz95", "path": downloaded}
 
 
 def removed_first(scene: Scene) -> Mapping[str, object]:
@@ -268,7 +292,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     },
     "remember": lambda scene: {"text": "Flagging removes the worst interference."},
     "remove_document": lambda scene: {"collection": "notes", "handle": scene.note},
-    "remove_pack": installed,
+    "uninstall_pack": installed,
     "remove_version": lambda scene: {"project": "tool", "version": "1.0"},
     "restore_document": removed_first,
     "return_corpus": lambda scene: {"commit": scene.first_commit},
@@ -286,6 +310,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "forget_project": a_known_project,
     "bundle_status": lambda scene: {"bundle": bundle_of(scene)},
     "reset_preview": lambda scene: {"bundle": bundle_of(scene)},
+    "supply_paper": a_pack_s_paper_by_hand,
     "sync_corpus": lambda scene: {},
     "contents": lambda scene: {"collection": "notes"},
     "docs_versions": lambda scene: {},
@@ -443,8 +468,14 @@ def test_a_read_answers_what_calling_it_directly_answers(
 
 @pytest.mark.parametrize("name", WRITES)
 def test_a_write_runs_as_a_job_and_answers_its_declared_type(
-    client: TestClient, scene: Scene, name: str
+    client: TestClient, scene: Scene, name: str, monkeypatch: pytest.MonkeyPatch
 ):
+    # A paper supplied by DOI is described by doi.org, and a call through
+    # the API cannot be handed a client: the registry here knows nothing.
+    monkeypatch.setattr(
+        "kennis.engine.corpus.add.lookup_doi_metadata",
+        lambda doi, *, client=None: None,
+    )
     operation = OPERATIONS[name]
     arguments = CALLS[name](scene)
 

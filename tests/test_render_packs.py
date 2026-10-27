@@ -41,6 +41,7 @@ from kennis.render.packs import (
     describe_damage,
     describe_declarations,
     describe_deferred,
+    describe_described,
     describe_holdings,
     describe_install,
     describe_installed,
@@ -59,7 +60,7 @@ from kennis.render.packs import (
     describe_unselected,
     describe_update_needed,
     describe_verdict,
-    describe_what_remove_cannot_reach,
+    describe_what_uninstall_cannot_reach,
     describe_when,
     remedy_for,
     verdict_word,
@@ -289,12 +290,20 @@ def test_a_changed_update_says_what_it_recorded():
     assert describe_recorded(result) == "2 files recorded"
 
 
-def test_an_update_counts_the_papers_it_described():
+def test_an_update_names_each_paper_it_described_by_its_new_citekey():
     result = PackUpdate(
-        path=Path("p.ken.yml"), outcome="written", files=2, unselected=0, papers=1
+        path=Path("p.ken.yml"),
+        outcome="written",
+        files=2,
+        unselected=0,
+        described=(("doi:10.1093/mnrasl/slaf009", "smirnovMiningTimeAxis2025"),),
     )
 
-    assert describe_recorded(result) == "2 files and 1 paper recorded"
+    assert describe_recorded(result) == "2 files recorded"
+    assert (
+        describe_described(*result.described[0])
+        == "doi:10.1093/mnrasl/slaf009 as smirnovMiningTimeAxis2025"
+    )
 
 
 def test_a_paper_left_without_a_citekey_is_named_with_the_way_out():
@@ -675,7 +684,7 @@ def test_remove_says_what_it_could_not_reach():
     """A user running `remove` will reasonably expect the content to be
     gone, and it is not - not from the corpus and not from any project.
     Both scopes are named, because each is reached by its own sync."""
-    described = describe_what_remove_cannot_reach()
+    described = describe_what_uninstall_cannot_reach()
 
     assert "corpus" in described
     assert "project" in described

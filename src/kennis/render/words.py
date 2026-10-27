@@ -49,6 +49,7 @@ _PARTICIPLES: Final[dict[str, str]] = {
     "index": "Indexing",
     "backup": "Backing up",
     "corpus-sync": "Synchronising",
+    "pack-describe": "Looking up papers",
 }
 
 # How much of a hit to show by default. Long enough to recognise the passage,

@@ -51,6 +51,7 @@ from kennis.gui.routes import (
     search,
     settings,
     shell,
+    supply,
 )
 from kennis.gui.theme import stylesheet
 from kennis.service.jobs import Jobs
@@ -349,7 +350,17 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             found.read_text(encoding="utf-8"), media_type="text/javascript"
         )
 
-    for routes in (shell, search, corpus, documents, remember, add, jobs, settings):
+    for routes in (
+        shell,
+        search,
+        corpus,
+        documents,
+        remember,
+        add,
+        jobs,
+        settings,
+        supply,
+    ):
         app.include_router(routes.router)
 
     return app

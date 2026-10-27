@@ -182,6 +182,7 @@ JOB_ROUTES: Final[dict[str, str]] = {
     "/context-sync": "context-sync",
     "/index": "index",
     "/pack": "pack",
+    "/supply": "add",
     "/sync": "sync",
 }
 

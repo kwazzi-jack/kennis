@@ -157,7 +157,7 @@ kennis context sync
 ```
 
 A **pack** is knowledge that arrives from outside, as data - see
-[Author a pack](author-a-pack.md). `kennis pack add` puts it in this
+[Author a pack](author-a-pack.md). `kennis pack install` puts it in this
 machine's store; this command applies the context half of every installed
 pack to the project you are standing in.
 

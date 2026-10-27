@@ -32,7 +32,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.sync import sync_corpus
 from kennis.engine.history.repository import initialise_corpus
-from kennis.engine.pack.installed import remove_pack
+from kennis.engine.pack.installed import uninstall_pack
 from kennis.engine.pack.store import install_pack, pack_root
 from kennis.engine.pack.update import update_pack
 from test_add_docs import BASE, sphinx_site
@@ -166,7 +166,7 @@ def test_a_new_release_replaces_the_read_only_store(corpus: Path, tmp_path: Path
 def test_removing_a_pack_removes_its_read_only_store(corpus: Path, tmp_path: Path):
     installed(corpus, tmp_path)
 
-    remove_pack(corpus, "alpha")
+    uninstall_pack(corpus, "alpha")
 
     assert not pack_root(corpus, "alpha").exists()
 

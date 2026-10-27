@@ -21,10 +21,13 @@ import pytest
 from kennis.cli.__main__ import main
 from kennis.engine import refusals as refusal_module
 from kennis.engine.refusals import (
+    AlreadyDeclared,
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentifierNeeded,
     IdentityMismatch,
     KennisOwn,
+    NameTaken,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -72,6 +75,9 @@ EVERY_REFUSAL: list[Refusal] = [
     SymlinkSkipped(),
     KennisOwn(),
     UnsupportedFormat(suffix=".zip"),
+    AlreadyDeclared(named="1101.1764"),
+    IdentifierNeeded(named="/tmp/paper.pdf"),
+    NameTaken(named="/tmp/a.pdf", copy="files/literature/a.pdf"),
 ]
 
 

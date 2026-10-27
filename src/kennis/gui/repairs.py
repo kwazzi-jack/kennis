@@ -22,15 +22,19 @@ filled - two links, because the download is the reader's to do.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import quote, urlencode
 
 from kennis.engine.refusals import (
+    AlreadyDeclared,
     AmbiguousIdentity,
     BibliographyIncomplete,
+    IdentifierNeeded,
     IdentityMismatch,
     KennisOwn,
+    NameTaken,
     NoArxivText,
     NoIdentity,
     NoPublisherText,
@@ -130,6 +134,9 @@ def ways_out_for(refusal: Refusal) -> tuple[WayOut, ...]:
             | SymlinkSkipped()
             | KennisOwn()
             | UnsupportedFormat()
+            | AlreadyDeclared()
+            | IdentifierNeeded()
+            | NameTaken()
         ):
             return ()
 
@@ -142,6 +149,16 @@ def _from_a_pdf(identifier: str) -> WayOut:
     """The Add dialog on Paper, PDF chosen, the identifier filled."""
     query = urlencode({"kind": "paper", "source": "pdf", "identifier": identifier})
     return WayOut(ADD_FROM_A_PDF, f"/add?{query}")
+
+
+def supply_address(owner: str, papers: Sequence[tuple[str, str]]) -> str:
+    """The dialog asking for a file for each of `papers`, `(kind, value)`
+    pairs, to be added as `owner`'s: `pack` after a sync, `user` after an
+    add (Brian, 2026-10-26)."""
+    query = urlencode(
+        [("owner", owner), *(("paper", f"{kind}:{value}") for kind, value in papers)]
+    )
+    return f"/supply?{query}"
 
 
 def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
@@ -201,6 +218,9 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
             | SymlinkSkipped()
             | KennisOwn()
             | UnsupportedFormat()
+            | AlreadyDeclared()
+            | IdentifierNeeded()
+            | NameTaken()
         ):
             return ()
 
@@ -241,5 +261,6 @@ __all__ = [
     "WayOut",
     "candidate_address",
     "repairs_for",
+    "supply_address",
     "ways_out_for",
 ]

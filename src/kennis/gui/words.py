@@ -648,6 +648,7 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/docs/remove-version": "Remove a version",
     "/document/remove": "Remove a document",
     "/corpus/return": "Return the corpus to a point",
+    "/supply": "Papers kennis could not fetch",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -1710,6 +1711,25 @@ KEYWORDS_ONLY_CHOOSE = "Choose a meaning model in Settings"
 KEYWORDS_ONLY_INDEX = "Index with meaning"
 
 
+# Asking for papers kennis could not fetch, once the job that tried is
+# done (Brian, 2026-10-26). The page is offered because the person may be
+# able to download the paper there when kennis may not.
+SUPPLY_PREAMBLE = (
+    "kennis may not fetch these papers. Each one's page may let you "
+    "download it through your institution's access: choose the file you "
+    "downloaded, or leave it empty to skip that paper. Cancel skips them all."
+)
+SUPPLY_FOR_THE_PACK = "Each file is added as the pack's paper, as the sync would have."
+SUPPLY_ACTION = "Add the files"
+SUPPLY_NOTHING_CHOSEN = (
+    "Choose a file for at least one paper, or Cancel to skip them all"
+)
+SUPPLY_NO_PAPERS = "This names no paper kennis can be given a file for"
+CHOOSE_THE_FILE = "Choose the file"
+# What kind of identifier names a paper, beside its value.
+PAPER_KINDS: Final[dict[str, str]] = {"doi": "DOI", "arxiv": "arXiv", "bibcode": "ADS"}
+
+
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
@@ -1754,6 +1774,7 @@ __all__ = [
     "CHOOSER_UP",
     "CHOOSE_A_COLLECTION",
     "CHOOSE_FOLDER",
+    "CHOOSE_THE_FILE",
     "CLOSE",
     "COLLECTION_ICONS",
     "CONTEXT_HEADING",
@@ -1893,6 +1914,7 @@ __all__ = [
     "PANE_HIDE",
     "PANE_SHOW",
     "PANE_STATES",
+    "PAPER_KINDS",
     "PASSWORDS_DIFFER",
     "PASSWORD_NEEDED",
     "PREFERENCE_CHOICES",
@@ -1953,6 +1975,11 @@ __all__ = [
     "STATUS_ICONS",
     "STILL_RUNNING",
     "STOPPED",
+    "SUPPLY_ACTION",
+    "SUPPLY_FOR_THE_PACK",
+    "SUPPLY_NOTHING_CHOSEN",
+    "SUPPLY_NO_PAPERS",
+    "SUPPLY_PREAMBLE",
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
     "SYNC_PREAMBLE",
