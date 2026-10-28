@@ -1,3 +1,9 @@
+## v0.12.2 (2026-10-28)
+
+### Feat
+
+- cancel running tasks, write pack entries in braces and keep biblatex author lists
+
 ## v0.12.1 (2026-10-27)
 
 ### Feat
