@@ -2348,6 +2348,10 @@ section h2 { font-size: 1.1rem; margin: 0 0 0.35rem; }
   background: var(--raised);
 }
 .job-page .job-panel { border: 1px solid var(--rule); border-radius: 8px; }
+/* Cancel is for a job still going; the script moves `data-state` on. */
+.job:not([data-state="running"], [data-state="queued"]) .job-cancel { display: none; }
+.panel-foot .job-cancel { margin: 0; }
+.panel-foot p.job-cancel { padding: 0.2rem 0.4rem; }
 
 /* A group of items that ended the same way for the same reason: folded
    under the reason and the count, the folder they share said once. */

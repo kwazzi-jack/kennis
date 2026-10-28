@@ -49,9 +49,31 @@ being refused: `kennis corpus add` says what it is waiting behind and then
 carries on. Tasks that cannot interfere run side by side: an index build
 does not hold up a note, and a project's bundle has its own queue.
 
-Ctrl-C on a command stops the watching, not the task. The task goes on in
-the service, and the command prints `kennis service watch <task>` to follow
-it again.
+## Cancelling a task
+
+Ctrl-C on a command cancels its task, and the command waits for it to stop
+and says `Cancelled: nothing was changed`, exiting with status 130. In the
+interface, a running or waiting task's panel has a **Cancel task** button.
+
+A task stops at its next step - the next document, the next page, the next
+progress report - and a PDF being converted by MinerU is stopped at once.
+Until then it has written only in its copy of the collections (see below),
+which is thrown away, so the corpus is exactly as it was. Once a task has
+begun to place its changes in the corpus it finishes, and reports what it
+did; a cancel that arrives then is too late to take effect. A task
+cancelled while it waits for another never begins.
+
+An index build is the one exception to "nothing". Each collection's index
+is swapped in whole, so one finished before the cancel is a correct index of
+the corpus and is kept, and the message names it: `Cancelled: the docs index
+was finished first and was kept`.
+
+To leave a task running and get the terminal back, press Ctrl-Z, which
+suspends the command and not the task; `kennis service watch <task>`
+follows the task again, from any terminal. Pressing Ctrl-C a second time
+while a cancel is on its way stops the watching too. Windows has no Ctrl-Z;
+there, open another terminal. The line under a task's progress bar says
+which keys do what, with the task's id.
 
 ## A write is all or nothing
 

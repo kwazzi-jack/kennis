@@ -15,9 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from kennis.client import connection
-from kennis.client.calls import Answered, call
+from kennis.client.calls import Answered, Notice, call
 from kennis.engine.history.outofband import OutOfBandChange
-from kennis.protocol.progress import Began, Queued
 
 if TYPE_CHECKING:
     from kennis.engine.backup import BackupReport
@@ -55,7 +54,7 @@ if TYPE_CHECKING:
     from kennis.render.hits import Hit
     from kennis.retrieval import Sweep
 
-type Waiting = Callable[[Queued | Began], None]
+type Waiting = Callable[[Notice], None]
 
 
 def _read[Result](

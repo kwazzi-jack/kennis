@@ -198,7 +198,7 @@
    closed with every word; `revision.js` fills in what changed, from the
    server's own sentence, and opens it on focus (Brian, 2026-10-17). #}
 <dialog id="corpus-changed" class="dialog" aria-labelledby="corpus-changed-title"
-        data-revision="{{ revision | default('') }}">
+        data-revision="{% block revision %}{{ drawn_at() }}{% endblock %}">
   <header class="dialog-head">
     <h2 id="corpus-changed-title">{{ corpus_changed_heading }}</h2>
   </header>

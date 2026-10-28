@@ -9,9 +9,11 @@ that waits behind others says so first, through `on_waiting`.
 resolution and notes rebuilt by `load_error`, so the command line prints
 it exactly as it printed one raised in its own process.
 
-**Ctrl-C stops the watching, never the work** (Brian's default 3). The
-job goes on in the service; `JobDetached` names it and the command that
-follows it again.
+**Ctrl-C cancels the task** (Brian, 2026-10-27, reversing 14c's default
+3): the client asks the service to stop it and follows it to its end,
+which is `TaskStopped` unless it had begun to publish. A second Ctrl-C
+stops the watching and leaves the task as it is; `JobDetached` names it
+and the command that follows it again.
 """
 
 from __future__ import annotations
@@ -40,6 +42,18 @@ class JobDetached(KennisError):
 
 
 @dataclass(frozen=True, slots=True)
+class Started:
+    """The service took a write as task `job`: the client's own notice to
+    whoever watches, never in a stream, so a terminal can say how to cancel
+    the task or follow it again."""
+
+    job: str
+
+
+type Notice = Queued | Began | Started
+
+
+@dataclass(frozen=True, slots=True)
 class Answered:
     """An operation's result, and what it put back that had been deleted by
     hand (a write's; always empty for a read)."""
@@ -60,7 +74,7 @@ def call(
     *,
     returns: object,
     events: EventSink | None = None,
-    on_waiting: Callable[[Queued | Began], None] | None = None,
+    on_waiting: Callable[[Notice], None] | None = None,
 ) -> Answered:
     """Call the operation `name` with `arguments`, and read its result as
     `returns`. A write is followed to its end."""
@@ -72,6 +86,8 @@ def call(
     if "error" in said:
         raise load_error(said["error"])
     if "job" in said:
+        if on_waiting is not None:
+            on_waiting(Started(job=str(said["job"])))
         return watch(
             connection,
             str(said["job"]),
@@ -88,24 +104,48 @@ def watch(
     *,
     returns: object,
     events: EventSink | None = None,
-    on_waiting: Callable[[Queued | Began], None] | None = None,
+    on_waiting: Callable[[Notice], None] | None = None,
 ) -> Answered:
-    """Follow the job `job` from its beginning to its end."""
+    """Follow the job `job` from its beginning to its end.
+
+    Ctrl-C asks the service to cancel it and goes on following, so what it
+    ended as - cancelled, or finished because it was already publishing - is
+    what is reported. The stream an interrupt broke is read again from the
+    start, skipping the events already handed on; the clock's ticks are not
+    in the job's history and are not counted. A second Ctrl-C detaches.
+    """
     sink = events if events is not None else _Unwatched()
-    try:
-        final: dict[str, Json] = {}
-        for message in _messages(connection, job):
-            if "event" not in message:
-                final = message
-                continue
-            event = load(message["event"], Event | Queued | Began | Elapsed)
-            if isinstance(event, Queued | Began):
-                if on_waiting is not None:
-                    on_waiting(event)
-            elif not isinstance(event, Elapsed):
-                sink.emit(cast(Event, event))
-    except KeyboardInterrupt:
-        raise JobDetached(job) from None
+    final: dict[str, Json] = {}
+    handed_on = 0
+    cancelled = False
+    while True:
+        try:
+            skipping = handed_on
+            for message in _messages(connection, job):
+                if "event" not in message:
+                    final = message
+                    continue
+                event = load(message["event"], Event | Queued | Began | Elapsed)
+                if isinstance(event, Elapsed):
+                    continue
+                if skipping:
+                    skipping -= 1
+                    continue
+                handed_on += 1
+                if isinstance(event, Queued | Began):
+                    if on_waiting is not None:
+                        on_waiting(event)
+                else:
+                    sink.emit(cast(Event, event))
+            break
+        except KeyboardInterrupt:
+            if cancelled:
+                raise JobDetached(job) from None
+            cancelled = True
+            try:
+                connection.post(f"job/{job}/cancel")
+            except KeyboardInterrupt:
+                raise JobDetached(job) from None
     if "error" in final:
         raise load_error(final["error"])
     if "result" not in final:
@@ -187,6 +227,8 @@ def _document(answer: httpx.Response) -> dict[str, Json]:
 __all__ = [
     "Answered",
     "JobDetached",
+    "Notice",
+    "Started",
     "Task",
     "call",
     "task",

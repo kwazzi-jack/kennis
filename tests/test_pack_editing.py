@@ -149,7 +149,7 @@ def test_a_paper_is_appended_to_its_section_and_nothing_else_moves(pack: Path):
     )
 
     after = authored(pack)
-    insertion = after.index('    - identifier: "2511.10785"')
+    insertion = after.index('    - {\n        identifier: "2511.10785",')
     # Everything above the new entry is the author's bytes, unmoved, and
     # everything below it too.
     head, tail = after[:insertion], after[insertion:].partition("\n\n")[2]
@@ -161,7 +161,8 @@ def test_a_paper_is_appended_to_its_section_and_nothing_else_moves(pack: Path):
     assert (entry.identifier, entry.citekey) == ("2511.10785", "murphyDawesReview2026")
 
 
-def test_the_new_entry_is_laid_out_like_its_neighbours(pack: Path):
+def test_the_new_entry_is_braced_and_set_apart_from_its_neighbours(pack: Path):
+    """In kennis's form whatever its neighbours' (#558)."""
     added(
         pack,
         "literature",
@@ -172,8 +173,10 @@ def test_the_new_entry_is_laid_out_like_its_neighbours(pack: Path):
     text = authored(pack)
     assert (
         '      identifier: "1101.1764"\n\n'
-        '    - identifier: "2511.10785"\n'
-        '      citekey: "murphyDawesReview2026"\n'
+        "    - {\n"
+        '        identifier: "2511.10785",\n'
+        '        citekey: "murphyDawesReview2026",\n'
+        "      }\n"
     ) in text
 
 
@@ -262,7 +265,12 @@ def test_every_input_is_reported_as_an_event(pack: Path):
         request_delay_seconds=0,
     )
 
-    finished = [event for event in seen.events if isinstance(event, ItemFinished)]
+    # The add's own, not the lookups `pack update` names as it describes.
+    finished = [
+        event
+        for event in seen.events
+        if isinstance(event, ItemFinished) and event.operation == "add"
+    ]
     assert [(event.item, event.outcome) for event in finished] == [
         ("2511.10785", Outcome.ADDED),
         ("nothing-at-all", Outcome.FAILED),
@@ -619,5 +627,214 @@ def test_a_doi_added_without_a_citekey_is_given_its_registry_s(pack: Path):
 
     entry = read(pack).corpus.literature[-1]
     assert entry.citekey == "murphyDawesReviewNew2026"
-    assert entry.authors == "Murphy, Tara"
+    assert entry.authors == ["Murphy, Tara"]
     assert entry.year == 2026
+
+
+# ---------------------------------------------------------------------------
+# Context one file at a time (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def a_brain(tmp_path: Path) -> Path:
+    """A pack whose folder holds context it has not declared, as
+    `rarg-brain` did when `pack add -c context/constraints.md` was refused."""
+    root = tmp_path / "brain"
+    (root / "context").mkdir(parents=True)
+    for name in ("constraints.md", "glossary.md", "team.md"):
+        (root / "context" / name).write_text(f"# {name}\n", encoding="utf-8")
+    (root / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
+    path = root / "brain.ken.yml"
+    path.write_text(
+        "kennis:\n  schema_version: 1\n"
+        'pack:\n  id: brain\n  name: b\n  version: "0.1.0"\n',
+        encoding="utf-8",
+    )
+    update_pack(path)
+    return path
+
+
+def test_a_context_file_in_the_pack_is_declared_by_its_folder_and_name(
+    tmp_path: Path,
+):
+    path = a_brain(tmp_path)
+
+    addition = added(
+        path,
+        "context",
+        str(path.parent / "context/constraints.md"),
+        options=AddOptions(group="context"),
+    )
+
+    assert the_one(addition).outcome is Outcome.ADDED
+    [source] = read(path).context
+    assert (source.source, source.group, source.include) == (
+        "context/",
+        "context",
+        ["constraints.md"],
+    )
+    assert validate_pack(path).ok
+    generated = read(path).generated
+    assert generated is not None
+    assert list(generated.content.context[0].files) == ["constraints.md"]
+
+
+def test_more_files_of_that_folder_join_its_include_list(tmp_path: Path):
+    path = a_brain(tmp_path)
+    folder = path.parent / "context"
+
+    added(path, "context", str(folder / "constraints.md"))
+    added(path, "context", str(folder / "glossary.md"), str(folder / "team.md"))
+
+    [source] = read(path).context
+    assert source.include == ["constraints.md", "glossary.md", "team.md"]
+    assert validate_pack(path).ok
+
+
+def test_a_file_at_the_pack_s_root_is_declared_alone(tmp_path: Path):
+    path = a_brain(tmp_path)
+
+    added(path, "context", str(path.parent / "AGENTS.md"))
+
+    [source] = read(path).context
+    assert (source.source, source.include) == ("./", ["AGENTS.md"])
+    generated = read(path).generated
+    assert generated is not None
+    assert list(generated.content.context[0].files) == ["AGENTS.md"]
+
+
+def test_a_file_its_declared_folder_already_ships_is_unchanged(tmp_path: Path):
+    path = a_brain(tmp_path)
+    added(path, "context", str(path.parent / "context"))
+
+    addition = added(path, "context", str(path.parent / "context/team.md"))
+
+    assert the_one(addition).outcome is Outcome.UNCHANGED
+    assert len(read(path).context) == 1
+
+
+def test_a_file_named_by_its_include_list_is_removed_from_it(tmp_path: Path):
+    path = a_brain(tmp_path)
+    folder = path.parent / "context"
+    added(path, "context", str(folder / "constraints.md"), str(folder / "team.md"))
+
+    remove_from_pack(path, ["context/team.md"])
+
+    [source] = read(path).context
+    assert source.include == ["constraints.md"]
+    assert (folder / "team.md").exists()
+
+
+def test_the_last_file_of_an_include_list_takes_the_entry_with_it(tmp_path: Path):
+    path = a_brain(tmp_path)
+    added(path, "context", str(path.parent / "context/constraints.md"))
+
+    remove_from_pack(path, ["context/constraints.md"])
+
+    assert read(path).context == []
+
+
+def test_a_file_inside_a_whole_folder_is_refused_naming_the_folder(tmp_path: Path):
+    path = a_brain(tmp_path)
+    added(path, "context", str(path.parent / "context"))
+
+    with pytest.raises(InputError, match=r"part of the folder 'context/'"):
+        remove_from_pack(path, ["context/team.md"])
+
+
+def test_a_root_file_named_alone_sits_beside_a_declared_folder(tmp_path: Path):
+    """`./` contains `context/`, but an entry naming `AGENTS.md` alone cannot
+    deliver a file of that folder, so the two are not an overlap - which the
+    validator said they were, found by installing `rarg-brain`'s shape."""
+    path = a_brain(tmp_path)
+    added(path, "context", str(path.parent / "context"))
+    added(path, "context", str(path.parent / "AGENTS.md"))
+
+    assert [one.source for one in read(path).context] == ["context/", "./"]
+    assert validate_pack(path).ok
+    # The rest of the pack is not reported as missed by a pattern.
+    assert update_pack(path).unselected == 0
+
+
+def overlap_found(tmp_path: Path, context: str) -> bool:
+    path = a_brain(tmp_path)
+    authored_part, marker, block = path.read_text(encoding="utf-8").partition(
+        GENERATED_MARKER
+    )
+    path.write_text(
+        authored_part + "context:\n" + context + "\n" + marker + block,
+        encoding="utf-8",
+    )
+    update_pack(path)
+    return any(
+        problem.kind == "overlapping-sources"
+        for problem in validate_pack(path).problems
+    )
+
+
+def test_two_entries_naming_one_file_overlap(tmp_path: Path):
+    assert overlap_found(
+        tmp_path,
+        '  - source: "context/"\n    include: ["team.md"]\n'
+        '  - source: "context/"\n    group: other\n    include: ["team.md"]\n',
+    )
+
+
+def test_a_named_file_a_folder_s_patterns_also_ship_overlaps(tmp_path: Path):
+    assert overlap_found(
+        tmp_path,
+        '  - source: "context/"\n  - source: "./"\n    include: ["context/team.md"]\n',
+    )
+
+
+def test_two_folders_naming_different_files_do_not_overlap(tmp_path: Path):
+    assert not overlap_found(
+        tmp_path,
+        '  - source: "context/"\n    include: ["team.md"]\n'
+        '  - source: "./"\n    include: ["AGENTS.md"]\n',
+    )
+
+
+def test_one_name_in_two_folders_is_two_files(tmp_path: Path):
+    """`context/team.md` and `team.md` at the root share a name and nothing
+    else, so naming each in its own folder's list is not an overlap."""
+    assert not overlap_found(
+        tmp_path,
+        '  - source: "context/"\n    include: ["team.md"]\n'
+        '  - source: "./"\n    include: ["team.md"]\n',
+    )
+
+
+# ---------------------------------------------------------------------------
+# A site whose address names no version (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def test_a_site_naming_no_version_is_refused_with_the_command_that_files_it(
+    pack: Path,
+):
+    """`pack add -d https://casacore.github.io/python-casacore/` crashed with
+    pydantic's traceback; it is refused as `corpus add -d` refuses it, and the
+    remedy is this command with `--version unversioned`."""
+    before = pack.read_text(encoding="utf-8")
+
+    with pytest.raises(InputError) as raised:
+        added(pack, "docs", "https://casacore.github.io/python-casacore/")
+
+    assert raised.value.resolution == (
+        "kennis pack add -d https://casacore.github.io/python-casacore/ "
+        "--version unversioned"
+    )
+    assert pack.read_text(encoding="utf-8") == before
+
+
+def test_unversioned_is_declared_as_given(pack: Path):
+    added(
+        pack,
+        "docs",
+        "https://casacore.github.io/python-casacore/",
+        options=AddOptions(version="unversioned"),
+    )
+
+    assert [one.version for one in read(pack).corpus.docs][-1] == "unversioned"
+    assert validate_pack(pack).ok

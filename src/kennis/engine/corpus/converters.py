@@ -45,6 +45,7 @@ from typing import Any, Final, Literal, Protocol, runtime_checkable
 
 import httpx
 
+from kennis.engine.cancelling import cancellation_asked, pause
 from kennis.engine.corpus.ligatures import (
     repair_ligatures,
     text_layer_vocabulary,
@@ -55,6 +56,7 @@ from kennis.engine.errors import (
     ConversionFailed,
     ConverterRefused,
     ConverterUnavailable,
+    TaskCancelled,
 )
 from kennis.engine.settings import credential, load_settings
 
@@ -582,7 +584,7 @@ class DatalabConverter:
                     f"{': ' + _detail_of(response) if _detail_of(response) else ''})"
                 )
             if response.status_code >= 500:
-                time.sleep(self._poll_seconds)
+                pause(self._poll_seconds)
                 continue
             result = _json_of(response)
             if result.get("success") is False or result.get("status") == "failed":
@@ -594,7 +596,7 @@ class DatalabConverter:
                 if not converted:
                     raise ConversionFailed("datalab returned no markdown")
                 return converted, _as_cost(result.get("total_cost"))
-            time.sleep(self._poll_seconds)
+            pause(self._poll_seconds)
         raise ConversionFailed(
             f"datalab did not finish converting {path.name} within "
             f"{int(self._max_polls * self._poll_seconds)}s and was given up on"
@@ -730,6 +732,10 @@ def _collect(
     return markdown, front_page
 
 
+# How often a converter's wait looks for a cancellation.
+_CANCEL_STEP_SECONDS: Final = 0.25
+
+
 def _run_as_group(
     command: list[str], *, env: dict[str, str], timeout: float
 ) -> subprocess.CompletedProcess[str]:
@@ -740,6 +746,10 @@ def _run_as_group(
     of its own - a model server among them - so a cancelled run left those
     running, holding the GPU and the output directory, after kennis had
     said the run was cancelled. `TimeoutExpired` is raised as `run` raises it.
+
+    The wait is in steps, so a cancelled task ends the group within one
+    step rather than after the conversion (Brian, 2026-10-27); `communicate`
+    may be called again after its own timeout without losing output.
     """
     group: dict[str, Any]
     if sys.platform == "win32":
@@ -759,11 +769,21 @@ def _run_as_group(
         env=env,
         **group,
     ) as process:
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            _end_group(process)
-            raise
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            try:
+                stdout, stderr = process.communicate(
+                    timeout=max(0.0, min(remaining, _CANCEL_STEP_SECONDS))
+                )
+                break
+            except subprocess.TimeoutExpired:
+                if cancellation_asked():
+                    _end_group(process)
+                    raise TaskCancelled() from None
+                if remaining <= _CANCEL_STEP_SECONDS:
+                    _end_group(process)
+                    raise subprocess.TimeoutExpired(command, timeout) from None
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 

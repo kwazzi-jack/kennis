@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% set shown_heading = heading | default(problem_heading, true) %}
+{# No commit: the problem may be the configuration `drawn_at` reads, and
+   drawing it would raise inside the page that says so. #}
+{% block revision %}{% endblock %}
 {% block title %}kennis - {{ shown_heading }}{% endblock %}
 {% block main %}
 {# A heading to find it by, the refusal as a notice, and two ways back:

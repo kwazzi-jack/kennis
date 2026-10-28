@@ -39,7 +39,6 @@ from kennis.gui.preferences import (
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
-    frame,
     from_htmx,
     refused_in_the_form,
 )
@@ -83,7 +82,6 @@ def _settings_page(
             "save_label": words.SAVE,
             **kennis,
             **(backup if backup is not None else _backup_section()),
-            **frame(existing_corpus()),
         },
     )
 

@@ -32,7 +32,8 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Final
 
-from kennis.engine.errors import KennisError
+from kennis.engine.cancelling import Cancellation, cancellable, stop_if_asked
+from kennis.engine.errors import KennisError, TaskCancelled, TaskStopped
 from kennis.engine.events import Event, EventSink
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.logs import FanOut, LogSink
@@ -100,6 +101,9 @@ class Job:
     # drawn mid-job sees what was already reported and two pages watching
     # at once both see everything (#424).
     history: list[JobEvent] = field(default_factory=list)
+    # Asked by `Jobs.cancel`, honoured by the task at its next point that
+    # can stop (`engine/cancelling.py`).
+    cancellation: Cancellation = field(default_factory=Cancellation)
     changed: threading.Condition = field(default_factory=threading.Condition)
     began: threading.Event = field(default_factory=threading.Event)
     done: threading.Event = field(default_factory=threading.Event)
@@ -139,6 +143,9 @@ class _HistorySink:
 
     def emit(self, event: Event) -> None:
         self._job.record(event)
+        # Every event is a point the task can stop at, once it is recorded:
+        # a watcher sees how far the task got.
+        stop_if_asked()
 
 
 type _Work = tuple[Job, Callable[[EventSink], object]]
@@ -180,9 +187,17 @@ def _run(job: Job, work: Callable[[EventSink], object]) -> None:
     # command line does. Without it an operation started from the window
     # left no trace at all, because the only subscriber was a browser
     # that closes its connection when the page is closed. Concern #326.
-    sink = FanOut(_HistorySink(job), LogSink())
+    # The log first: the history's sink is where a cancelled task stops,
+    # and the event it stops at is still logged.
+    sink = FanOut(LogSink(), _HistorySink(job))
     try:
-        job.result = work(sink)
+        if job.cancellation.asked:
+            # Cancelled while it waited in its lane: it never begins.
+            raise TaskCancelled()
+        with cancellable(job.cancellation):
+            job.result = work(sink)
+    except TaskCancelled as cancelled:
+        job.error = TaskStopped(str(cancelled))
     except KennisError as error:
         # Every domain failure becomes the job's answer. A thread that
         # raised would lose it: nothing is waiting on this thread to
@@ -284,6 +299,19 @@ class Jobs:
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
+
+    def cancel(self, job: Job) -> bool:
+        """Ask `job` to stop, and say whether it can still be asked.
+
+        A finished job cannot. A queued one never begins; a running one
+        stops at its next point that can, unless it is publishing, which it
+        then finishes (`past_cancelling`).
+        """
+        if job.done.is_set():
+            return False
+        job.cancellation.ask()
+        logging.getLogger("kennis.service").info("the %s job was cancelled", job.kind)
+        return True
 
     def stream(self, job: Job) -> Iterator[JobEvent | Elapsed]:
         """Every event this job records, and its running time, until it ends.

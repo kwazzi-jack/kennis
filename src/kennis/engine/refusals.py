@@ -251,6 +251,18 @@ class NameTaken:
     copy: str
 
 
+@dataclass(frozen=True, slots=True)
+class ShippedTwice:
+    """An entry `pack add` would declare whose files another entry of the
+    same section ships too, so a file would have two destinations: `path`
+    and `other` are the two, relative to the pack (#557). Met when a
+    folder kennis copies into, `files/`, is declared as a source."""
+
+    code: ClassVar[str] = "shipped-twice"
+    path: str
+    other: str
+
+
 # Every way an item can end as something other than written. A union
 # rather than a string, so a front end switches on the refusal and
 # supplies its own words - and so `kennis gui` can build a form from the
@@ -275,6 +287,7 @@ type Refusal = (
     | AlreadyDeclared
     | IdentifierNeeded
     | NameTaken
+    | ShippedTwice
 )
 
 
@@ -313,6 +326,7 @@ __all__ = [
     "SameContent",
     "SamePage",
     "SamePaper",
+    "ShippedTwice",
     "SymlinkSkipped",
     "UnsupportedFormat",
     "wanted_paper",

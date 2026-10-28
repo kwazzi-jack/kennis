@@ -25,6 +25,7 @@ import httpx
 
 from kennis.engine.courtesy import get_politely
 from kennis.engine.literature.identifiers import normalize_arxiv_id
+from kennis.engine.literature.names import joined_names, protected
 
 _ATOM_API: Final = "https://export.arxiv.org/api/query"
 # A paper's own page, which carries its metadata in `citation_*` meta tags.
@@ -116,7 +117,9 @@ def lookup_doi_metadata(
         return None
     return PaperMetadata(
         title=" ".join(title.split()),
-        authors=" and ".join(_csl_names(answer.get("author"))),
+        authors=joined_names(
+            [protected(name) for name in _csl_names(answer.get("author"))]
+        ),
         year=_csl_year(answer),
     )
 
@@ -177,7 +180,7 @@ def _from_atom(arxiv_id: str, client: httpx.Client) -> PaperMetadata | None:
     return PaperMetadata(
         # arXiv wraps a long title across lines in its Atom output.
         title=" ".join(title_element.text.split()),
-        authors=" and ".join(_author_names(entry)),
+        authors=joined_names([protected(name) for name in _author_names(entry)]),
         year=published.text[:4] if published is not None and published.text else "",
     )
 
@@ -226,7 +229,9 @@ def _from_abs_page(arxiv_id: str, client: httpx.Client) -> PaperMetadata | None:
     dates = tagged("citation_date")
     return PaperMetadata(
         title=titles[0],
-        authors=" and ".join(name for name in tagged("citation_author") if name),
+        authors=joined_names(
+            [protected(name) for name in tagged("citation_author") if name]
+        ),
         year=dates[0][:4] if dates and dates[0][:4].isdigit() else "",
     )
 

@@ -17,7 +17,7 @@ editor header line `pack init` exists to write, every comment an author put
 there, and whatever key order they chose. So the block, the **trailing
 section**, is replaced from its anchor to the end of the file, and what is
 derived for a paper - its citekey, title, authors and year - is written
-into the paper's own entry (`text.with_fields_first`), the way `uv add`
+into the paper's own entry (`text.with_fields`), the way `uv add`
 writes into `pyproject.toml` (Brian, 2026-10-26). The block keeps the
 checksums, a lock file's job; every other byte above it is the person's.
 
@@ -55,6 +55,7 @@ from kennis.engine.literature.metadata import (
     lookup_arxiv_metadata,
     lookup_doi_metadata,
 )
+from kennis.engine.literature.names import joined_names
 from kennis.engine.pack.content import (
     SourceContent,
     address_of,
@@ -67,10 +68,11 @@ from kennis.engine.pack.schema import (
     GeneratedSource,
     LiteratureEntry,
     Pack,
+    authors_from_line,
     load_pack,
     read_yaml,
 )
-from kennis.engine.pack.text import GENERATED_MARKER, Fields, with_fields_first
+from kennis.engine.pack.text import GENERATED_MARKER, Fields, with_fields
 from kennis.engine.pack.validate import version_refusal
 from kennis.engine.parallel import fetched_in_parallel
 from kennis.engine.refusals import Quoted
@@ -165,7 +167,7 @@ def update_pack(
     filled = text
     # Any order: each insertion finds its item in the text as it now is.
     for index, fields in described:
-        filled = with_fields_first(filled, ("corpus", "literature"), index, fields)
+        filled = with_fields(filled, ("corpus", "literature"), index, fields)
     if filled != text:
         # Parsed before it is written, so a defect in the insertion is a
         # refusal rather than a broken file. No test reaches this without
@@ -299,10 +301,20 @@ def _looked_up(
         events.emit(Progress(operation=DESCRIBING, completed=0, total=len(owed)))
     looked = 0
 
-    def advance(_: object, __: object) -> None:
+    def advance(
+        pair: tuple[int, LiteratureEntry], answer: PaperMetadata | None
+    ) -> None:
         nonlocal looked
         looked += 1
         if events is not None:
+            paper = pair[1].paper
+            events.emit(
+                ItemFinished(
+                    operation=DESCRIBING,
+                    item=f"{paper.kind}:{paper.value}",
+                    outcome=Outcome.SKIPPED if answer is None else Outcome.CHANGED,
+                )
+            )
             events.emit(
                 Progress(operation=DESCRIBING, completed=looked, total=len(owed))
             )
@@ -340,7 +352,7 @@ def _owes_a_lookup(entry: LiteratureEntry) -> bool:
 class _Values(TypedDict):
     citekey: str | None
     title: str | None
-    authors: str | None
+    authors: list[str] | None
     year: int | None
 
 
@@ -350,7 +362,9 @@ def _values(
     """The four fields, the entry's own first, and a citekey derived from
     them as `corpus add` derives one."""
     title = entry.title or (metadata.title if metadata else None)
-    authors = entry.authors or (metadata.authors if metadata else None)
+    authors = entry.authors or (
+        authors_from_line(metadata.authors) if metadata else None
+    )
     year = entry.year or (
         int(metadata.year) if metadata and metadata.year.isdigit() else None
     )
@@ -358,7 +372,9 @@ def _values(
     if citekey is None and (title or authors):
         citekey = unique_citekey(
             derive_citekey(
-                authors=authors or "", year=str(year or ""), title=title or ""
+                authors=joined_names(authors or []),
+                year=str(year or ""),
+                title=title or "",
             ),
             taken,
         )
@@ -467,7 +483,10 @@ def _shipped(root: Path, pack: Pack) -> dict[str, str]:
 def _entry(root: Path, source: ContentSource, unselected: list[str]) -> GeneratedSource:
     found = read_source(root, source)
     _refuse_unshippable(found)
-    unselected.extend(found.unselected)
+    if source.named_files is None:
+        # A source naming its files picks a few of a folder on purpose, so
+        # the rest are not files a pattern missed.
+        unselected.extend(found.unselected)
     return GeneratedSource(source=source.source, files=found.digests)
 
 

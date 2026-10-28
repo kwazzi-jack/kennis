@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import parse_qsl, unquote
 
 import pytest
 from bs4 import BeautifulSoup, Tag
@@ -1626,3 +1626,80 @@ def test_the_lookup_ring_is_the_submit_buttons_ring():
     assert len(turning) == 1
     assert ".looking .ring" in turning[0]
     assert 'button[type="submit"]::after' in turning[0]
+
+
+# ---------------------------------------------------------------------------
+# Documentation with no versions (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def test_a_site_naming_no_version_offers_unversioned_and_it_fills_the_field(
+    client: TestClient,
+):
+    """The status says the address names no version, beside a button that
+    fills the Version field with `unversioned`. The button's request is
+    read from the page, as the window sends it, with the form's own fields."""
+    unnamed = client.get(
+        "/add/preview/site", params={"identifiers": "https://example.org/docs/"}
+    )
+    button = BeautifulSoup(unnamed.text, "html.parser").find(
+        "button", attrs={"data-fills": "version"}
+    )
+    assert button is not None
+    assert button.get_text(strip=True) == words.USE_UNVERSIONED
+    # htmx adds the form's fields to the button's own query; httpx's
+    # `params=` would replace it, so the two are joined here.
+    path, _, query = str(button["hx-get"]).partition("?")
+    filled = client.get(
+        path,
+        params=[
+            *parse_qsl(query),
+            ("identifiers", "https://example.org/docs/"),
+            ("version", ""),
+        ],
+    )
+
+    page = BeautifulSoup(filled.text, "html.parser")
+    entry = page.find(id="add-version-entry")
+    assert entry is not None
+    assert entry.get("hx-swap-oob") == "true"
+    field = entry.find("input", attrs={"name": "version"})
+    assert field is not None and field.get("value") == "unversioned"
+    # Chosen by the reader, so not drawn as kennis's suggestion.
+    assert "prefilled" not in (field.get("class") or [])
+    assert words.previewed_version("unversioned") in unescape(filled.text)
+
+
+def test_a_site_refused_for_its_version_names_unversioned(
+    client: TestClient, adds: list[AddCall]
+):
+    refused = client.post(
+        "/add",
+        data={
+            "kind": "site",
+            "collection": "docs",
+            "identifiers": "https://example.org/docs/",
+        },
+        headers=HTMX,
+    )
+
+    assert adds == []
+    assert "unversioned" in unescape(refused.text)
+
+
+def test_unversioned_chosen_in_the_form_reaches_the_add(
+    app: FastAPI, client: TestClient, adds: list[AddCall]
+):
+    client.post(
+        "/add",
+        data={
+            "kind": "site",
+            "collection": "docs",
+            "identifiers": "https://example.org/docs/",
+            "version": "unversioned",
+        },
+        headers=HTMX,
+    )
+    finished(app)
+
+    assert adds[0][2].version == "unversioned"

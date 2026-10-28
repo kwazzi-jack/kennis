@@ -205,8 +205,10 @@ def add_command(
     Anything `kennis corpus add` takes, and each input is added or refused
     on its own as there. A local file or folder is copied into the pack
     under `files/` and named relative to the pack file, so the pack still
-    works on another machine. The file is edited in place - comments and
-    layout stay - and its generated block is brought up to date.
+    works on another machine; a context file already in the pack is
+    declared by its folder with an `include:` naming it. The file is edited
+    in place - comments and layout stay - and its generated block is brought
+    up to date.
     """
     from kennis.engine.corpus.add import AddOptions
     from kennis.engine.pack.editing import add_to_pack, find_pack_file
@@ -271,7 +273,8 @@ def remove_command(names: tuple[str, ...], pack_path: Path | None, yes: bool) ->
     """Take entries out of a pack file.
 
     Each name is a citekey, an identifier, an address, a documentation
-    project, a shipped file's path or a source folder. A copy `pack add`
+    project, a shipped file's path, a source folder, or a context file its
+    folder's `include:` names. A copy `pack add`
     made under `files/` that no entry names any more is deleted; nothing
     else in the pack is.
     """
@@ -291,7 +294,9 @@ def remove_command(names: tuple[str, ...], pack_path: Path | None, yes: bool) ->
         click.confirm(f"Remove {listed} from {path.name}?", abort=True)
     with reporting() as events:
         edit = remove_from_pack(path, names, events=events)
-    display.operation("Removed", f"{path.name}")
+    from kennis.render.words import count_of
+
+    display.operation("Removed", count_of(len(edit.removed), "entry", "entries"))
     for name in edit.removed:
         display.detail("-", name)
     for relative in edit.deleted:
@@ -371,6 +376,33 @@ def update_command(path: Path) -> None:
     _say_the_rest(result)
 
 
+@pack_group.command(name="format", cls=KennisCommand)
+@click.option(
+    "--pack",
+    "pack_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="The pack file. The one *.ken.yml here when not given.",
+)
+def format_command(pack_path: Path | None) -> None:
+    """Write every entry of a pack file the way kennis writes one.
+
+    Each entry becomes a mapping in braces with one key per line, a paper's
+    identifier first and its authors last, as a list, and entries are set
+    apart by a blank line. Comments between entries are kept; a comment
+    inside an entry is not. A pack whose authors are one string, as kennis
+    wrote them before, is made readable again by this.
+    """
+    from kennis.engine.pack.editing import find_pack_file
+    from kennis.engine.pack.formatting import format_pack
+
+    path = pack_path or find_pack_file(Path.cwd())
+    if format_pack(path):
+        display.operation("Formatted", path.name)
+        return
+    display.operation("Unchanged", path.name)
+    display.detail("=", "already formatted")
+
+
 def _say_the_rest(result: PackUpdate, *, described: bool = True) -> None:
     """Each paper described and the citekey it was given; then files in a
     declared source that no pattern took, and papers left undescribed.
@@ -429,7 +461,7 @@ def _report(report: PackReport) -> None:
 
     if report.refusal is not None:
         display.failure(describe_refusal(report.refusal))
-        display.hint(remedy_for(report.refusal))
+        display.remedy(remedy_for(report.refusal))
         return
 
     if not report.problems:
@@ -446,7 +478,7 @@ def _report(report: PackReport) -> None:
     digests = [problem for problem in report.problems if problem.kind in _DIGEST_KINDS]
     if digests:
         display.note(describe_update_needed(len(digests)))
-        display.hint(f"kennis pack update {report.path}")
+        display.remedy(f"kennis pack update {report.path}")
     for problem in report.problems:
         display.detail("-", describe_problem(problem))
 

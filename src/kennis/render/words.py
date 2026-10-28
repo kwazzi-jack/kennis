@@ -460,6 +460,21 @@ def waiting_for(behind: str, ahead: int) -> str:
     )
 
 
+def task_keys(job: str, *, windows: bool) -> str:
+    """What the keys do while a task is watched, under its bar (Brian,
+    2026-10-27). Windows has no job control, so no Ctrl-Z there; a second
+    Ctrl-C stops the watching on every platform."""
+    if windows:
+        return (
+            "Ctrl-C cancels the task; pressed again, it stops watching and "
+            f"`kennis service watch {job}` follows the task again"
+        )
+    return (
+        "Ctrl-C cancels the task; Ctrl-Z suspends this command while the task "
+        f"goes on, and `kennis service watch {job}` follows it again"
+    )
+
+
 def running_for(seconds: float) -> str:
     """How long a job has been running, for a clock that ticks once a second.
 

@@ -12,6 +12,8 @@ import re
 import unicodedata
 from typing import Final
 
+from kennis.engine.literature.names import is_braced, split_names, unbraced
+
 # Words a title contributes nothing by including.
 _STOPWORDS: Final = frozenset(
     {"a", "an", "the", "of", "for", "and", "with", "in", "on", "to", "using", "at"}
@@ -78,19 +80,23 @@ def _named_authors(authors: str) -> str:
     surname = _surname_of(authors)
     if not surname:
         return ""
-    return f"{surname} et al" if " and " in authors else surname
+    return f"{surname} et al" if len(split_names(authors)) > 1 else surname
 
 
 def _surname_of(authors: str) -> str:
     """The first author's surname, spelled as it was given.
 
     Two conventions reach here and both have to parse: `Last, First M.` from
-    a Zotero export, and `First M. Last` from arXiv's Atom API.
+    a Zotero export, and `First M. Last` from arXiv's Atom API. A name
+    wholly in braces is its own surname, as BibLaTeX reads it.
     """
-    first = authors.split(" and ")[0].strip()
+    names = split_names(authors)
+    first = names[0] if names else ""
+    if is_braced(first):
+        return unbraced(first).strip()
     if "," in first:
-        return first.split(",")[0].strip()
-    parts = first.split()
+        return unbraced(first.split(",")[0]).strip()
+    parts = unbraced(first).split()
     return parts[-1].strip() if parts else ""
 
 
@@ -101,7 +107,15 @@ def _surname_part(authors: str) -> str:
     `hallowesWelman`. A *filename* keeps the hyphen, which is why
     `literature_stem` uses `_surname_of` and not this.
     """
-    surname = re.sub(r"[^A-Za-z]", "", _ascii(_surname_of(authors))) or _NO_AUTHOR
+    names = split_names(authors)
+    if names and is_braced(names[0]):
+        # A corporate name's words each begin a capital, as a citekey's
+        # title words do; a person's surname keeps its own spelling.
+        words = re.findall(r"[A-Za-z]+", _ascii(unbraced(names[0])))
+        surname = "".join(word[:1].upper() + word[1:] for word in words)
+    else:
+        surname = re.sub(r"[^A-Za-z]", "", _ascii(_surname_of(authors)))
+    surname = surname or _NO_AUTHOR
     return surname[:1].lower() + surname[1:]
 
 

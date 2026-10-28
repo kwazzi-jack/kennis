@@ -181,7 +181,7 @@ def _report_remedies(report: AddReport) -> None:
             ):
                 commands.setdefault(command, None)
     for command in commands:
-        display.hint(command)
+        display.remedy(command)
 
 
 __all__ = [

@@ -29,6 +29,7 @@ from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.errors import (
     KennisError,
     PublishRefused,
+    TaskStopped,
     UnknownCollection,
 )
 from kennis.engine.events import EventSink
@@ -329,6 +330,21 @@ def serve_job(request: Request, job_id: str) -> HTMLResponse:
     )
 
 
+@router.post("/job/{job_id}/cancel")
+def cancel_job(request: Request, job_id: str) -> Response:
+    """Ask a task to stop (Brian, 2026-10-27). It stops at its next step and
+    its stream then ends as any task's does, with its outcome; htmx gets the
+    button's replacement, a plain form the task's page (#412)."""
+    jobs: Jobs = request.app.state.jobs
+    job = jobs.get(job_id)
+    if job is None:
+        return refused_a_post(request, words.NO_SUCH_JOB)
+    jobs.cancel(job)
+    if not from_htmx(request):
+        return RedirectResponse(f"/job/{job.id}", status_code=303)
+    return HTMLResponse(f'<p class="job-cancel role-muted">{words.CANCELLING}</p>')
+
+
 @router.get("/activity")
 def serve_activity(request: Request) -> HTMLResponse:
     """What has run since kennis started, newest first.
@@ -434,6 +450,12 @@ def _outcome(request: Request, job: Job) -> _Outcome:
         return _Outcome(
             refused(request, said, role="role-error", state="failed"), "failed", said
         )
+    if isinstance(job.error, TaskStopped):
+        # Asked for, so neither a failure nor a finish: worded as the
+        # command line words it.
+        said = words.cancelled(str(job.error))
+        answer = refused(request, said, role="role-warning", state="attention")
+        return _Outcome(answer, "attention", said)
     if job.error is not None:
         busy = isinstance(job.error, PublishRefused)
         said = words.CHANGED_MEANWHILE_RETRY if busy else str(job.error)

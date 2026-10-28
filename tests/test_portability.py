@@ -34,7 +34,7 @@ from kennis.engine.history.git import git as run_git
 from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.schema import ContentSource
-from kennis.render.refusals import quoted_for_posix, quoted_for_windows
+from kennis.engine.shell import quoted_for_posix, quoted_for_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src/kennis"

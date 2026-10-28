@@ -251,6 +251,19 @@ class LiteratureSettings(BaseModel):
     )
 
 
+class TerminalSettings(BaseModel):
+    """What the command line prints beside its reports."""
+
+    messages: Literal["all", "warnings", "errors"] = Field(
+        default="all",
+        description=(
+            "Which advice the command line prints: all of it, warnings and "
+            "errors without hints, or errors alone. An error keeps the "
+            "command that resolves it, and reports are always printed."
+        ),
+    )
+
+
 class LoggingSettings(BaseModel):
     """What is written to the log file."""
 
@@ -303,6 +316,7 @@ class Settings(BaseSettings):
     corpus: CorpusSettings = CorpusSettings()
     conversion: ConversionSettings = ConversionSettings()
     literature: LiteratureSettings = LiteratureSettings()
+    terminal: TerminalSettings = TerminalSettings()
     logging: LoggingSettings = LoggingSettings()
     backup: BackupSettings = BackupSettings()
     service: ServiceSettings = ServiceSettings()

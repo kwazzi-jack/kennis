@@ -4,8 +4,8 @@ tasks, or stop it.
 Milestone 14. The service starts itself when a command or a window needs
 it and stops itself when idle, so none of these is needed in ordinary use;
 they are for a person who wants to know what is running, to follow a task
-they stopped watching with Ctrl-C, or to end the service before a
-reinstall.
+they stopped watching (Ctrl-Z, or Ctrl-C twice), or to end the service
+before a reinstall.
 """
 
 from __future__ import annotations
@@ -16,12 +16,11 @@ import click
 
 from kennis.cli import display
 from kennis.cli.group import KennisGroup
-from kennis.cli.sink import DisplaySink
+from kennis.cli.sink import DisplaySink, say_waiting
 from kennis.client import connection
-from kennis.client.calls import task, unfinished_tasks, watch
+from kennis.client.calls import Started, task, unfinished_tasks, watch
 from kennis.client.process import hello, stop_service
 from kennis.context import existing_corpus
-from kennis.protocol.progress import Began, Queued
 from kennis.protocol.record import find_service
 
 if TYPE_CHECKING:
@@ -66,19 +65,17 @@ def status_command() -> None:
 @service_group.command(name="watch")
 @click.argument("task_id", metavar="TASK")
 def watch_command(task_id: str) -> None:
-    """Follow a task to its end: one a command stopped watching on Ctrl-C,
-    which goes on in the service."""
-    from kennis.render.words import JOB_KINDS, waiting_for
+    """Follow a task to its end: one a command stopped watching, after Ctrl-Z
+    or a second Ctrl-C, which goes on in the service. Ctrl-C here cancels
+    it."""
+    from kennis.render.words import JOB_KINDS
 
     link = connection.connect(existing_corpus().corpus_root)
     followed = task(link, task_id)
 
-    def waiting(news: Queued | Began) -> None:
-        if isinstance(news, Queued):
-            display.note(waiting_for(news.behind, news.ahead))
-
+    say_waiting(Started(job=task_id))
     with DisplaySink() as shown:
-        watch(link, task_id, returns=object, events=shown, on_waiting=waiting)
+        watch(link, task_id, returns=object, events=shown, on_waiting=say_waiting)
     display.operation("Finished", JOB_KINDS.get(followed.kind, followed.kind).lower())
 
 

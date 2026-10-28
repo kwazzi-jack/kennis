@@ -121,7 +121,7 @@ corpus:
     - citekey: smirnovRevisitingRIMEI2011
       title: "Revisiting the radio interferometer measurement equation I"
       identifier: "1101.1764"
-      authors: "Smirnov, O. M."
+      authors: ["Smirnov, O. M."]
       year: 2011
   docs:
     - project: stimela
@@ -511,3 +511,13 @@ def test_a_docs_entry_s_version_must_be_a_folder():
                 '      base_url: "https://s.io/en/1.0/"\n      version: "../x"\n'
             )
         )
+
+
+def test_a_site_naming_no_version_says_unversioned_is_a_way_out():
+    with pytest.raises(PackInvalid) as raised:
+        a_pack(
+            MINIMAL + "corpus:\n  docs:\n    - project: casacore\n"
+            '      base_url: "https://casacore.github.io/python-casacore/"\n'
+        )
+
+    assert "version: unversioned" in str(raised.value)

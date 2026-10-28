@@ -27,7 +27,6 @@ from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
     action_page,
-    frame,
     from_htmx,
     written,
 )
@@ -48,7 +47,6 @@ def _remember_context(outcome: ShownOutcome | None) -> dict[str, object]:
         "group_hint": words.GROUP_HINT,
         "action": words.REMEMBER_ACTION,
         "known_groups": known_groups(existing_corpus(), ("notes",)),
-        **frame(existing_corpus()),
     }
 
 

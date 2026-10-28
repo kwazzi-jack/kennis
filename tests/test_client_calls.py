@@ -9,22 +9,32 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 from click.testing import CliRunner
 
 from in_process import InProcessServices
 from kennis.cli.__main__ import main
-from kennis.client import connection
-from kennis.client.calls import JobDetached, call, watch
+from kennis.client import calls, connection
+from kennis.client.calls import JobDetached, Notice, Started, call, watch
 from kennis.context import existing_corpus
 from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.collection import CollectionContents
-from kennis.engine.errors import DocumentNotFound
-from kennis.engine.events import Event, ItemFinished, ItemStarted, OperationFinished
+from kennis.engine.errors import DocumentNotFound, TaskStopped
+from kennis.engine.events import (
+    Event,
+    ItemFinished,
+    ItemStarted,
+    OperationFinished,
+    Progress,
+)
 from kennis.holdings import contents_of
-from kennis.protocol.progress import Began, Queued
+from kennis.protocol.progress import Began, Elapsed, Queued
+from kennis.protocol.wire import Json, dump, dump_error
 from kennis.service.jobs import CORPUS_LANE
 
 
@@ -106,7 +116,7 @@ def test_a_refusal_is_raised_as_the_error_it_was(corpus: Path):
 def test_a_job_behind_another_says_so_before_it_begins(
     corpus: Path, tmp_path: Path, service_in_this_process: InProcessServices
 ):
-    told: list[Queued | Began] = []
+    told: list[Notice] = []
     app = service_in_this_process.app(corpus)
     release = threading.Event()
     app.state.jobs.start("index", lambda events: release.wait(30), lane=CORPUS_LANE)
@@ -135,37 +145,113 @@ def test_a_job_behind_another_says_so_before_it_begins(
         on_waiting=told.append,
     )
 
-    assert told == [Queued(ahead=1, behind="index"), Began()]
+    assert isinstance(told[0], Started)
+    assert told[1:] == [Queued(ahead=1, behind="index"), Began()]
 
 
-def test_an_interrupt_while_following_detaches_and_names_the_job(
-    corpus: Path, tmp_path: Path
-):
-    """Ctrl-C stops the watching, never the work (Brian's default 3)."""
+class ScriptedService(httpx.Client):
+    """The two requests `watch` makes, scripted: the stream replays the
+    job's history from its start on every connection, as the service's
+    does, and ends with the task's outcome. A cancel stops the task at the
+    step after the one last streamed when it was asked, as the service's
+    stops at the next event (or `lag` steps on, for a task slow to reach
+    one); a task with no step left finishes.
 
-    class Interrupting:
-        def emit(self, event: Event) -> None:
+    Not the in-process application: its client reads a streamed answer to
+    the end before handing over a line, so a watcher there sees a task's
+    events only after it has finished.
+    """
+
+    def __init__(self, steps: int, *, lag: int = 1) -> None:
+        super().__init__()
+        self.steps = steps
+        self.lag = lag
+        self.cancels = 0
+        self.connections = 0
+        self._streamed = -1
+        self._stops_at: int | None = None
+
+    def messages(self, connection: object, job: str) -> Iterator[dict[str, Json]]:
+        self.connections += 1
+        for step in range(self.steps):
+            if step == self._stops_at:
+                yield {"error": dump_error(TaskStopped())}
+                return
+            self._streamed = max(self._streamed, step)
+            yield {"event": dump(Progress(operation="add", completed=step, total=None))}
+            yield {"event": dump(Elapsed(seconds=float(step)))}
+        yield {"result": dump("ran to its end"), "restored": dump([])}
+
+    def post(self, url: httpx.URL | str, *args: Any, **keywords: Any) -> httpx.Response:
+        assert url == "job/a-job/cancel", url
+        self.cancels += 1
+        self._stops_at = self._streamed + self.lag
+        return httpx.Response(202, json={"cancelling": True})
+
+
+@pytest.fixture
+def scripted(monkeypatch: pytest.MonkeyPatch) -> ScriptedService:
+    service = ScriptedService(steps=20)
+    monkeypatch.setattr(calls, "_messages", service.messages)
+    return service
+
+
+class InterruptedAt:
+    """Records each event, and raises Ctrl-C at the ones named."""
+
+    def __init__(self, *at: int) -> None:
+        self.at = set(at)
+        self.events: list[Event] = []
+
+    def emit(self, event: Event) -> None:
+        self.events.append(event)
+        if len(self.events) in self.at:
             raise KeyboardInterrupt
 
-    with pytest.raises(JobDetached) as detached:
-        call(
-            connection.connect(corpus),
-            "add",
-            {
-                "destination": "notes",
-                "identifiers": [str(a_source(tmp_path, "three.md"))],
-                "options": AddOptions(),
-            },
-            returns=AddReport,
-            events=Interrupting(),
-        )
 
-    job = detached.value.job
-    assert job in str(detached.value.resolution)
-    followed = watch(
-        connection.connect(corpus), job, returns=AddReport, events=Recorded()
-    )
-    assert isinstance(followed.result, AddReport)
+def test_an_interrupt_while_following_cancels_the_task(scripted: ScriptedService):
+    """Ctrl-C cancels (Brian, 2026-10-27, reversing 14c's default 3), and
+    the client follows the task to what it ended as."""
+    with pytest.raises(TaskStopped):
+        watch(scripted, "a-job", returns=str, events=InterruptedAt(2))
+
+    assert scripted.cancels == 1
+
+
+def test_the_events_before_an_interrupt_are_not_handed_on_twice(
+    scripted: ScriptedService,
+):
+    """The stream an interrupt broke is read again from the job's start; the
+    clock's ticks are not in the history and are not counted."""
+    shown = InterruptedAt(3)
+
+    with pytest.raises(TaskStopped):
+        watch(scripted, "a-job", returns=str, events=shown)
+
+    steps = [event.completed for event in shown.events if isinstance(event, Progress)]
+    assert steps == list(range(len(steps)))
+    assert scripted.connections == 2
+
+
+def test_a_second_interrupt_detaches_and_names_the_job(scripted: ScriptedService):
+    """Pressed again while the task is still on its way to a point that can
+    stop: the watching ends, and the cancel already asked stands."""
+    scripted.lag = 5
+    with pytest.raises(JobDetached) as detached:
+        watch(scripted, "a-job", returns=str, events=InterruptedAt(1, 2))
+
+    assert "a-job" in str(detached.value.resolution)
+    assert scripted.cancels == 1
+
+
+def test_a_task_that_finished_first_is_reported_as_finished(
+    scripted: ScriptedService,
+):
+    """Interrupted after its last event: the cancel arrives too late, and
+    the result is what the task did."""
+    followed = watch(scripted, "a-job", returns=str, events=InterruptedAt(20))
+
+    assert followed.result == "ran to its end"
 
 
 def test_every_command_reaches_the_service_in_this_process(corpus: Path):

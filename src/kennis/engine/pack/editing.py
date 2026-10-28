@@ -48,6 +48,7 @@ from kennis.engine.corpus.add import (
 from kennis.engine.corpus.inputs import ResolvedInputs, resolve_inputs
 from kennis.engine.corpus.intake import is_supported_suffix, looks_like_url
 from kennis.engine.docs.sites import project_name_from_url
+from kennis.engine.docs.versions import UNVERSIONED, version_in_address
 from kennis.engine.errors import InputError, KennisError, PackInvalid
 from kennis.engine.events import (
     DiscardingSink,
@@ -73,11 +74,15 @@ from kennis.engine.pack.text import (
     appended,
     child,
     composed,
+    dash_of,
+    entry_written,
     last_line,
     node_at,
     read_pack_text,
+    with_entry,
 )
 from kennis.engine.pack.update import PackUpdate, update_pack
+from kennis.engine.pack.validate import overlapping
 from kennis.engine.refusals import (
     AlreadyDeclared,
     IdentifierNeeded,
@@ -85,6 +90,7 @@ from kennis.engine.refusals import (
     NotAnInput,
     Quoted,
     Refusal,
+    ShippedTwice,
     UnsupportedFormat,
 )
 
@@ -163,10 +169,15 @@ class _Planned:
     item: Fields
     name: str
     copies: list[tuple[Path, str]] = field(default_factory=list)
-    # For a local docs page joining a project the pack already declares:
-    # the project's index in `corpus.docs`, and the page to append.
-    pages_of: int | None = None
-    pages: list[str] = field(default_factory=list)
+    # For a value joining a list inside an entry the pack already declares -
+    # a local docs page joining its project's `pages:`, a context file its
+    # folder's `include:` - the entry's index in `section` and the list's key,
+    # and the values to append.
+    joins: tuple[int, str] | None = None
+    joined: list[str] = field(default_factory=list)
+    # The entry of `section` this item is written over: a folder declared
+    # by its files one by one, given again as the folder (#557).
+    replaces: int | None = None
 
 
 @dataclass(slots=True)
@@ -218,7 +229,13 @@ def add_to_pack(
     except InputError as error:
         # The shared refusals name `corpus add --help`, which is not the
         # command that was typed.
-        raise InputError(str(error), resolution=ADD_HELP) from error
+        # A remedy naming this command is kept as it is.
+        raise InputError(
+            str(error),
+            resolution=ADD_HELP
+            if error.resolution == InputError.default_resolution
+            else error.resolution,
+        ) from error
     sink: EventSink = events or DiscardingSink()
     started_at = time.monotonic()
     text = read_pack_text(path)
@@ -233,9 +250,18 @@ def add_to_pack(
             change = planner(one, batch)
             candidate = _applied(text, change)
             after = load_pack(candidate)
+            _refuse_shipping_twice(batch.pack, after)
         except _Refused as refused:
             outcome = AddOutcome(
-                identifier=one, outcome=refused.outcome, refusal=refused.refusal
+                identifier=one,
+                outcome=refused.outcome,
+                refusal=refused.refusal,
+                # A local file or folder named as the pack names it, not by
+                # the absolute path it reached here as (#557).
+                title=refused.refusal.named
+                if isinstance(refused.refusal, AlreadyDeclared)
+                and _local(one) is not None
+                else None,
             )
         except KennisError as error:
             outcome = AddOutcome(
@@ -285,6 +311,15 @@ def add_to_pack(
     return PackAddition(path=path, report=report, copied=tuple(copied), update=update)
 
 
+def _refuse_shipping_twice(before: Pack, after: Pack) -> None:
+    """Refuse a change after which a file would have two destinations, as
+    `pack validate` would, unless the pack was so already."""
+    held = overlapping(before)
+    for problem in overlapping(after):
+        if problem not in held:
+            raise _Refused(ShippedTwice(path=problem.path, other=problem.other or ""))
+
+
 def _checked_and_resolved(
     destination: Destination,
     inputs: Sequence[str],
@@ -323,15 +358,20 @@ def _refuse_unusable_docs(inputs: Sequence[str], options: AddOptions) -> None:
     local page with no version, which a pack cannot read one from later."""
     unusable = unusable_docs_input(inputs, project=options.project)
     if unusable is not None:
-        raise docs_input_refused(*unusable)
+        raise docs_input_refused(*unusable, command="kennis pack add")
     if options.version is None:
         for one in inputs:
             if not looks_like_url(one):
                 raise InputError(
                     f"'{one}' is a local page, so there is no address to read "
                     "a version from: name one with --version, such as "
-                    "--version latest"
+                    f"--version latest, or --version {UNVERSIONED} when the "
+                    "documentation has no versions"
                 )
+            if version_in_address(one) is None:
+                # Refused here, before the schema refuses the entry from
+                # inside pydantic (2026-10-27: a traceback).
+                raise docs_input_refused(one, "unversioned", command="kennis pack add")
 
 
 def _inputs_of(resolved: ResolvedInputs, destination: Destination) -> list[str]:
@@ -408,10 +448,17 @@ def _note(raw: str, batch: _Batch) -> _Planned:
             raise InputError("--title names one note, and a folder holds several")
         relative, copy = _placed(raw, local, batch, f"{COPIES}/notes")
         copies.extend(copy)
-        item = _source_fields(relative, local, given.group)
         name = f"{relative}/"
-        if relative in {one.source.strip("/") for one in pack.corpus.note_sources}:
-            raise _Refused(AlreadyDeclared(named=name), Outcome.UNCHANGED)
+        widened = _widened(relative, local, given.group, list(pack.corpus.notes))
+        if widened is not None:
+            return _Planned(
+                section=("corpus", "notes"),
+                item=widened[1],
+                name=name,
+                copies=copies,
+                replaces=widened[0],
+            )
+        item = _source_fields(relative, local, given.group)
     elif local is not None and local.is_file():
         relative, copy = _placed(raw, local, batch, f"{COPIES}/notes")
         copies.extend(copy)
@@ -442,13 +489,15 @@ def _context(raw: str, batch: _Batch) -> _Planned:
     if local.is_dir():
         relative, copies = _placed(raw, local, batch, f"{COPIES}/context")
         name = f"{relative}/"
-        if relative in {one.source.strip("/") for one in pack.context}:
-            raise _Refused(AlreadyDeclared(named=name), Outcome.UNCHANGED)
+        widened = _widened(relative, local, given.group, list(pack.context))
         return _Planned(
             section=("context",),
-            item=_source_fields(relative, local, given.group),
+            item=_source_fields(relative, local, given.group)
+            if widened is None
+            else widened[1],
             name=name,
             copies=copies,
+            replaces=None if widened is None else widened[0],
         )
     if local.suffix.lower() not in _MARKDOWN:
         raise _Refused(UnsupportedFormat(suffix=local.suffix))
@@ -463,10 +512,7 @@ def _context(raw: str, batch: _Batch) -> _Planned:
     if covering and not copies:
         raise _Refused(AlreadyDeclared(named=relative), Outcome.UNCHANGED)
     if not relative.startswith(f"{folder}/"):
-        raise InputError(
-            f"'{raw}' is in the pack and no context folder holds it: declare "
-            "its folder instead"
-        )
+        return _context_file(relative, given.group, pack)
     if covering:
         # The folder is declared already; the copy alone adds the file.
         return _Planned(section=(), item=[], name=relative, copies=copies)
@@ -476,6 +522,34 @@ def _context(raw: str, batch: _Batch) -> _Planned:
         name=relative,
         copies=copies,
     )
+
+
+def _context_file(relative: str, group: str | None, pack: Pack) -> _Planned:
+    """One file already in the pack, declared by its folder with an
+    `include:` naming it (Brian, 2026-10-27: "not per file"), so the
+    install, the checksums and the search treat it as any source. A further
+    file of that folder joins the list of the entry already naming files
+    one by one in the same group."""
+    parent, _, name = relative.rpartition("/")
+    source = f"{parent}/" if parent else "./"
+    for index, entry in enumerate(pack.context):
+        if (
+            entry.source.strip("/") == parent
+            and entry.group == group
+            and entry.named_files is not None
+        ):
+            return _Planned(
+                section=("context",),
+                item=[],
+                name=relative,
+                joins=(index, "include"),
+                joined=[name],
+            )
+    item: Fields = [("source", source)]
+    if group is not None:
+        item.append(("group", group))
+    item.append(("include", [name]))
+    return _Planned(section=("context",), item=item, name=relative)
 
 
 def _docs(raw: str, batch: _Batch) -> _Planned:
@@ -527,8 +601,8 @@ def _docs(raw: str, batch: _Batch) -> _Planned:
         item=[],
         name=relative,
         copies=copies,
-        pages_of=existing[0],
-        pages=[relative],
+        joins=(existing[0], "pages"),
+        joined=[relative],
     )
 
 
@@ -538,6 +612,31 @@ _PLANNERS: Final[dict[Destination, Callable[[str, _Batch], _Planned]]] = {
     "notes": _note,
     "context": _context,
 }
+
+
+def _widened(
+    relative: str,
+    folder: Path,
+    group: str | None,
+    entries: Sequence[ContentSource | NoteLink | NoteFile],
+) -> tuple[int, Fields] | None:
+    """The entry already declaring the folder `relative`, by its index in
+    `entries`, and the fields that make it ship the whole folder; None when
+    no entry declares it. Refused as unchanged when one ships it whole.
+
+    `pack add -c context/*` then `pack add -c context/`: the second names
+    the whole folder, and was told it was there already, so a file put in
+    it later would not have shipped (#557). Its group is kept unless one
+    is given."""
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, ContentSource) or entry.source.strip("/") != relative:
+            continue
+        if entry.named_files is None:
+            raise _Refused(AlreadyDeclared(named=f"{relative}/"), Outcome.UNCHANGED)
+        return index, _source_fields(
+            relative, folder, entry.group if group is None else group
+        )
+    return None
 
 
 def _source_fields(relative: str, folder: Path, group: str | None) -> Fields:
@@ -642,7 +741,8 @@ def remove_from_pack(
 
     A name is a citekey, an identifier in any spelling a paper's
     `identifier` takes, an address, a documentation project, a shipped
-    file's path or a source folder. Raises `InputError` naming a name that
+    file's path, a source folder, or a context file a folder's `include:`
+    names. Raises `InputError` naming a name that
     matches nothing; nothing is written then.
     """
     text = read_pack_text(path)
@@ -733,7 +833,40 @@ def _matching(pack: Pack, name: str) -> list[_Match]:
     for index, source in enumerate(pack.context):
         if folder == source.source.strip("/"):
             found.append(_Match(("context",), index, source.source, (folder,)))
+            continue
+        found.extend(_context_file_match(index, source, wanted))
     return found
+
+
+def _context_file_match(index: int, source: ContentSource, wanted: str) -> list[_Match]:
+    """A file a context entry ships, as `pack remove` takes it out: from its
+    `include:` list, or with the entry when it is the last there. A file a
+    folder ships by pattern is refused, since no line names it alone."""
+    within = source.source.strip("/").removeprefix(".")
+    if within and not _under(wanted, within):
+        return []
+    name = wanted[len(within) + 1 :] if within else wanted
+    if source.named_files is not None:
+        if name not in source.include:
+            return []
+        if source.include == [name]:
+            return [_Match(("context",), index, wanted, ())]
+        return [
+            _Match(
+                ("context", str(index), "include"),
+                source.include.index(name),
+                wanted,
+                (),
+            )
+        ]
+    if within and selects(name, source):
+        raise InputError(
+            f"'{wanted}' is shipped as part of the folder '{source.source}', "
+            "and no line names it alone: remove the folder, or declare the "
+            "files you want one by one",
+            resolution=None,
+        )
+    return []
 
 
 def _deleted_copies(
@@ -782,30 +915,63 @@ def _prune(directory: Path, top: Path) -> None:
 def _applied(text: str, change: _Planned) -> str:
     if not change.section:
         return text
-    if change.pages_of is not None:
-        section = (*change.section, str(change.pages_of), "pages")
-        for page in change.pages:
-            text = appended(text, section, [], single=page)
-        return text
+    if change.replaces is not None:
+        return with_entry(text, change.section, change.replaces, change.item)
+    if change.joins is not None:
+        index, key = change.joins
+        held = entry_written(text, change.section, index)
+        joined: list[tuple[str, object]] = []
+        for name, value in held:
+            if name == key and isinstance(value, list):
+                value = [*value, *change.joined]
+            joined.append((name, value))
+        return with_entry(text, change.section, index, joined)
     return appended(text, change.section, change.item)
+
+
+def _within_an_entry(match: _Match) -> bool:
+    """Whether `match` is a value in a list inside an entry, whose section
+    then names the entry by its index."""
+    return any(part.isdigit() for part in match.section)
 
 
 def _without(text: str, matches: Sequence[_Match]) -> str:
     """`text` with each matched item's lines deleted, one blank line beside
-    it with them, and a sequence left with no items written `key: []`."""
+    it with them, and a sequence left with no items written `key: []`. A
+    value leaving a list inside an entry - a docs project's `pages:`, a
+    context folder's `include:` - writes that entry again without it."""
+    whole = [match for match in matches if not _within_an_entry(match)]
+    gone = {(match.section, match.index) for match in whole}
+    leaving: dict[tuple[tuple[str, ...], int, str], set[int]] = {}
+    for match in matches:
+        if _within_an_entry(match):
+            *holder, position, key = match.section
+            leaving.setdefault((tuple(holder), int(position), key), set()).add(
+                match.index
+            )
+    for (holder_section, entry, key), positions in leaving.items():
+        if (holder_section, entry) in gone:
+            continue
+        kept: list[tuple[str, object]] = []
+        for name, value in entry_written(text, holder_section, entry):
+            if name == key and isinstance(value, list):
+                value = [one for at, one in enumerate(value) if at not in positions]
+            kept.append((name, value))
+        text = with_entry(text, holder_section, entry, kept)
+
     lines = text.splitlines(keepends=True)
     root = composed(text)
     doomed: set[int] = set()
     emptied: list[int] = []
     by_section: dict[tuple[str, ...], set[int]] = {}
-    for match in matches:
+    for match in whole:
         by_section.setdefault(match.section, set()).add(match.index)
     for section, indices in by_section.items():
         node = node_at(root, section)
         assert isinstance(node, SequenceNode) and not node.flow_style
         for index in indices:
             item = node.value[index]
-            start = item.start_mark.line
+            start, _ = dash_of(text, item)
             end = last_line(item, lines)
             doomed.update(range(start, end + 1))
             if index > 0 and start > 0 and not lines[start - 1].strip():

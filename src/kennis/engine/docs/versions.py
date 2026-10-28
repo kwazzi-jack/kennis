@@ -30,6 +30,12 @@ from kennis.engine.frontmatter import split_frontmatter
 
 CURRENT_FILENAME: Final = ".current"
 
+# The version a person names for documentation that has none - a site with
+# one edition and no version in its address, such as python-casacore's -
+# offered by every refusal that asks for a version (Brian, 2026-10-27). A
+# version like any other: kennis invents it for no one, so it is chosen.
+UNVERSIONED: Final = "unversioned"
+
 # A release number - `2.12`, `v2.1.0`, `2.2.0rc1` - needs a dot or a leading
 # `v`, so a page named `2.html` or a folder named `2023` is not taken for
 # one.
@@ -262,6 +268,7 @@ def version_order(version: str) -> tuple[tuple[int, int | str], ...]:
 __all__ = [
     "CURRENT_FILENAME",
     "EVERY_VERSION",
+    "UNVERSIONED",
     "ProjectVersions",
     "checked_version",
     "chosen_or_default",

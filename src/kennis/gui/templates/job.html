@@ -13,7 +13,11 @@
    `open_panel` is set only on an answer to the reader's own action - a
    task refused before it began, or a second task asked for while this one
    runs, whose refusal is `problem` - and `redraws.js` opens it. A page
-   load never opens one (#475). #}
+   load never opens one (#475).
+
+   A queued or running job's panel offers to cancel it, as a form so it
+   works without a script; the layout hides it once the job has ended,
+   which `progress.js` says by the job's `data-state`. #}
 {% set state = state | default("running") %}
 {% set panel_id = "job-panel-" ~ job_id %}
 {% set said = headline | default("", true) or job_doing.get(kind, kind) %}
@@ -39,6 +43,7 @@
     <ul class="job-lines"></ul>
     <div class="job-outcome">{{ outcome | default("") }}</div>
     <div class="panel-foot">
+      {% if state in ("running", "queued") %}<form class="job-cancel" method="post" action="/job/{{ job_id }}/cancel" hx-post="/job/{{ job_id }}/cancel" hx-target="this" hx-swap="outerHTML"><button type="submit" class="ghost">{{ icon("x") }}{{ cancel_task }}</button></form>{% endif %}
       {% if not inline %}<a class="ghost" href="/job/{{ job_id }}">{{ icon("arrow-up-right") }}{{ open_as_page }}</a>{% endif %}
       <a class="ghost" href="/activity">{{ icon("activity") }}{{ activity_heading }}</a>
     </div>

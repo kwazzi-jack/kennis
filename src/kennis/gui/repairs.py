@@ -45,6 +45,7 @@ from kennis.engine.refusals import (
     SameContent,
     SamePage,
     SamePaper,
+    ShippedTwice,
     SymlinkSkipped,
     UnsupportedFormat,
 )
@@ -137,6 +138,7 @@ def ways_out_for(refusal: Refusal) -> tuple[WayOut, ...]:
             | AlreadyDeclared()
             | IdentifierNeeded()
             | NameTaken()
+            | ShippedTwice()
         ):
             return ()
 
@@ -221,6 +223,7 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
             | AlreadyDeclared()
             | IdentifierNeeded()
             | NameTaken()
+            | ShippedTwice()
         ):
             return ()
 

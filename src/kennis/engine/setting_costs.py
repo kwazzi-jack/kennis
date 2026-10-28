@@ -1,8 +1,9 @@
 """What changing a setting costs, as data (#410).
 
-Six costs, and a setting may carry more than one. `next_search`,
+Seven costs, and a setting may carry more than one. `next_search`,
 `next_add` and `next_index` take effect the next time kennis searches,
-adds or builds an index; `next_start` when kennis next starts, because the
+adds or builds an index; `next_command` at the next command, which reads
+the file as it starts; `next_start` when kennis next starts, because the
 log is opened once, at the start; `rebuild`
 leaves every index on what it was built with until it is rebuilt, because
 an index records its model and chunk size in `binding.json` and a query
@@ -20,7 +21,13 @@ from __future__ import annotations
 from typing import Final, Literal
 
 type SettingCost = Literal[
-    "next_search", "next_add", "next_index", "next_start", "rebuild", "leaves_machine"
+    "next_search",
+    "next_add",
+    "next_index",
+    "next_command",
+    "next_start",
+    "rebuild",
+    "leaves_machine",
 ]
 
 # The host is absent from the binding, so moving an embedding daemon
@@ -55,6 +62,8 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "conversion.repair_ligatures": ("next_add",),
     "conversion.batch_size": ("next_add",),
     "literature.request_delay": ("next_add",),
+    # Read by each command as it starts; the window prints no hints.
+    "terminal.messages": ("next_command",),
     "logging.level": ("next_start",),
     "logging.max_bytes": ("next_start",),
     "logging.backup_count": ("next_start",),

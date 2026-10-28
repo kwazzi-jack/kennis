@@ -37,23 +37,30 @@ from kennis.cli.group import KennisGroup
 from kennis.logs import start_logging
 
 if TYPE_CHECKING:
-    pass
+    from kennis.engine.settings import Settings
 
 
-def _logging_settings() -> dict[str, int]:
-    """The configuration's `[logging]` section, as `start_logging` takes it.
+def _settings_at_start() -> Settings | None:
+    """The configuration as every command starts, or None if it will not load.
 
-    A configuration that will not load still gets a log, at the defaults:
-    the log is how the reason gets read, and the command reports the
-    failure itself when it loads the settings again.
+    A configuration that will not load still gets a log, at the defaults,
+    and every message: the log is how the reason gets read, and the command
+    reports the failure itself when it loads the settings again.
     """
     from kennis.engine.errors import SettingsError
     from kennis.engine.settings import load_settings
 
     try:
-        section = load_settings().logging
+        return load_settings()
     except SettingsError:
+        return None
+
+
+def _logging_settings(settings: Settings | None) -> dict[str, int]:
+    """The configuration's `[logging]` section, as `start_logging` takes it."""
+    if settings is None:
         return {}
+    section = settings.logging
     return {
         "level": logging.getLevelNamesMapping()[section.level.upper()],
         "max_bytes": section.max_bytes,
@@ -89,9 +96,11 @@ def _say_unknown_settings() -> None:
 def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
     """A knowledge and memory system for people and AI agents."""
     display.set_verbosity(quiet=quiet, progress=not no_progress)
+    settings = _settings_at_start()
+    display.set_messages("all" if settings is None else settings.terminal.messages)
     # Always on, because the log is what you ask for when something went
     # wrong and it has to already exist by then.
-    start_logging(**_logging_settings())
+    start_logging(**_logging_settings(settings))
     logging.getLogger("kennis.cli").info("kennis %s", __version__)
     _say_unknown_settings()
     # Which command, with which parameters, is logged by `KennisCommand` -

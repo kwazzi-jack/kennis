@@ -23,15 +23,18 @@ that was the answer to the question. The log keeps all three hundred.
 from __future__ import annotations
 
 import contextlib
+import sys
 from collections.abc import Iterator
 from types import TracebackType
 from typing import TYPE_CHECKING, Final
 
 from kennis.cli import display
+from kennis.client.calls import Notice, Started
 from kennis.engine.events import (
     FETCH_MODEL,
     Diagnostic,
     Event,
+    ItemFinished,
     ItemStarted,
     OperationFinished,
     Outcome,
@@ -67,19 +70,22 @@ def marker_for(outcome: Outcome) -> str:
 class DisplaySink:
     """What the person running the command sees while it runs.
 
-    Three of the five events, plus one exception. `ItemStarted` and
-    `ItemFinished` are otherwise the log's alone: an item's outcome is
-    reported afterwards from the report, where it can be counted and capped.
-    The exception is a model fetch, which no later report line accounts for.
+    `ItemStarted` and `ItemFinished` print no line: an item's outcome is
+    reported afterwards from the report, where it can be counted and capped,
+    and while a bar is open they only name what it is working on. The
+    exception is a model fetch, which no later report line accounts for.
 
     The bar is opened on the first `Progress` rather than up front, so a
     command that turns out to have nothing to do does not flash one. That is
-    what the `ExitStack` is for, and why this has a lifetime.
+    what the `ExitStack` is for, and why this has a lifetime. Under it the
+    bar names the item of the latest item event, started or finished: a
+    count alone said nothing through a minute of one paper's conversion.
     """
 
     def __init__(self) -> None:
         self._stack = contextlib.ExitStack()
         self._advance: display.ProgressUpdate | None = None
+        self._item: str | None = None
 
     def __enter__(self) -> DisplaySink:
         return self
@@ -100,6 +106,8 @@ class DisplaySink:
                 # so no later report line accounts for it - and it is sixty
                 # seconds of apparent silence if nothing says what it is.
                 display.operation("Downloading", fetching_model(event.item))
+            case ItemStarted(item=item) | ItemFinished(item=item):
+                self._in_hand(item)
             case Progress():
                 self._progress(event)
             case Diagnostic():
@@ -109,15 +117,22 @@ class DisplaySink:
                 # the line lands above a bar that then erases itself and
                 # takes the cursor position with it.
                 self._close()
-            case _:
-                return None
 
     def _progress(self, event: Progress) -> None:
         if self._advance is None:
             self._advance = self._stack.enter_context(
                 display.progress_bar(progress_label(event.operation), event.total)
             )
+            if self._item is not None:
+                self._advance(item=self._item)
         self._advance(event.completed, event.total)
+
+    def _in_hand(self, item: str) -> None:
+        # Kept while no bar is open, because an add names its item before
+        # its first `Progress`.
+        self._item = item
+        if self._advance is not None:
+            self._advance(item=item)
 
     @staticmethod
     def _diagnostic(event: Diagnostic) -> None:
@@ -131,6 +146,9 @@ class DisplaySink:
         match event.severity:
             case Severity.ERROR:
                 display.failure(said)
+                if event.resolution:
+                    display.remedy(event.resolution)
+                return
             case Severity.WARNING:
                 display.note(said)
             case Severity.HINT:
@@ -142,6 +160,7 @@ class DisplaySink:
         self._stack.close()
         self._stack = contextlib.ExitStack()
         self._advance = None
+        self._item = None
 
 
 @contextlib.contextmanager
@@ -151,11 +170,16 @@ def reporting() -> Iterator[FanOut]:
         yield FanOut(shown, LogSink())
 
 
-def say_waiting(news: Queued | Began) -> None:
+def say_waiting(news: Notice) -> None:
     """A task asked for behind others says so before it begins (14b): the
     service runs one write at a time in a lane, and silence while one waits
-    reads as a hang."""
-    from kennis.render.words import waiting_for
+    reads as a hang. A task begun names its keys under its bar."""
+    from kennis.render.words import task_keys, waiting_for
 
-    if isinstance(news, Queued):
-        display.note(waiting_for(news.behind, news.ahead))
+    match news:
+        case Queued():
+            display.note(waiting_for(news.behind, news.ahead))
+        case Started():
+            display.set_task_keys(task_keys(news.job, windows=sys.platform == "win32"))
+        case Began():
+            return

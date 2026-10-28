@@ -26,7 +26,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import LiteratureFrontmatter
 from kennis.engine.corpus.sync import sync_corpus
 from kennis.engine.errors import PackInvalid
-from kennis.engine.events import Event, Progress
+from kennis.engine.events import Event, ItemFinished, Progress
 from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.editing import add_to_pack
 from kennis.engine.pack.schema import load_pack
@@ -168,56 +168,44 @@ def test_update_writes_what_the_entry_leaves_out_into_the_entry(tmp_path: Path):
         "arxiv:1101.1764": {
             "citekey": "smirnovRevisitingRime2011",
             "title": "Revisiting the RIME",
-            "authors": "Oleg Smirnov",
+            "authors": ["Oleg Smirnov"],
             "year": 2011,
         }
     }
     assert result.described == (("arxiv:1101.1764", "smirnovRevisitingRime2011"),)
 
 
-def test_the_fields_head_the_entry_and_the_author_s_follow(tmp_path: Path):
+def test_the_entry_is_written_again_in_kennis_s_order(tmp_path: Path):
+    """The derived fields and the author's own, in one order (#558)."""
     path = a_pack(tmp_path, "    - identifier: '1101.1764'\n      group: rime\n")
 
     updated(path, arxiv())
 
     assert (
         "  literature:\n"
-        '    - citekey: "smirnovRevisitingRime2011"\n'
-        '      title: "Revisiting the RIME"\n'
-        '      authors: "Oleg Smirnov"\n'
-        "      year: 2011\n"
-        "      identifier: '1101.1764'\n"
-        "      group: rime\n"
+        "    - {\n"
+        '        identifier: "1101.1764",\n'
+        '        citekey: "smirnovRevisitingRime2011",\n'
+        '        title: "Revisiting the RIME",\n'
+        "        year: 2011,\n"
+        '        group: "rime",\n'
+        "        authors: [\n"
+        '          "Oleg Smirnov",\n'
+        "        ],\n"
+        "      }\n"
     ) in path.read_text(encoding="utf-8")
 
 
-def test_an_entry_whose_dash_stands_alone_gains_its_fields_below_it(
+def test_an_entry_whose_dash_stands_alone_is_written_from_its_dash(
     tmp_path: Path,
 ):
     path = a_pack(tmp_path, "    -\n      identifier: '1101.1764'\n")
 
     updated(path, arxiv())
 
-    assert (
-        "    -\n"
-        '      citekey: "smirnovRevisitingRime2011"\n'
-        '      title: "Revisiting the RIME"\n'
-        '      authors: "Oleg Smirnov"\n'
-        "      year: 2011\n"
-        "      identifier: '1101.1764'\n"
-    ) in path.read_text(encoding="utf-8")
-
-
-def test_an_entry_written_on_one_line_is_refused_naming_the_way_out(
-    tmp_path: Path,
-):
-    path = a_pack(tmp_path, "    - {identifier: '1101.1764'}\n")
-    before = path.read_bytes()
-
-    with pytest.raises(PackInvalid, match="one key per line"):
-        updated(path, arxiv())
-
-    assert path.read_bytes() == before
+    text = path.read_text(encoding="utf-8")
+    assert "  literature:\n    - {\n" in text
+    assert "    -\n" not in text
 
 
 def test_a_record_in_the_generated_block_is_refused_naming_what_to_do():
@@ -284,7 +272,7 @@ def test_the_authors_own_fields_are_kept_as_written(tmp_path: Path):
     assert described(path) == {
         "arxiv:1101.1764": {
             "citekey": "smirnovRime2011",
-            "authors": "Oleg Smirnov",
+            "authors": ["Oleg Smirnov"],
             "year": 2011,
             "title": "The RIME",
         }
@@ -379,7 +367,7 @@ def test_a_doi_is_described_by_its_registry_as_an_arxiv_id_is_by_arxiv(
         "doi:10.48479/bhpj-nz95": {
             "citekey": "maccagniRfiUMeerkat2022",
             "title": "RFI at u=0 in MeerKAT observations",
-            "authors": "Maccagni, Filippo Marcello and Healy, Julia",
+            "authors": ["Maccagni, Filippo Marcello", "Healy, Julia"],
             "year": 2022,
         }
     }
@@ -399,7 +387,7 @@ def test_what_a_doi_entry_gives_is_kept_and_only_the_rest_written(tmp_path: Path
     assert described(path) == {
         "doi:10.48479/bhpj-nz95": {
             "citekey": "maccagniMeerkatTimeSmearing2024",
-            "authors": "Maccagni, Filippo Marcello and Healy, Julia",
+            "authors": ["Maccagni, Filippo Marcello", "Healy, Julia"],
             "url": "https://archive.example.org/smearing.pdf",
             "title": "MeerKAT time smearing simulation",
             "year": 2024,
@@ -423,7 +411,7 @@ def test_a_bibcode_is_still_described_from_what_the_entry_says(tmp_path: Path):
     path = a_pack(
         tmp_path,
         "    - identifier: 2011A&A...527A.106S\n"
-        "      title: Revisiting the RIME\n      authors: Smirnov, O. M.\n"
+        "      title: Revisiting the RIME\n      authors: ['Smirnov, O. M.']\n"
         "      year: 2011\n",
     )
 
@@ -433,7 +421,7 @@ def test_a_bibcode_is_still_described_from_what_the_entry_says(tmp_path: Path):
         "bibcode:2011A&A...527A.106S": {
             "citekey": "smirnovRevisitingRime2011",
             "title": "Revisiting the RIME",
-            "authors": "Smirnov, O. M.",
+            "authors": ["Smirnov, O. M."],
             "year": 2011,
         }
     }
@@ -691,3 +679,21 @@ def test_doi_lookups_run_together_and_citekeys_keep_entry_order(tmp_path: Path):
         ("doi:10.1093/mnrasl/slaf009", "smirnovMiningTimeAxis2025"),
         ("doi:10.1093/mnrasl/slaf015", "smirnovMiningTimeAxis2025a"),
     )
+
+
+def test_each_lookup_names_its_paper_as_it_returns(tmp_path: Path):
+    """So a bar can say what it is working on, not only how far it is."""
+    path = a_pack(
+        tmp_path,
+        "    - identifier: arxiv:1101.1764\n    - identifier: arxiv:1502.06974\n",
+    )
+    sink = Recording()
+
+    update_pack(path, arxiv=arxiv(), request_delay_seconds=0, events=sink)
+
+    named = [
+        event.item
+        for event in sink.events
+        if isinstance(event, ItemFinished) and event.operation == "pack-describe"
+    ]
+    assert named == ["arxiv:1101.1764", "arxiv:1502.06974"]

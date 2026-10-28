@@ -130,6 +130,7 @@ _ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     ("conversion.repair_ligatures", (("conversion.backend", "mineru"),)),
     ("conversion.batch_size", ()),
     ("literature.request_delay", ()),
+    ("terminal.messages", ()),
     ("logging.level", ()),
     ("logging.max_bytes", ()),
     ("logging.backup_count", ()),

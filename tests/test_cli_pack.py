@@ -721,3 +721,41 @@ def test_list_as_json_from_a_real_process_is_parseable(
     assert completed.returncode == 0, completed.stderr
     [listed] = json.loads(completed.stdout)["packs"]
     assert listed["description"] == "Radio interferometry reduction."
+
+
+def test_a_digest_problem_keeps_its_remedy_when_only_errors_are_shown(
+    run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`terminal.messages = "errors"` hides advice, not the way out of a
+    failure: the remedy is printed by `display.remedy`."""
+    monkeypatch.setenv("KENNIS_TERMINAL_MESSAGES", "errors")
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "one.md").write_text("Body.\n", encoding="utf-8")
+    body = (
+        HEADER
+        + "corpus:\n  notes:\n    - source: notes/\n"
+        + "generated:\n"
+        + '  at: "2026-09-26T00:00:00Z"\n'
+        + '  by: "kennis 0.2.0"\n'
+        + "  content:\n    notes:\n      - source: notes/\n        files: {}\n"
+    )
+    path = a_pack_file(tmp_path, body)
+
+    result = run.invoke(main, ["pack", "validate", str(path)])
+
+    assert "error:" in result.output
+    assert "kennis pack update" in result.output
+
+
+def test_a_version_refusal_keeps_its_remedy_when_only_errors_are_shown(
+    run: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KENNIS_TERMINAL_MESSAGES", "errors")
+    body = HEADER.replace(
+        "  schema_version: 1", '  schema_version: 1\n  min_version: "99.0"'
+    )
+
+    result = run.invoke(main, ["pack", "validate", str(a_pack_file(tmp_path, body))])
+
+    assert "uv tool upgrade kennis" in result.output

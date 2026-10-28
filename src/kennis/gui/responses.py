@@ -27,7 +27,9 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.docs.versions import project_versions
 from kennis.engine.errors import (
+    CorpusNotFound,
     KennisError,
+    TaskStopped,
 )
 from kennis.engine.history.history import HistoryEntry
 from kennis.gui import words
@@ -169,6 +171,7 @@ TEMPLATES.env.globals.update(
         "job_kinds": JOB_KINDS,
         "job_details": words.JOB_DETAILS,
         "open_as_page": words.OPEN_AS_PAGE,
+        "cancel_task": words.CANCEL_TASK,
         "pane_now": pane_now,
         "pane_show": words.PANE_SHOW,
         "pane_hide": words.PANE_HIDE,
@@ -341,20 +344,27 @@ def written[Answer: Response](answer: Answer) -> Answer:
     return answer
 
 
-def frame(context: Context) -> dict[str, object]:
-    """What every page carries regardless of what it shows.
+def _drawn_at() -> str:
+    """The commit the corpus is at as a page is drawn, or "" with none.
 
-    The revision is the page's own timestamp, in the only unit that
-    matters here: a commit the corpus was at when this was drawn. The
-    message travels with it so the script does not compose words.
+    The page's own timestamp, in the only unit that matters here, compared
+    on focus by `revision.js`. A function every template calls rather than a
+    value each route passes: the document and Activity pages passed none, so
+    each read as changed on its first focus - the reload notice Brian saw
+    after opening a link in a new tab (2026-10-27).
+
+    Only a missing corpus is answered with "": a configuration that will
+    not load raises, as the route's own read of it once did, so the page
+    that names the bad value is drawn instead (`problem.html` draws no
+    commit).
     """
-    return {
-        "revision": revision(context) or "",
-        "corpus_changed": words.CORPUS_CHANGED,
-        "corpus_changed_heading": words.CORPUS_CHANGED_HEADING,
-        "corpus_changed_reload": words.CORPUS_CHANGED_RELOAD,
-        "corpus_changed_later": words.CORPUS_CHANGED_LATER,
-    }
+    try:
+        return revision(existing_corpus()) or ""
+    except CorpusNotFound:
+        return ""
+
+
+TEMPLATES.env.globals["drawn_at"] = _drawn_at
 
 
 def problem_page(request: Request, error: KennisError) -> HTMLResponse:
@@ -418,6 +428,8 @@ def job_state(job: Job) -> str:
         return words.JOB_QUEUED
     if not job.done.is_set():
         return words.JOB_RUNNING
+    if isinstance(job.error, TaskStopped):
+        return words.JOB_CANCELLED
     return words.JOB_FAILED if job.failed else words.JOB_FINISHED
 
 
@@ -549,6 +561,4 @@ def action_page(
     }
     if request.headers.get("hx-request") == "true":
         return TEMPLATES.TemplateResponse(request, "dialog.html", shown)
-    return TEMPLATES.TemplateResponse(
-        request, "action-page.html", {**shown, **frame(existing_corpus())}
-    )
+    return TEMPLATES.TemplateResponse(request, "action-page.html", shown)

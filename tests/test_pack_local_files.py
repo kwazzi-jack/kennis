@@ -39,7 +39,7 @@ PAPER = (
     "  literature:\n"
     "    - citekey: smirnovRevisitingRIMEI2011\n"
     '      title: "Revisiting the RIME"\n'
-    '      authors: "Smirnov, O. M."\n'
+    '      authors: ["Smirnov, O. M."]\n'
     "      year: 2011\n"
     '      identifier: "1101.1764"\n'
     "      file: files/literature/rime.md\n"

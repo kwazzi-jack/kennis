@@ -56,6 +56,7 @@ EXPECTED_GROUPS = {
         "literature.request_delay",
         "literature.unpaywall_email",
     ],
+    "Command line": ["terminal.messages"],
     "Log file": [
         "logging.level",
         "logging.max_bytes",

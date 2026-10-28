@@ -375,6 +375,34 @@ class ServiceUnavailable(KennisError):
     default_resolution = None
 
 
+class TaskCancelled(BaseException):
+    """A task stopping part way because someone asked it to (Brian,
+    2026-10-27), raised in the task's own thread at the next point that can
+    stop - before anything is published, so a cancelled write left the
+    corpus as it was.
+
+    **Not a `KennisError`, nor an `Exception`**, as asyncio's
+    `CancelledError` is not since Python 3.8, and for the same reason: a
+    loop that records one item's `KennisError` as a failed item and carries
+    on would count a cancellation as one more failure and keep going. What
+    a cancelled task reports is `TaskStopped`, which the service makes of
+    this once it reaches the top. The message follows the word
+    "Cancelled", which every front end puts before it.
+    """
+
+    default_message = "nothing was changed"
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message if message is not None else self.default_message)
+
+
+class TaskStopped(KennisError):
+    """A task's outcome when it was cancelled: the sentence `TaskCancelled`
+    carried, as a refusal every front end already knows how to report."""
+
+    default_message = TaskCancelled.default_message
+
+
 class ServiceBusy(KennisError):
     """A stop asked of the service while a task is queued or running, which
     would end the task wherever it was."""

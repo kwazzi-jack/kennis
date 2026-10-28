@@ -15,11 +15,12 @@ from pathlib import Path
 import httpx
 import pytest
 
-from kennis.engine.corpus.add import AddOptions, add_docs
+from kennis.engine.corpus.add import AddOptions, add_docs, docs_input_refused
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.ids import derive_id, natural_key_for_docs
 from kennis.engine.corpus.schema import DocsFrontmatter
 from kennis.engine.docs.versions import (
+    UNVERSIONED,
     checked_version,
     current_version_file,
     project_versions,
@@ -27,6 +28,7 @@ from kennis.engine.docs.versions import (
 )
 from kennis.engine.errors import InputError
 from kennis.engine.events import Outcome
+from kennis.engine.shell import quoted_for_this_shell
 
 SEARCHINDEX = (
     'Search.setIndex({"docnames": ["index", "guide/start"], "filenames": []});'
@@ -364,3 +366,43 @@ def test_a_page_answers_to_its_project_version_and_page(docs: Collection):
 
     assert isinstance(found.frontmatter, DocsFrontmatter)
     assert found.frontmatter.docs.version == "2.0"
+
+
+# ---------------------------------------------------------------------------
+# Documentation that has no versions (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def test_unversioned_is_a_version_like_any_other(docs: Collection):
+    """A site with one edition and no version in its address -
+    `https://casacore.github.io/python-casacore/` - is filed under the
+    reserved name the refusal offers."""
+    added(docs, "https://example.org/en/latest/", version=UNVERSIONED)
+
+    assert files_of(docs) == [
+        "example/unversioned/Overview.md",
+        "example/unversioned/Start.md",
+    ]
+
+
+def test_the_refusal_offers_unversioned_as_a_command_that_runs():
+    refused = docs_input_refused(
+        "https://casacore.github.io/python-casacore/", "unversioned"
+    )
+
+    assert "--version unversioned" in str(refused)
+    assert refused.resolution == (
+        "kennis corpus add -d https://casacore.github.io/python-casacore/ "
+        "--version unversioned"
+    )
+
+
+def test_the_refusal_names_the_command_that_was_typed():
+    refused = docs_input_refused(
+        "https://example.org/a b/", "unversioned", command="kennis pack add"
+    )
+
+    assert refused.resolution == (
+        f"kennis pack add -d {quoted_for_this_shell('https://example.org/a b/')} "
+        "--version unversioned"
+    )

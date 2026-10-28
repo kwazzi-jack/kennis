@@ -13,6 +13,8 @@ operations in `calls.py` by name and watches a write's job.
   arrives.
 - `GET job/<id>`: where the job is, and its outcome once it has one, for a
   client that stopped watching and came back.
+- `POST job/<id>/cancel`: ask the job to stop; it ends with `TaskStopped`
+  unless it had already begun to publish, which it then finishes.
 
 A refusal is `{"error": ...}` as `dump_error` writes it: 400 for a request
 the wire cannot read, 404 for a name nobody knows, 422 for a refusal the
@@ -187,6 +189,19 @@ def job_now(job_id: str, request: Request) -> JSONResponse:
     if job.done.is_set():
         said.update(_outcome(job))
     return JSONResponse(said)
+
+
+@router.post("/job/{job_id}/cancel")
+def cancel_job(job_id: str, request: Request) -> JSONResponse:
+    """Ask a task to stop. `202 {"cancelling": true}` when it was asked, and
+    `{"cancelling": false}` when it had already finished; its stream then
+    ends with `TaskStopped`, or with whatever it finished as."""
+    jobs: Jobs = request.app.state.jobs
+    job = jobs.get(job_id)
+    if job is None:
+        return _refused(KennisError(f"there is no job {job_id!r}"), 404)
+    asked = jobs.cancel(job)
+    return JSONResponse({"cancelling": asked}, status_code=202 if asked else 200)
 
 
 @router.get("/job/{job_id}/events")

@@ -20,9 +20,6 @@ is needed.
 
 from __future__ import annotations
 
-import os
-import shlex
-import subprocess
 from typing import Final
 from urllib.parse import quote
 
@@ -44,32 +41,12 @@ from kennis.engine.refusals import (
     SameContent,
     SamePage,
     SamePaper,
+    ShippedTwice,
     SymlinkSkipped,
     UnsupportedFormat,
 )
+from kennis.engine.shell import quoted_for_this_shell
 from kennis.render.words import count_of
-
-
-def quoted_for_posix(argument: str) -> str:
-    """One argument as a POSIX shell reads it."""
-    return shlex.quote(argument)
-
-
-def quoted_for_windows(argument: str) -> str:
-    """One argument as cmd.exe and PowerShell both read it.
-
-    `list2cmdline` double-quotes only when the argument needs it. A
-    single-quoted path, which is what `shlex.quote` produces for any
-    path containing a backslash, is not quoting to cmd.exe at all.
-    """
-    return subprocess.list2cmdline([argument])
-
-
-def quoted_for_this_shell(argument: str) -> str:
-    """One argument quoted so the remedy runs as printed on this platform."""
-    if os.name == "nt":
-        return quoted_for_windows(argument)
-    return quoted_for_posix(argument)
 
 
 def describe_refusal(refusal: Refusal) -> str:
@@ -172,6 +149,11 @@ def describe_refusal(refusal: Refusal) -> str:
                 f"{copy} is already in the pack and is not '{named}'; rename "
                 f"one of them"
             )
+        case ShippedTwice(path=path, other=other):
+            return (
+                f"{path} and {other} would both ship it, so a file under them "
+                "would have two destinations"
+            )
 
 
 def refusal_fact(refusal: Refusal) -> str:
@@ -225,6 +207,7 @@ def refusal_fact(refusal: Refusal) -> str:
             | UnsupportedFormat()
             | AlreadyDeclared()
             | NameTaken()
+            | ShippedTwice()
         ):
             # Nothing in these to type: the sentence is the fact.
             return describe_refusal(refusal)
@@ -263,6 +246,7 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             | AlreadyDeclared()
             | IdentifierNeeded()
             | NameTaken()
+            | ShippedTwice()
         ):
             return ()
 

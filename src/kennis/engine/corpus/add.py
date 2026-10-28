@@ -42,6 +42,7 @@ from typing import Literal
 
 import httpx
 
+from kennis.engine.cancelling import pause
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.conversions import KeptConversions, conversions_root
 from kennis.engine.corpus.converters import Converter, default_converter
@@ -96,6 +97,7 @@ from kennis.engine.docs.sites import (
     validate_project_name,
 )
 from kennis.engine.docs.versions import (
+    UNVERSIONED,
     checked_version,
     make_current,
     project_versions,
@@ -159,6 +161,7 @@ from kennis.engine.refusals import (
     SamePaper,
 )
 from kennis.engine.settings import own_directories
+from kennis.engine.shell import quoted_for_this_shell
 
 # Identifies kennis to a documentation host, so the traffic can be
 # attributed and, if a site wishes, blocked.
@@ -880,7 +883,7 @@ def add_literature(
 
     for position, paper in enumerate(papers):
         if position and delay:
-            time.sleep(delay)
+            pause(delay)
         sink.emit(ItemStarted(operation="add", item=paper.identifier))
         outcome = _add_paper(
             collection, paper, record, options, plan, arxiv, sink, client
@@ -1723,7 +1726,7 @@ def add_docs(
                 page, record, refresh=options.refresh
             ):
                 if requested and wait:
-                    time.sleep(wait)
+                    pause(wait)
                 requested += 1
             sink.emit(ItemStarted(operation="add", item=page.identifier))
             outcome = _add_page(collection, page, record, active, options)
@@ -1903,7 +1906,11 @@ def unusable_docs_input(
     return None
 
 
-def docs_input_refused(identifier: str, reason: DocsInputProblem) -> InputError:
+def docs_input_refused(
+    identifier: str, reason: DocsInputProblem, *, command: str = "kennis corpus add"
+) -> InputError:
+    """Why `identifier` cannot be added as documentation. `command` is the
+    one typed, so a remedy runs as printed."""
     if reason == "missing":
         return InputError(
             f"'{identifier}' is neither a documentation site nor a file that exists"
@@ -1911,7 +1918,12 @@ def docs_input_refused(identifier: str, reason: DocsInputProblem) -> InputError:
     if reason == "unversioned":
         return InputError(
             f"'{identifier}' does not say which version of the documentation "
-            "it is: name one with --version, such as --version latest"
+            "it is: name one with --version, such as --version latest, or "
+            f"--version {UNVERSIONED} when the documentation has no versions",
+            resolution=(
+                f"{command} -d {quoted_for_this_shell(identifier)} "
+                f"--version {UNVERSIONED}"
+            ),
         )
     return InputError(
         f"'{identifier}' is a local file, so there is no site to take a "

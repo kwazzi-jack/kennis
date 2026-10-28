@@ -38,6 +38,7 @@ from kennis.engine.refusals import (
     SameContent,
     SamePage,
     SamePaper,
+    ShippedTwice,
     SymlinkSkipped,
     UnsupportedFormat,
 )
@@ -78,6 +79,7 @@ EVERY_REFUSAL: list[Refusal] = [
     AlreadyDeclared(named="1101.1764"),
     IdentifierNeeded(named="/tmp/paper.pdf"),
     NameTaken(named="/tmp/a.pdf", copy="files/literature/a.pdf"),
+    ShippedTwice(path="files/", other="files/notes/a.md"),
 ]
 
 

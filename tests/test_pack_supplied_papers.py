@@ -39,7 +39,7 @@ corpus:
   literature:
     - citekey: maccagniRFIMeerKAT2022
       title: "RFI at u=0 in MeerKAT observations"
-      authors: "Maccagni, F. M."
+      authors: ["Maccagni, F. M."]
       year: 2022
       identifier: "{DOI}"
       group: rfi

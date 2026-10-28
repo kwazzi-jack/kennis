@@ -8,13 +8,16 @@ as what it acts on.
 from __future__ import annotations
 
 import contextlib
+import io
 from collections.abc import Iterator
 
 import pytest
+from rich.console import Console
 
 from kennis.cli import display, sink
 from kennis.cli.display import ProgressUpdate
 from kennis.engine.events import (
+    FETCH_MODEL,
     Diagnostic,
     DocumentUnsearchable,
     ItemFinished,
@@ -39,6 +42,7 @@ class RecordingBar:
     def __init__(self) -> None:
         self.opened: list[tuple[str, int | None]] = []
         self.advanced: list[tuple[int | None, int | None]] = []
+        self.items: list[str] = []
         self.closed = 0
 
     def __call__(
@@ -46,12 +50,21 @@ class RecordingBar:
     ) -> contextlib.AbstractContextManager[ProgressUpdate]:
         self.opened.append((description, total))
 
+        def update(
+            completed: int | None = None,
+            total: int | None = None,
+            *,
+            item: str | None = None,
+        ) -> None:
+            if item is not None:
+                self.items.append(item)
+                return
+            self.advanced.append((completed, total))
+
         @contextlib.contextmanager
         def opened() -> Iterator[ProgressUpdate]:
             try:
-                yield lambda completed=None, total=None: self.advanced.append(
-                    (completed, total)
-                )
+                yield update
             finally:
                 self.closed += 1
 
@@ -206,3 +219,123 @@ def test_an_ordinary_item_still_prints_nothing(capsys: pytest.CaptureFixture[str
 
     written = capsys.readouterr()
     assert "trees.md" not in written.out + written.err
+
+
+# ---------------------------------------------------------------------------
+# What the bar is working on (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def test_the_bar_names_the_item_in_hand(bar: RecordingBar):
+    """A sync's bar said `Synchronising 3/14` and nothing of what it was
+    doing for a minute of MinerU; each item event names what is in hand."""
+    with sink.DisplaySink() as shown:
+        shown.emit(Progress(operation="corpus-sync", completed=0, total=2))
+        shown.emit(ItemStarted(operation="add", item="doi:10.1017/pasa.2025.10128"))
+        shown.emit(Progress(operation="corpus-sync", completed=1, total=2))
+        shown.emit(
+            ItemFinished(
+                operation="pack-describe",
+                item="doi:10.1093/mnras/stae303",
+                outcome=Outcome.ADDED,
+            )
+        )
+
+    assert bar.items == ["doi:10.1017/pasa.2025.10128", "doi:10.1093/mnras/stae303"]
+
+
+def test_an_item_named_before_the_bar_opens_is_shown_when_it_does(
+    bar: RecordingBar,
+):
+    with sink.DisplaySink() as shown:
+        shown.emit(ItemStarted(operation="add", item="trees.md"))
+        shown.emit(Progress(operation="add", completed=0, total=1))
+
+    assert bar.items == ["trees.md"]
+
+
+def test_a_model_fetch_is_not_an_item_of_the_bar(bar: RecordingBar):
+    with sink.DisplaySink() as shown:
+        shown.emit(Progress(operation="index", completed=0, total=1))
+        shown.emit(ItemStarted(operation=FETCH_MODEL, item="a-model"))
+
+    assert bar.items == []
+
+
+def test_the_drawn_bar_carries_the_item_on_its_own_line():
+    """Drawn, not only passed: rendered to a string, the item is the line
+    between the label and the bar."""
+    written = io.StringIO()
+    console = Console(file=written, width=60, color_system=None)
+    stacked = display._StackedProgress(console=console, transient=True)
+    stacked.add_task("Synchronising", total=2, item="doi:10.1017/pasa.2025.10128")
+
+    console.print(stacked.get_renderable())
+    lines = [line.strip() for line in written.getvalue().splitlines()]
+
+    assert lines[0].endswith("Synchronising")
+    assert lines[1] == "doi:10.1017/pasa.2025.10128"
+
+
+def test_progress_bar_passes_the_item_to_what_it_draws(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    drawn: list[display._StackedProgress] = []
+
+    class Kept(display._StackedProgress):
+        def __enter__(self) -> Kept:
+            drawn.append(self)
+            return self
+
+        def __exit__(self, *raised: object) -> None:
+            return None
+
+    monkeypatch.setattr(display, "progress_wanted", lambda: True)
+    monkeypatch.setattr(display, "_StackedProgress", Kept)
+    with display.progress_bar("Synchronising", 2) as update:
+        update(item="trees.md")
+        update(1, 2)
+
+    (task,) = drawn[0].tasks
+    assert task.fields["item"] == "trees.md"
+    assert task.completed == 1
+
+
+# ---------------------------------------------------------------------------
+# The keys under a task's bar (Brian, 2026-10-27)
+# ---------------------------------------------------------------------------
+
+
+def test_a_started_task_names_its_keys_under_the_bar(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from kennis.client.calls import Started
+
+    monkeypatch.setattr(sink.sys, "platform", "linux")
+    sink.say_waiting(Started(job="a-job"))
+    written = io.StringIO()
+    console = Console(file=written, width=200, color_system=None)
+    stacked = display._StackedProgress(console=console, transient=True)
+    stacked.add_task("Synchronising", total=2)
+
+    console.print(stacked.get_renderable())
+    drawn = written.getvalue()
+
+    assert "Ctrl-C cancels the task" in drawn
+    assert "Ctrl-Z" in drawn
+    assert "kennis service watch a-job" in drawn
+    display.set_verbosity()
+    assert display._task_keys is None
+
+
+def test_windows_is_not_offered_ctrl_z(monkeypatch: pytest.MonkeyPatch):
+    from kennis.client.calls import Started
+
+    monkeypatch.setattr(sink.sys, "platform", "win32")
+    sink.say_waiting(Started(job="a-job"))
+    try:
+        assert display._task_keys is not None
+        assert "Ctrl-Z" not in display._task_keys
+        assert "kennis service watch a-job" in display._task_keys
+    finally:
+        display.set_verbosity()

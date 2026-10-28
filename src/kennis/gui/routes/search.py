@@ -31,7 +31,7 @@ from kennis.gui.pages import (
     shown_skips,
     versions_query,
 )
-from kennis.gui.responses import SCOPES, TEMPLATES, frame, from_htmx
+from kennis.gui.responses import SCOPES, TEMPLATES, from_htmx
 from kennis.retrieval import sweep
 from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
@@ -89,7 +89,6 @@ def _hits_context(
     `kennis gui` was typed in.
     """
     context: dict[str, object] = {
-        **frame(existing_corpus()),
         # What was asked. What the form offers - the scopes, the hint
         # for each, the modes - is a template global, because the form
         # is the bar's and is on every page.

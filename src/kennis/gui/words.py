@@ -404,6 +404,7 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("searching", "Searching and indexing"),
     ("converting", "Converting documents"),
     ("adding", "Adding documents"),
+    ("terminal", "Command line"),
     ("logging", "Log file"),
     ("service", "Background service"),
 )
@@ -435,6 +436,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "conversion.repair_ligatures": "Repair ff, fi and fl",
     "conversion.batch_size": "Documents per converter run",
     "literature.request_delay": "Seconds between arXiv requests",
+    "terminal.messages": "Messages shown",
     "logging.level": "Detail",
     "logging.max_bytes": "Size before a new file (bytes)",
     "logging.backup_count": "Old files kept",
@@ -508,6 +510,10 @@ SETTING_TIPS: Final[dict[str, str]] = {
         "everything in one run."
     ),
     "literature.request_delay": "arXiv asks for three seconds between requests.",
+    "terminal.messages": (
+        "Which advice the command line prints beside its reports. An error "
+        "always keeps the command that resolves it."
+    ),
     "logging.level": "How much kennis writes to its log file.",
     "logging.max_bytes": "The size at which the log starts a new file.",
     "logging.backup_count": "How many earlier log files are kept.",
@@ -553,6 +559,11 @@ SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
     "retrieval.corpus_method": {value: label for value, label in MODE_CHOICES if value},
     "retrieval.context_method": {
         value: label for value, label in MODE_CHOICES if value
+    },
+    "terminal.messages": {
+        "all": "Hints, warnings and errors",
+        "warnings": "Warnings and errors",
+        "errors": "Errors only",
     },
     "logging.level": {
         "debug": "Everything",
@@ -761,6 +772,19 @@ JOB_QUEUED = "waiting"
 JOB_FINISHED = "finished"
 
 JOB_FAILED = "failed"
+
+JOB_CANCELLED = "cancelled"
+
+# A queued or running task's panel (Brian, 2026-10-27). The task stops at
+# its next step, before anything is published.
+CANCEL_TASK = "Cancel task"
+CANCELLING = "Cancelling: the task stops at its next step."
+
+
+def cancelled(said: str) -> str:
+    """A cancelled task's headline: what the engine says it kept, after the
+    word every front end puts before it."""
+    return f"Cancelled: {said}"
 
 
 def searchable_short(searchable: int, total: int) -> str:
@@ -1210,7 +1234,8 @@ def docs_input_refused(identifier: str, reason: str) -> str:
     if reason == "unversioned":
         return (
             f"'{identifier}' does not say which version of the documentation "
-            "it is. Enter a Version, such as latest."
+            "it is. Enter a Version, such as latest, or unversioned if the "
+            "documentation has no versions."
         )
     return (
         f"'{identifier}' is a file, so no project name can be made from it. "
@@ -1219,7 +1244,12 @@ def docs_input_refused(identifier: str, reason: str) -> str:
 
 
 PROJECT_UNNAMED = "No project name can be made from this address. Enter a Project name."
-VERSION_UNNAMED = "The address names no version. Enter a Version, such as latest."
+VERSION_UNNAMED = (
+    "The address names no version. Enter a Version, such as latest, or use "
+    "unversioned if the documentation has no versions."
+)
+# The button beside it, which fills the Version field (Brian, 2026-10-27).
+USE_UNVERSIONED = "Use unversioned"
 
 
 def previewed_version(version: str) -> str:
@@ -1763,6 +1793,8 @@ __all__ = [
     "BROWSE",
     "BUNDLE_NOT_COMMITTED",
     "CANCEL",
+    "CANCELLING",
+    "CANCEL_TASK",
     "CHANGED_MEANWHILE",
     "CHANGED_MEANWHILE_RETRY",
     "CHANGES_HEADING",
@@ -1821,6 +1853,7 @@ __all__ = [
     "INSPECTOR_HIDE",
     "INSPECTOR_LABEL",
     "INSPECTOR_SHOW",
+    "JOB_CANCELLED",
     "JOB_DETAILS",
     "JOB_DOING",
     "JOB_FAILED",
@@ -1997,6 +2030,7 @@ __all__ = [
     "UPLOAD_SAID",
     "UPLOAD_TYPED",
     "UPLOAD_TYPED_PDF",
+    "USE_UNVERSIONED",
     "VERSIONS_LABEL",
     "VERSION_UNNAMED",
     "WELCOME",
@@ -2008,6 +2042,7 @@ __all__ = [
     "WINDOW_SETTINGS_TIP",
     "attention_count",
     "built_with",
+    "cancelled",
     "change_line",
     "chooser_truncated",
     "corpus_at",

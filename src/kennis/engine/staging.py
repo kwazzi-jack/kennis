@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from kennis.engine.atomic import make_writable, remove_file, remove_tree, replace_file
+from kennis.engine.cancelling import past_cancelling
 from kennis.engine.corpus.conversions import forget_old_conversions
 from kennis.engine.corpus.document import seal_if_obtained
 from kennis.engine.corpus.layout import STAGING_DIRNAME
@@ -207,7 +208,9 @@ def journalled(
     """The journal around a write that does not go through a mirror - a
     restore or a return, which git writes into the working tree itself.
     `paths` is every file the write may touch; on any failure, here or at
-    the next start, they are put back as they were."""
+    the next start, they are put back as they were. From here the task runs
+    to its end, cancelled or not."""
+    past_cancelling()
     _write_journal(
         corpus_root,
         operation,
@@ -227,7 +230,9 @@ def publish(mirror: Mirror, *, operation: str, scope: str, summary: str) -> str 
 
     The caller holds the corpus exclusively. Returns the commit, or None
     when the operation changed nothing - which writes no journal either.
+    From here the task runs to its end, cancelled or not.
     """
+    past_cancelling()
     changes = mirror.changes()
     if changes.empty:
         return None

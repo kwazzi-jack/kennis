@@ -34,6 +34,7 @@ from typing import Final
 
 import httpx
 
+from kennis.engine.cancelling import pause
 from kennis.engine.corpus.add import (
     ARXIV_DELAY_SECONDS,
     AddOptions,
@@ -647,7 +648,7 @@ def _fetched_literature(
         entry = plan.entries[action.address]
         assert isinstance(entry, LiteratureEntry)
         if fetched and delay:
-            time.sleep(delay)
+            pause(delay)
         fetched += 1
         # The pack's copy of the paper when it ships one; the address, when
         # it gives one, read as the paper the identifier names; otherwise
@@ -833,7 +834,7 @@ def _rewrote_bibliography(
                 # A citekey neither the pack nor its record gave stays the
                 # one the add derived.
                 citekey=entry.citekey or frontmatter.bib.citekey,
-                authors=frontmatter.bib.authors or entry.authors,
+                authors=frontmatter.bib.authors or entry.author_line,
                 year=frontmatter.bib.year or (str(entry.year) if entry.year else None),
                 doi=frontmatter.bib.doi or declared.get("doi"),
                 arxiv_id=frontmatter.bib.arxiv_id or declared.get("arxiv"),
@@ -1010,7 +1011,7 @@ def _literature_digest(entry: LiteratureEntry) -> str:
             [
                 entry.citekey or "",
                 entry.title or "",
-                entry.authors or "",
+                entry.author_line or "",
                 str(entry.year or ""),
                 # Where the text is fetched from is part of what was
                 # declared: a corrected address is a declaration that moved.

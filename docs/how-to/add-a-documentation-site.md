@@ -97,6 +97,17 @@ search result looking like a fact. Name it yourself:
 kennis corpus add -d https://example.org/manual/ --version 3.1
 ```
 
+Documentation with no versions at all - one edition, and no version in its
+address, as `https://casacore.github.io/python-casacore/` - takes the
+reserved name `unversioned`, which the refusal offers as a command you can
+run as printed. A pack declares it as `version: unversioned`, and in the
+window the Add dialog's **Use unversioned** fills the Version field:
+
+```
+kennis corpus add -d https://casacore.github.io/python-casacore/ --version unversioned
+kennis pack add -d https://casacore.github.io/python-casacore/ --version unversioned
+```
+
 `--version` also overrides what the address says. Like a project, a
 version becomes a folder, so it is letters, digits, `.`, `-` and `_`,
 beginning with a letter or a digit.
@@ -330,7 +341,7 @@ the same page in the other versions held, under **Also held**.
 | far fewer pages than the site has | the address names a folder inside the manual; start from its root |
 | exactly `--max-pages` pages | the site is larger than the limit; raise it or narrow the address |
 | "the page has no documentation in it" for every page | the site's theme is one kennis does not recognise yet; please report the address |
-| the add is refused because the address names no version | name one with `--version`, or in the Version field |
+| the add is refused because the address names no version | name one with `--version`, or in the Version field; `unversioned` for documentation that has none |
 | a page from `latest` is out of date | add the site again with `--refresh` |
 | a search shows an older release than you expected | the current version is not the one you want; see `kennis corpus version` |
 | nothing found, and the site works in a browser | the site may build its pages with JavaScript, which kennis does not run; or its `robots.txt` forbids crawlers |

@@ -5,6 +5,7 @@ filled in, the chooser for a path on this computer, and the add itself.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.datastructures import FormData
@@ -19,6 +20,7 @@ from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.intake import uploaded_as
 from kennis.engine.corpus.preview import check_lines, preview_paper, preview_site
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.docs.versions import UNVERSIONED
 from kennis.engine.events import EventSink
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui import words
@@ -44,7 +46,6 @@ from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
     action_page,
-    frame,
     from_htmx,
     refused_in_the_form,
 )
@@ -312,19 +313,42 @@ def preview_a_site(
     project: str = "",
     version: str = "",
     probe: str = "",
+    fill_version: str = Query("", alias="fill-version"),
 ) -> HTMLResponse:
+    """What a docs add would file the pages under. `fill-version` is the
+    Use unversioned button: the Version field is redrawn holding it, as the
+    reader's own answer rather than a suggestion, since they chose it."""
     first = next(iter(_lines(identifiers)), "")
     probed = bool(probe) and bool(first)
+    chosen = UNVERSIONED if fill_version == UNVERSIONED else version.strip()
     preview = preview_site(
         first,
         project=project.strip() or None,
-        version=version.strip() or None,
+        version=chosen or None,
         probe=probed,
+    )
+    filled = (
+        [
+            replace(field, value=UNVERSIONED)
+            for field in add_fields("site", default_group=None)
+            if field.name == "version"
+        ]
+        if fill_version == UNVERSIONED
+        else []
     )
     return TEMPLATES.TemplateResponse(
         request,
         "forms/add-preview.html",
-        {"lines": shown_site_preview(preview, probed=probed)},
+        {
+            "lines": shown_site_preview(preview, probed=probed),
+            "fill_version": (
+                f"/add/preview/site?fill-version={UNVERSIONED}"
+                if preview.version is None and first
+                else None
+            ),
+            "use_unversioned": words.USE_UNVERSIONED,
+            "filled": filled,
+        },
     )
 
 
@@ -353,9 +377,7 @@ def serve_skip(request: Request) -> HTMLResponse:
     """
     if from_htmx(request):
         return TEMPLATES.TemplateResponse(request, "skipped.html", {})
-    return TEMPLATES.TemplateResponse(
-        request, "skipped-page.html", frame(existing_corpus())
-    )
+    return TEMPLATES.TemplateResponse(request, "skipped-page.html", {})
 
 
 @router.get("/browse")
@@ -382,7 +404,7 @@ def serve_chooser(
     return TEMPLATES.TemplateResponse(
         request,
         "chooser-page.html",
-        {**context, "page": True, **frame(existing_corpus())},
+        {**context, "page": True},
     )
 
 

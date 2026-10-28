@@ -44,6 +44,7 @@ from pathlib import Path
 from kennis.context import Context
 from kennis.engine.atomic import remove_file, remove_tree
 from kennis.engine.backup import BackupReport, write_backup
+from kennis.engine.cancelling import stop_if_asked
 from kennis.engine.context.bundle import declare_packs, declared_packs, index_root_for
 from kennis.engine.context.index import index_bundle
 from kennis.engine.context.reset import removable_documents
@@ -73,7 +74,7 @@ from kennis.engine.docs.versions import (
     pages_of_version,
     project_versions,
 )
-from kennis.engine.errors import IndexBusy
+from kennis.engine.errors import IndexBusy, TaskCancelled
 from kennis.engine.events import Event, EventSink, Outcome
 from kennis.engine.history.history import (
     RestoredDocument,
@@ -625,31 +626,59 @@ def build_indexes(
         if restored is not None:
             restored.extend(put_back)
 
-    for name in [collection] if collection else list(COLLECTION_NAMES):
-        target = Collection(root=context.corpus_root, name=name)
-        if not target.contents().documents:
-            continue
-        try:
-            report = build_index(
-                CollectionLoader(target),
-                index_root=root,
-                binding=binding,
-                events=events,
-                embed_batch_size=context.settings.embedding.batch_size,
-                repository=repository,
+    try:
+        for name in [collection] if collection else list(COLLECTION_NAMES):
+            # Here as well as at each event: a lexical build emits none.
+            stop_if_asked()
+            target = Collection(root=context.corpus_root, name=name)
+            if not target.contents().documents:
+                continue
+            try:
+                report = build_index(
+                    CollectionLoader(target),
+                    index_root=root,
+                    binding=binding,
+                    events=events,
+                    embed_batch_size=context.settings.embedding.batch_size,
+                    repository=repository,
+                )
+            except IndexBusy:
+                busy.append(name)
+                continue
+            built.append(
+                BuiltIndex(
+                    collection=name,
+                    documents=report.document_count,
+                    chunks=report.chunk_count,
+                    elapsed_seconds=report.elapsed_seconds,
+                )
             )
-        except IndexBusy:
-            busy.append(name)
-            continue
-        built.append(
-            BuiltIndex(
-                collection=name,
-                documents=report.document_count,
-                chunks=report.chunk_count,
-                elapsed_seconds=report.elapsed_seconds,
-            )
-        )
+    except TaskCancelled:
+        # A build is swapped in whole, so one finished before the cancel is
+        # a correct index of the corpus as it stands. It is committed, as it
+        # would have been, and named: putting the old one back would only
+        # cost a rebuild, and "changed nothing" would not be true.
+        if not built:
+            raise
+        _commit_the_index(context, repository, collection, built)
+        raise TaskCancelled(_kept_when_cancelled(built)) from None
 
+    _commit_the_index(context, repository, collection, built)
+
+    return IndexBuild(
+        built=built,
+        busy=tuple(busy),
+        model_kind=binding.model.kind if binding.model else None,
+        model_name=binding.model.model if binding.model else None,
+    )
+
+
+def _commit_the_index(
+    context: Context,
+    repository: Repository,
+    collection: str | None,
+    built: Sequence[BuiltIndex],
+) -> None:
     documents = sum(index.documents for index in built)
     chunks = sum(index.chunks for index in built)
     with exclusively(context.corpus_root):
@@ -662,12 +691,13 @@ def build_indexes(
             summary=commit_summary({"documents": documents, "chunks": chunks}),
         )
 
-    return IndexBuild(
-        built=built,
-        busy=tuple(busy),
-        model_kind=binding.model.kind if binding.model else None,
-        model_name=binding.model.model if binding.model else None,
-    )
+
+def _kept_when_cancelled(built: Sequence[BuiltIndex]) -> str:
+    names = [index.collection for index in built]
+    if len(names) == 1:
+        return f"the {names[0]} index was finished first and was kept"
+    listed = f"{', '.join(names[:-1])} and {names[-1]}"
+    return f"the {listed} indexes were finished first and were kept"
 
 
 def synchronise_corpus(

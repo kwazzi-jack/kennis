@@ -37,6 +37,7 @@ from kennis.engine.pack.content import (
     content_digest,
     read_file,
     read_source,
+    selects,
 )
 from kennis.engine.pack.schema import ContentSource, GeneratedSource, Pack, load_pack
 from kennis.engine.pack.versions import SCHEMA_VERSION
@@ -143,7 +144,7 @@ def validate_pack(path: Path, *, events: EventSink | None = None) -> PackReport:
         )
 
     root = path.parent
-    problems = list(_overlapping(pack))
+    problems = overlapping(pack)
     checked = pack.generated is not None
     for section, source in _content_sources(pack):
         problems.extend(_checked_source(root, section, source, pack))
@@ -240,47 +241,12 @@ def _content_sources(pack: Pack) -> list[tuple[str, ContentSource]]:
     ]
 
 
-def _overlapping(pack: Pack) -> list[PackProblem]:
-    """Sources within one section where one tree contains another.
-
-    Compared as declared prefixes rather than as matched file sets: the
-    ambiguity is a property of the declaration, and comparing files would
-    make this check need the content to be present.
-
-    **Across sections is not an overlap.** Section 5's diff key carries the
-    section, so the same tree shipped to `notes` and to `context` has two
-    distinct destinations. Odd, but decidable.
+def overlapping(pack: Pack) -> list[PackProblem]:
+    """Declarations within one section that could deliver one file twice:
+    two sources, or a notes `file:` inside a notes `source:`. Read from the
+    declarations alone, so `pack add` refuses what `validate` would (#557).
     """
-    problems: list[PackProblem] = []
-    for section in _CONTENT_SECTIONS:
-        declared = [
-            source.source for name, source in _content_sources(pack) if name == section
-        ]
-        for index, first in enumerate(declared):
-            for second in declared[index + 1 :]:
-                if _contains(first, second) or _contains(second, first):
-                    problems.append(
-                        PackProblem(
-                            kind="overlapping-sources", path=first, other=second
-                        )
-                    )
-    return problems
-
-
-def _checked_shipped(root: Path, pack: Pack) -> list[PackProblem]:
-    """Every file a `file:` or `pages:` names, against `generated.files`.
-
-    Two findings no source has. A path two entries name is declared
-    twice, since each entry would deliver it. And a notes `file:` inside a
-    declared notes `source:` is an overlap, since the folder delivers it
-    too; across sections it is not, as for two sources.
-    """
-    problems: list[PackProblem] = []
-    seen: set[str] = set()
-    for relative in pack.shipped_files:
-        if relative in seen:
-            problems.append(PackProblem(kind="declared-twice", path=relative))
-        seen.add(relative)
+    problems = _overlapping(pack)
     for note in pack.corpus.note_files:
         for source in pack.corpus.note_sources:
             if _contains(source.source, note.file):
@@ -289,6 +255,76 @@ def _checked_shipped(root: Path, pack: Pack) -> list[PackProblem]:
                         kind="overlapping-sources", path=source.source, other=note.file
                     )
                 )
+    return problems
+
+
+def _overlapping(pack: Pack) -> list[PackProblem]:
+    """Sources within one section that could deliver one file twice.
+
+    Compared as declarations rather than as matched file sets: the
+    ambiguity is a property of the declaration, and comparing files would
+    make this check need the content to be present. Two trees overlap when
+    one contains the other; a source naming its files one by one overlaps
+    another only where that one would ship one of them too (2026-10-27),
+    so `./` naming `AGENTS.md` sits beside `context/`.
+
+    **Across sections is not an overlap.** Section 5's diff key carries the
+    section, so the same tree shipped to `notes` and to `context` has two
+    distinct destinations. Odd, but decidable.
+    """
+    problems: list[PackProblem] = []
+    for section in _CONTENT_SECTIONS:
+        declared = [
+            source for name, source in _content_sources(pack) if name == section
+        ]
+        for index, first in enumerate(declared):
+            for second in declared[index + 1 :]:
+                if _overlap(first, second):
+                    problems.append(
+                        PackProblem(
+                            kind="overlapping-sources",
+                            path=first.source,
+                            other=second.source,
+                        )
+                    )
+    return problems
+
+
+def _overlap(first: ContentSource, second: ContentSource) -> bool:
+    named_first, named_second = first.named_files, second.named_files
+    if named_first is None and named_second is None:
+        return _contains(first.source, second.source) or _contains(
+            second.source, first.source
+        )
+    if named_first is not None and named_second is not None:
+        return bool(set(named_first) & set(named_second))
+    named, patterned = (
+        (named_first, second) if named_first is not None else (named_second, first)
+    )
+    assert named is not None
+    return any(_ships(patterned, path) for path in named)
+
+
+def _ships(source: ContentSource, path: str) -> bool:
+    """Whether `source`'s patterns take the file at `path` in the pack."""
+    within = "/".join(PurePosixPath(source.source).parts)
+    if within and not _contains(within, path):
+        return False
+    return selects(path[len(within) + 1 :] if within else path, source)
+
+
+def _checked_shipped(root: Path, pack: Pack) -> list[PackProblem]:
+    """Every file a `file:` or `pages:` names, against `generated.files`.
+
+    A path two entries name is declared twice, since each entry would
+    deliver it. A notes `file:` inside a notes `source:` is `overlapping`'s.
+    """
+    problems: list[PackProblem] = []
+    seen: set[str] = set()
+    for relative in pack.shipped_files:
+        if relative in seen:
+            problems.append(PackProblem(kind="declared-twice", path=relative))
+        seen.add(relative)
     recorded = pack.generated.files if pack.generated is not None else None
     for relative in dict.fromkeys(pack.shipped_files):
         found = read_file(root, relative)
@@ -400,6 +436,7 @@ __all__ = [
     # Re-exported so a caller checking a digest has one import site whether
     # it is validating, updating or installing.
     "content_digest",
+    "overlapping",
     "validate_pack",
     "version_refusal",
 ]

@@ -34,7 +34,6 @@ from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
     action_page,
-    frame,
     from_htmx,
     problem_page,
     refused,
@@ -172,7 +171,6 @@ def serve_corpus(request: Request) -> HTMLResponse:
             "packs": describe_holdings(installed_packs(context)),
             "nothing_held": words.NOTHING_HELD,
             "no_packs": words.NO_PACKS,
-            **frame(context),
         },
     )
 
@@ -194,7 +192,6 @@ def serve_collection(request: Request, collection: str) -> HTMLResponse:
             "groups": groups,
             "summary": words.describe_count(held),
             "unreadable": words.unreadable_note(unreadable),
-            **frame(context),
         },
     )
 
@@ -372,7 +369,6 @@ def return_the_corpus(request: Request, form: PostedForm) -> Response:
                 "changed": changed,
                 "returned_index": words.RETURNED_INDEX,
                 "index_now": words.INDEX_NOW,
-                **frame(existing_corpus()),
             },
         )
     )

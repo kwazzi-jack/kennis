@@ -28,6 +28,7 @@ from urllib.parse import quote
 
 from kennis.engine.corpus.preview import LineCheck, PaperPreview, SitePreview
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.literature.names import split_names, unbraced
 from kennis.gui import words
 from kennis.gui.repairs import WayOut, ways_out_for
 from kennis.render.refusals import refusal_fact
@@ -325,8 +326,7 @@ def shown_paper_found(
     """The card for the paper arXiv named, or None when it named none."""
     if preview.recognised is None or preview.title is None or preview.refusal:
         return None
-    names = [name.strip() for name in (preview.authors or "").split(" and ")]
-    names = [name for name in names if name]
+    names = [unbraced(name) for name in split_names(preview.authors or "")]
     identifier = preview.recognised.value
     return ShownFound(
         label=words.found_on_arxiv(identifier),

@@ -59,7 +59,7 @@ import textwrap
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import lru_cache
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import click
 from rich.console import Console, RenderableType
@@ -100,6 +100,7 @@ _progress_console = Console(theme=_THEME, highlight=False, stderr=True)
 
 # Advances a bar: no arguments steps it by one, `(done, total)` sets both.
 type ProgressUpdate = Callable[..., None]
+type MessageLevel = Literal["all", "warnings", "errors"]
 
 
 # ---------------------------------------------------------------------------
@@ -621,7 +622,7 @@ def note(text: str, *, stderr: bool = False) -> None:
     would end up in whatever file the user redirected it to. Everywhere else
     stdout is the report and a diagnostic belongs in it.
     """
-    if _quiet:
+    if _quiet or _messages == "errors":
         return
     _diagnostic("warning", "warning", text, stderr=stderr)
 
@@ -654,7 +655,19 @@ _HINT_INDENT = " " * _CONTENT_INDENT
 def hint(text: str, *, stderr: bool = False) -> None:
     """`hint: ...` - the command to run next.
 
-    `stderr` as for `note`: it follows the warning it belongs to.
+    `stderr` as for `note`: it follows the warning it belongs to. Hidden
+    unless `terminal.messages` is `all`; an error's own way out is `remedy`.
+    """
+    if _messages != "all":
+        return
+    remedy(text, stderr=stderr)
+
+
+def remedy(text: str, *, stderr: bool = False) -> None:
+    """`hint: ...` under an `error:` - what resolves the failure.
+
+    Drawn as a hint, and shown whatever `terminal.messages` says, because it
+    is part of the error: hiding it would leave a failure with no way out.
     """
     if _quiet:
         return
@@ -696,11 +709,25 @@ class _StackedProgress(Progress):
             label = Text(f"{frame} ", style=rich_style_name("spinner"))
             label.append(task.description, style="heading.line")
             yield label
+            item = task.fields.get("item")
+            if isinstance(item, str):
+                yield Text(
+                    f"{_PROGRESS_INDENT}{item}",
+                    style="muted",
+                    no_wrap=True,
+                    overflow="ellipsis",
+                )
         # Padding rather than table.padding, which is per-cell and so would
         # indent every column instead of the row.
         yield Padding(
             self.make_tasks_table(self.tasks), (0, 0, 0, len(_PROGRESS_INDENT))
         )
+        # Under the bar rather than in the report: it matters only while the
+        # task runs, and the bar is erased when it ends.
+        if _task_keys is not None:
+            keys = Text(f"{_PROGRESS_INDENT}{_task_keys}", style="muted")
+            _MESSAGE_HIGHLIGHTER.highlight(keys)
+            yield keys
 
 
 @contextlib.contextmanager
@@ -710,7 +737,9 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
     Called with no arguments it advances by one; called with `(done, total)`
     it sets both, which is what a step whose total is not known up front needs
     - chunking cannot say how many chunks there are until it has finished, and
-    renders as an indeterminate spinner until it can.
+    renders as an indeterminate spinner until it can. Called with `item=` it
+    names what is in hand, on a line of its own under the label, and moves
+    nothing.
 
     **On stderr, and transient.** The bar is progress, not output: it is
     erased when the step ends, leaving the `operation` line that summarises
@@ -724,7 +753,12 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
     """
     if not progress_wanted():
 
-        def undrawn(completed: int | None = None, total: int | None = None) -> None:
+        def undrawn(
+            completed: int | None = None,
+            total: int | None = None,
+            *,
+            item: str | None = None,
+        ) -> None:
             return None
 
         yield undrawn
@@ -740,7 +774,15 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
     ) as progress:
         task_id = progress.add_task(description, total=total)
 
-        def update(completed: int | None = None, total: int | None = None) -> None:
+        def update(
+            completed: int | None = None,
+            total: int | None = None,
+            *,
+            item: str | None = None,
+        ) -> None:
+            if item is not None:
+                progress.update(task_id, item=item)
+                return
             if completed is None and total is None:
                 progress.advance(task_id)
                 return
@@ -759,6 +801,12 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
 # primitive.
 _quiet = False
 _progress_wanted = True
+# What the keys do while a service task is watched, drawn under its bar.
+_task_keys: str | None = None
+# `terminal.messages`, from the configuration rather than an option, so it
+# is set apart from `set_verbosity`: a configuration that will not load
+# leaves it at "all", and the refusal is one of the messages it shows.
+_messages: MessageLevel = "all"
 # Set by a command whose stdout is a document for a program. Every
 # diagnostic then goes to stderr - including the failure `KennisGroup`
 # prints after the command has already raised, which is why this is
@@ -773,10 +821,26 @@ def set_verbosity(*, quiet: bool = False, progress: bool = True) -> None:
     report, which matters where one process runs several (a test, or a
     caller that invokes the group directly).
     """
-    global _quiet, _progress_wanted, _stdout_is_payload
+    global _quiet, _progress_wanted, _stdout_is_payload, _task_keys
     _quiet = quiet
     _progress_wanted = progress
     _stdout_is_payload = False
+    _task_keys = None
+
+
+def set_task_keys(text: str | None) -> None:
+    """Say `text` under every bar until the next invocation: what Ctrl-C
+    and Ctrl-Z do to the task being watched."""
+    global _task_keys
+    _task_keys = text
+
+
+def set_messages(level: MessageLevel) -> None:
+    """Apply `terminal.messages` for the rest of the process: `warnings`
+    hides hints, `errors` hides warnings too. `failure`, `remedy` and every
+    report line are drawn whatever it says."""
+    global _messages
+    _messages = level
 
 
 def declare_stdout_a_payload() -> None:

@@ -9,6 +9,8 @@
 {% if ways | default(()) %}<div class="notice">{{ icon("triangle-alert") }}<div>{% for line in lines %}<p>{{ line.text }}</p>{% endfor %}
 <p class="ways-out">{% for way in ways %}{% if way.outside %}<a class="button" href="{{ way.href }}" target="_blank" rel="noopener noreferrer">{{ icon("arrow-up-right") }}{{ way.label }}</a>{% else %}<a class="button" href="{{ way.href }}" hx-get="{{ way.href }}" hx-target="#dialog" hx-swap="innerHTML">{{ way.label }}</a>{% endif %} {% endfor %}</p></div></div>
 {% else %}{% for line in lines %}<p class="{{ line.role }}">{{ line.text }}</p>{% endfor %}{% endif %}
-{% for field, value in redraws | default([]) %}<span class="entry-row" id="add-{{ field.name }}-entry" hx-swap-oob="true">{{ typed_input(field, value) }}</span>
+{% if fill_version | default(none) %}<p class="ways-out"><button type="button" class="ghost" data-fills="version" hx-get="{{ fill_version }}" hx-include="closest form" hx-target="#add-preview">{{ use_unversioned }}</button></p>{% endif %}
+{% for field in filled | default([]) %}<span class="entry-row" id="add-{{ field.name }}-entry" hx-swap-oob="true">{{ typed_input(field) }}</span>
+{% endfor %}{% for field, value in redraws | default([]) %}<span class="entry-row" id="add-{{ field.name }}-entry" hx-swap-oob="true">{{ typed_input(field, value) }}</span>
 <span id="add-prefilled-{{ field.name }}" hx-swap-oob="true"><input type="hidden" name="prefilled-{{ field.name }}" value="{{ value }}"></span>
 {% endfor %}

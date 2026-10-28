@@ -177,17 +177,47 @@ added to it later ship too; a pattern such as `'~/reports/*.md'` is
 expanded as `corpus add` expands one. Documentation pages are files, as
 for `corpus add -d`: a folder or a pattern is refused.
 
+**Context can be one file at a time.** A context file already in the pack
+is declared by its folder, with an `include:` naming it, and further files
+of that folder join the list:
+
+```
+kennis pack add -c context/constraints.md context/glossary.md --group context
+kennis pack add -c AGENTS.md
+```
+
+```yaml
+context:
+  - source: "context/"
+    group: "context"
+    include:
+      - "constraints.md"
+      - "glossary.md"
+  - source: "./"
+    include:
+      - "AGENTS.md"
+```
+
+`-c` writes to the pack's own `context:` section, not under `corpus:`,
+because context is copied into each project's `.context/` folder rather
+than into the corpus; `-n` is the one for the corpus's `notes`.
+
 **Each input is added or refused on its own**, as with `corpus add`, and
 the report has the same shape: `+` for an entry added, `=` for one the pack
 already declares, `!` for one refused, with the reason on its line - a file
 given as a paper without `--identifier`, say. The good inputs are written
 even when another is refused, and nothing is written when none was added.
-The file is edited in place: your comments, layout and key order stay, and
-each entry is added at the end of its section. kennis's own folders - the
+The file is edited in place, and each entry is added at the end of its
+section. Giving a folder whose files were added one by one declares the
+whole folder, so a file put in it later ships too. An entry that would
+ship a file another entry ships is refused, naming both: declaring
+`files/` itself, where `pack add` keeps its copies, is the usual way to
+meet it. kennis's own folders - the
 corpus, its configuration, state and log - are never shipped.
 
 `kennis pack remove` takes entries out, by citekey, identifier, address,
-docs project, shipped file or source folder. It names what it matched and
+docs project, shipped file, source folder, or a context file a folder's
+`include:` names (the entry goes with its last file). It names what it matched and
 asks first, as `corpus remove` does; `-y` does not ask:
 
 ```
@@ -202,9 +232,65 @@ deleted; nothing outside `files/` ever is. Both commands end by running
 
 **The file is yours and kennis's both**, as `pyproject.toml` is yours and
 `uv`'s: the commands edit it, and so may you, by hand. Edit anything above
-the generated block; kennis keeps your comments, layout and key order when
-it writes, and refuses - naming what is wrong - a file that is not YAML or
-not a pack.
+the generated block. kennis refuses, naming what is wrong, a file that is
+not YAML or not a pack.
+
+**Each entry kennis writes is in braces, one key per line**, and entries
+are set apart by a blank line, so a paper with forty authors still reads
+as one entry:
+
+```yaml
+  literature:
+    - {
+        identifier: "1101.1764",
+        citekey: "smirnovRevisitingRadioInterferometer2011",
+        title: "Revisiting the radio interferometer measurement equation. I. A full-sky Jones formalism",
+        year: 2011,
+        authors: [
+          "Oleg M. Smirnov",
+        ],
+      }
+```
+
+The keys come in one order: for a paper `identifier`, `url`, `file`,
+`citekey`, `title`, `year`, `group`, then `authors`, a list, last; for a
+docs project `project`, `base_url`, `version`, `pages`; for notes and
+context `source` (or `url`, `file`), `title`, `group`, `include`,
+`exclude`. An identifier is written the one way kennis spells it: `doi:`
+and a trailing full stop dropped, an arXiv DOI as the arXiv identifier.
+Text beyond ASCII is written as a `\uXXXX` escape, which YAML reads back as
+the character.
+
+**An entry kennis changes is written again whole**, in that form - when
+`pack update` describes a paper, or a page or file joins or leaves a list
+inside it. What lies between entries stays as you wrote it, comments
+included; a comment *inside* an entry kennis changes is not kept (see
+below).
+
+`kennis pack format` writes every entry that way at once, and is what to
+run on a pack written before authors were a list:
+
+```
+kennis pack format
+```
+
+A pack whose `authors` is one string, `"Smirnov, O and Heywood, I"`, is
+refused until it is formatted.
+
+**Each author is one name as BibLaTeX writes it**: `Family, Given` (or
+`Given Family`), with braces around a name that holds the word "and", so it
+stays one name - `"{Barnes and Noble}"` - and `"others"` as the last item
+for a list cut short. kennis braces a collaboration's name itself when a
+registry sends one holding "and", and joins the list with ` and ` for the
+corpus, which keeps BibLaTeX's one string. A name wholly in braces is its
+own surname for the citekey: `{Event Horizon Telescope Collaboration}`
+gives `eventHorizonTelescopeCollaboration...`.
+
+**Two things about comments.** YAML has comments, but the parser kennis
+reads a pack with drops them, so kennis writes an entry from its values.
+A comment *between* entries is kept, because kennis never rewrites the
+lines between entries; a comment *inside* an entry is lost when kennis
+writes that entry again. Put a comment about an entry on the line above it.
 
 ## Where it lands
 
@@ -283,17 +369,9 @@ seconds to answer one. So DOIs are looked up four at a time, since doi.org
 asks for no delay, and arXiv identifiers one at a time, as arXiv asks; while
 they are looked up, `pack add` and `pack update` draw a bar counting them.
 
-Only the fields the entry left out are written, at the head of the entry
-and before what you wrote:
-
-```yaml
-  literature:
-    - citekey: "smirnovRevisitingRadioInterferometer2011"
-      title: "Revisiting the radio interferometer measurement equation. I. A full-sky Jones formalism"
-      authors: "Oleg M. Smirnov"
-      year: 2011
-      identifier: "1101.1764"
-```
+Only the fields the entry left out are added, and a field you gave is
+never overridden. The entry is then written again in kennis's form, as
+shown in [the layout above](#add-and-remove-entries).
 
 From then on the citekey is the entry's, so the paper is not looked up
 again and its citekey does not change unless you change it - which you may.

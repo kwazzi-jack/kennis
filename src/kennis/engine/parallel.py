@@ -19,10 +19,15 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from typing import Final
 
+from kennis.engine.cancelling import stop_if_asked
+
 # How many requests kennis has in flight at once, to one host or to several.
 # Four is a browser's habit halved: enough to hide a slow registry's
 # latency, few enough that no host sees kennis as more than a person.
 PARALLEL_REQUESTS: Final = 4
+
+# How often the wait for fetches looks for a cancellation.
+_CANCEL_STEP_SECONDS: Final = 0.25
 
 
 def fetched_in_parallel[Item, Result](
@@ -69,7 +74,12 @@ def fetched_in_parallel[Item, Result](
         }
         pending = set(futures)
         while pending:
-            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            # In steps, so a cancelled task stops waiting for requests that
+            # may take a minute to answer.
+            done, pending = wait(
+                pending, timeout=_CANCEL_STEP_SECONDS, return_when=FIRST_COMPLETED
+            )
+            stop_if_asked()
             for future in done:
                 result = future.result()
                 if on_fetched is not None:

@@ -643,8 +643,8 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # /context-sync gone, because the window copies no pack into a project (14g);
 # and POST /copy, a document copied into a note of the person's (14g, #514);
 # 56th and 57th: GET and POST /supply, the papers kennis could not fetch
-# (#542)
-EXPECTED_ROUTES = 57
+# (#542); 58th: POST /job/{id}/cancel, a task cancelled from the window
+EXPECTED_ROUTES = 58
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

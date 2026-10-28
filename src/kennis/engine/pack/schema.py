@@ -45,7 +45,11 @@ from pydantic import (
 )
 from yaml.nodes import MappingNode, ScalarNode
 
-from kennis.engine.docs.versions import checked_version, version_in_address
+from kennis.engine.docs.versions import (
+    UNVERSIONED,
+    checked_version,
+    version_in_address,
+)
 from kennis.engine.errors import InputError, PackInvalid
 from kennis.engine.groups import (
     group_problem,
@@ -57,6 +61,7 @@ from kennis.engine.literature.identifiers import (
     PaperIdentifier,
     identifier_if_reference,
 )
+from kennis.engine.literature.names import joined_names, split_names
 from kennis.engine.pack.versions import SCHEMA_VERSION
 
 type JsonSchema = dict[str, Any]
@@ -179,7 +184,9 @@ class LiteratureEntry(BaseModel):
     # publisher (Brian, 2026-10-26). Excludes `url`.
     file: str | None = None
     group: str | None = None
-    authors: str | None = None
+    # One name an item in the file (Brian, 2026-10-27, #558); the corpus
+    # keeps BibTeX's one string, which `author_line` makes.
+    authors: list[str] | None = None
     # An int, because `year_min` filtering compares numerically and a string
     # year invites a lexicographic comparison bug at the filter.
     year: int | None = None
@@ -260,6 +267,11 @@ class LiteratureEntry(BaseModel):
         return parsed
 
     @property
+    def author_line(self) -> str | None:
+        """The authors as one BibTeX string, as the corpus holds them."""
+        return None if self.authors is None else joined_names(self.authors)
+
+    @property
     def key(self) -> str:
         """What a sync diffs this declaration on: the identifier with its
         kind, never the citekey. The kind is part of it so a DOI and an
@@ -313,13 +325,15 @@ class DocsEntry(BaseModel):
             if self.version is None:
                 raise ValueError(
                     "local pages name no version of the documentation: add "
-                    "`version:`, such as `version: latest`"
+                    "`version:`, such as `version: latest`, or `version: "
+                    f"{UNVERSIONED}` when the documentation has no versions"
                 )
             return self
         if self.version is None and version_in_address(self.base_url) is None:
             raise ValueError(
                 f"'{self.base_url}' names no version of the documentation: "
-                "add `version:`, such as `version: latest`"
+                "add `version:`, such as `version: latest`, or `version: "
+                f"{UNVERSIONED}` when the documentation has no versions"
             )
         return self
 
@@ -356,6 +370,23 @@ class ContentSource(BaseModel):
     @classmethod
     def _stays_under_the_pack_root(cls, value: str) -> str:
         return _inside_the_pack(value, named="source")
+
+    @property
+    def named_files(self) -> tuple[str, ...] | None:
+        """The files this source ships, as paths in the pack, when its
+        `include:` names them one by one rather than by pattern; None when
+        it ships a folder by pattern.
+
+        Known from the declaration alone, which is what lets `pack add -c
+        <file>` declare one file and the overlap check tell two entries for
+        one folder apart without reading the files (Brian, 2026-10-27).
+        """
+        if "include" not in self.model_fields_set or any(
+            character in pattern for pattern in self.include for character in "*?["
+        ):
+            return None
+        within = "/".join(PurePosixPath(self.source).parts)
+        return tuple(f"{within}/{name}" if within else name for name in self.include)
 
     @field_validator("group")
     @classmethod
@@ -602,10 +633,31 @@ def load_pack(text: str) -> Pack:
     if not isinstance(document, dict):
         kind = type(document).__name__
         raise PackInvalid(f"a pack file is a mapping of sections, not a {kind}")
+    _refuse_authors_in_one_string(document)
     try:
         return Pack.model_validate(document)
     except ValidationError as error:
         raise PackInvalid(_field_paths(error)) from error
+
+
+def authors_from_line(line: str) -> list[str] | None:
+    """BibTeX's one string of authors as the list a pack holds, or None
+    when it names nobody. A name in braces stays one, as in BibLaTeX."""
+    return split_names(line) or None
+
+
+def _refuse_authors_in_one_string(document: dict[object, object]) -> None:
+    """A paper's `authors` as one string, as kennis wrote them before
+    #558, refused naming the command that writes them as a list."""
+    corpus = document.get("corpus")
+    literature = corpus.get("literature") if isinstance(corpus, dict) else None
+    for index, entry in enumerate(literature if isinstance(literature, list) else []):
+        if isinstance(entry, dict) and isinstance(entry.get("authors"), str):
+            raise PackInvalid(
+                f"corpus.literature.{index}.authors is one string; a paper's "
+                "authors are a list, one name an item",
+                resolution="kennis pack format",
+            )
 
 
 def schema_path() -> Path:
@@ -646,6 +698,7 @@ __all__ = [
     "NoteLink",
     "Pack",
     "PackIdentity",
+    "authors_from_line",
     "is_pack_id",
     "load_pack",
     "read_yaml",
