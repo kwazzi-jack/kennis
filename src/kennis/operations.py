@@ -42,7 +42,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from kennis.context import Context
-from kennis.engine.atomic import remove_file, remove_tree
 from kennis.engine.backup import BackupReport, write_backup
 from kennis.engine.cancelling import stop_if_asked
 from kennis.engine.context.bundle import declare_packs, declared_packs, index_root_for
@@ -69,10 +68,9 @@ from kennis.engine.corpus.sync import (
     sync_corpus,
 )
 from kennis.engine.docs.versions import (
-    current_version_file,
     make_current,
     pages_of_version,
-    project_versions,
+    removed_version,
 )
 from kennis.engine.errors import IndexBusy, TaskCancelled
 from kennis.engine.events import Event, EventSink, Outcome
@@ -441,26 +439,17 @@ def remove_docs_version(context: Context, project: str, version: str) -> Removed
     rather than keeping a version alive that the reader removed. A record
     of the current version that named it goes too, so the newest version
     left is current; one naming another version stays. A project left with
-    no version is removed. Recoverable through git like any removal.
+    no version is removed (`versions.removed_version`, which a sync uses
+    too). Recoverable through git like any removal.
     """
 
     def removed(staged: Context, sink: EventSink | None) -> RemovedVersion:
         docs = Collection(root=staged.corpus_root, name="docs")
-        project_dir = docs.path / project
         # Counted in the mirror, which nothing else writes to.
         pages = pages_of_version(docs.path, project, version)
-        remove_tree(project_dir / version)
-        record = current_version_file(docs.path, project)
-        if record.is_file() and record.read_text(encoding="utf-8").strip() == version:
-            remove_file(record)
-        left = project_versions(docs.path).get(project)
-        if left is None:
-            remove_tree(project_dir)
+        current = removed_version(docs.path, project, version)
         return RemovedVersion(
-            project=project,
-            version=version,
-            pages=pages,
-            current=left.current if left is not None else None,
+            project=project, version=version, pages=pages, current=current
         )
 
     return _prepared_then_published(

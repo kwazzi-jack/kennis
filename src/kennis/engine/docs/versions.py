@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from kennis.engine.atomic import replace_file
+from kennis.engine.atomic import remove_file, remove_tree, replace_file
 from kennis.engine.corpus.layout import iter_documents
 from kennis.engine.errors import InputError
 from kennis.engine.frontmatter import split_frontmatter
@@ -220,6 +220,32 @@ def pages_of_version(docs_root: Path, project: str, version: str) -> int:
     return sum(1 for _ in iter_documents(docs_root / project / version))
 
 
+def removed_version(docs_root: Path, project: str, version: str) -> str | None:
+    """Remove one version's folder whole, a record of the current version
+    that named it, and the project's folder when nothing but its record is
+    left; the project's current version afterwards, or None when it holds
+    none (#489).
+
+    `corpus remove --project --version` and a sync dropping a pack's
+    version both come here, so the two cannot disagree about what is left
+    (Brian, 2026-10-28). A file in the project that is not a version - a
+    page from before versions - keeps the project's folder.
+    """
+    project_dir = docs_root / project
+    # Already gone when a sync's removal of its last page emptied it.
+    if (project_dir / version).is_dir():
+        remove_tree(project_dir / version)
+    record = current_version_file(docs_root, project)
+    if record.is_file() and record.read_text(encoding="utf-8").strip() == version:
+        remove_file(record)
+    left = project_versions(docs_root).get(project)
+    if project_dir.is_dir() and all(
+        child.name == CURRENT_FILENAME for child in project_dir.iterdir()
+    ):
+        remove_tree(project_dir)
+    return left.current if left is not None else None
+
+
 def _unheld(choice: str, held: Mapping[str, ProjectVersions]) -> InputError:
     listing = "; ".join(
         f"{project}: {', '.join(versions.held)}" for project, versions in held.items()
@@ -277,6 +303,7 @@ __all__ = [
     "make_current",
     "pages_of_version",
     "project_versions",
+    "removed_version",
     "version_in_address",
     "version_order",
     "versions_holding",

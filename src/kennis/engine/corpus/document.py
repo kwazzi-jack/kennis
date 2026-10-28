@@ -412,6 +412,24 @@ def remove_document(document: Document) -> None:
     remove_file(document.md_path, missing_ok=True)
 
 
+def remove_empty_groups(directory: Path, *, collection: Path) -> None:
+    """Remove `directory` and each folder above it while it is empty,
+    stopping at `collection`, which always stays.
+
+    For what a pack's removal empties (Brian, 2026-10-28): a group exists
+    only as a folder, so one left empty is a group holding nothing that the
+    tree and `corpus status` would go on showing. Empty means no entry at
+    all, so a file of the person's - a dotfile included - keeps its folder.
+    """
+    stop = collection.resolve()
+    current = directory
+    while current.resolve() != stop and current.resolve().is_relative_to(stop):
+        if not current.is_dir() or any(current.iterdir()):
+            return
+        current.rmdir()
+        current = current.parent
+
+
 def _asset_name(name: str) -> str:
     """Where a kept original goes inside its document's directory.
 

@@ -46,9 +46,14 @@ from kennis.engine.corpus.add import (
 )
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.copying import copied_note
-from kennis.engine.corpus.document import Document, move_document, write_document
+from kennis.engine.corpus.document import (
+    Document,
+    move_document,
+    remove_empty_groups,
+    write_document,
+)
 from kennis.engine.corpus.intake import Converted, convert_local_file, convert_url
-from kennis.engine.corpus.layout import relative_to_corpus
+from kennis.engine.corpus.layout import iter_documents, relative_to_corpus
 from kennis.engine.corpus.moving import holding, move_target
 from kennis.engine.corpus.schema import (
     Bibliography,
@@ -58,6 +63,7 @@ from kennis.engine.corpus.schema import (
     Source,
     SourceFormat,
 )
+from kennis.engine.docs.versions import removed_version, version_in_address
 from kennis.engine.errors import DocumentInvalid, InputError, KennisError
 from kennis.engine.events import (
     Event,
@@ -391,10 +397,12 @@ def _relocated(collection: Collection, plan: _Plan) -> _Plan:
             target = move_target(
                 collection, document, group=group, title=document.frontmatter.title
             )
+        moved_from = holding(document)
         held[action.address] = (
             existing,
             move_document(document, target_md_path=target),
         )
+        remove_empty_groups(moved_from, collection=collection.path)
         actions.append(
             replace(action, verdict="rewrite") if action.verdict == "keep" else action
         )
@@ -636,7 +644,7 @@ def _fetched_literature(
     for action in plan.actions:
         declaration = action.declaration
         if action.verdict == "delete":
-            collection.remove(plan.held[action.address][1])
+            _removed(collection, plan.held[action.address][1])
             continue
         if action.verdict in {"rewrite", "adopt"} and declaration is not None:
             _rewrote_bibliography(
@@ -702,23 +710,25 @@ def _crawled_docs(
     events: EventSink | None,
     progress: _Progress,
 ) -> list[str]:
-    """Crawl the projects that are missing, drop the ones that went.
+    """Crawl the versions that are missing, drop the ones that went.
 
-    **`keep` does not re-crawl.** A crawl is hundreds of requests, the
-    design's diff key for docs is the project alone, and refreshing a
-    site is the reader's decision, made with `corpus add -d --refresh`
-    (#277, #489). A plain add of a held site writes nothing.
+    **`keep` does not re-crawl.** A crawl is hundreds of requests, and
+    refreshing a site is the reader's decision, made with `corpus add -d
+    --refresh` (#277, #489). A plain add of a held site writes nothing.
 
-    A delete removes every page of the project, because the unit of
-    declaration is the project and leaving some pages would leave a
-    project nothing declares and nothing would ever clean it.
+    A delete removes every page a pack holds of that version of the
+    project, because the unit of declaration is the version (Brian,
+    2026-10-28); leaving some would leave a version nothing declares and
+    nothing would ever clean. Its folder goes when that empties it.
     """
     collection = Collection(root=corpus_root, name="docs")
     failed: list[str] = []
     for action in plan.actions:
         declaration = action.declaration
         if action.verdict == "delete":
-            _removed_project(collection, action.address)
+            held = plan.held[action.address][1].frontmatter
+            assert isinstance(held, DocsFrontmatter)
+            _dropped_version(collection, held.docs.project, held.docs.version)
             continue
         if action.verdict not in _CRAWLED:
             continue
@@ -758,7 +768,9 @@ def _crawled_docs(
         # Every page, including those the crawl found already held: they
         # kept the old owner and digest, so the next sync judged the
         # project changed again and crawled it again, every time.
-        _stamped_project(collection, entry.project, declaration)
+        _stamped_version(
+            collection, entry.project, _declared_version(entry), declaration
+        )
         if not any(
             one.outcome in (Outcome.ADDED, Outcome.UNCHANGED) for one in report.outcomes
         ):
@@ -766,17 +778,21 @@ def _crawled_docs(
     return failed
 
 
-def _stamped_project(
-    collection: Collection, project: str, declaration: Declaration
+def _stamped_version(
+    collection: Collection,
+    project: str,
+    version: str | None,
+    declaration: Declaration,
 ) -> None:
-    """Mark every page of `project` as the declaring pack's, at its digest."""
+    """Mark the pages of one version of `project` as the declaring pack's,
+    at its digest. Never a page of the person's: one they added into a
+    pack's version is still theirs, and stamping it would let the pack
+    remove it later."""
     owner = f"pack:{declaration.pack_id}"
-    for document in collection.contents().documents:
+    for document in _pages_of(collection, project, version):
         frontmatter = document.frontmatter
-        if not (
-            isinstance(frontmatter, DocsFrontmatter)
-            and frontmatter.docs.project == project
-        ):
+        assert isinstance(frontmatter, DocsFrontmatter)
+        if frontmatter.owner == "user":
             continue
         if (
             frontmatter.owner == owner
@@ -794,14 +810,38 @@ def _stamped_project(
         write_document(document.md_path, frontmatter=updated, body=document.body)
 
 
-def _removed_project(collection: Collection, project: str) -> None:
-    for document in list(collection.contents().documents):
-        frontmatter = document.frontmatter
-        if (
-            isinstance(frontmatter, DocsFrontmatter)
-            and frontmatter.docs.project == project
-        ):
-            collection.remove(document)
+def _pages_of(
+    collection: Collection, project: str, version: str | None
+) -> list[Document]:
+    """Every page of one version of `project`."""
+    return [
+        document
+        for document in collection.contents().documents
+        if isinstance(document.frontmatter, DocsFrontmatter)
+        and document.frontmatter.docs.project == project
+        and document.frontmatter.docs.version == version
+    ]
+
+
+def _dropped_version(collection: Collection, project: str, version: str | None) -> None:
+    """Remove a pack's pages of one version of `project`; then the version,
+    as `corpus remove --project --version` removes one, when no document is
+    left in it. A page of the person's keeps the version."""
+    for document in _pages_of(collection, project, version):
+        if document.frontmatter.owner != "user":
+            _removed(collection, document)
+    if version is None:
+        return
+    if not any(iter_documents(collection.path / project / version)):
+        removed_version(collection.path, project, version)
+
+
+def _removed(collection: Collection, document: Document) -> None:
+    """Remove a pack's document, and the groups that leaves empty (Brian,
+    2026-10-28). The person's own removals keep their folders for now."""
+    folder = holding(document)
+    collection.remove(document)
+    remove_empty_groups(folder, collection=collection.path)
 
 
 def _rewrote_bibliography(
@@ -894,16 +934,24 @@ def _held_papers(collection: Collection) -> dict[str, tuple[Existing, Document]]
 
 
 def _docs_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
-    """Documentation projects. The unit of declaration is the project.
+    """Documentation, by version of a project: `docs_key`, which is also
+    the version's folder (Brian, 2026-10-28). A project declared at two
+    versions, by one pack or two, is two declarations; one version two
+    packs declare is one, the incumbent's.
 
-    A project is many documents on disk, so `held` keeps one of its
-    pages as the representative - they were written by one crawl and
-    agree about what was declared - and a delete removes all of them.
+    A version is many documents on disk, so `held` keeps one of its pages
+    as the representative - written by one crawl, they agree about what was
+    declared - and a pack's page before a page of the person's, so a page
+    they added into a pack's version does not make the version theirs.
     """
     declarations, entries = _declared(
         packs,
         listed=lambda pack, files: [
-            (entry.project, _docs_digest(entry, files), entry)
+            (
+                docs_key(entry.project, _declared_version(entry)),
+                _docs_digest(entry, files),
+                entry,
+            )
             for entry in pack.corpus.docs
         ],
     )
@@ -913,9 +961,12 @@ def _docs_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
         frontmatter = document.frontmatter
         if not isinstance(frontmatter, DocsFrontmatter):
             continue
-        project = frontmatter.docs.project
-        if project not in held:
-            held[project] = (_declared_existing(project, document), document)
+        key = docs_key(frontmatter.docs.project, frontmatter.docs.version)
+        incumbent = held.get(key)
+        if incumbent is None or (
+            incumbent[1].frontmatter.owner == "user" and frontmatter.owner != "user"
+        ):
+            held[key] = (_declared_existing(key, document), document)
     return _Plan(
         actions=resolve(declarations, {one: held[one][0] for one in held}),
         held=held,
@@ -923,6 +974,20 @@ def _docs_plan(corpus_root: Path, packs: tuple[InstalledPack, ...]) -> _Plan:
         entries=entries,
         unreadable=_unreadable_in(collection),
     )
+
+
+def docs_key(project: str, version: str | None) -> str:
+    """A docs declaration's address: `<project>/<version>`, its folder; a
+    page from before versions (#489) is its project alone."""
+    return f"{project}/{version}" if version is not None else project
+
+
+def _declared_version(entry: DocsEntry) -> str | None:
+    """The version a pack's docs entry is filed under: the one it names,
+    else the one in its address, which the schema requires one of."""
+    if entry.version is not None:
+        return entry.version
+    return version_in_address(entry.base_url) if entry.base_url else None
 
 
 def _declared(
@@ -1092,7 +1157,7 @@ def _applied(
     """Carry out one action. `keep` and `yours` write nothing; `edited` is
     `_kept_as_theirs`'s."""
     if action.verdict == "delete":
-        collection.remove(plan.held[action.address][1])
+        _removed(collection, plan.held[action.address][1])
         return
     if action.verdict not in {"write", "rewrite", "adopt"}:
         return
@@ -1121,7 +1186,7 @@ def _kept_as_theirs(
     mine = copied_note(collection, record, held)
     declaration = action.declaration
     if declaration is None:
-        collection.remove(held)
+        _removed(collection, held)
     else:
         content = _content_of(declaration, plan.entries.get(action.address), client)
         _rewritten(held, declaration, content)

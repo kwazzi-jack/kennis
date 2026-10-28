@@ -460,7 +460,8 @@ def test_a_crawl_that_fails_is_reported_and_not_recorded(corpus: Path, tmp_path:
     result = synced(corpus, client=unreachable_client())
 
     assert pages_in(corpus) == []
-    assert result.failed == ("stimela",)
+    # A docs declaration is a version of a project (Brian, 2026-10-28).
+    assert result.failed == ("stimela/latest",)
 
 
 def test_two_packs_declaring_one_paper_resolve_to_the_incumbent(
@@ -782,4 +783,4 @@ def test_a_project_is_reported_as_its_folder(corpus: Path, tmp_path: Path):
     result = synced(corpus)
 
     (action,) = result.actions
-    assert result.places[action.address] == "docs/stimela"
+    assert result.places[action.address] == "docs/stimela/latest"
