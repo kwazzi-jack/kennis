@@ -1,3 +1,9 @@
+## v0.12.4 (2026-10-28)
+
+### Fix
+
+- **sync**: sync pack docs by version and remove the groups a pack's removals empty
+
 ## v0.12.3 (2026-10-28)
 
 ### Fix
