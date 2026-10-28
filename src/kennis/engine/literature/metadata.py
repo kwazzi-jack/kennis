@@ -17,12 +17,14 @@ kennis deliberately does not ask anyone for.
 from __future__ import annotations
 
 import json
+import logging
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from typing import Final
 
 import httpx
 
+from kennis.engine.cancelling import pause
 from kennis.engine.courtesy import get_politely
 from kennis.engine.literature.identifiers import normalize_arxiv_id
 from kennis.engine.literature.names import joined_names, protected
@@ -37,6 +39,20 @@ _DOI_RESOLVER: Final = "https://doi.org/"
 _CSL_JSON: Final = "application/vnd.citationstyles.csl+json"
 _USER_AGENT: Final = "kennis-literature"
 _REQUEST_TIMEOUT_SECONDS: Final = 30
+# Crossref, which answers most DOIs behind doi.org's redirect, puts an
+# anonymous request in its public pool: `x-concurrency-limit: 1`,
+# `x-rate-limit-limit: 5` a `1s` interval (measured 2026-10-28). kennis paces
+# by the origin it asks, doi.org, which names no `Crawl-delay`, so a caller
+# looking up several DOIs keeps them one at a time and this far apart (#561).
+DOI_LOOKUP_SPACING_SECONDS: Final = 0.2
+# A refusal that says "not now" - 429, or the registry failing - is asked
+# once more after `Retry-After`, else this long; a longer wait is cut to the
+# bound, because an update waiting an hour on one paper is worse than one
+# paper left undescribed.
+RETRY_WAIT_SECONDS: Final = 1.0
+MAX_RETRY_WAIT_SECONDS: Final = 10.0
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,27 +109,20 @@ def lookup_doi_metadata(
     owned = client is None
     active = client or httpx.Client(headers={"User-Agent": _USER_AGENT})
     try:
-        response = get_politely(
-            active,
-            f"{_DOI_RESOLVER}{doi}",
-            user_agent=_USER_AGENT,
-            headers={"Accept": _CSL_JSON},
-            follow_redirects=True,
-            timeout=_REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        answer = json.loads(response.text)
-    except (httpx.HTTPError, ValueError):
-        return None
+        answer = _csl_for(doi, active)
     finally:
         if owned:
             active.close()
+    if answer is None:
+        return None
     if not isinstance(answer, dict) or str(answer.get("DOI", "")).lower() != (
         doi.lower()
     ):
+        _logger.warning("doi.org's answer for %s is not that paper", doi)
         return None
     title = _first_text(answer.get("title"))
     if not title:
+        _logger.warning("doi.org's answer for %s has no title", doi)
         return None
     return PaperMetadata(
         title=" ".join(title.split()),
@@ -122,6 +131,52 @@ def lookup_doi_metadata(
         ),
         year=_csl_year(answer),
     )
+
+
+def _csl_for(doi: str, client: httpx.Client) -> object | None:
+    """The registry's CSL-JSON for `doi`, asked at most twice, or None with
+    the reason logged. Only a refusal that says "not now" is asked again; a
+    404 is the registry's answer and is not."""
+    for attempt in (1, 2):
+        try:
+            response = get_politely(
+                client,
+                f"{_DOI_RESOLVER}{doi}",
+                user_agent=_USER_AGENT,
+                headers={"Accept": _CSL_JSON},
+                follow_redirects=True,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
+            )
+        except httpx.TransportError as error:
+            reason = type(error).__name__
+            retry_after = None
+        except httpx.HTTPError as error:
+            _logger.warning("doi.org could not be asked for %s: %s", doi, error)
+            return None
+        else:
+            if response.is_success:
+                try:
+                    answer: object = json.loads(response.text)
+                except ValueError:
+                    _logger.warning("doi.org's answer for %s is not JSON", doi)
+                    return None
+                return answer
+            reason = f"HTTP {response.status_code}"
+            if response.status_code != 429 and response.status_code < 500:
+                _logger.warning("doi.org answered %s for %s", reason, doi)
+                return None
+            retry_after = response.headers.get("retry-after")
+        if attempt == 1:
+            pause(_retry_wait(retry_after))
+    _logger.warning("doi.org answered %s for %s, twice", reason, doi)
+    return None
+
+
+def _retry_wait(retry_after: str | None) -> float:
+    """`Retry-After` in seconds, bounded; its date form is not read."""
+    if retry_after is not None and retry_after.strip().isdigit():
+        return min(float(retry_after.strip()), MAX_RETRY_WAIT_SECONDS)
+    return RETRY_WAIT_SECONDS
 
 
 def _first_text(value: object) -> str:
@@ -141,8 +196,14 @@ def _csl_names(authors: object) -> list[str]:
         family = " ".join(_first_text(author.get("family")).split())
         given = " ".join(_first_text(author.get("given")).split())
         literal = " ".join(_first_text(author.get("literal")).split())
-        if family:
-            names.append(f"{family}, {given}" if given else family)
+        if family and given:
+            names.append(f"{family}, {given}")
+        elif family:
+            # Crossref sends an organisation as a family name with no given
+            # one (`The CASA Team`, #562); braced, it is cited whole rather
+            # than by its last word. A person registered without a given
+            # name and with a family of several words is braced too.
+            names.append(f"{{{family}}}" if " " in family else family)
         elif literal:
             names.append(literal)
     return names

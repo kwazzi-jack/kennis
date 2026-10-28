@@ -51,6 +51,7 @@ from kennis.engine.events import (
 )
 from kennis.engine.literature.citekeys import derive_citekey, unique_citekey
 from kennis.engine.literature.metadata import (
+    DOI_LOOKUP_SPACING_SECONDS,
     PaperMetadata,
     lookup_arxiv_metadata,
     lookup_doi_metadata,
@@ -286,11 +287,12 @@ def _looked_up(
 ) -> dict[int, PaperMetadata | None]:
     """What arXiv and doi.org say of each entry owing a lookup, by its index.
 
-    The DOIs are asked together, since doi.org names no delay and a lookup
-    is Crossref's 1 to 10 s (2026-10-27); `courtesy` holds a host to its own
-    robots.txt either way. The arXiv identifiers are asked one at a time,
-    `delay` apart, as arXiv asks. `Progress` advances as each answer
-    arrives, emitted from this thread.
+    The DOIs are asked one at a time, `DOI_LOOKUP_SPACING_SECONDS` apart:
+    doi.org names no delay, but Crossref behind it allows one request at a
+    time and refused some of those sent four at once (#561); `courtesy`
+    holds a host to its own robots.txt either way. The arXiv identifiers are
+    asked one at a time, `delay` apart, as arXiv asks. `Progress` advances
+    as each answer arrives, emitted from this thread.
     """
     owed = [
         (index, entry)
@@ -324,6 +326,8 @@ def _looked_up(
     answers = fetched_in_parallel(
         dois,
         lambda pair: lookup_doi_metadata(pair[1].paper.value, client=arxiv),
+        workers=1,
+        spacing=DOI_LOOKUP_SPACING_SECONDS,
         on_fetched=advance,
     ) + fetched_in_parallel(
         papers,

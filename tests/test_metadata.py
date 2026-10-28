@@ -8,10 +8,13 @@ trade a small loss for a total one.
 
 from __future__ import annotations
 
+import logging
 import re
 
 import httpx
+import pytest
 
+from kennis.engine.literature import metadata as metadata_module
 from kennis.engine.literature.citekeys import derive_citekey
 from kennis.engine.literature.metadata import (
     PaperMetadata,
@@ -418,3 +421,129 @@ def test_a_no_break_space_inside_a_name_is_an_ordinary_space():
 
     assert metadata is not None
     assert metadata.authors == "de Blok, W J G and Perkins, S J"
+
+
+# ---------------------------------------------------------------------------
+# A registry that refuses for now is asked once more (#561)
+# ---------------------------------------------------------------------------
+
+
+def registry_answering(
+    *answers: httpx.Response, seen: list[httpx.Request]
+) -> httpx.Client:
+    """A registry giving `answers` in turn; robots.txt is not one of them."""
+    queue = list(answers)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        seen.append(request)
+        return queue.pop(0)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+# Measured 2026-10-28: Crossref, behind doi.org, answers a request beyond
+# its public pool's one-at-a-time limit with an empty 429.
+TOO_MANY = httpx.Response(429, headers={"retry-after": "0"})
+
+
+def test_a_429_is_asked_again_and_the_second_answer_describes_the_paper():
+    seen: list[httpx.Request] = []
+    client = registry_answering(
+        TOO_MANY, httpx.Response(200, json=CROSSREF_CSL), seen=seen
+    )
+
+    metadata = lookup_doi_metadata("10.1017/pasa.2025.10128", client=client)
+
+    assert metadata is not None
+    assert metadata.title.startswith("The Dawes review 13")
+    assert len(seen) == 2
+
+
+def test_a_server_error_is_asked_again_too():
+    seen: list[httpx.Request] = []
+    client = registry_answering(
+        httpx.Response(503, headers={"retry-after": "0"}),
+        httpx.Response(200, json=CROSSREF_CSL),
+        seen=seen,
+    )
+
+    assert lookup_doi_metadata("10.1017/pasa.2025.10128", client=client) is not None
+    assert len(seen) == 2
+
+
+def test_a_lookup_refused_twice_is_nothing_and_the_log_says_why(
+    caplog: pytest.LogCaptureFixture,
+):
+    seen: list[httpx.Request] = []
+    client = registry_answering(TOO_MANY, TOO_MANY, seen=seen)
+
+    with caplog.at_level(logging.WARNING, logger="kennis.engine.literature"):
+        metadata = lookup_doi_metadata("10.1017/pasa.2025.10128", client=client)
+
+    assert metadata is None
+    assert len(seen) == 2
+    [record] = [
+        record
+        for record in caplog.records
+        if "10.1017/pasa.2025.10128" in record.message
+    ]
+    assert "429" in record.message
+
+
+def test_a_doi_the_registry_does_not_know_is_asked_once(
+    caplog: pytest.LogCaptureFixture,
+):
+    seen: list[httpx.Request] = []
+    client = registry_answering(httpx.Response(404), seen=seen)
+
+    with caplog.at_level(logging.WARNING, logger="kennis.engine.literature"):
+        assert lookup_doi_metadata("10.1/x", client=client) is None
+
+    assert len(seen) == 1
+    assert any("404" in record.message for record in caplog.records)
+
+
+def test_a_wait_the_registry_asks_for_is_bounded():
+    """A `Retry-After` of an hour must not hold a pack update for an hour."""
+    waited: list[float] = []
+    seen: list[httpx.Request] = []
+    client = registry_answering(
+        httpx.Response(429, headers={"retry-after": "3600"}),
+        httpx.Response(200, json=CROSSREF_CSL),
+        seen=seen,
+    )
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(metadata_module, "pause", waited.append)
+        lookup_doi_metadata("10.1017/pasa.2025.10128", client=client)
+
+    assert waited == [metadata_module.MAX_RETRY_WAIT_SECONDS]
+    assert metadata_module.MAX_RETRY_WAIT_SECONDS <= 10
+
+
+# ---------------------------------------------------------------------------
+# An organisation sent as a family name (#562)
+# ---------------------------------------------------------------------------
+
+
+def test_a_family_of_several_words_and_no_given_name_is_one_braced_name():
+    """Crossref's CSL for 10.1088/1538-3873/ac9642, 2026-10-28."""
+    answer = {
+        **CROSSREF_CSL,
+        "author": [
+            {"family": "The CASA Team"},
+            {"family": "Bean", "given": "Ben"},
+            {"family": "Healy"},
+        ],
+    }
+
+    metadata = lookup_doi_metadata("10.1017/pasa.2025.10128", client=registry(answer))
+
+    assert metadata is not None
+    assert metadata.authors == "{The CASA Team} and Bean, Ben and Healy"
+    citekey = derive_citekey(
+        authors=metadata.authors, year=metadata.year, title=metadata.title
+    )
+    assert citekey.startswith("theCASATeam")

@@ -640,18 +640,28 @@ def test_pack_add_hands_its_sink_to_the_update_and_times_all_of_it(
     assert addition.report.elapsed_seconds >= pause
 
 
-def test_doi_lookups_run_together_and_citekeys_keep_entry_order(tmp_path: Path):
-    """Brian, 2026-10-27: requests in parallel where the host allows it.
-    doi.org names no delay, so two lookups are in flight at once - each
-    answer waits for the other request, so one at a time fails the barrier -
-    and the second paper deriving the same citekey is still the one told
-    apart, whichever answer came back first."""
-    together = threading.Barrier(2, timeout=5)
+def test_doi_lookups_run_one_at_a_time_and_citekeys_keep_entry_order(
+    tmp_path: Path,
+):
+    """Crossref, behind doi.org, allows one request at a time
+    (`x-concurrency-limit: 1`, measured 2026-10-28) and answered 429 to
+    three of 69 sent four at once (#561). So no two lookups overlap, and the
+    second paper deriving the same citekey is the one told apart."""
+    in_flight = 0
+    most_in_flight = 0
+    counting = threading.Lock()
 
     def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, most_in_flight
         if request.url.path == "/robots.txt":
             return httpx.Response(404)
-        together.wait()
+        with counting:
+            in_flight += 1
+            most_in_flight = max(most_in_flight, in_flight)
+        # Long enough that a second worker, had there been one, would start.
+        time.sleep(0.05)
+        with counting:
+            in_flight -= 1
         doi = request.url.path.lstrip("/")
         return httpx.Response(
             200,
@@ -666,7 +676,8 @@ def test_doi_lookups_run_together_and_citekeys_keep_entry_order(tmp_path: Path):
     path = a_pack(
         tmp_path,
         "    - identifier: doi:10.1093/mnrasl/slaf009\n"
-        "    - identifier: doi:10.1093/mnrasl/slaf015\n",
+        "    - identifier: doi:10.1093/mnrasl/slaf015\n"
+        "    - identifier: doi:10.1093/mnras/stae303\n",
     )
 
     result = update_pack(
@@ -675,9 +686,11 @@ def test_doi_lookups_run_together_and_citekeys_keep_entry_order(tmp_path: Path):
         request_delay_seconds=0,
     )
 
+    assert most_in_flight == 1
     assert result.described == (
         ("doi:10.1093/mnrasl/slaf009", "smirnovMiningTimeAxis2025"),
         ("doi:10.1093/mnrasl/slaf015", "smirnovMiningTimeAxis2025a"),
+        ("doi:10.1093/mnras/stae303", "smirnovMiningTimeAxis2025b"),
     )
 
 
