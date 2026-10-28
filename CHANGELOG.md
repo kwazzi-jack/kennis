@@ -1,3 +1,9 @@
+## v0.12.3 (2026-10-28)
+
+### Fix
+
+- **literature**: look up dois one at a time, retry a refused lookup and brace an organisation
+
 ## v0.12.2 (2026-10-28)
 
 ### Feat
