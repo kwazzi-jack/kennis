@@ -1,0 +1,118 @@
+name: Bug report
+description: kennis did something it should not have, or refused something it should have done.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting this. Output from kennis can include paths
+        under your home folder, paper titles and the text of your notes.
+        Please remove anything you would rather not publish before
+        submitting; see https://kwazzi-jack.github.io/kennis/privacy/.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What kennis did, and what you expected it to do instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: |
+        The commands you ran, or the steps you took in the window, in order.
+        A small pack file or corpus layout that shows the problem helps most.
+      placeholder: |
+        1. kennis corpus add -l 2401.01234
+        2. kennis corpus index
+        3. kennis search "..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: |
+        The full output of the failing command, including any error and the
+        command it suggests. Add `-v` to the command for more detail.
+      render: text
+
+  - type: dropdown
+    id: front-end
+    attributes:
+      label: Where you saw it
+      multiple: true
+      options:
+        - Command line (kennis ...)
+        - Window (kennis gui)
+        - MCP server (kennis serve, used by an agent)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: kennis version
+      description: The output of `kennis --version`.
+      placeholder: kennis, version 0.12.4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: input
+    id: platform-detail
+    attributes:
+      label: Operating system version and Python version
+      placeholder: Ubuntu 24.04, Python 3.12.3
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How kennis was installed
+      options:
+        - uv tool install kennis
+        - uvx kennis
+        - Into a project's environment (uv add kennis)
+        - From a clone of the repository
+        - Other (say below)
+
+  - type: textarea
+    id: service
+    attributes:
+      label: Service status
+      description: |
+        The output of `kennis service status`. kennis runs one background
+        service per corpus, and many problems depend on whether it was
+        running and which build it was.
+      render: text
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: |
+        The lines of `kennis.log` around the failure. The log is in the
+        folder named by `KENNIS_LOG_DIR`, or by default in your platform's
+        log folder for kennis (on Linux, `~/.local/state/kennis/log/`).
+      render: text
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Settings you changed (`kennis config show`, which holds no API keys), packs installed (`kennis pack list`), or anything you think is relevant.

@@ -1,0 +1,43 @@
+name: Feature request
+description: Something kennis does not do yet, or does in a way that gets in your way.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: |
+        The task, and where kennis falls short of it today. Describing the
+        task rather than a solution leaves room for one that fits kennis's
+        design.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like kennis to do
+      description: The behaviour you have in mind, if you have one. A command, a field in a pack file, a control in the window.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead
+      description: Any workaround you use, and what it costs you.
+
+  - type: dropdown
+    id: front-end
+    attributes:
+      label: Where it belongs
+      multiple: true
+      options:
+        - Command line
+        - Window
+        - MCP server
+        - Packs
+        - Not sure
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else

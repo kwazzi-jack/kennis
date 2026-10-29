@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://kwazzi-jack.github.io/kennis/
+    about: How to install kennis, build a corpus, write a pack and connect an agent.
+  - name: Privacy
+    url: https://kwazzi-jack.github.io/kennis/privacy/
+    about: What kennis sends where, and what to remove from a report before posting it.

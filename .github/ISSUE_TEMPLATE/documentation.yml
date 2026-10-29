@@ -1,0 +1,26 @@
+name: Documentation
+description: A page that is wrong, missing, out of date or hard to follow.
+labels: ["documentation"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page
+      description: The address of the page, or the command whose help text this is about.
+      placeholder: https://kwazzi-jack.github.io/kennis/how-to/...
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing
+      description: Quote the passage if it is wrong, and say what kennis actually did if you tried it.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: kennis version
+      description: The output of `kennis --version`, if you compared the page with what kennis does.
