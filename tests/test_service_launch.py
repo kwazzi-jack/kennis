@@ -56,3 +56,41 @@ def test_the_launcher_is_started_in_the_corpus_root(
         client_process.start_detached(corpus)
 
     assert started_in == [corpus]
+
+
+def test_on_windows_a_start_has_a_console_with_no_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`DETACHED_PROCESS` leaves a process no console, and Windows ignores
+    `CREATE_NO_WINDOW` beside it; the real interpreter behind a uv tool's
+    `python.exe` was then given a console of its own, visible, and closing
+    that window ended the service (#5, #6). Asserted on the flags, since
+    nothing here runs Windows; the constants are stand-ins, distinct bits."""
+    import types
+
+    import kennis.protocol.spawn as spawn
+
+    flags = {
+        "DETACHED_PROCESS": 0x8,
+        "CREATE_NEW_PROCESS_GROUP": 0x200,
+        "CREATE_NO_WINDOW": 0x8000000,
+    }
+    for name, value in flags.items():
+        monkeypatch.setattr(subprocess, name, value, raising=False)
+    monkeypatch.setattr(spawn, "sys", types.SimpleNamespace(platform="win32"))
+    given: list[int] = []
+
+    def popen(command: list[str], **options: object) -> None:
+        creationflags = options["creationflags"]
+        assert isinstance(creationflags, int)
+        given.append(creationflags)
+        raise Started
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+    with pytest.raises(Started):
+        spawn.spawned(["kennis"], cwd=tmp_path)
+
+    assert given[0] & flags["CREATE_NO_WINDOW"]
+    assert not given[0] & flags["DETACHED_PROCESS"]
+    assert given[0] & flags["CREATE_NEW_PROCESS_GROUP"]

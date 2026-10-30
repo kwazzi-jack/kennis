@@ -3,8 +3,8 @@
 Shared by the client, which starts the launcher, and the launcher, which
 starts the service. Three null standard streams, because under `kennis
 serve` the client's stdout is the MCP wire (#291). On POSIX a session of
-its own, so a terminal closing does not end it; on Windows the creation
-flags give it no console, so no window flashes open.
+its own, so a terminal closing does not end it; on Windows a console of its
+own with no window, so none opens and none can be closed under it.
 """
 
 from __future__ import annotations
@@ -46,11 +46,14 @@ def spawned(command: list[str], *, cwd: Path) -> subprocess.Popen[bytes]:
     process can depend on where its starter happened to be (#508).
     """
     if sys.platform == "win32":
-        flags = (
-            subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.CREATE_NO_WINDOW
-        )
+        # Not `DETACHED_PROCESS`, beside which Windows ignores
+        # `CREATE_NO_WINDOW`: a detached process has no console, and the
+        # console program it starts - the real interpreter behind a uv
+        # tool's `python.exe`, git, MinerU - is given a new one, visible.
+        # Two such windows opened with `kennis gui`, and closing one ended
+        # the service (#5, #6). The group keeps a Ctrl-C in the person's
+        # terminal from reaching it.
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         return subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
