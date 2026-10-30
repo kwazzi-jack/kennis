@@ -13,13 +13,13 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
-from test_gui_browser import _WAIT_MS, address, page
+from test_gui_browser import _WAIT_MS, address, page, served
 
 playwright = pytest.importorskip("playwright.sync_api")
 
 pytestmark = pytest.mark.browser
 
-__all__ = ["address", "page"]
+__all__ = ["address", "page", "served"]
 
 
 @pytest.fixture

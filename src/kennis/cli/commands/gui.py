@@ -2,7 +2,7 @@
 
 Thin. The window is served by the service that owns the corpus (milestone
 14), started here if none runs, so this opens an address and returns: the
-service outlives the command, stops by itself when idle, and serves the
+service outlives the command, runs while a window is open, and serves the
 same window to every tab.
 """
 

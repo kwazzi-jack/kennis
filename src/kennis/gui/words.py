@@ -1416,6 +1416,16 @@ CORPUS_CHANGED = (
 CORPUS_CHANGED_RELOAD = "Reload"
 CORPUS_CHANGED_LATER = "Not now"
 
+# Drawn into every page, opened when the service this window speaks to has
+# stopped: nothing on the page can answer any more, and its address will not
+# be answered again, because a new service has a port and a token of its own.
+SERVICE_GONE_HEADING = "kennis has stopped"
+SERVICE_GONE = (
+    "This window can no longer reach it, so nothing here will answer. "
+    "To open the window again, run:"
+)
+SERVICE_GONE_COMMAND = "kennis gui"
+
 NOTHING_HELD = "No documents yet. Use Add to bring some in."
 
 NO_PACKS = "No packs installed."
@@ -1993,6 +2003,9 @@ __all__ = [
     "SEARCHING",
     "SEARCH_ACTION",
     "SEARCH_KEY_TITLE",
+    "SERVICE_GONE",
+    "SERVICE_GONE_COMMAND",
+    "SERVICE_GONE_HEADING",
     "SETTINGS_HEADING",
     "SETTING_CHOICES",
     "SETTING_NAMES",

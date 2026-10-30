@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 from click.testing import CliRunner
+from fastapi import FastAPI
 
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
@@ -67,9 +68,9 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def address(corpus: Path) -> Iterator[str]:
+def served(corpus: Path) -> Iterator[tuple[str, FastAPI]]:
     """The address `kennis gui` prints, token and all, for the service's
-    application served on a thread of this process.
+    application served on a thread of this process, and that application.
 
     In this process rather than a real service's, so a test's stand-in for
     a lookup reaches the server and the network guard (#495) holds there:
@@ -85,9 +86,17 @@ def address(corpus: Path) -> Iterator[str]:
     runner = threading.Thread(target=server.run, daemon=True)
     runner.start()
     port = port_of(server)
-    yield f"http://{HOST}:{port}/?token={token}"
+    yield f"http://{HOST}:{port}/?token={token}", app
+    # As the service's own stop does, so no window's stream holds the
+    # server open past the test.
+    app.state.presence.end()
     server.should_exit = True
     runner.join(timeout=10)
+
+
+@pytest.fixture
+def address(served: tuple[str, FastAPI]) -> str:
+    return served[0]
 
 
 def _benign(text: str) -> bool:
@@ -107,7 +116,9 @@ def page(address: str) -> Iterator[object]:
         browser = driver.chromium.launch(
             executable_path=os.environ.get("KENNIS_TEST_CHROMIUM") or None
         )
-        tab = browser.new_page()
+        # A context of its own, so a test can open a second tab in it: two
+        # tabs of one browser profile, which share a worker.
+        tab = browser.new_context().new_page()
         problems: list[str] = []
         # Both channels: Chromium reports the cut-short cross-fade as a
         # console line on one navigation and as an uncaught error on another.
@@ -1089,3 +1100,71 @@ def test_a_sync_that_could_not_fetch_a_paper_asks_for_it_once(
     page.reload()
     page.wait_for_selector(".strip .job[data-state]", timeout=_WAIT_MS)
     assert page.locator("#dialog dialog").count() == 0
+
+
+def _until(condition: object, within: float = _WAIT_MS / 1000) -> bool:
+    import time
+
+    assert callable(condition)
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.05)
+    return bool(condition())
+
+
+def test_two_windows_share_one_held_connection(
+    served: tuple[str, FastAPI], page: playwright.Page
+) -> None:
+    """Browsers allow six HTTP/1.1 connections to a host across all its
+    tabs; a stream held by each would leave a seventh request waiting."""
+    address, app = served
+    presence = app.state.presence
+    assert _until(lambda: presence.open_windows() == 1)
+
+    second = page.context.new_page()
+    second.goto(address)
+    second.wait_for_load_state("load")
+    second.wait_for_timeout(500)
+
+    assert presence.open_windows() == 1
+
+
+def test_a_window_whose_service_stopped_says_so(
+    served: tuple[str, FastAPI], page: playwright.Page
+) -> None:
+    _, app = served
+    presence = app.state.presence
+    assert _until(lambda: presence.open_windows() == 1)
+    dialog = page.locator("#service-gone")
+    assert not dialog.evaluate("element => element.open")
+
+    presence.end()
+
+    page.wait_for_function(
+        "() => document.getElementById('service-gone').open", timeout=_WAIT_MS
+    )
+    assert words.SERVICE_GONE_HEADING in dialog.inner_text()
+    # Nothing behind it can answer, so nothing may close it.
+    page.keyboard.press("Escape")
+    assert dialog.evaluate("element => element.open")
+
+
+def test_a_window_whose_stream_dropped_while_kennis_runs_connects_again(
+    served: tuple[str, FastAPI], page: playwright.Page
+) -> None:
+    """A browser that froze a background tab and woke it: the stream is gone
+    and the service is not. Ended here from the server's side without
+    marking the service stopped, which nothing but this test does."""
+    _, app = served
+    presence = app.state.presence
+    assert _until(lambda: presence.open_windows() == 1)
+    held = list(presence._held)
+
+    for loop, event in held:
+        loop.call_soon_threadsafe(event.set)
+
+    assert _until(lambda: presence.open_windows() == 1 and presence._held != set(held))
+    page.wait_for_timeout(300)
+    assert not page.locator("#service-gone").evaluate("element => element.open")

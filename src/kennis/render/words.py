@@ -517,7 +517,8 @@ TOKEN_IN_THE_ADDRESS: Final = (
     "The token is in the address, and lasts as long as the service runs."
 )
 SERVICE_STOPS_ITSELF: Final = (
-    "It stops by itself when idle, and the next command starts it again."
+    "It runs while a window is open, stops by itself a while after the "
+    "last one closes, and the next command starts it again."
 )
 
 

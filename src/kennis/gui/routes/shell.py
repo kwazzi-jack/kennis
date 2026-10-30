@@ -8,6 +8,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
+    Response,
+    StreamingResponse,
 )
 from starlette.background import BackgroundTask
 
@@ -18,6 +20,7 @@ from kennis.gui.pages import (
     palette_typed,
 )
 from kennis.gui.pane import pane_now
+from kennis.gui.presence import Presence
 from kennis.gui.responses import TEMPLATES, action_page, newest_change_said
 from kennis.gui.theme import stylesheet
 from kennis.holdings import (
@@ -81,6 +84,20 @@ def serve_pane_row(request: Request, collection: str) -> HTMLResponse:
         return HTMLResponse("", status_code=404)
     return TEMPLATES.TemplateResponse(
         request, "pane-row.html", {"row": rows[collection]}
+    )
+
+
+@router.get("/presence")
+def hold_presence(request: Request) -> Response:
+    """Held open by a window for as long as it is open (`gui/presence.py`):
+    it keeps the service, and ends when the service stops."""
+    presence: Presence = request.app.state.presence
+    if presence.has_ended():
+        return Response(status_code=204)
+    return StreamingResponse(
+        presence.held(),
+        media_type="text/event-stream",
+        headers={"cache-control": "no-store", "x-accel-buffering": "no"},
     )
 
 

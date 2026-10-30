@@ -14,6 +14,7 @@
 <script defer src="/static/typeset.js"></script>
 <script defer src="/static/passage.js"></script>
 <script defer src="/static/revision.js"></script>
+<script defer src="/static/presence.js"></script>
 <script defer src="/static/redraws.js"></script>
 <script defer src="/static/pane.js"></script>
 <script defer src="/static/resize.js"></script>
@@ -209,6 +210,19 @@
       <button type="button" data-later>{{ corpus_changed_later }}</button>
       <button type="button" class="primary" data-reload>{{ corpus_changed_reload }}</button>
     </div>
+  </div>
+</dialog>
+
+{# The service this window speaks to has stopped (Brian, 2026-10-30).
+   Drawn closed with every word; `presence.js` opens it, and nothing closes
+   it, because nothing on the page can answer any more. #}
+<dialog id="service-gone" class="dialog" aria-labelledby="service-gone-title">
+  <header class="dialog-head">
+    <h2 id="service-gone-title">{{ service_gone_heading }}</h2>
+  </header>
+  <div class="dialog-body">
+    <p>{{ service_gone }}</p>
+    <p><code class="role-command">{{ service_gone_command }}</code></p>
   </div>
 </dialog>
 

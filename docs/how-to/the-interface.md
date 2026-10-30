@@ -15,8 +15,12 @@ the tab.
 
 The tab is served by the [kennis service](../explanation/service.md), which
 `kennis gui` starts if it is not running; the command then returns.
-**Closing the tab does not stop kennis**, and need not: the service stops by
-itself when idle. **Quit** at the end of the bar stops it now. Quit refuses
+**An open tab keeps kennis running**, however long it is left; once the last
+kennis tab closes, the service stops by itself after `service.idle_minutes`
+(30 by default). **Quit** at the end of the bar stops it now. If the service
+stops while a tab is open - Quit in another tab, `kennis service stop`, a
+newer kennis replacing it - the tab says so and names `kennis gui`, which
+opens the window again at a new address. Quit refuses
 while an add, an index or a sync is queued or running, because that work
 would be lost.
 
@@ -51,7 +55,7 @@ The command prints something like this and returns:
 Opened the kennis window
   + http://127.0.0.1:41287/?token=cQ6Nr53qZECwtkvA7QyWRjowELeIlbcZkETGEwOv7Nw
 The token is in the address, and lasts as long as the service runs.
-It stops by itself when idle, and the next command starts it again.
+It runs while a window is open, stops by itself a while after the last one closes, and the next command starts it again.
 ```
 
 Three things about that address are deliberate.

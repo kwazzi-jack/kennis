@@ -29,8 +29,14 @@ On every system an administrator can read it, as they can read anything of
 yours.
 
 It stops after `service.idle_minutes` (30 by default) with no task queued
-or running, no request in progress and no window open. The next command
-starts it again.
+or running, no request in progress and no window open. A window counts as
+open because it holds one connection open for as long as it is: all the
+kennis tabs of one browser share that connection, through a shared worker,
+since a browser allows only six connections to one address across its tabs.
+While a window is open the service holds what its searches loaded - about
+425 MB for a corpus of some 11,700 chunks with the default local model.
+When the service stops for any reason, an open window says so. The next
+command starts it again.
 
 ```
 kennis service status   # whether it runs, where, and its unfinished tasks

@@ -173,6 +173,9 @@ def _serve(corpus_root: Path) -> int:
         return 0
     finally:
         idle.stop()
+        # Every stop passes here: each window's stream says so and ends,
+        # or uvicorn would wait for it and the join below would give up.
+        app.state.presence.end()
         server.should_exit = True
         thread.join(timeout=10)
 

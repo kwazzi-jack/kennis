@@ -281,3 +281,60 @@ def test_a_real_command_waits_while_the_corpus_is_held_and_then_writes(
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert time.monotonic() - began >= 0.5
     assert len(sorted((corpus / "notes").rglob("*.md"))) == 1
+
+
+def test_an_open_window_keeps_the_service_and_a_closed_one_lets_it_go(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The window's stream is an open request, which the idle timer counts.
+    Closing it must end the request: Starlette ends the stream when the
+    server says the reader has gone (ASGI spec 2.3), and under a server
+    that did not, a closed window would keep the service for ever."""
+    monkeypatch.setenv("KENNIS_SERVICE_IDLE_MINUTES", "0.02")
+    record = ensure_service(corpus)
+
+    with httpx.stream(
+        "GET", f"{record.address}presence", params={"token": record.token}
+    ) as stream:
+        assert stream.status_code == 200
+        # Kept: a dropped generator is closed, and httpx then closes the
+        # connection - which is a window closing.
+        chunks = stream.iter_text()
+        next(chunks)
+        # Three times the idle period, with the window open.
+        time.sleep(3.6)
+        assert is_held(corpus)
+
+    assert eventually(lambda: not is_held(corpus))
+
+
+def test_a_stop_ends_an_open_window_s_stream_and_does_not_wait_for_it(
+    corpus: Path,
+):
+    """uvicorn waits for an open response before it exits; an unended
+    stream made every stop wait out the ten seconds the service gives it."""
+    record = ensure_service(corpus)
+    said: list[str] = []
+
+    def watch() -> None:
+        with httpx.stream(
+            "GET",
+            f"{record.address}presence",
+            params={"token": record.token},
+            timeout=PATIENCE,
+        ) as stream:
+            said.extend(stream.iter_text())
+
+    watching = threading.Thread(target=watch)
+    watching.start()
+    assert eventually(lambda: hello(record) is not None)
+    time.sleep(0.2)
+    began = time.monotonic()
+
+    stop_service(corpus, record)
+
+    assert eventually(lambda: not is_held(corpus))
+    assert time.monotonic() - began < 5
+    watching.join(timeout=PATIENCE)
+    assert not watching.is_alive()
+    assert said and said[0].startswith(":")

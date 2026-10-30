@@ -41,6 +41,7 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.gui import words
+from kennis.gui.presence import Presence
 from kennis.gui.responses import TEMPLATES, from_htmx, refused
 from kennis.gui.routes import (
     add,
@@ -228,6 +229,8 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
     # Read by `/quit`, which answers and then asks whoever runs the server
     # to stop: uvicorn owns the server, so the application cannot.
     app.state.on_quit = on_quit
+    # The windows open on it, each holding one stream (`gui/presence.py`).
+    app.state.presence = Presence()
 
     @app.middleware("http")
     async def require_token(
