@@ -74,13 +74,18 @@ def test_the_record_is_where_the_platform_protects_it(
     kept from other accounts there by the profile's own permissions, which
     is true only while it sits in the state directory and that directory is
     in the profile. Both are asserted here, the second with the redirect
-    every test runs under taken away."""
+    every test runs under taken away - the home one too, since Windows finds
+    the profile's folders without reading `USERPROFILE`."""
+    from conftest import REAL_HOME
+
     assert record_path(tmp_path).parent == state_dir()
 
     with monkeypatch.context() as unredirected:
         unredirected.delenv("KENNIS_STATE_DIR", raising=False)
+        unredirected.setenv("HOME", str(REAL_HOME))
+        unredirected.setenv("USERPROFILE", str(REAL_HOME))
         default = state_dir()
-    assert default.is_relative_to(Path.home()), default
+    assert default.is_relative_to(REAL_HOME), default
 
 
 def test_a_record_with_nobody_behind_it_is_a_crash_s_and_is_removed(tmp_path: Path):

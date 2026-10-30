@@ -118,6 +118,11 @@ def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
 
 HOME_DIRNAME = "home-elsewhere"
 
+# The person's home, read when pytest imports this file and before any
+# fixture moves it: for the few tests about where a platform's own folders
+# are, which Windows finds through its profile rather than `USERPROFILE`.
+REAL_HOME = Path.home()
+
 
 def playwright_browsers_of(home: Path) -> Path:
     """Where `playwright install` puts its browsers for `home`, by
