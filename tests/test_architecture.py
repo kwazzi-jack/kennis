@@ -10,6 +10,7 @@ what a module reaches for while it is being executed.
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -483,6 +484,15 @@ def test_a_test_s_home_holds_none_of_its_temporary_folders(tmp_path: Path):
 
     assert Path.home().name == HOME_DIRNAME
     assert not tmp_path.is_relative_to(Path.home())
+
+
+def test_a_test_s_browser_is_still_the_one_installed():
+    """Playwright looks for its browser under home, and `home_elsewhere`
+    moves home, so the fixture names the real folder first. Without it
+    every browser test failed to launch on CI (2026-10-30)."""
+    browsers = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    assert browsers is not None
+    assert not Path(browsers).is_relative_to(Path.home())
 
 
 def test_a_test_does_not_read_the_real_configuration():

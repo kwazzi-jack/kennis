@@ -119,6 +119,18 @@ def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
 HOME_DIRNAME = "home-elsewhere"
 
 
+def playwright_browsers_of(home: Path) -> Path:
+    """Where `playwright install` puts its browsers for `home`, by
+    Playwright's own default on each platform."""
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        return (Path(local) if local else home / "AppData" / "Local") / "ms-playwright"
+    if sys.platform == "darwin":
+        return home / "Library" / "Caches" / "ms-playwright"
+    cache = os.environ.get("XDG_CACHE_HOME")
+    return (Path(cache) if cache else home / ".cache") / "ms-playwright"
+
+
 @pytest.fixture(autouse=True)
 def home_elsewhere(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
@@ -132,7 +144,15 @@ def home_elsewhere(
     while passing here, where `/tmp` is not under home. `Path.home()` reads
     `HOME` on POSIX and `USERPROFILE` on Windows, so both are set.
     `test_architecture.py` fails if this is removed.
+
+    Playwright finds the browser `playwright install` put under the real
+    home by reading home, so it is told that folder first; without it every
+    browser test failed to launch on CI.
     """
+    if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+        monkeypatch.setenv(
+            "PLAYWRIGHT_BROWSERS_PATH", str(playwright_browsers_of(Path.home()))
+        )
     home = tmp_path_factory.getbasetemp() / HOME_DIRNAME
     home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
