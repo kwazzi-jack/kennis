@@ -134,40 +134,38 @@ def test_a_comment_inside_a_code_fence_is_not_a_heading():
 # ---------------------------------------------------------------------------
 
 
-def test_an_oversized_table_is_kept_whole():
-    """One over-long chunk beats a bisected table: half a table is not
-    something a reader or a retriever can use."""
-    rows = "\n".join(f"| row {index} | value {index} |" for index in range(120))
+def test_a_table_over_the_size_is_kept_whole_up_to_the_ceiling():
+    """Half a table is not something a reader or a retriever can use, so a
+    table is cut only once it passes the ceiling (#577)."""
+    rows = "\n".join(f"| row {index} | value {index} |" for index in range(9))
     text = f"# Data\n\n| a | b |\n| --- | --- |\n{rows}\n"
 
     chunks = chunks_of(text, size=200, overlap=20)
     holding = [chunk for chunk in chunks if "row 0" in chunk]
     assert len(holding) == 1
-    assert "row 119" in holding[0]
+    assert "row 8" in holding[0]
 
 
-def test_an_oversized_code_fence_is_kept_whole():
-    body = "\n".join(f"call_number_{index}()" for index in range(120))
+def test_a_code_fence_over_the_size_is_kept_whole_up_to_the_ceiling():
+    body = "\n".join(f"call_{index}()" for index in range(30))
     text = f"# Code\n\n```python\n{body}\n```\n"
 
     holding = [
-        chunk
-        for chunk in chunks_of(text, size=200, overlap=20)
-        if "call_number_0()" in chunk
+        chunk for chunk in chunks_of(text, size=200, overlap=20) if "call_0()" in chunk
     ]
     assert len(holding) == 1
-    assert "call_number_119()" in holding[0]
+    assert "call_29()" in holding[0]
 
 
-def test_an_oversized_display_equation_is_kept_whole():
-    equation = " + ".join(f"a_{{{index}}} x_{{{index}}}" for index in range(80))
+def test_display_maths_over_the_size_is_kept_whole_up_to_the_ceiling():
+    equation = " + ".join(f"a_{{{index}}} x_{{{index}}}" for index in range(20))
     text = f"# Maths\n\nThe model is\n\n$$\n{equation}\n$$\n"
 
     holding = [
         chunk for chunk in chunks_of(text, size=200, overlap=20) if "a_{0}" in chunk
     ]
     assert len(holding) == 1
-    assert "a_{79}" in holding[0]
+    assert "a_{19}" in holding[0]
 
 
 def test_oversized_prose_is_the_one_thing_that_is_split():
@@ -187,7 +185,7 @@ def test_a_heading_opens_the_window_of_the_long_paragraph_beneath_it():
 
 
 def test_a_heading_opens_an_oversized_table_beneath_it():
-    rows = "\n".join(f"| row {index} | value {index} |" for index in range(120))
+    rows = "\n".join(f"| row {index} | value {index} |" for index in range(9))
     text = f"# Data\n\n| a | b |\n| --- | --- |\n{rows}\n"
 
     chunks = chunks_of(text, size=200, overlap=20)

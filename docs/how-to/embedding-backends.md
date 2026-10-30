@@ -73,6 +73,39 @@ become relative to each query's best hit, and the summary line says so.
 Reasonable when the corpus is small, when your queries use the corpus's own
 vocabulary, or when you do not want a model download at all.
 
+## How much text a model reads
+
+Every embedding model reads at most a fixed number of *tokens* - pieces of
+words - per chunk. A chunk longer than that is refused or cut short,
+depending on the backend:
+
+| model | backend | tokens it reads | past that |
+|---|---|---|---|
+| `text-embedding-3-small`, `text-embedding-3-large` | openai | 8192 | the request is refused |
+| `BAAI/bge-small-en-v1.5` | fastembed | 512 | the rest of the chunk is ignored, with no message |
+| `nomic-embed-text` | ollama | 8192 | depends on the context Ollama runs it with |
+
+The limits are the models' published ones; kennis does not yet check a chunk
+against them before embedding.
+
+How many tokens a chunk is depends on what it holds. Measured on one
+corpus of papers, documentation and notes, with OpenAI's tokenizer:
+
+| content | characters per token |
+|---|---|
+| prose | about 4.2 |
+| code | about 3.1 |
+| display maths | about 2.6 |
+| tables | about 1.8 |
+| the densest chunk | 1.3 |
+
+A chunk is at most the ceiling, twice `chunking.size` (see [How retrieval
+works](../explanation/retrieval.md#how-a-document-is-cut)), so at the default
+size of 1500 a chunk is at most 3000 characters: at worst about 2300 tokens,
+within OpenAI's 8192. With `bge-small`, a prose chunk of 1500 characters is
+about 360 tokens and fits, but a dense table of the same length does not, and
+its end is not seen by the dense leg. BM25 always reads the whole chunk.
+
 ## Changing backend
 
 `kennis config init` and the settings page offer each backend's own model when

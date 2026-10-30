@@ -7,8 +7,14 @@ resolved to files that exist.
 
 **Chunking is block-aware.** A `markdown-it-py` parse locates the boundaries
 of atomic blocks - tables, fenced code, display math, lists, headings,
-blockquotes - and the packer never bisects one. Only prose is split, by a
-sliding window snapped to whitespace. One over-long chunk beats half a table.
+blockquotes - and the packer keeps each whole up to a ceiling of twice the
+chunk size. Prose is split by a sliding window snapped to whitespace.
+
+**No chunk passes the ceiling** (#577). Keeping every atomic block whole made
+a docs page's code block one 98,579-character chunk, which an embedding model
+refuses or truncates. A block past the ceiling is split at its own
+boundaries - a list between its top-level items, anything else between lines
+- and only a single unit still past it is cut by the prose window.
 
 One departure from boepie, which this is otherwise a close port of: **the
 headings come from the same parse as the blocks, not from a regular
@@ -69,7 +75,19 @@ class ChunkParameters:
     overlap: int = 200
     # 2: a heading opens the window of an oversized block after it, rather
     # than being a chunk of its own.
-    version: int = 2
+    # 3: no chunk passes `ceiling`; a block past it is split (#577).
+    version: int = 3
+
+    @property
+    def ceiling(self) -> int:
+        """The longest a chunk may be, in characters.
+
+        Twice the size, so a table or an equation a little over it stays
+        whole, and never less than a prose window can run to: `_windows`
+        ends a window up to `_SNAP_LOOKAHEAD` past `size` to end on a space.
+        Derived rather than set, so `size` and `version` still decide it.
+        """
+        return max(2 * self.size, self.size + _SNAP_LOOKAHEAD)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +101,9 @@ class _Block:
     is_atomic: bool
     # The heading's text, for a heading block.
     title: str | None = None
+    # Where each top-level item of a list starts, so a list past the
+    # ceiling is split between items and never inside one.
+    item_starts: tuple[int, ...] = ()
 
 
 def chunk_document(
@@ -199,9 +220,28 @@ def _blocks(text: str) -> list[_Block]:
                 is_heading=is_heading,
                 is_atomic=token.type != "paragraph_open",
                 title=_heading_title(tokens, position) if is_heading else None,
+                item_starts=_item_starts(tokens, position, offsets)
+                if token.type in _LISTS
+                else (),
             )
         )
     return blocks
+
+
+_LISTS: Final = frozenset({"bullet_list_open", "ordered_list_open"})
+
+
+def _item_starts(
+    tokens: Sequence[Token], position: int, offsets: list[int]
+) -> tuple[int, ...]:
+    """Where each top-level item of the list opened at `position` starts."""
+    starts: list[int] = []
+    for token in tokens[position + 1 :]:
+        if token.level == 0:
+            break
+        if token.type == "list_item_open" and token.level == 1 and token.map:
+            starts.append(offsets[token.map[0]])
+    return tuple(starts)
 
 
 def _heading_title(tokens: Sequence[Token], position: int) -> str | None:
@@ -273,10 +313,12 @@ def _pack(
                 flush()
             run_start = None
             heading_only = False
-            if block.is_atomic:
+            if not block.is_atomic:
+                windows.extend(_windows(start, block.end, text, parameters))
+            elif block.end - start <= parameters.ceiling:
                 windows.append((start, block.end))
             else:
-                windows.extend(_windows(start, block.end, text, parameters))
+                windows.extend(_split_structurally(start, block, text, parameters))
             continue
         if run_start is None:
             run_start = block.start
@@ -291,6 +333,57 @@ def _pack(
 
     flush()
     return windows
+
+
+def _split_structurally(
+    start: int, block: _Block, text: str, parameters: ChunkParameters
+) -> list[tuple[int, int]]:
+    """An atomic block past the ceiling, as pieces no longer than it.
+
+    The block is cut into units at its own boundaries - a list's items,
+    anything else's lines - and the units are packed up to `size`, so no
+    piece overlaps another and every unit is whole. `start` may be before the
+    block, when a heading opens the first piece. The units are contiguous
+    from `start` to the block's end, so nothing between them is dropped. A
+    unit that is itself past the ceiling, one enormous line, is cut by the
+    prose window.
+    """
+    boundaries = block.item_starts or _line_starts(text, block.start, block.end)
+    cuts = sorted({start, *(cut for cut in boundaries if start < cut < block.end)})
+    units = list(zip(cuts, [*cuts[1:], block.end], strict=True))
+
+    pieces: list[tuple[int, int]] = []
+    piece_start: int | None = None
+    piece_end = start
+    for unit_start, unit_end in units:
+        if unit_end - unit_start > parameters.ceiling:
+            if piece_start is not None:
+                pieces.append((piece_start, piece_end))
+                piece_start = None
+            pieces.extend(_windows(unit_start, unit_end, text, parameters))
+            continue
+        if piece_start is None:
+            piece_start = unit_start
+        elif unit_end - piece_start > parameters.size:
+            pieces.append((piece_start, piece_end))
+            piece_start = unit_start
+        piece_end = unit_end
+    if piece_start is not None:
+        pieces.append((piece_start, piece_end))
+    return pieces
+
+
+def _line_starts(text: str, start: int, end: int) -> list[int]:
+    """The offset of every line that starts inside `[start, end)`.
+
+    A `\\n` scan, as `_line_offsets` is, for the same reason.
+    """
+    starts = [start]
+    position = start
+    while (newline := text.find("\n", position, end)) != -1:
+        position = newline + 1
+        starts.append(position)
+    return starts
 
 
 def _windows(

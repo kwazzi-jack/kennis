@@ -11,6 +11,25 @@ A document is split into chunks of about 1500 characters, overlapping by 200
 searched and the unit that is returned, because a whole document is usually
 too large to be an answer.
 
+### How a document is cut
+
+The cut follows the document's structure. A heading, a paragraph, a list, a
+table, a code block, display maths and a quotation are each one *block*, and
+neighbouring blocks are joined into one chunk while they fit in
+`chunking.size`. A paragraph longer than that is cut by a sliding window that
+ends on a space, overlapping by `chunking.overlap`.
+
+Any other block is kept whole up to the **ceiling**, twice `chunking.size`
+(3000 characters by default), because half a table or half an equation is
+of no use to a reader or a model. Past the ceiling a block is split at its own
+boundaries: a list between its items, a table between its rows, code and
+maths between their lines. Only a single line longer than the ceiling is cut
+by the window. So no chunk is ever longer than the ceiling, and nothing in a
+document is left out of every chunk.
+
+A piece from the middle of a long table or code block is shown on its own,
+without the table's header or the block's opening line.
+
 Each chunk is indexed twice:
 
 **BM25**, a lexical ranking function. It scores a chunk by the query's terms
