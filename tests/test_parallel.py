@@ -16,7 +16,8 @@ import time
 
 import pytest
 
-from kennis.engine.parallel import fetched_in_parallel
+from kennis.engine import parallel
+from kennis.engine.parallel import Spacing, fetched_in_parallel
 
 # Long enough that a loaded runner reaches the barrier, short enough that a
 # serial implementation fails the test quickly rather than hanging it.
@@ -159,3 +160,46 @@ def test_one_worker_waits_the_spacing_after_each_fetch_ends(
     fetched_in_parallel([1, 2, 3], lambda item: item, workers=1, spacing=2.0)
 
     assert slept == [2.0, 2.0]
+
+
+def test_a_worker_that_oversleeps_does_not_bring_the_next_start_closer(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The spacing is between starts, not between slots handed out.
+
+    A worker that sleeps past its turn - a loaded runner - must not let the
+    worker after it start sooner than the spacing after it. Measured on
+    macOS CI before the fix: 3 ms between two starts where 50 was asked.
+    The first sleep is made to oversleep on purpose, so this fails here.
+    """
+    spacing = 0.05
+    real_sleep = time.sleep
+    overslept = threading.Event()
+
+    def sleep(seconds: float) -> None:
+        if not overslept.is_set():
+            overslept.set()
+            real_sleep(seconds + 1.4 * spacing)
+            return
+        real_sleep(seconds)
+
+    monkeypatch.setattr(parallel.time, "sleep", sleep)
+    pacing = Spacing(spacing, one_at_a_time=False)
+    starts: list[float] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        pacing.wait_turn()
+        with lock:
+            starts.append(time.monotonic())
+
+    threads = [threading.Thread(target=worker) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+        real_sleep(0.005)
+    for thread in threads:
+        thread.join()
+
+    ordered = sorted(starts)
+    gaps = [later - earlier for earlier, later in itertools.pairwise(ordered)]
+    assert min(gaps) >= spacing - CLOCK_RESOLUTION

@@ -315,18 +315,26 @@ def test_the_openai_backend_uses_a_key_from_the_setup(
 # ---------------------------------------------------------------------------
 
 
-def test_the_model_cache_is_not_in_a_temporary_directory():
+def test_the_model_cache_is_not_in_a_temporary_directory(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """fastembed's own default is `<tempdir>/fastembed_cache`, which a reboot
     or a tmpfiles sweep empties. The model is 65 MB and takes twenty seconds
     to fetch, and the failure when it is gone names an ONNX runtime path
-    rather than anything a user can act on. Concern #196."""
+    rather than anything a user can act on. Concern #196.
+
+    A test's home lies in the temporary folder (`home_elsewhere`), so this
+    one names a home outside it, never created, as a person's would be."""
     import tempfile
 
     from kennis.engine.rag.embedding import model_cache_dir
 
+    temporary = Path(tempfile.gettempdir())
+    monkeypatch.setenv("HOME", str(Path(temporary.anchor) / "a-home-outside-temp"))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     cache = model_cache_dir()
 
-    assert not cache.is_relative_to(Path(tempfile.gettempdir()))
+    assert not cache.is_relative_to(temporary)
     assert "kennis" in cache.parts
 
 

@@ -69,6 +69,17 @@ def context_lane(bundle: str) -> str:
 type JobEvent = Event | Queued | Began
 
 
+def new_job_id() -> str:
+    """A task's identifier: twelve hexadecimal digits.
+
+    Typed back by the person in `kennis service watch <id>`, which kennis
+    prints as the way back to a task. `token_urlsafe` draws from an alphabet
+    holding `-`, so one identifier in 64 began with it and the command line
+    read it as an option (CI, 2026-10-30).
+    """
+    return secrets.token_hex(6)
+
+
 @dataclass(slots=True)
 class Job:
     """One operation, its events, and whatever it ended as.
@@ -253,7 +264,7 @@ class Jobs:
                 if job.lane == lane and not job.done.is_set()
             ]
             job = Job(
-                id=secrets.token_urlsafe(8),
+                id=new_job_id(),
                 kind=kind,
                 lane=lane,
                 restored=restored if restored is not None else [],
@@ -276,7 +287,7 @@ class Jobs:
         function as a failure mid-way (#475). Nothing runs, and it is in
         no lane, because it is done when it is made.
         """
-        job = Job(id=secrets.token_urlsafe(8), kind=kind, lane="", error=error)
+        job = Job(id=new_job_id(), kind=kind, lane="", error=error)
         job.began.set()
         job.done.set()
         with self._guard:
@@ -375,4 +386,5 @@ __all__ = [
     "JobEvent",
     "Jobs",
     "context_lane",
+    "new_job_id",
 ]

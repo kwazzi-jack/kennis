@@ -105,7 +105,8 @@ class Spacing:
         self._one_at_a_time = one_at_a_time
         self._first = True
         self._lock = threading.Lock()
-        self._next = time.monotonic()
+        # The last start, so the first worker starts at once.
+        self._last = time.monotonic() - seconds
 
     def wait_turn(self) -> None:
         if self._spacing <= 0:
@@ -117,13 +118,17 @@ class Spacing:
                 time.sleep(self._spacing)
             self._first = False
             return
+        # A start is taken only once the last actual start is a whole spacing
+        # behind, and recorded when the worker wakes. Handing each worker a
+        # slot instead let a worker that overslept its slot start a few
+        # milliseconds before the next one woke on time: 3 ms apart where 50
+        # was asked, on macOS CI. The others wait on the lock meanwhile,
+        # which is what they would do anyway.
         with self._lock:
-            now = time.monotonic()
-            turn = max(now, self._next)
-            self._next = turn + self._spacing
-        # Slept outside the lock, so the next worker can take its own turn.
-        if turn > now:
-            time.sleep(turn - now)
+            wait = self._last + self._spacing - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
 
 
 __all__ = ["PARALLEL_REQUESTS", "Spacing", "fetched_in_parallel"]

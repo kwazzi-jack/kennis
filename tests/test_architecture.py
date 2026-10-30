@@ -470,6 +470,21 @@ def test_a_test_does_not_write_to_the_real_state_directory():
     assert not written_to.is_relative_to(Path.home() / ".local" / "state")
 
 
+def test_a_test_s_home_holds_none_of_its_temporary_folders(tmp_path: Path):
+    """Home is the autouse `home_elsewhere` folder, never the person's.
+
+    Asserted as being that folder rather than as `tmp_path` lying outside
+    home, because on Linux `/tmp` is outside the real home too and the
+    weaker check would pass with the fixture gone. Windows put the
+    temporary folder under home and six tests failed there (CI,
+    2026-10-30).
+    """
+    from conftest import HOME_DIRNAME
+
+    assert Path.home().name == HOME_DIRNAME
+    assert not tmp_path.is_relative_to(Path.home())
+
+
 def test_a_test_does_not_read_the_real_configuration():
     """The configuration a test reads is a test's, not Brian's.
 

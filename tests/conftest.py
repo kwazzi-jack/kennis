@@ -116,6 +116,29 @@ def offline_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
 
 
+HOME_DIRNAME = "home-elsewhere"
+
+
+@pytest.fixture(autouse=True)
+def home_elsewhere(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A test's home is a folder no `tmp_path` lies inside.
+
+    The command line shows a path under home from `~` (#575). On Windows the
+    temporary folder is under the home folder
+    (`C:\\Users\\runneradmin\\AppData\\Local\\Temp`), so every path a test
+    built in `tmp_path` was shown from `~` there and six tests failed on CI
+    while passing here, where `/tmp` is not under home. `Path.home()` reads
+    `HOME` on POSIX and `USERPROFILE` on Windows, so both are set.
+    `test_architecture.py` fails if this is removed.
+    """
+    home = tmp_path_factory.getbasetemp() / HOME_DIRNAME
+    home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+
 @pytest.fixture(autouse=True)
 def nowhere_real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No test writes to the developer's own state directory.

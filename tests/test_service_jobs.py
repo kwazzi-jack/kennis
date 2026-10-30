@@ -20,9 +20,11 @@ from kennis.service.jobs import (
     INDEX_LANE,
     Jobs,
     context_lane,
+    new_job_id,
 )
 
 WAIT = 30.0
+CLOCK_RESOLUTION = 0.016
 
 
 def held(
@@ -172,4 +174,24 @@ def test_a_job_s_clock_starts_when_its_lane_takes_it():
     release.set()
     assert second.done.wait(WAIT)
 
-    assert second.started_at >= queued_at + 0.2
+    # Bounded by the clock's resolution: Windows' monotonic clock ticks at
+    # about 15.6 ms, and a 0.2 s wait was measured there as 0.188 (#533).
+    assert second.started_at >= queued_at + 0.2 - CLOCK_RESOLUTION
+
+
+def test_a_task_s_identifier_never_reads_as_an_option():
+    """`kennis service watch <id>` is the way back to a task, printed for
+    the person to type. `token_urlsafe` began one identifier in 64 with
+    `-`, which the command line read as an option (CI, 2026-10-30)."""
+    identifiers = [new_job_id() for _ in range(5000)]
+
+    assert all(set(identifier) <= set("0123456789abcdef") for identifier in identifiers)
+    assert len(set(identifiers)) == len(identifiers)
+
+
+def test_every_task_gets_such_an_identifier():
+    jobs = Jobs()
+    started = jobs.start("index", lambda events: None)
+    assert started.done.wait(WAIT)
+
+    assert set(started.id) <= set("0123456789abcdef")
