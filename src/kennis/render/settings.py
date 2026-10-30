@@ -9,9 +9,12 @@ two say the same thing about the same change.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import assert_never
+from typing import TYPE_CHECKING, assert_never
 
 from kennis.engine.setting_costs import SettingCost
+
+if TYPE_CHECKING:
+    from kennis.engine.rag.limits import ChunkFit
 
 
 def describe_cost(cost: SettingCost) -> str:
@@ -72,3 +75,39 @@ def describe_unknown_settings(keys: Sequence[str], path: str) -> str:
         else f"{path} sets {named}, which kennis does not read, so they have "
         f"no effect; the next change to the configuration removes them"
     )
+
+
+def describe_fit(fit: ChunkFit, *, model: str) -> str:
+    """Whether a chunk of the configured size fits `model`, with the numbers.
+
+    Every count of tokens is an estimate from measured ratios (#577), and the
+    sentence says so, because a person choosing a size reads it as a promise
+    otherwise.
+    """
+    bound = (
+        f"a chunk is at most {fit.ceiling} characters: an estimated "
+        f"{fit.prose_tokens} tokens of prose, and up to about "
+        f"{fit.densest_tokens} for a dense table of that length"
+    )
+    match fit.verdict:
+        case "fits":
+            return f"{bound}; {model} reads {fit.model_tokens}, so every chunk fits"
+        case "dense-may-not-fit":
+            return (
+                f"{bound}; {model} reads {fit.model_tokens}: prose fits, but a "
+                "dense table or equation near that length does not, and a "
+                "meaning search sees only its beginning"
+            )
+        case "may-not-fit":
+            return (
+                f"{bound}; {model} reads {fit.model_tokens}, so even a chunk of "
+                "prose is longer than that, and a meaning search sees only its "
+                "beginning; a smaller chunking.size fits it"
+            )
+        case "unknown":
+            return (
+                f"{bound}; kennis does not know how many tokens {model} reads, "
+                "so it cannot say whether a chunk fits"
+            )
+        case _:
+            assert_never(fit.verdict)

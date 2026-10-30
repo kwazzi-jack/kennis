@@ -85,8 +85,28 @@ depending on the backend:
 | `BAAI/bge-small-en-v1.5` | fastembed | 512 | the rest of the chunk is ignored, with no message |
 | `nomic-embed-text` | ollama | 8192 | depends on the context Ollama runs it with |
 
-The limits are the models' published ones; kennis does not yet check a chunk
-against them before embedding.
+The limits are the models' published ones. kennis knows these four and
+treats any other model's limit as unknown, never as large enough.
+
+**When an index is built**, kennis checks each passage it embeds:
+
+- for **openai**, a passage longer in bytes than the limit is shortened, at a
+  character, before it is sent. OpenAI's tokenizer never makes more tokens
+  than a text has bytes, so a request can no longer be refused for length;
+- for **fastembed**, the model's own tokenizer counts exactly which passages
+  it will cut short;
+- for **ollama**, nothing: it exposes no tokenizer, and cuts a long text by
+  itself.
+
+If any passage was not read whole, the build ends with one warning saying how
+many. A meaning search does not see the end of such a passage; the keyword
+search always reads all of it.
+
+**When you change `chunking.size`, `embedding.backend` or `embedding.model`**,
+with `kennis config set` or on the settings page, kennis says whether a chunk
+of that size fits the model, using the ratios below - as a warning when it
+may not. On the settings page the line is under the chunk size, and changes
+as the size is changed.
 
 How many tokens a chunk is depends on what it holds. Measured on one
 corpus of papers, documentation and notes, with OpenAI's tokenizer:

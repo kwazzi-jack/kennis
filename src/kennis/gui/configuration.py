@@ -13,7 +13,7 @@ the command line would refuse, or phrase a cost the command line does not.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
@@ -21,6 +21,7 @@ from kennis.engine.corpus.converters import MineruConverter
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.rag.index import read_binding
+from kennis.engine.rag.limits import chunk_fit
 from kennis.engine.setting_costs import costs_of
 from kennis.engine.settings import (
     CREDENTIALS_KEPT,
@@ -36,7 +37,7 @@ from kennis.engine.setup import (
     questions_for,
 )
 from kennis.gui import words
-from kennis.render.settings import describe_cost, describe_costs
+from kennis.render.settings import describe_cost, describe_costs, describe_fit
 
 type Answers = Mapping[str, str]
 
@@ -73,6 +74,13 @@ class ShownSetting:
     # the control is then shown and not offered, because saving it would
     # write a value the environment goes on overriding.
     overridden_by: str = ""
+    # Whether a chunk of this size fits the model chosen above it (#577),
+    # on the chunk size's row alone; drawn as a warning unless it fits.
+    fit: str = ""
+    fit_warns: bool = False
+    # A field whose change redraws the section, as a choice's does: the
+    # chunk size, so its fit is said for the size typed.
+    redraws: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,14 +114,43 @@ def shown_settings(
 ) -> list[ShownSetting]:
     found = problems or {}
     offers = _offers()
+    questions = offered(answers)
+    values = {
+        question.key: _typed(question, answers, offers.get(question.key, set()))
+        or question.suggested
+        for question in questions
+    }
     return [
-        _shown(
-            question,
-            _typed(question, answers, offers.get(question.key, set())),
-            found.get(question.key, ""),
+        _with_fit(
+            _shown(
+                question,
+                _typed(question, answers, offers.get(question.key, set())),
+                found.get(question.key, ""),
+            ),
+            values,
         )
-        for question in offered(answers)
+        for question in questions
     ]
+
+
+def _with_fit(setting: ShownSetting, values: Mapping[str, str]) -> ShownSetting:
+    """The chunk size's row with what its size means for the model chosen."""
+    if setting.key != "chunking.size":
+        return setting
+    redrawn = replace(setting, redraws=True)
+    try:
+        size = int(values.get("chunking.size", ""))
+    except ValueError:
+        return redrawn
+    model = values.get("embedding.model", "")
+    fit = chunk_fit(size, values.get("embedding.backend", "none"), model)
+    if fit is None:
+        return redrawn
+    return replace(
+        redrawn,
+        fit=describe_fit(fit, model=model),
+        fit_warns=fit.verdict != "fits",
+    )
 
 
 def _offers() -> dict[str, set[str]]:

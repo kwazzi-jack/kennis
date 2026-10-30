@@ -30,11 +30,11 @@ from __future__ import annotations
 import os
 import threading
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol
+from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol, runtime_checkable
 
 import numpy as np
 from platformdirs import user_cache_dir
@@ -76,6 +76,20 @@ class Embedder(Protocol):
     """
 
     def embed(self, texts: list[str]) -> np.ndarray: ...
+
+
+@runtime_checkable
+class MeasuresInput(Protocol):
+    """An embedder that can say, exactly, which texts its model truncates.
+
+    fastembed's, from the model's own tokenizer (#577). A model that
+    truncates by itself gives no sign of it in the vectors, so this is the
+    only way the index build can say how many passages were not read whole.
+    """
+
+    def input_limit(self) -> int: ...
+
+    def overflowing(self, texts: list[str]) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -459,6 +473,32 @@ class _FastembedEmbedder:
     def embed(self, texts: list[str]) -> np.ndarray:
         return np.array(list(self._model().embed(texts)), dtype=np.float32)
 
+    def input_limit(self) -> int:
+        """The most tokens the model reads, as its tokenizer truncates."""
+        truncation = self._tokenizer().truncation
+        limit = truncation.get("max_length") if truncation else None
+        if not isinstance(limit, int):
+            raise EmbeddingUnavailable(
+                f"the fastembed model '{self._binding.model}' states no input limit"
+            )
+        return limit
+
+    def overflowing(self, texts: list[str]) -> int:
+        """How many of `texts` the model truncates.
+
+        The tokenizer stops at the limit and puts the rest in `overflowing`,
+        so a text that was cut has some. About 0.1 ms a chunk, measured on
+        2,000 chunks: nothing beside embedding them.
+        """
+        encodings = self._tokenizer().encode_batch(texts)
+        return sum(bool(encoding.overflowing) for encoding in encodings)
+
+    def _tokenizer(self) -> _Tokenizer:
+        # fastembed types the model it holds as `TextEmbeddingBase`, which
+        # declares no tokenizer; every ONNX text model it loads has one.
+        tokenizer: _Tokenizer = getattr(self._model().model, _TOKENIZER)
+        return tokenizer
+
     def warm(self) -> None:
         """Load the model, downloading it if it is not cached.
 
@@ -498,6 +538,26 @@ class _FastembedEmbedder:
                         cache_dir=str(model_cache_dir()),
                     )
         return self._loaded[self._binding.model]
+
+
+# The attribute of fastembed's loaded model that holds its tokenizer.
+_TOKENIZER: Final = "tokenizer"
+
+
+class _Encoded(Protocol):
+    """What kennis reads of one `tokenizers.Encoding`."""
+
+    @property
+    def overflowing(self) -> Sequence[object]: ...
+
+
+class _Tokenizer(Protocol):
+    """What kennis reads of a `tokenizers.Tokenizer`, which ships no types."""
+
+    @property
+    def truncation(self) -> Mapping[str, object] | None: ...
+
+    def encode_batch(self, texts: list[str]) -> Sequence[_Encoded]: ...
 
 
 class _OllamaEmbedder:

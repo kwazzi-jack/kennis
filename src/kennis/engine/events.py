@@ -183,6 +183,26 @@ class NoPagesDiscovered:
     path_prefix: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class PassagesCutShort:
+    """Passages an index build embedded that `model` does not read whole
+    (#577).
+
+    `count` of the `total` embedded in this build were longer than `limit`
+    tokens. `shortened` says who cut them: True when kennis shortened what
+    it sent, so a request could not be refused for length (OpenAI); False
+    when the model truncates by itself and only the count is kennis's
+    (fastembed). Either way the keyword index holds the whole passage.
+    """
+
+    code: ClassVar[str] = "passages-cut-short"
+    model: str
+    limit: int
+    count: int
+    total: int
+    shortened: bool
+
+
 # Every condition the engine can report that is not an item's outcome.
 # A union rather than a string, so a front end switches on the condition
 # and supplies its own words, and mypy tells whoever adds a seventh that
@@ -196,6 +216,7 @@ type DiagnosticDetail = (
     | DocumentSkipped
     | MetadataUnavailable
     | NoPagesDiscovered
+    | PassagesCutShort
 )
 
 

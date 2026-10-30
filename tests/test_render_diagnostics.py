@@ -19,6 +19,7 @@ from kennis.engine.events import (
     FrontmatterUnreadable,
     MetadataUnavailable,
     NoPagesDiscovered,
+    PassagesCutShort,
     TitleDotStripped,
 )
 from kennis.render.diagnostics import describe_diagnostic
@@ -37,6 +38,9 @@ EVERY_CONDITION: tuple[DiagnosticDetail, ...] = (
     DocumentSkipped(problem="notes/a.md: bad yaml"),
     MetadataUnavailable(identifier="1101.1764"),
     NoPagesDiscovered(base_url="https://x.example", mode="sphinx", path_prefix=None),
+    PassagesCutShort(
+        model="BAAI/bge-small-en-v1.5", limit=512, count=3, total=40, shortened=False
+    ),
 )
 
 

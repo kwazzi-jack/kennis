@@ -53,7 +53,7 @@
 {% elif setting.kind == "secret" %}
 <input id="setting-{{ setting.key }}" type="password" name="{{ setting.key }}" autocomplete="off">
 {% elif setting.kind == "integer" or setting.kind == "number" %}
-<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.kind == "number" %} step="any"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}>
+<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.kind == "number" %} step="any"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}{% if setting.redraws %} hx-get="/settings/kennis" hx-trigger="change" hx-include=".kennis-settings [data-redraw]" hx-target="closest section" hx-swap="outerHTML"{% endif %}>
 {% elif setting.kind == "boolean" %}
 {# An unticked box sends nothing, and nothing means "keep": the hidden
    `false` comes first, so a ticked box's `true` is the later value and
@@ -69,6 +69,7 @@
 {% if setting.credential %}<p class="credential"><code class="role-command">{{ setting.credential.variable }}</code> {{ credential_set if setting.credential.is_set else credential_unset }}</p>{% endif %}
 {% if setting.install_hint %}<p class="role-warning">{{ converter_missing }} <code class="role-command">{{ setting.install_hint }}</code></p>{% endif %}
 {% if setting.leaves_machine %}<p class="cost role-warning">{{ setting.leaves_machine }}</p>{% endif %}
+{% if setting.fit %}<p class="fit{% if setting.fit_warns %} role-warning{% else %} role-muted{% endif %}">{{ setting.fit }}</p>{% endif %}
 </div>
 {% endfor %}
 </div>

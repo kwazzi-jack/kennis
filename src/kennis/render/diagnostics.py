@@ -21,6 +21,7 @@ from kennis.engine.events import (
     FrontmatterUnreadable,
     MetadataUnavailable,
     NoPagesDiscovered,
+    PassagesCutShort,
     TitleDotStripped,
 )
 
@@ -63,6 +64,19 @@ def describe_diagnostic(detail: DiagnosticDetail) -> str:
             return (
                 f"'{base_url}' produced no pages: {mode} discovery "
                 f"found nothing{beneath}"
+            )
+        case PassagesCutShort(
+            model=model, limit=limit, count=count, total=total, shortened=shortened
+        ):
+            who = (
+                "kennis shortened them so the request is not refused"
+                if shortened
+                else "it reads only their beginning"
+            )
+            return (
+                f"{count} of {total} passages embedded are longer than {model} "
+                f"reads ({limit} tokens): {who}, so a meaning search does not "
+                "see their end, while the keyword search reads all of it"
             )
 
 

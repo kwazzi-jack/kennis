@@ -141,9 +141,34 @@ def set_command(key: str, value: str) -> None:
     overriding = overriding_variable(key)
     if overriding is not None:
         display.warning(describe_overridden(overriding))
-    if key not in COSTED:
+    if key in COSTED:
+        display.guidance(describe_costs(costs_of(key, value)))
+    if key in _FIT_KEYS:
+        _say_fit()
+
+
+# The settings that decide whether a chunk fits the model (#577).
+_FIT_KEYS = frozenset({"chunking.size", "embedding.backend", "embedding.model"})
+
+
+def _say_fit() -> None:
+    """Whether a chunk at the size in force fits the model in force: as a
+    warning unless it does, since a chunk it does not read whole is one a
+    meaning search cannot find by its end."""
+    from kennis.engine.rag.limits import chunk_fit
+    from kennis.engine.settings import load_settings
+    from kennis.render.settings import describe_fit
+
+    settings = load_settings()
+    embedding = settings.embedding
+    fit = chunk_fit(settings.chunking.size, embedding.backend, embedding.model)
+    if fit is None:
         return
-    display.guidance(describe_costs(costs_of(key, value)))
+    said = describe_fit(fit, model=embedding.model)
+    if fit.verdict == "fits":
+        display.guidance(said)
+    else:
+        display.note(said)
 
 
 @config_group.command(name="init")

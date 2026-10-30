@@ -43,10 +43,13 @@ import numpy as np
 from kennis.engine.atomic import replace_file, replacing_directory
 from kennis.engine.errors import NothingToIndex
 from kennis.engine.events import (
+    Diagnostic,
     EventSink,
     OperationFinished,
     Outcome,
+    PassagesCutShort,
     Progress,
+    Severity,
 )
 from kennis.engine.history.repository import Repository
 from kennis.engine.locking import index_lock
@@ -54,7 +57,14 @@ from kennis.engine.rag.binding import Binding, document_digest
 from kennis.engine.rag.bm25 import Bm25Index
 from kennis.engine.rag.cache import VectorCache
 from kennis.engine.rag.chunking import chunk_document
-from kennis.engine.rag.embedding import Embedder, embed_texts, embedder_for
+from kennis.engine.rag.embedding import (
+    Embedder,
+    MeasuresInput,
+    ModelBinding,
+    embed_texts,
+    embedder_for,
+)
+from kennis.engine.rag.limits import input_tokens, shortened_to_bytes
 from kennis.engine.rag.loaders import Loader
 from kennis.engine.rag.models import Chunk, Document
 
@@ -476,6 +486,7 @@ def _vectors_for(
     embedded = 0
     total = sum(len(produced) for _, _, produced in chunked)
     done = 0
+    fitting = _InputFit.for_model(binding.model, active)
     if events is not None:
         events.emit(Progress(operation="index", completed=0, total=total))
 
@@ -490,7 +501,7 @@ def _vectors_for(
         else:
             block = embed_texts(
                 binding.model,
-                [chunk.text for chunk in produced],
+                fitting.prepared([chunk.text for chunk in produced]),
                 embedder=active,
                 batch_size=batch_size,
                 events=events,
@@ -502,12 +513,67 @@ def _vectors_for(
         if events is not None:
             events.emit(Progress(operation="index", completed=done, total=total))
 
+    if fitting.cut and events is not None:
+        events.emit(
+            Diagnostic(
+                severity=Severity.WARNING,
+                detail=PassagesCutShort(
+                    model=binding.model.model,
+                    limit=fitting.limit or 0,
+                    count=fitting.cut,
+                    total=fitting.seen,
+                    shortened=fitting.shortens,
+                ),
+            )
+        )
+
     # A document with no chunks gives a block with no rows and no columns,
     # which cannot stand beside the others. It adds no rows, so leaving it
     # out keeps row `i` on chunk `i`.
     filled = [block for block in blocks if block.shape[0]]
     stacked = np.vstack(filled) if filled else np.zeros((0, 0), dtype=np.float32)
     return stacked, embedded
+
+
+@dataclass(slots=True)
+class _InputFit:
+    """What one build does about passages longer than its model reads (#577).
+
+    For a byte-level tokenizer with a known limit (OpenAI's), each passage
+    is cut to that many bytes, which cannot be refused for length. For an
+    embedder that measures (fastembed's), the passages it will truncate are
+    counted. Anything else is sent as it is and counted as nothing, because
+    there is nothing to count it with.
+    """
+
+    limit: int | None
+    shortens: bool
+    measurer: MeasuresInput | None
+    cut: int = 0
+    seen: int = 0
+
+    @classmethod
+    def for_model(cls, model: ModelBinding, embedder: Embedder) -> _InputFit:
+        if model.kind == "openai":
+            return cls(
+                limit=input_tokens(model.kind, model.model),
+                shortens=True,
+                measurer=None,
+            )
+        if isinstance(embedder, MeasuresInput):
+            return cls(limit=embedder.input_limit(), shortens=False, measurer=embedder)
+        return cls(limit=None, shortens=False, measurer=None)
+
+    def prepared(self, texts: list[str]) -> list[str]:
+        """`texts` as they are sent, counting the ones not read whole."""
+        self.seen += len(texts)
+        if self.shortens and self.limit is not None:
+            sent, shortened = shortened_to_bytes(texts, self.limit)
+            self.cut += shortened
+            return sent
+        if self.measurer is not None:
+            self.cut += self.measurer.overflowing(texts)
+        return texts
 
 
 def _write_chunks(path: Path, chunks: Sequence[Chunk]) -> None:
