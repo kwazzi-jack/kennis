@@ -99,6 +99,29 @@ def test_a_release_refuses_a_tag_that_is_not_the_projects_version():
     )
 
 
+def test_a_release_is_built_only_from_a_commit_whose_tests_passed():
+    """v0.12.5 and v0.12.6 reached PyPI from commits whose `tests.yml` run
+    had failed, because nothing in the release looked. The build waits on
+    a job that finds a successful run of that workflow for the tagged
+    commit; it reads the result rather than running the suite again."""
+    jobs = jobs_of(load_workflow("release.yml"))
+    needs = jobs["build"].get("needs")
+    required = [needs] if isinstance(needs, str) else list(needs or [])
+    assert required, "the build waits for nothing"
+    checks = [
+        script
+        for name in required
+        for script in run_scripts(jobs[name])
+        if "workflows/tests.yml/runs" in script
+        and "head_sha=$GITHUB_SHA" in script
+        # The comparison itself: "success" alone is also in the refusal's words.
+        and "grep -qx success" in script
+    ]
+    assert checks, required
+    assert (WORKFLOWS / "tests.yml").is_file()
+    assert "needs" in jobs["publish"]
+
+
 def matrix_pairs(job: dict[str, object]) -> set[tuple[str, str]]:
     """The (os, python) pairs a job's matrix runs, with `include` added.
     A job without a matrix runs nowhere this can name, so it is empty."""

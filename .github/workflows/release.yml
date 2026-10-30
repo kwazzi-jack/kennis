@@ -20,7 +20,29 @@ permissions:
   contents: read
 
 jobs:
+  # Nothing is built unless `tests.yml` passed on the tagged commit. v0.12.5
+  # and v0.12.6 were uploaded from commits whose tests had failed. This reads
+  # the result of a run that exists rather than running the suite again.
+  tested:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: The tagged commit passed its tests
+        run: |
+          conclusions="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?head_sha=$GITHUB_SHA&status=completed" --jq '.workflow_runs[].conclusion')"
+          if ! printf '%s\n' "$conclusions" | grep -qx success; then
+            found="$(printf '%s' "$conclusions" | tr '\n' ' ')"
+            echo "no successful tests.yml run for $GITHUB_REF_NAME ($GITHUB_SHA); found: ${found:-none}" >&2
+            echo "wait for its run to pass, or start one: gh workflow run tests.yml --ref $GITHUB_REF_NAME" >&2
+            echo "then run this again: gh run rerun $GITHUB_RUN_ID" >&2
+            exit 1
+          fi
+
   build:
+    needs: tested
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
