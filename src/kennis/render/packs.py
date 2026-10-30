@@ -15,6 +15,7 @@ from kennis.engine.pack.store import PackInstall
 from kennis.engine.pack.update import PackUpdate
 from kennis.engine.pack.validate import PackProblem, PackReport, VersionRefusal
 from kennis.engine.refusals import Refusal
+from kennis.render.portable import describe_unportable
 from kennis.render.refusals import describe_refusal as describe_add_refusal
 from kennis.render.words import count_of, joined
 
@@ -145,6 +146,8 @@ def describe_problem(problem: PackProblem) -> str:
         return f"{problem.path} is declared and is not a file in the pack"
     if problem.kind == "declared-twice":
         return f"{problem.path} is named by two entries, so it would be added twice"
+    if problem.kind == "not-portable" and problem.portability is not None:
+        return describe_unportable(problem.path, problem.portability)
     return f"{problem.path} is in the pack and has no recorded digest"
 
 

@@ -25,6 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from kennis.engine.portable import PortabilityProblem
+
 
 @dataclass(frozen=True, slots=True)
 class Quoted:
@@ -263,6 +265,18 @@ class ShippedTwice:
     other: str
 
 
+@dataclass(frozen=True, slots=True)
+class NotPortable:
+    """A file `pack add` would ship at `path`, relative to the pack file,
+    that Windows cannot hold, for the reason in `problem` (#573). `named`
+    is the input as typed."""
+
+    code: ClassVar[str] = "not-portable"
+    named: str
+    path: str
+    problem: PortabilityProblem
+
+
 # Every way an item can end as something other than written. A union
 # rather than a string, so a front end switches on the refusal and
 # supplies its own words - and so `kennis gui` can build a form from the
@@ -288,6 +302,7 @@ type Refusal = (
     | IdentifierNeeded
     | NameTaken
     | ShippedTwice
+    | NotPortable
 )
 
 
@@ -320,6 +335,7 @@ __all__ = [
     "NoIdentity",
     "NoPublisherText",
     "NotAnInput",
+    "NotPortable",
     "NothingConverted",
     "Quoted",
     "Refusal",

@@ -20,6 +20,7 @@ import pytest
 
 from kennis.cli.__main__ import main
 from kennis.engine import refusals as refusal_module
+from kennis.engine.portable import PortabilityProblem
 from kennis.engine.refusals import (
     AlreadyDeclared,
     AmbiguousIdentity,
@@ -33,6 +34,7 @@ from kennis.engine.refusals import (
     NoPublisherText,
     NotAnInput,
     NothingConverted,
+    NotPortable,
     Quoted,
     Refusal,
     SameContent,
@@ -80,6 +82,13 @@ EVERY_REFUSAL: list[Refusal] = [
     IdentifierNeeded(named="/tmp/paper.pdf"),
     NameTaken(named="/tmp/a.pdf", copy="files/literature/a.pdf"),
     ShippedTwice(path="files/", other="files/notes/a.md"),
+    NotPortable(
+        named="VASTER: the pipeline.pdf",
+        path="files/literature/VASTER: the pipeline.pdf",
+        problem=PortabilityProblem(
+            kind="reserved-character", segment="VASTER: the pipeline.pdf", character=":"
+        ),
+    ),
 ]
 
 
@@ -94,7 +103,10 @@ def test_every_member_of_the_union_is_sampled():
     declared = {
         value
         for name, value in vars(refusal_module).items()
-        if is_dataclass(value) and not name.startswith("_")
+        if is_dataclass(value)
+        and not name.startswith("_")
+        # Declared here: a refusal's field type is imported, not a refusal.
+        and value.__module__ == refusal_module.__name__
     }
 
     assert sampled == declared

@@ -36,6 +36,7 @@ from kennis.engine.refusals import (
     NoPublisherText,
     NotAnInput,
     NothingConverted,
+    NotPortable,
     Quoted,
     Refusal,
     SameContent,
@@ -46,6 +47,7 @@ from kennis.engine.refusals import (
     UnsupportedFormat,
 )
 from kennis.engine.shell import quoted_for_this_shell
+from kennis.render.portable import describe_unportable
 from kennis.render.words import count_of
 
 
@@ -154,6 +156,8 @@ def describe_refusal(refusal: Refusal) -> str:
                 f"{path} and {other} would both ship it, so a file under them "
                 "would have two destinations"
             )
+        case NotPortable(path=path, problem=problem):
+            return describe_unportable(path, problem)
 
 
 def refusal_fact(refusal: Refusal) -> str:
@@ -208,6 +212,7 @@ def refusal_fact(refusal: Refusal) -> str:
             | AlreadyDeclared()
             | NameTaken()
             | ShippedTwice()
+            | NotPortable()
         ):
             # Nothing in these to type: the sentence is the fact.
             return describe_refusal(refusal)
@@ -247,6 +252,7 @@ def remedies_for_refusal(refusal: Refusal) -> tuple[str, ...]:
             | IdentifierNeeded()
             | NameTaken()
             | ShippedTwice()
+            | NotPortable()
         ):
             return ()
 

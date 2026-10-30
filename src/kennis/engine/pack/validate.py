@@ -41,6 +41,7 @@ from kennis.engine.pack.content import (
 )
 from kennis.engine.pack.schema import ContentSource, GeneratedSource, Pack, load_pack
 from kennis.engine.pack.versions import SCHEMA_VERSION
+from kennis.engine.portable import PortabilityProblem, portability_problem
 from kennis.engine.refusals import Quoted
 
 type ProblemKind = Literal[
@@ -53,6 +54,7 @@ type ProblemKind = Literal[
     "undigested",
     "file-missing",
     "declared-twice",
+    "not-portable",
 ]
 
 type RefusalKind = Literal["schema-too-new", "kennis-too-old"]
@@ -76,6 +78,8 @@ class PackProblem:
     # The two sides of a digest disagreement.
     recorded: str | None = None
     actual: str | None = None
+    # Why a path is `not-portable`.
+    portability: PortabilityProblem | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,6 +331,9 @@ def _checked_shipped(root: Path, pack: Pack) -> list[PackProblem]:
         seen.add(relative)
     recorded = pack.generated.files if pack.generated is not None else None
     for relative in dict.fromkeys(pack.shipped_files):
+        # Judged by the declaration alone, so a name Windows cannot hold is
+        # reported there too, where the file could never have been made.
+        problems.extend(_unportable(relative))
         found = read_file(root, relative)
         if found.state == "missing":
             problems.append(PackProblem(kind="file-missing", path=relative))
@@ -348,6 +355,30 @@ def _checked_shipped(root: Path, pack: Pack) -> list[PackProblem]:
                 )
             )
     return problems
+
+
+def _unportable(address: str) -> list[PackProblem]:
+    """The finding for a shipped path Windows cannot hold, if it is one."""
+    problem = portability_problem(address)
+    if problem is None:
+        return []
+    return [PackProblem(kind="not-portable", path=address, portability=problem)]
+
+
+def unportable_addresses(root: Path, pack: Pack) -> frozenset[str]:
+    """Every path `pack` ships from `root` that Windows cannot hold.
+
+    What `pack add` compares before and after an input, so an input is
+    refused for what it adds and not for what the pack already shipped.
+    """
+    found = [
+        problem
+        for section, source in _content_sources(pack)
+        for problem in _checked_source(root, section, source, pack)
+    ] + _checked_shipped(root, pack)
+    return frozenset(
+        problem.path for problem in found if problem.kind == "not-portable"
+    )
 
 
 def _contains(outer: str, inner: str) -> bool:
@@ -375,6 +406,9 @@ def _checked_source(
     problems += [
         PackProblem(kind="symlink", path=address) for address in found.symlinks
     ]
+    # Only what the source ships: a file no `include` selects goes nowhere.
+    for relative in sorted(found.digests):
+        problems.extend(_unportable(address_of(source.source, relative)))
 
     recorded = _recorded_digests(pack, section, source.source)
     if recorded is None:
@@ -437,6 +471,7 @@ __all__ = [
     # it is validating, updating or installing.
     "content_digest",
     "overlapping",
+    "unportable_addresses",
     "validate_pack",
     "version_refusal",
 ]

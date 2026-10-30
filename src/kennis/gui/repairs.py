@@ -40,6 +40,7 @@ from kennis.engine.refusals import (
     NoPublisherText,
     NotAnInput,
     NothingConverted,
+    NotPortable,
     Quoted,
     Refusal,
     SameContent,
@@ -139,6 +140,7 @@ def ways_out_for(refusal: Refusal) -> tuple[WayOut, ...]:
             | IdentifierNeeded()
             | NameTaken()
             | ShippedTwice()
+            | NotPortable()
         ):
             return ()
 
@@ -224,6 +226,7 @@ def repairs_for(refusal: Refusal) -> tuple[Repair, ...]:
             | IdentifierNeeded()
             | NameTaken()
             | ShippedTwice()
+            | NotPortable()
         ):
             return ()
 

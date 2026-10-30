@@ -82,12 +82,14 @@ from kennis.engine.pack.text import (
     with_entry,
 )
 from kennis.engine.pack.update import PackUpdate, update_pack
-from kennis.engine.pack.validate import overlapping
+from kennis.engine.pack.validate import overlapping, unportable_addresses
+from kennis.engine.portable import portability_problem
 from kennis.engine.refusals import (
     AlreadyDeclared,
     IdentifierNeeded,
     NameTaken,
     NotAnInput,
+    NotPortable,
     Quoted,
     Refusal,
     ShippedTwice,
@@ -251,6 +253,7 @@ def add_to_pack(
             candidate = _applied(text, change)
             after = load_pack(candidate)
             _refuse_shipping_twice(batch.pack, after)
+            _refuse_unportable(one, change, batch, after)
         except _Refused as refused:
             outcome = AddOutcome(
                 identifier=one,
@@ -318,6 +321,40 @@ def _refuse_shipping_twice(before: Pack, after: Pack) -> None:
     for problem in overlapping(after):
         if problem not in held:
             raise _Refused(ShippedTwice(path=problem.path, other=problem.other or ""))
+
+
+def _refuse_unportable(raw: str, change: _Planned, batch: _Batch, after: Pack) -> None:
+    """Refuse an input that would put a file Windows cannot hold in the pack
+    (#573), unless the pack shipped that path already.
+
+    A copy is judged by the names it will have, read from the source,
+    because nothing is copied until every input has been planned; a copied
+    folder by every file in it, since the copy puts each in the pack.
+    """
+    for source, relative in change.copies:
+        for address in _copied_addresses(source, relative):
+            _refuse_if_unportable(raw, address)
+    held = unportable_addresses(batch.root, batch.pack)
+    for address in sorted(unportable_addresses(batch.root, after) - held):
+        _refuse_if_unportable(raw, address)
+
+
+def _copied_addresses(source: Path, relative: str) -> list[str]:
+    """The paths, relative to the pack, that copying `source` to `relative`
+    makes."""
+    if not source.is_dir():
+        return [relative]
+    return [relative] + [
+        (PurePosixPath(relative) / path.relative_to(source).as_posix()).as_posix()
+        for path in sorted(source.rglob("*"))
+        if path.is_file()
+    ]
+
+
+def _refuse_if_unportable(raw: str, address: str) -> None:
+    problem = portability_problem(address)
+    if problem is not None:
+        raise _Refused(NotPortable(named=raw, path=address, problem=problem))
 
 
 def _checked_and_resolved(

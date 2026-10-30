@@ -408,14 +408,32 @@ kennis pack validate boepie.ken.yml
 ```
 
 Non-zero exit on anything wrong, so it belongs in a release pipeline. It
-checks four things beyond "does this parse":
+checks five things beyond "does this parse":
 
 | check | what it catches |
 |---|---|
 | version | a pack written for a newer schema, or needing a newer kennis |
 | overlap | two sources in one section that address the same file |
 | path hygiene | a file that resolves outside the pack, or a symlink |
+| portability | a file Windows cannot hold (below) |
 | digests | content that changed since `pack update` last ran |
+
+A pack is written on one platform and installed on another, so every file
+it ships is judged by the strictest, Windows, wherever it is checked. A
+path is refused when a part of it:
+
+- holds one of `<>:"|?*\` or a control character;
+- is a device name - `CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1`
+  to `LPT9` - with or without an extension, so `nul.md` too;
+- ends in a dot or a space, which Windows drops.
+
+A path longer than 100 characters, relative to the pack file, is refused
+too. That is a budget rather than a Windows rule: Windows refuses a path
+over 260 characters unless long paths are turned on, and kennis keeps a
+pack's file about 150 characters deep there. A paper named after its
+title is the usual way to meet all of these at once; naming it by its
+citekey, `papers/<citekey>.pdf`, avoids them. `pack add` refuses such a
+file before copying it, and `pack install` refuses a pack that ships one.
 
 The last one is the reason to run this where the pack is built. kennis
 believes a pack's own digests on its fast path, so a pack that ships

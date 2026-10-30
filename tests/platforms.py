@@ -49,6 +49,15 @@ NO_ARROW_IN_A_FILENAME = (
     "be created (#363)"
 )
 
+# The case is a file Windows refuses to create - a `:` in its name, a
+# reserved device name, a trailing dot - which is exactly what kennis now
+# refuses in a pack. On Windows the filesystem refuses it first, so the
+# fixture cannot exist; the rule itself is tested on paths alone everywhere.
+NO_UNPORTABLE_FILENAME = (
+    "Windows refuses to create a file named with ':', a device name or a "
+    "trailing dot, so the fixture cannot exist there (#573)"
+)
+
 # Windows has no POSIX file mode: `chmod` toggles only the read-only flag
 # and the file reports 0666. What protects the key there is the config
 # directory's ACL, which denies the same set 0600 denies. The guarantee is
@@ -64,6 +73,7 @@ _WINDOWS = os.name == "nt"
 needs_a_posix_shell = pytest.mark.skipif(_WINDOWS, reason=NO_POSIX_SHELL)
 needs_arrow_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_ARROW_IN_A_FILENAME)
 needs_file_modes = pytest.mark.skipif(_WINDOWS, reason=NO_FILE_MODES)
+needs_unportable_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_UNPORTABLE_FILENAME)
 
 # What `test_platforms.py` iterates. A marker missing from here is one
 # nothing checks, so the guard asserts this names every marker the module
@@ -72,6 +82,7 @@ MARKERS = (
     needs_a_posix_shell,
     needs_arrow_filenames,
     needs_file_modes,
+    needs_unportable_filenames,
 )
 
 __all__ = [
@@ -79,7 +90,9 @@ __all__ = [
     "NO_ARROW_IN_A_FILENAME",
     "NO_FILE_MODES",
     "NO_POSIX_SHELL",
+    "NO_UNPORTABLE_FILENAME",
     "needs_a_posix_shell",
     "needs_arrow_filenames",
     "needs_file_modes",
+    "needs_unportable_filenames",
 ]
