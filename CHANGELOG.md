@@ -1,3 +1,9 @@
+## v0.12.6 (2026-10-30)
+
+### Fix
+
+- **search**: fit each passage to its model's input limit and say whether a chunk fits
+
 ## v0.12.5 (2026-10-30)
 
 ### Fix
