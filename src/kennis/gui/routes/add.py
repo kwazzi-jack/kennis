@@ -23,6 +23,7 @@ from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.docs.versions import UNVERSIONED
 from kennis.engine.events import EventSink
 from kennis.engine.history.outofband import OutOfBandChange
+from kennis.engine.typed import without_quotes
 from kennis.gui import words
 from kennis.gui.adding import (
     FIRST_BLOCKS,
@@ -67,7 +68,7 @@ def _lines(given: str) -> list[str]:
     ordinary case - a folder of papers arrives as a list - and because
     a space-separated field cannot hold a path with a space in it.
     """
-    return [line.strip() for line in given.splitlines() if line.strip()]
+    return [without_quotes(line) for line in given.splitlines() if line.strip()]
 
 
 # The collections whose directories are groups a reader names.

@@ -37,6 +37,7 @@ from kennis.engine.history.history import read_history, removed_in
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.engine.pack.store import PackInstall
+from kennis.engine.typed import without_quotes
 from kennis.gui import words
 from kennis.gui.pages import (
     ShownJob,
@@ -292,7 +293,7 @@ def serve_pack_form(request: Request) -> HTMLResponse:
 
 @router.post("/pack")
 def start_pack_install(request: Request, form: PostedForm) -> Response:
-    given = str(form.get("path") or "").strip()
+    given = without_quotes(str(form.get("path") or ""))
     path = Path(given).expanduser()
     if not given or not path.is_file():
         return refused_in_the_form(request, "#pack-problem", words.no_such_pack(given))

@@ -225,6 +225,18 @@ def test_saving_a_folder_writes_the_setting(client: TestClient, folder: Path):
     )
 
 
+def test_a_folder_typed_in_quotes_is_saved_without_them(
+    client: TestClient, folder: Path
+):
+    """A pasted "Copy as path" carries its quotes into the field (#4)."""
+    answer = client.post(
+        "/settings/backup", data={"backup.folder": f'"{folder}"'}, headers=HTMX
+    )
+
+    assert answer.status_code == 200
+    assert load_settings().backup.folder == str(folder)
+
+
 def test_a_file_is_not_a_folder(client: TestClient, tmp_path: Path):
     a_file = tmp_path / "notes.txt"
     a_file.write_text("x", encoding="utf-8")

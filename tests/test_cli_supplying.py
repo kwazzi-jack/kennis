@@ -159,6 +159,24 @@ def test_a_path_that_is_not_a_file_is_asked_again(
     assert calls == [(f"doi:{DOI}", downloaded.resolve())]
 
 
+def test_a_path_in_quotes_is_the_path(
+    run: CliRunner,
+    corpus: None,
+    monkeypatch: pytest.MonkeyPatch,
+    downloaded: Path,
+):
+    """Windows Explorer's "Copy as path" wraps it in double quotes (#4)."""
+    a_sync_that_could_not_fetch(monkeypatch, [(f"doi:{DOI}", BEHIND_A_PUBLISHER)])
+    asked = a_terminal(monkeypatch, [f'"{downloaded}"'])
+    calls = supplied_calls(monkeypatch)
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert len(asked) == 1
+    assert calls == [(f"doi:{DOI}", downloaded.resolve())]
+
+
 def test_an_interrupt_stops_asking_about_the_rest(
     run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch
 ):

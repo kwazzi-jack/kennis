@@ -20,6 +20,7 @@ from pathlib import Path
 
 from kennis.cli import display
 from kennis.engine.refusals import Refusal, wanted_paper
+from kennis.engine.typed import without_quotes
 from kennis.render.refusals import (
     PATH_QUESTION,
     describe_asking,
@@ -88,7 +89,7 @@ def ask_for_files(
         display.note(describe_wanted_paper(paper.kind, paper.value))
         while True:
             try:
-                answer = read_path(PATH_QUESTION).strip()
+                answer = without_quotes(read_path(PATH_QUESTION))
             except EOFError:
                 answer = ""
             except KeyboardInterrupt:

@@ -517,6 +517,30 @@ def test_installing_a_pack_that_is_not_a_file_is_refused_before_a_job_starts(
     assert "/nowhere/at/all.ken.yml" in answer.text
 
 
+def test_a_pack_path_typed_in_quotes_is_installed_from_that_path(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A pasted "Copy as path" carries its quotes into the field (#4)."""
+    import kennis.gui.routes.jobs as job_routes
+
+    pack = tmp_path / "a pack.ken.yml"
+    pack.write_text("id: alpha\n", encoding="utf-8")
+    installed: list[Path] = []
+
+    def install(context: object, path: Path, *, events: EventSink) -> None:
+        installed.append(path)
+
+    monkeypatch.setattr(job_routes, "install_a_pack", install)
+
+    answer = posted(client, "/pack", data={"path": f'"{pack}"'})
+
+    assert "data-job" in answer.text
+    deadline = time.monotonic() + 5
+    while not installed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert installed == [pack]
+
+
 def test_the_pack_field_browses_the_computer_kennis_runs_on(client: TestClient):
     """A pack is read from its path, and its sources from beside it, so the
     browser's own picker - which uploads a copy - cannot choose one

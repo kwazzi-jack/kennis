@@ -21,6 +21,7 @@ from kennis.engine.errors import (
 )
 from kennis.engine.settings import config_path, load_settings, unknown_settings
 from kennis.engine.setup import apply_answers, validate_answer
+from kennis.engine.typed import without_quotes
 from kennis.gui import words
 from kennis.gui.configuration import (
     answers_in,
@@ -288,7 +289,7 @@ def save_backup_folder(request: Request, form: PostedForm) -> HTMLResponse:
     Refused when it is not a folder, because the chooser lists files
     too and a file would only be found out at the next backup.
     """
-    given = str(form.get("backup.folder") or "").strip()
+    given = without_quotes(str(form.get("backup.folder") or ""))
     if not given:
         return _backup_answer(
             request, _backup_section(about="folder", outcome=words.KENNIS_UNCHANGED)

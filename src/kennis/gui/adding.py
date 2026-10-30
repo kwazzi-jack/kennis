@@ -29,6 +29,7 @@ from urllib.parse import quote
 from kennis.engine.corpus.preview import LineCheck, PaperPreview, SitePreview
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.literature.names import split_names, unbraced
+from kennis.engine.typed import without_quotes
 from kennis.gui import words
 from kennis.gui.repairs import WayOut, ways_out_for
 from kennis.render.refusals import refusal_fact
@@ -478,6 +479,7 @@ def listing_of(asked: str, *, target: str, folders: bool) -> ShownListing:
     entries and nothing in them, so the chooser can say what is there
     without opening a file.
     """
+    asked = without_quotes(asked)
     place = Path(asked).expanduser() if asked else Path.home()
     if not place.is_absolute():
         place = Path.home() / place
