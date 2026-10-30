@@ -16,6 +16,7 @@ from kennis.client.calls import JobDetached
 from kennis.client.process import tell_of_recovery
 from kennis.engine.errors import KennisError, TaskStopped
 from kennis.logs import log_path
+from kennis.render.paths import from_home
 from kennis.render.words import put_back_at_start
 
 
@@ -83,5 +84,6 @@ class KennisGroup(click.Group):
             display.failure(str(error))
             for note in getattr(error, "__notes__", []):
                 display.remedy(note)
-            display.remedy(f"full detail in {log_path()}")
+            # Not a command, so shown from `~` as prose is.
+            display.remedy(f"full detail in {from_home(str(log_path()))}")
             raise SystemExit(1) from error

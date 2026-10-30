@@ -75,6 +75,7 @@ from rich.progress import (
 from rich.text import Text
 
 from kennis.cli.theme import rich_style_name, rich_theme, syntax_theme
+from kennis.render.paths import from_home
 from kennis.render.theme import STYLE_PREFIX
 
 if TYPE_CHECKING:
@@ -299,7 +300,7 @@ def _line(style: str | None, text: str, lead: str | None, indent: str) -> Text:
     Either way the text is highlighted, never parsed as markup.
     """
     prefix = indent if lead is None else f"{indent}{lead}{' ' if text else ''}"
-    line = Text(f"{prefix}{text}")
+    line = Text(f"{prefix}{from_home(text)}")
     _MESSAGE_HIGHLIGHTER.highlight(line)
     if lead is None:
         if style is not None:
@@ -386,7 +387,7 @@ def using(text: str) -> None:
     """
     if _quiet:
         return
-    line = Text(f"Using {text}")
+    line = Text(f"Using {from_home(text)}")
     _MESSAGE_HIGHLIGHTER.highlight(line)
     line.stylize("muted", 0, 5)
     console.print(line, soft_wrap=True)
@@ -411,7 +412,7 @@ def operation(
     if _quiet:
         return
     trailer = f" in {_format_elapsed(elapsed)}" if elapsed is not None else ""
-    line = Text(f"{verb} {text}{trailer}".rstrip())
+    line = Text(f"{verb} {from_home(text)}{trailer}".rstrip())
     _MESSAGE_HIGHLIGHTER.highlight(line)
     line.stylize(style, 0, len(verb))
     # `stderr` for a command whose stdout is a payload rather than a report:
@@ -489,7 +490,7 @@ def detail(marker: str, text: str) -> None:
     line = Text.assemble(
         _DETAIL_INDENT,
         (marker, rich_style_name(role)),
-        (f" {text}", "muted"),
+        (f" {from_home(text)}", "muted"),
     )
     console.print(line, soft_wrap=True)
 
@@ -554,12 +555,14 @@ def row(identifier: str, text: str) -> None:
     if _quiet:
         return
     if not identifier:
-        console.print(Text.assemble(_DETAIL_INDENT, (text, "muted")), soft_wrap=True)
+        console.print(
+            Text.assemble(_DETAIL_INDENT, (from_home(text), "muted")), soft_wrap=True
+        )
         return
     line = Text.assemble(
         _DETAIL_INDENT,
         (identifier, rich_style_name("identifier")),
-        (f"  {text}", "muted"),
+        (f"  {from_home(text)}", "muted"),
     )
     console.print(line, soft_wrap=True)
 
@@ -573,7 +576,7 @@ def setting_row(text: str) -> None:
     """
     if _quiet:
         return
-    rendered = Text(f"{_DETAIL_INDENT}{text}")
+    rendered = Text(f"{_DETAIL_INDENT}{from_home(text)}")
     _SETTING_HIGHLIGHTER.highlight(rendered)
     console.print(rendered, soft_wrap=True)
 
@@ -624,7 +627,7 @@ def note(text: str, *, stderr: bool = False) -> None:
     """
     if _quiet or _messages == "errors":
         return
-    _diagnostic("warning", "warning", text, stderr=stderr)
+    _diagnostic("warning", "warning", from_home(text), stderr=stderr)
 
 
 def guidance(text: str) -> None:
@@ -642,7 +645,7 @@ def guidance(text: str) -> None:
 def failure(text: str) -> None:
     """`error: ...` - printed even under --quiet, which suppresses reports
     rather than problems."""
-    _diagnostic("error", "error", text)
+    _diagnostic("error", "error", from_home(text))
 
 
 # Advice is indented under the operation it follows. `warning:` and `error:`
@@ -668,6 +671,10 @@ def remedy(text: str, *, stderr: bool = False) -> None:
 
     Drawn as a hint, and shown whatever `terminal.messages` says, because it
     is part of the error: hiding it would leave a failure with no way out.
+
+    Its paths are not shown from `~` as prose is: a remedy is typed back as
+    printed, and a quoted `'~/x'` does not expand. A caller whose text is
+    not a command shortens it itself.
     """
     if _quiet:
         return

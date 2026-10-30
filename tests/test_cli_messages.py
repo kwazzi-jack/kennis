@@ -15,8 +15,7 @@ from click.testing import CliRunner
 
 from kennis.cli import display, sink
 from kennis.cli.__main__ import main
-from kennis.engine.events import Diagnostic, Severity
-from kennis.engine.refusals import SameContent
+from kennis.engine.events import Diagnostic, DocumentSkipped, Severity
 
 
 @pytest.fixture(autouse=True)
@@ -114,26 +113,26 @@ def test_an_error_diagnostics_resolution_survives_errors(
         shown.emit(
             Diagnostic(
                 severity=Severity.ERROR,
-                detail=SameContent(document_id="trees"),
+                detail=DocumentSkipped(problem="trees could not be read"),
                 resolution="kennis corpus remove trees",
             )
         )
         shown.emit(
             Diagnostic(
                 severity=Severity.WARNING,
-                detail=SameContent(document_id="oaks"),
+                detail=DocumentSkipped(problem="oaks could not be read"),
                 resolution="kennis corpus remove oaks",
             )
         )
         shown.emit(
             Diagnostic(
                 severity=Severity.HINT,
-                detail=SameContent(document_id="elms"),
+                detail=DocumentSkipped(problem="elms could not be read"),
             )
         )
 
     printed = capsys.readouterr().out
-    assert "error:" in printed
+    assert "error: trees could not be read" in printed
     assert "kennis corpus remove trees" in printed
     assert "oaks" not in printed
     assert "elms" not in printed
