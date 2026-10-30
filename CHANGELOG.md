@@ -1,3 +1,11 @@
+## v0.12.5 (2026-10-30)
+
+### Fix
+
+- **search**: give every chunk a ceiling and split a block past it at its own boundaries
+- **cli**: show a path under the home directory from ~ in prose
+- **packs**: refuse a shipped file whose path windows cannot hold
+
 ## v0.12.4 (2026-10-28)
 
 ### Fix
