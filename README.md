@@ -27,6 +27,16 @@ uv run --group docs mkdocs build      # into site/
 
 ## Status
 
+**kennis is experimental.** It is pre-release software written by one
+person for their own research, and its commands, settings and on-disk format
+change between releases without notice or migration. Expect bugs.
+
+**Linux is the platform kennis is developed and used on.** macOS runs the
+test suite in CI. **Windows is not yet working properly**: CI runs the tests
+there, but kennis is not used on Windows, and Windows users should expect
+far more bugs than on Linux. Running kennis under WSL has not been
+tried at all.
+
 Pre-release, published on PyPI as `kennis`. Built and tested:
 
 - **the corpus**, machine-global, with git-backed history, BM25 and dense
@@ -37,8 +47,8 @@ Pre-release, published on PyPI as `kennis`. Built and tested:
   sync commands that converge each scope with what is installed;
 - **the MCP server**, `kennis serve`, nine tools over stdio, with its
   description of this machine generated from the installed packs;
-- **the graphical interface**, `kennis gui`, serving on loopback with a
-  per-run token, in a native window where the platform provides one.
+- **the graphical interface**, `kennis gui`, a tab in your own browser,
+  served on loopback by kennis's service with a per-run token.
 
 Cross-machine synchronisation and any packaged application come after that.
 
