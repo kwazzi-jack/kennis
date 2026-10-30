@@ -696,6 +696,30 @@ def test_a_checkout_is_recognised_by_its_layout(tmp_path: Path):
     assert converters._is_source_checkout(tmp_path)
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        # Brian's file (#3): the cut at 40 lands on the space after "Dying".
+        "LHW Mortality Book Review Dlamini Dying For Freedom August 2026.pdf",
+        f"{'a' * 39}. and then more.pdf",
+        f"{'b' * 38} . .more.pdf",
+    ],
+)
+def test_a_staged_name_does_not_end_in_a_space_or_a_dot(tmp_path: Path, name: str):
+    """MinerU names its output folder by the staged stem, and Windows drops
+    a trailing space or dot from a folder it creates, so MinerU then looked
+    for a folder that was not there (#3)."""
+    from kennis.engine.portable import portability_problem
+
+    staged_dir = tmp_path / "input"
+    staged_dir.mkdir()
+
+    stem = next(iter(_stage([a_pdf(tmp_path / name)], staged_dir)))
+
+    problem = portability_problem(stem)
+    assert problem is None or problem.kind != "ends-in-dot-or-space", stem
+
+
 def test_a_staged_name_leaves_room_under_the_windows_path_limit(tmp_path: Path):
     """MinerU writes the staged stem into its output path twice; a long
     filename pushed that past the 260 characters Windows opens."""

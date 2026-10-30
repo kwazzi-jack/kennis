@@ -698,9 +698,11 @@ def _stage(paths: Sequence[Path], staged_dir: Path) -> dict[str, Path]:
     """
     staged: dict[str, Path] = {}
     for index, path in enumerate(paths):
-        target = staged_dir / (
-            f"{index:04d}-{path.stem[:_STAGED_STEM_LIMIT]}{path.suffix.lower()}"
-        )
+        # Without a trailing space or dot: MinerU names its output folder by
+        # the stem, Windows drops either from a folder it creates, and
+        # MinerU then looked for one that was not there (#3).
+        kept = path.stem[:_STAGED_STEM_LIMIT].rstrip(" .")
+        target = staged_dir / f"{index:04d}-{kept}{path.suffix.lower()}"
         try:
             os.link(path, target)
         except OSError:
