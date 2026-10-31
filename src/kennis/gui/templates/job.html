@@ -27,6 +27,9 @@
   <button type="button" class="segment job-segment" popovertarget="{{ panel_id }}" title="{{ job_details }}">
     {{ state_icon() }}<span class="job-step">{{ said }}</span>
     <progress class="job-bar" hidden aria-label="{{ progress_label }}"></progress>
+    {# How far, beside the bar: a folder of 2594 notes showed a bar and
+       a name, and how many was the question (#11). #}
+    <span class="job-count role-muted"></span>
   </button>
   {% endif %}
   <div class="job-panel"{% if not inline %} id="{{ panel_id }}" popover{% endif %}>

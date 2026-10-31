@@ -49,7 +49,7 @@ from kennis.gui.responses import (
     refused_in_the_form,
 )
 from kennis.gui.routes.jobs import started
-from kennis.gui.uploads import PostedWithFiles, Staged
+from kennis.gui.uploads import NamedAsSent, PostedWithFiles, Staged
 from kennis.operations import (
     GroupBlock,
     add_documents,
@@ -495,7 +495,7 @@ def start_add(request: Request, posted: PostedWithFiles) -> Response:
                 destination,
                 identifiers,
                 options,
-                events=events,
+                events=NamedAsSent(events, uploads.names),
                 restored=put_back,
             )
 

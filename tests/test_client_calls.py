@@ -97,8 +97,8 @@ def test_a_job_is_followed_to_its_end_and_its_events_reach_the_sink(
         str(a_source(tmp_path, "one.md"))
     ]
     kinds = [type(event) for event in recorded.events]
-    assert kinds[0] is ItemStarted
-    assert ItemFinished in kinds
+    # The add's count comes first, none of one done (#11).
+    assert kinds[:3] == [Progress, ItemStarted, ItemFinished]
     assert kinds[-1] is OperationFinished
     assert answered.restored == []
 

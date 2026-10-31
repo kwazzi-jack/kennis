@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -465,6 +466,95 @@ def test_a_folder_of_more_than_a_thousand_files_is_added_whole(
 
     held = corpus / "corpus" / "notes"
     assert sum(1 for _ in held.rglob("note*.md")) == count
+
+
+def test_a_running_add_counts_its_files_in_the_strip(
+    page: playwright.Page, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Brian, after the vault went in (#11): "there is no indicator as to how
+    many files are being added or where it is". Each file is slowed here so
+    the running task can be read."""
+    from kennis.engine.corpus import add
+
+    def slowly[**Parameters, Result](
+        function: Callable[Parameters, Result],
+    ) -> Callable[Parameters, Result]:
+        def waited(*arguments: Parameters.args, **options: Parameters.kwargs) -> Result:
+            time.sleep(0.2)
+            return function(*arguments, **options)
+
+        return waited
+
+    monkeypatch.setattr(add, "_add_one", slowly(add._add_one))
+    folder = tmp_path / "vault"
+    for index in range(20):
+        note = folder / f"note{index}.md"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(f"# Note {index}\n", encoding="utf-8")
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] .uploads[data-enhanced]',
+        timeout=_WAIT_MS,
+    )
+    page.set_input_files("#dialog input[name=upload][webkitdirectory]", str(folder))
+    page.click("#dialog .choices label:has(input[value=notes])")
+    _wait_for_htmx(page, "#dialog form")
+    page.click("#dialog form[action='/add'] button[type=submit]")
+
+    count = ".strip .job-segment .job-count"
+    page.wait_for_function(
+        "selector => /^[1-9][0-9]* of 20$/.test("
+        "document.querySelector(selector)?.textContent || '')",
+        arg=count,
+        timeout=_WAIT_MS,
+    )
+    step = page.inner_text(".strip .job-segment .job-step")
+    assert step.startswith("Adding vault/note"), step
+
+
+def test_the_files_being_sent_are_counted_in_the_dialog(
+    page: playwright.Page, tmp_path: Path
+) -> None:
+    """No task exists until the last byte has arrived, and the dialog's
+    spinner said nothing for however long that took (#11). Chromium's own
+    throttle makes the sending last long enough to be seen."""
+    folder = tmp_path / "vault"
+    for index in range(40):
+        note = folder / f"note{index}.md"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(f"# Note {index}\n" + "word " * 5000, encoding="utf-8")
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] .uploads[data-enhanced]',
+        timeout=_WAIT_MS,
+    )
+    page.set_input_files("#dialog input[name=upload][webkitdirectory]", str(folder))
+    page.click("#dialog .choices label:has(input[value=notes])")
+    _wait_for_htmx(page, "#dialog form")
+    throttle = page.context.new_cdp_session(page)
+    throttle.send("Network.enable")
+    throttle.send(
+        "Network.emulateNetworkConditions",
+        {
+            "offline": False,
+            "latency": 0,
+            "downloadThroughput": -1,
+            "uploadThroughput": 256 * 1024,
+        },
+    )
+    page.click("#dialog form[action='/add'] button[type=submit]")
+
+    sending = "#dialog .form-foot .sending"
+    page.wait_for_selector(f"{sending}:not([hidden])", timeout=_WAIT_MS)
+    said = page.inner_text(sending)
+    prefix = words.UPLOAD_SENDING.split("{")[0]
+    assert said.startswith(prefix), said
+    assert page.is_hidden("#dialog .form-foot .destination")
+    page.wait_for_selector(".strip .job[data-state='done']", timeout=60_000)
 
 
 def test_a_note_in_a_new_group_appears_in_the_open_branch(

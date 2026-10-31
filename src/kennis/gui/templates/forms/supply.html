@@ -21,6 +21,7 @@
     {% endfor %}
   </ul>
   <div class="form-foot">
+    <p class="sending role-muted" role="status" hidden data-said-sending="{{ upload_sending }}" data-said-sent="{{ upload_sent }}"></p>
     <a class="button" href="/" data-close>{{ cancel_label }}</a>
     <button type="submit" class="primary">{{ icon("file-plus") }}{{ supply_action }}</button>
   </div>

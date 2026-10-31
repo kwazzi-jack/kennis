@@ -25,6 +25,7 @@ from kennis.engine.events import (
     ItemFinished,
     MetadataUnavailable,
     Outcome,
+    Progress,
     Recorder,
     Severity,
 )
@@ -629,6 +630,26 @@ def test_the_event_stream_reports_each_paper(papers: Collection, tmp_path: Path)
     add_literature(papers, ["2409.19750"], arxiv=arxiv_client(), events=recorder)
 
     assert recorder.outcomes() == {"2409.19750": Outcome.ADDED}
+
+
+def test_the_event_stream_counts_the_papers(papers: Collection, tmp_path: Path):
+    """As a notes add does (#11): a hundred papers fetched a few seconds
+    apart said which one was in hand and never how many were left."""
+    bib = bib_with_documents(tmp_path, a="10.1088/a", b="10.1088/b")
+    recorder = Recorder()
+
+    add_literature(
+        papers,
+        [str(bib)],
+        AddOptions(request_delay_seconds=0),
+        arxiv=no_preprint_client(),
+        events=recorder,
+    )
+
+    counted = [
+        (event.completed, event.total) for event in recorder.events_of_type(Progress)
+    ]
+    assert counted == [(0, 2), (1, 2), (2, 2)]
 
 
 def test_adding_no_papers_is_not_an_error(papers: Collection):

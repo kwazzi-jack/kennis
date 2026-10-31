@@ -418,7 +418,11 @@ def add_notes(
         sink,
     )
 
-    for item in resolved.items:
+    # How far the add is, as a conversion says it: none before the first
+    # item, and one after each. A folder of 2594 notes named one path after
+    # another and never how many were left (#11).
+    sink.emit(Progress(operation="add", completed=0, total=len(resolved.items)))
+    for number, item in enumerate(resolved.items, start=1):
         sink.emit(ItemStarted(operation="add", item=item.identifier))
         outcome = _add_one(
             collection,
@@ -438,6 +442,9 @@ def add_notes(
                 outcome=outcome.outcome,
                 refusal=outcome.refusal,
             )
+        )
+        sink.emit(
+            Progress(operation="add", completed=number, total=len(resolved.items))
         )
 
     report = AddReport(
@@ -881,6 +888,8 @@ def add_literature(
         sink,
     )
 
+    # Counted as the notes are (#11).
+    sink.emit(Progress(operation="add", completed=0, total=len(papers)))
     for position, paper in enumerate(papers):
         if position and delay:
             pause(delay)
@@ -897,6 +906,7 @@ def add_literature(
                 refusal=outcome.refusal,
             )
         )
+        sink.emit(Progress(operation="add", completed=position + 1, total=len(papers)))
 
     report = AddReport(
         outcomes=outcomes,

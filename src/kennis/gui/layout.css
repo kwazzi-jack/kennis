@@ -2141,6 +2141,14 @@ button:focus-visible, a:focus-visible {
 /* Two classes, to outrank `.dialog-body p`, whose margin took away the
    `auto` that keeps this at the left. */
 .form-foot .destination { margin: 0 auto 0 0; font-size: 0.8125rem; }
+/* What has been sent so far takes the destination's place while the files
+   travel (#11); the figures keep their width as they change. */
+.form-foot .sending {
+  margin: 0 auto 0 0;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.form-foot:has(> .sending:not([hidden])) > .destination { display: none; }
 /* Until there is a collection there is nowhere to say: the File tab
    chooses none for the reader (#431). */
 .destination:has(> [data-mirror="collection"]:empty) { visibility: hidden; }

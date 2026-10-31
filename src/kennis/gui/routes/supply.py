@@ -36,7 +36,7 @@ from kennis.gui.responses import (
     refused_in_the_form,
 )
 from kennis.gui.routes.jobs import started
-from kennis.gui.uploads import PostedWithFiles
+from kennis.gui.uploads import NamedAsSent, PostedWithFiles
 from kennis.operations import add_documents, supply_a_pack_paper
 from kennis.render.refusals import paper_page
 
@@ -135,6 +135,7 @@ def start_supplying(request: Request, posted: PostedWithFiles) -> Response:
     def supplied(events: EventSink) -> AddReport:
         outcomes: list[AddOutcome] = []
         elapsed = 0.0
+        events = NamedAsSent(events, names)
         with uploaded_as(names):
             for reference, value, path in chosen:
                 try:

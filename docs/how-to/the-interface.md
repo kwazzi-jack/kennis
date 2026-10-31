@@ -155,13 +155,15 @@ that it was uploaded, under the name it was sent with. A folder may hold
 any number of files; each is written to disk on the kennis computer as it
 arrives. As for a folder path, its sub-folders become groups, and any
 folder whose name begins with a dot, such as `.obsidian`, is skipped.
-A path typed into
+While the files are being sent, the foot of the dialog counts the
+megabytes; the add begins once the last one has arrived. A path typed into
 the field instead is read on the computer kennis runs on, without copying;
 **Browse**, in a Several by group block, lists that computer's folders.
 
 Each operation runs in the background and reports in the strip at the
 bottom of every page, so a document conversion or a documentation crawl
-shows what it is doing rather than appearing to hang.
+shows what it is doing rather than appearing to hang: the item in hand,
+and how many of how many are done.
 
 **A second operation waits its turn.** It is queued behind the one running,
 and the strip says what it is waiting for. An index build and a note do not

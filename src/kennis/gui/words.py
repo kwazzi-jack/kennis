@@ -963,7 +963,7 @@ CHANGED_MEANWHILE_RETRY = (
 # A posted form kennis could not read: not a form, cut short, or a typed
 # field longer than anyone types (#11). Nothing was started.
 FORM_UNREAD = (
-    "kennis could not read what the window sent, so nothing was added. "
+    "kennis could not read what the window sent, so nothing was done. "
     "Try again; if it happens again, reload the page."
 )
 NOTHING_TO_ADD = "Nothing to add. Enter an ID, address or path, or choose a file."
@@ -1152,6 +1152,10 @@ UPLOAD_CLEAR = "Clear"
 # What was chosen, said back under the buttons. Filled in by the page's
 # script, which composes no words of its own: `{name}`, `{names}` and
 # `{count}` are its only part.
+# While the chosen files travel to kennis, in the form's foot (#11). The
+# script fills `{sent}` and `{total}` with megabytes to one decimal.
+UPLOAD_SENDING = "Sending to kennis: {sent} of {total} MB"
+UPLOAD_SENT = "Sent. kennis is starting the task."
 UPLOAD_SAID: Final[dict[str, str]] = {
     "none": "Nothing chosen.",
     "one": "{name}",
@@ -2053,6 +2057,8 @@ __all__ = [
     "UPLOAD_HINT",
     "UPLOAD_PDF",
     "UPLOAD_SAID",
+    "UPLOAD_SENDING",
+    "UPLOAD_SENT",
     "UPLOAD_TYPED",
     "UPLOAD_TYPED_PDF",
     "USE_UNVERSIONED",

@@ -26,7 +26,7 @@ from markupsafe import escape
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.intake import convert_local_file
-from kennis.engine.events import EventSink
+from kennis.engine.events import EventSink, ItemFinished, ItemStarted
 from kennis.engine.literature.metadata import PaperMetadata
 from kennis.engine.settings import load_settings
 from kennis.gui import words
@@ -1240,6 +1240,41 @@ def test_a_form_kennis_cannot_read_is_said_in_the_bar(client: TestClient):
     )
 
     assert answer.status_code == 200
+    assert str(escape(words.FORM_UNREAD)) in answer.text
+
+
+def test_an_uploaded_file_is_named_in_the_task_as_it_was_sent(client: TestClient):
+    """The strip said "Adding /tmp/kennis-upload-.../2025/d28/n2008.md":
+    the staging folder is kennis's, and the reader chose `2025/d28/...`."""
+    client.post(
+        "/add",
+        data={"kind": "file", "collection": "notes"},
+        files=[
+            ("upload", ("2025/day/one.md", b"# One\n", "text/markdown")),
+            ("upload", ("2025/day/two.md", b"# Two\n", "text/markdown")),
+        ],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    [job] = client.app.state.jobs.recent()
+    named = {
+        event.item
+        for event in job.history
+        if isinstance(event, (ItemStarted, ItemFinished))
+    }
+    assert named == {"2025/day/one.md", "2025/day/two.md"}
+
+
+def test_a_form_kennis_cannot_read_is_said_on_any_route(client: TestClient):
+    """Starlette's own refusal of a form was a bare 400 on every route, and
+    htmx draws none (#588)."""
+    answer = client.post(
+        "/remember",
+        content=b"not a form",
+        headers={**HTMX, "content-type": "multipart/form-data"},
+    )
+
     assert str(escape(words.FORM_UNREAD)) in answer.text
 
 

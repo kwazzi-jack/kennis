@@ -43,6 +43,7 @@
     {% if destination %}
     <p class="destination role-muted">{{ adds_to }} {% for name, value in destination %}{% if not loop.first %}<span class="part"><span class="sep">/</span>{% endif %}<span data-mirror="{{ name }}">{{ value }}</span>{% if not loop.first %}</span>{% endif %}{% endfor %}</p>
     {% endif %}
+    <p class="sending role-muted" role="status" hidden data-said-sending="{{ upload_sending }}" data-said-sent="{{ upload_sent }}"></p>
     <a class="button" href="/" data-close>{{ cancel }}</a>
     <button type="submit" class="primary">{{ icon("file-plus") }}{{ add_action }}</button>
   </div>

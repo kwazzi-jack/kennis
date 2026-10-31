@@ -519,11 +519,56 @@ def test_a_conversion_run_is_the_only_moment_there_is_to_report(
         events=recorder,
     )
 
-    progress = recorder.events_of_type(Progress)
+    # The conversion's runs, which come before the items' own count: that
+    # begins with the (0, 4) said just before the first item starts.
+    first_item = next(
+        position
+        for position, event in enumerate(recorder.events)
+        if isinstance(event, ItemStarted)
+    )
+    assert recorder.events[first_item - 1] == Progress(
+        operation="add", completed=0, total=4
+    )
+    progress = [
+        event
+        for event in recorder.events[: first_item - 1]
+        if isinstance(event, Progress)
+    ]
     assert [(event.completed, event.total) for event in progress] == [
         (0, 2),
         (1, 2),
         (2, 2),
+    ]
+
+
+def test_an_add_counts_its_items_as_each_one_finishes(
+    notes: Collection, tmp_path: Path
+):
+    """Brian added a vault of 2594 notes and the window named one path after
+    another with no count (#11): only a conversion said how far it was. Each
+    count is said after its item finished and before the next one starts."""
+    source = tmp_path / "vault"
+    for index in range(3):
+        a_note_file(source / f"n{index}.md", f"# Note {index}\n")
+    recorder = Recorder()
+
+    add_notes(notes, [str(source)], events=recorder)
+
+    sequence = [
+        ("progress", event.completed, event.total)
+        if isinstance(event, Progress)
+        else ("finished",)
+        for event in recorder.events
+        if isinstance(event, (Progress, ItemFinished))
+    ]
+    assert sequence == [
+        ("progress", 0, 3),
+        ("finished",),
+        ("progress", 1, 3),
+        ("finished",),
+        ("progress", 2, 3),
+        ("finished",),
+        ("progress", 3, 3),
     ]
 
 

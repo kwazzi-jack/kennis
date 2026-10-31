@@ -25,8 +25,10 @@ they are the reader's own files, sent by a window that holds the token.
 from __future__ import annotations
 
 import atexit
+import dataclasses
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, BinaryIO, Final
@@ -38,8 +40,8 @@ from python_multipart.multipart import MultipartParser, parse_options_header
 from starlette.datastructures import FormData, UploadFile
 from starlette.requests import Request
 
-from kennis.engine.errors import KennisError
-from kennis.gui import words
+from kennis.engine.events import Event, EventSink, ItemFinished, ItemStarted
+from kennis.gui.responses import FormUnread, form_of
 
 if TYPE_CHECKING:
     from python_multipart.multipart import MultipartCallbacks
@@ -50,13 +52,6 @@ _PREFIX: Final = "kennis-upload-"
 # What a typed field may hold, as Starlette allowed: far past anything typed,
 # and a bound on what is kept in memory.
 FIELD_LIMIT: Final = 1024 * 1024
-
-
-class FormUnread(KennisError):
-    """A posted form that could not be read: not a form, or a typed field
-    past `FIELD_LIMIT`. Nothing was started."""
-
-    default_message = words.FORM_UNREAD
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +93,7 @@ async def received(request: Request) -> Received:
     if kind != b"multipart/form-data":
         # A tab with no file input posts its fields encoded in the body,
         # which carries no file to count or hold open.
-        return Received(fields=await request.form(), files={})
+        return Received(fields=await form_of(request), files={})
     boundary = options.get(b"boundary")
     if not boundary:
         raise FormUnread()
@@ -208,6 +203,27 @@ class _Reader:
             self._file = None
 
 
+class NamedAsSent:
+    """A task's sink that names an uploaded file as the reader sent it.
+
+    The engine names an item by its path, and an upload's path is in the
+    staging folder - `/tmp/kennis-upload-.../2025/d28/n2008.md` - which is
+    kennis's, gone with the session, and not what the reader chose (#11).
+    """
+
+    def __init__(self, events: EventSink, names: Mapping[Path, str]) -> None:
+        self._events = events
+        self._names = {str(path): name for path, name in names.items()}
+
+    def emit(self, event: Event) -> None:
+        match event:
+            case ItemStarted(item=item) | ItemFinished(item=item) if (
+                item in self._names
+            ):
+                event = dataclasses.replace(event, item=self._names[item])
+        self._events.emit(event)
+
+
 def _decoded(raw: bytes) -> str:
     """As Starlette decodes a part: UTF-8, which every browser sends, and
     Latin-1 for bytes that are not, so a name is never refused for it."""
@@ -235,7 +251,7 @@ def _parts_of(filename: str) -> tuple[str, ...]:
 
 __all__ = [
     "FIELD_LIMIT",
-    "FormUnread",
+    "NamedAsSent",
     "PostedWithFiles",
     "Received",
     "Staged",

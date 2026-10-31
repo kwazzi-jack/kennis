@@ -63,5 +63,39 @@
     describe(box);
   });
   document.addEventListener("htmx:load", function (event) { enhance(event.target); });
+
+  // While the chosen files are sent, the form's foot counts them (#11): the
+  // task begins only once the last byte has arrived, and a spinner alone
+  // said nothing for however long that took. htmx reports the answer's
+  // download the same way, but only once the answer has begun, which is
+  // after the last byte was sent - when "sent" is already true.
+  var MEGABYTE = 1024 * 1024;
+
+  function chosenIn(form) {
+    return Array.prototype.some.call(
+      form.querySelectorAll('input[type="file"]'),
+      function (input) { return input.files && input.files.length > 0; }
+    );
+  }
+
+  document.addEventListener("htmx:xhr:progress", function (event) {
+    var form = event.target.closest && event.target.closest("form");
+    var line = form && form.querySelector(".sending");
+    var detail = event.detail;
+    if (!line || !detail.lengthComputable || !chosenIn(form)) { return; }
+    line.hidden = false;
+    line.textContent = detail.loaded >= detail.total
+      ? line.dataset.saidSent
+      : filled(line.dataset.saidSending, {
+          sent: (detail.loaded / MEGABYTE).toFixed(1),
+          total: (detail.total / MEGABYTE).toFixed(1),
+        });
+  });
+
+  document.addEventListener("htmx:afterRequest", function (event) {
+    var line = event.target.querySelector && event.target.querySelector(".sending");
+    if (!line) { return; }
+    line.hidden = true;
+  });
   enhance(document);
 })();

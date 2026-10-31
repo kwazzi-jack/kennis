@@ -20,6 +20,7 @@ from fastapi.responses import (
     HTMLResponse,
 )
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kennis.context import Context, existing_corpus
 from kennis.engine.context.groups import CONTEXT_COLLECTION
@@ -304,11 +305,22 @@ TEMPLATES.env.globals.update(
         "chooser_up": words.CHOOSER_UP,
         "chooser_cancel": words.CHOOSER_CANCEL,
         "choose_folder": words.CHOOSE_FOLDER,
+        "upload_sending": words.UPLOAD_SENDING,
+        "upload_sent": words.UPLOAD_SENT,
         "skip_label": words.SKIP,
         "skipped": words.SKIPPED,
         "open_candidate": words.open_candidate,
     }
 )
+
+
+class FormUnread(KennisError):
+    """A posted form that could not be read: not a form, cut short, or a
+    typed field past a megabyte. Raised in place of Starlette's bare 400,
+    which htmx does not draw (#588), so the window's own handler says it:
+    in the bar for a task, beside the form otherwise. Nothing was done."""
+
+    default_message = words.FORM_UNREAD
 
 
 async def form_of(request: Request) -> FormData:
@@ -321,7 +333,12 @@ async def form_of(request: Request) -> FormData:
     whole server, a running job's progress stream included. Reading a form
     is the one thing that has to be awaited, so it is this dependency.
     """
-    return await request.form()
+    try:
+        return await request.form()
+    except StarletteHTTPException as error:
+        if error.status_code != 400:
+            raise
+        raise FormUnread() from error
 
 
 # A route's form, as a parameter: `form: PostedForm`.
