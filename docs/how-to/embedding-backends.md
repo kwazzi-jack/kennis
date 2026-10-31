@@ -60,6 +60,38 @@ This sends your document text to OpenAI. It needs a key, which does not go in
 `config.toml` - see [Keep credentials out of the
 config](credentials.md).
 
+## An OpenAI-compatible service
+
+Any server that implements OpenAI's embeddings endpoint - a hosted provider
+that offers one, or vLLM or Hugging Face's text-embeddings-inference on your
+own machine - is reached through the `openai` backend with its address.
+For vLLM serving `BAAI/bge-m3` on this machine:
+
+```
+kennis config set embedding.backend openai
+kennis config set embedding.model BAAI/bge-m3
+kennis config set embedding.base_url http://localhost:8000/v1
+kennis config set embedding.api_key_env VLLM_API_KEY
+```
+
+For a hosted provider, the model is its name for the model and the address
+is the one its documentation gives for OpenAI-compatible requests.
+
+`base_url` is the address the server's `/embeddings` lies under, usually
+ending in `/v1`. The key is read from the variable `api_key_env` names, or
+from kennis's credentials under that name; a server on your own machine
+usually accepts any key. kennis sends each batch of passages as OpenAI's
+API documents it - the model, the texts, and the key as a bearer token -
+and asks for the vectors as floats, the API's own default, which every
+compatible server supports.
+
+Your document text goes to that address instead of OpenAI's. Two things
+kennis cannot know about a model it has no table entry for: how many
+tokens it reads, so `config set` and the settings page say its fit is
+unknown and nothing is cut to fit before sending; and a relevance scale, so
+a search by meaning ranks its hits without a level, as for every model but
+the default fastembed one.
+
 ## none
 
 ```

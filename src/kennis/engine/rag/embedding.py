@@ -593,5 +593,16 @@ class _OpenAiEmbedder:
             if key
             else OpenAI(base_url=self._binding.host)
         )
-        response = client.embeddings.create(model=self._binding.model, input=texts)
+        # Floats from any other server: the API's own default, which every
+        # compatible server supports. The client asks for base64 unless told
+        # otherwise, which a server may not implement, and one that did not
+        # refused the first request of a build. OpenAI's own service keeps
+        # base64, about half the bytes of an index build's answers.
+        response = (
+            client.embeddings.create(model=self._binding.model, input=texts)
+            if self._binding.host is None
+            else client.embeddings.create(
+                model=self._binding.model, input=texts, encoding_format="float"
+            )
+        )
         return np.array([item.embedding for item in response.data], dtype=np.float32)
