@@ -479,6 +479,63 @@ def test_a_partial_identifier_asks_nobody(client: TestClient, lookups: list[str]
     assert lookups == []
 
 
+def test_a_doi_with_the_email_set_is_not_told_to_set_it(
+    client: TestClient, lookups: list[str], monkeypatch: pytest.MonkeyPatch
+):
+    """Issue #10: the email was set and the dialog asked for it."""
+    import kennis.engine.corpus.preview as preview_module
+    from kennis.engine.literature.unpaywall import OpenCopies
+    from kennis.gui.repairs import SET_UNPAYWALL
+
+    told = CliRunner().invoke(
+        main, ["config", "set", "literature.unpaywall_email", "reader@example.org"]
+    )
+    assert told.exit_code == 0, told.output
+    emails: list[str] = []
+
+    def open_copy_of(doi: str, *, email: str, client: object = None) -> OpenCopies:
+        emails.append(email)
+        return OpenCopies()
+
+    monkeypatch.setattr(preview_module, "open_copy_of", open_copy_of)
+
+    shown = client.get(
+        "/add/preview/paper",
+        params={"identifiers": "10.1093/mnras/stab1234"},
+        headers=HTMX,
+    ).text
+
+    assert emails == ["reader@example.org"]
+    assert SET_UNPAYWALL not in shown
+    assert "Unpaywall knows no open copy" in shown.replace("&#39;", "'")
+
+
+def test_a_doi_with_an_open_copy_is_told_the_add_fetches_it(
+    client: TestClient, lookups: list[str], monkeypatch: pytest.MonkeyPatch
+):
+    import kennis.engine.corpus.preview as preview_module
+    from kennis.engine.literature.unpaywall import OpenCopies
+
+    published = "https://journal.example/published.pdf"
+    told = CliRunner().invoke(
+        main, ["config", "set", "literature.unpaywall_email", "reader@example.org"]
+    )
+    assert told.exit_code == 0, told.output
+    monkeypatch.setattr(
+        preview_module,
+        "open_copy_of",
+        lambda doi, *, email, client=None: OpenCopies(published=published),
+    )
+
+    shown = client.get(
+        "/add/preview/paper",
+        params={"identifiers": "10.1093/mnras/stab1234"},
+        headers=HTMX,
+    ).text
+
+    assert words.previewed_open_copy(published) in shown
+
+
 def test_a_doi_alone_is_told_what_the_add_would_say(
     client: TestClient, lookups: list[str]
 ):

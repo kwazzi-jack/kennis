@@ -1178,6 +1178,11 @@ def previewed_citekey(citekey: str) -> str:
     return f"Citekey: {citekey}"
 
 
+def previewed_open_copy(address: str) -> str:
+    """A DOI whose published paper Unpaywall knows an open copy of (#10)."""
+    return f"Unpaywall knows an open copy, which the add fetches: {address}"
+
+
 # Shown while a preview's request is out: arXiv takes a second or more,
 # and an Add pressed before it answers loses what it would have said.
 LOOKING_UP: Final[dict[str, str]] = {
@@ -2089,6 +2094,7 @@ __all__ = [
     "overridden_by",
     "passage_label",
     "previewed_citekey",
+    "previewed_open_copy",
     "previewed_project",
     "previewed_version",
     "remember_targets",

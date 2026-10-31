@@ -44,6 +44,7 @@ from kennis.engine.literature.identifiers import (
     identifier_if_reference,
 )
 from kennis.engine.literature.metadata import lookup_arxiv_metadata
+from kennis.engine.literature.unpaywall import open_copy_of
 from kennis.engine.refusals import NoPublisherText, SamePaper
 
 
@@ -69,6 +70,8 @@ class PaperPreview:
     citekey: str | None = None
     held_title: str | None = None
     refusal: SamePaper | NoPublisherText | None = None
+    # The published open copy Unpaywall named, which the add would fetch.
+    open_copy: str | None = None
 
 
 def preview_paper(
@@ -77,9 +80,14 @@ def preview_paper(
     *,
     citekey: str | None = None,
     title: str | None = None,
+    unpaywall_email: str = "",
     client: httpx.Client | None = None,
 ) -> PaperPreview:
-    """What an add of one paper would do, fetching only what it would."""
+    """What an add of one paper would do, fetching only what it would.
+
+    `unpaywall_email` is the setting the add is given: with one, a DOI is
+    asked of Unpaywall here as the add would ask it (#10).
+    """
     candidate = asked.strip()
     if not candidate:
         return PaperPreview(asked=asked)
@@ -98,11 +106,34 @@ def preview_paper(
             held_title=record.titles.get(held),
             refusal=SamePaper(document_id=held),
         )
+    if recognised.kind == "doi" and unpaywall_email:
+        # The add asks Unpaywall for a DOI whenever the reader has given an
+        # email for it (`add._open_copy`), so the preview asks too. Not
+        # asking said to set an email that was set (#10).
+        copies = open_copy_of(recognised.value, email=unpaywall_email, client=client)
+        if copies.published is not None:
+            return PaperPreview(
+                asked=asked,
+                recognised=recognised,
+                citekey=citekey,
+                open_copy=copies.published,
+            )
+        return PaperPreview(
+            asked=asked,
+            recognised=recognised,
+            citekey=citekey,
+            refusal=NoPublisherText(
+                kind=recognised.kind,
+                value=recognised.value,
+                asked_unpaywall=True,
+                accepted_manuscript=copies.accepted,
+            ),
+        )
     if recognised.kind != "arxiv":
-        # The add records a DOI or a bibcode as given and has no text to
-        # store for one: a publisher's copy needs a browser session
-        # kennis does not have. So the add would refuse it unless a file
-        # comes with it, and the preview says so now.
+        # A bibcode, or a DOI with no email for Unpaywall: the add records
+        # it as given and has no text to store, since a publisher's copy
+        # needs a browser session kennis does not have. So the add would
+        # refuse it unless a file comes with it, and the preview says so.
         return PaperPreview(
             asked=asked,
             recognised=recognised,

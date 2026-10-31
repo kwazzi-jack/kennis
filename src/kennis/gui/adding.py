@@ -383,6 +383,8 @@ def shown_paper_preview(
     if preview.refusal is not None:
         # The window's words; its ways out are `preview_ways`, as controls.
         return [ShownLine(refusal_fact(preview.refusal), "role-warning")]
+    if preview.open_copy is not None:
+        return [ShownLine(words.previewed_open_copy(preview.open_copy))]
     # What arXiv named is the card's, drawn by `shown_paper_found`.
     lines: list[ShownLine] = []
     if preview.title is None and preview.looked_up:

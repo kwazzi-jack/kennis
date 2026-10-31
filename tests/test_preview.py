@@ -164,6 +164,87 @@ def test_a_doi_or_bibcode_alone_is_refused_ahead_and_not_looked_up(
     assert arxiv.requests == []
 
 
+DOI = "10.1080/13576275.2026.2733460"
+PUBLISHED = "https://journal.example/published.pdf"
+ACCEPTED = "https://repository.example/accepted.pdf"
+
+
+def unpaywall(*locations: tuple[str, str]) -> tuple[httpx.Client, list[str]]:
+    """Unpaywall listing `(version, address)` locations, recording every
+    address asked for."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(str(request.url))
+        return httpx.Response(
+            200,
+            json={
+                "oa_locations": [
+                    {"version": version, "url_for_pdf": address}
+                    for version, address in locations
+                ]
+            },
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), asked
+
+
+def test_with_an_email_a_doi_s_open_copy_is_named_as_the_add_would_fetch_it(
+    papers: Collection,
+):
+    """Issue #10: the preview never asked Unpaywall, so it said to set an
+    email that was set. The add asks whenever one is, and so does this."""
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    preview = preview_paper(
+        papers, DOI, unpaywall_email="reader@example.org", client=client
+    )
+
+    assert preview.refusal is None
+    assert preview.open_copy == PUBLISHED
+    assert len(asked) == 1 and "api.unpaywall.org" in asked[0]
+
+
+def test_with_an_email_and_no_open_copy_unpaywall_is_said_to_have_been_asked(
+    papers: Collection,
+):
+    """The add's own refusal: asked, none known, the manuscript offered."""
+    client, _ = unpaywall(("acceptedVersion", ACCEPTED))
+
+    preview = preview_paper(
+        papers, DOI, unpaywall_email="reader@example.org", client=client
+    )
+
+    assert preview.refusal == NoPublisherText(
+        kind="doi", value=DOI, asked_unpaywall=True, accepted_manuscript=ACCEPTED
+    )
+    assert preview.open_copy is None
+
+
+def test_without_an_email_unpaywall_is_not_asked(papers: Collection):
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    preview = preview_paper(papers, DOI, client=client)
+
+    assert preview.refusal == NoPublisherText(kind="doi", value=DOI)
+    assert asked == []
+
+
+def test_a_bibcode_is_not_asked_of_unpaywall_whatever_the_email(papers: Collection):
+    """Unpaywall knows DOIs; the add asks it for nothing else."""
+    client, asked = unpaywall(("publishedVersion", PUBLISHED))
+
+    preview = preview_paper(
+        papers,
+        "2021MNRAS.501.1234W",
+        unpaywall_email="reader@example.org",
+        client=client,
+    )
+
+    assert isinstance(preview.refusal, NoPublisherText)
+    assert asked == []
+
+
 @pytest.mark.parametrize("typed", ["2409", "2409.1", "10.10", "arXiv:", "calibration"])
 def test_nothing_is_fetched_until_the_input_is_recognised(
     papers: Collection, arxiv: Recording, typed: str

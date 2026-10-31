@@ -274,9 +274,14 @@ def preview_a_paper(
     first = next(iter(papers_named), "")
     typed_title = _typed(title, prefilled_title)
     typed_citekey = _typed(citekey, prefilled_citekey)
-    papers = Collection(root=existing_corpus().corpus_root, name="literature")
+    context = existing_corpus()
+    papers = Collection(root=context.corpus_root, name="literature")
     preview = preview_paper(
-        papers, first, citekey=typed_citekey or None, title=typed_title or None
+        papers,
+        first,
+        citekey=typed_citekey or None,
+        title=typed_title or None,
+        unpaywall_email=context.settings.literature.unpaywall_email,
     )
     # The field whose input asked is the one the reader is in: emptied to
     # type afresh, it must not be refilled under the cursor.
