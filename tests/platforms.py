@@ -68,17 +68,28 @@ NO_FILE_MODES = (
     "config directory's ACL is what protects the key there (#389)"
 )
 
+# A test that makes an open file per uploaded part fail lowers the
+# process's limit on open files, which Windows has no `resource` module to
+# do, and counts what is open in `/dev/fd`, which Windows has not got. The
+# streaming it guards is the same code on every platform.
+NO_FILE_LIMIT = (
+    "Windows has no resource module to lower a process's limit on open "
+    "files, nor a /dev/fd to count them by (#11)"
+)
+
 _WINDOWS = os.name == "nt"
 
 needs_a_posix_shell = pytest.mark.skipif(_WINDOWS, reason=NO_POSIX_SHELL)
 needs_arrow_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_ARROW_IN_A_FILENAME)
 needs_file_modes = pytest.mark.skipif(_WINDOWS, reason=NO_FILE_MODES)
+needs_a_file_limit = pytest.mark.skipif(_WINDOWS, reason=NO_FILE_LIMIT)
 needs_unportable_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_UNPORTABLE_FILENAME)
 
 # What `test_platforms.py` iterates. A marker missing from here is one
 # nothing checks, so the guard asserts this names every marker the module
 # defines.
 MARKERS = (
+    needs_a_file_limit,
     needs_a_posix_shell,
     needs_arrow_filenames,
     needs_file_modes,
@@ -88,9 +99,11 @@ MARKERS = (
 __all__ = [
     "MARKERS",
     "NO_ARROW_IN_A_FILENAME",
+    "NO_FILE_LIMIT",
     "NO_FILE_MODES",
     "NO_POSIX_SHELL",
     "NO_UNPORTABLE_FILENAME",
+    "needs_a_file_limit",
     "needs_a_posix_shell",
     "needs_arrow_filenames",
     "needs_file_modes",

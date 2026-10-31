@@ -151,7 +151,11 @@ complete.
 folder** sends a whole folder with its sub-folders. The files go to kennis
 through the same connection as the page, so this works the same when kennis
 runs on another machine behind `ssh -L`. A document added this way records
-that it was uploaded, under the name it was sent with. A path typed into
+that it was uploaded, under the name it was sent with. A folder may hold
+any number of files; each is written to disk on the kennis computer as it
+arrives. As for a folder path, its sub-folders become groups, and any
+folder whose name begins with a dot, such as `.obsidian`, is skipped.
+A path typed into
 the field instead is read on the computer kennis runs on, without copying;
 **Browse**, in a Several by group block, lists that computer's folders.
 

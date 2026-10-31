@@ -12,7 +12,6 @@ from fastapi.datastructures import FormData
 from fastapi.responses import (
     HTMLResponse,
 )
-from starlette.datastructures import UploadFile
 
 from kennis.context import Context, existing_corpus
 from kennis.engine.corpus.add import AddOptions, AddReport, unusable_docs_input
@@ -45,13 +44,12 @@ from kennis.gui.adding import (
 from kennis.gui.pages import known_groups
 from kennis.gui.responses import (
     TEMPLATES,
-    PostedForm,
     action_page,
     from_htmx,
     refused_in_the_form,
 )
 from kennis.gui.routes.jobs import started
-from kennis.gui.uploads import staged
+from kennis.gui.uploads import PostedWithFiles, Staged
 from kennis.operations import (
     GroupBlock,
     add_documents,
@@ -433,7 +431,7 @@ def _docs_refusal(
 
 
 @router.post("/add")
-def start_add(request: Request, form: PostedForm) -> Response:
+def start_add(request: Request, posted: PostedWithFiles) -> Response:
     """Start an add and answer with somewhere to watch it.
 
     Answers at once rather than when the work is done: one PDF is
@@ -441,6 +439,7 @@ def start_add(request: Request, form: PostedForm) -> Response:
     and a POST that returns at the end is a browser that appears to
     have hung.
     """
+    form = posted.fields
     context = existing_corpus()
     options = _add_options(context, form)
     if isinstance(options, str):
@@ -465,14 +464,12 @@ def start_add(request: Request, form: PostedForm) -> Response:
     # The Paper tab adds from the way in chosen and only that: a PDF left
     # in the picker of the way not chosen is out of sight, and is not
     # added behind the reader's back.
-    parts = [part for part in form.getlist("upload") if isinstance(part, UploadFile)]
     if form.get("kind") == "paper" and not _from_a_pdf(form):
-        uploads = staged([])
-        for part in parts:
-            part.file.close()
+        posted.discard("upload")
+        uploads = Staged()
         typed = "identifiers"
     else:
-        uploads = staged(parts)
+        uploads = posted.staged("upload")
         typed = "pdf" if form.get("kind") == "paper" else "identifiers"
     identifiers = _lines(str(form.get(typed) or "")) + [
         str(path) for path in uploads.paths

@@ -437,6 +437,36 @@ def test_a_finished_job_redraws_every_part_it_names(
     )
 
 
+def test_a_folder_of_more_than_a_thousand_files_is_added_whole(
+    corpus: Path, page: playwright.Page, tmp_path: Path
+) -> None:
+    """Brian's Obsidian vault by the folder button, 2594 files (#11): the
+    form was refused past 1000 files, and the window said nothing. As the
+    browser sends it, each file named by its path inside the folder."""
+    count = 1100
+    folder = tmp_path / "vault"
+    for index in range(count):
+        note = folder / f"day{index % 25}" / f"note{index}.md"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(f"# Note {index}\n", encoding="utf-8")
+
+    page.click("a.action[href='/add']")
+    page.wait_for_selector("#dialog .add-tab", timeout=_WAIT_MS)
+    page.click("#dialog a.tab[href*='kind=file']")
+    page.wait_for_selector(
+        '#dialog .field[data-uploads="both"] .uploads[data-enhanced]',
+        timeout=_WAIT_MS,
+    )
+    page.set_input_files("#dialog input[name=upload][webkitdirectory]", str(folder))
+    page.click("#dialog .choices label:has(input[value=notes])")
+    _wait_for_htmx(page, "#dialog form")
+    page.click("#dialog form[action='/add'] button[type=submit]")
+    page.wait_for_selector(".strip .job[data-state='done']", timeout=120_000)
+
+    held = corpus / "corpus" / "notes"
+    assert sum(1 for _ in held.rglob("note*.md")) == count
+
+
 def test_a_note_in_a_new_group_appears_in_the_open_branch(
     page: playwright.Page,
 ) -> None:

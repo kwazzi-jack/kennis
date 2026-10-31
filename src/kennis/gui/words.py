@@ -960,6 +960,12 @@ CHANGED_MEANWHILE_RETRY = (
     "Nothing changed; run it again."
 )
 
+# A posted form kennis could not read: not a form, cut short, or a typed
+# field longer than anyone types (#11). Nothing was started.
+FORM_UNREAD = (
+    "kennis could not read what the window sent, so nothing was added. "
+    "Try again; if it happens again, reload the page."
+)
 NOTHING_TO_ADD = "Nothing to add. Enter an ID, address or path, or choose a file."
 
 # The Add dialog's four tabs, in the order offered. A kind of thing to
@@ -1851,6 +1857,7 @@ __all__ = [
     "EVERY_PROJECT",
     "FIELD_LABELS",
     "FIELD_TIPS",
+    "FORM_UNREAD",
     "GROUP_HINT",
     "GROUP_LABEL",
     "GROUP_NEEDS_A_NAME",

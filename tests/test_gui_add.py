@@ -8,11 +8,10 @@ runs on, because that is the computer `corpus add` reads from (#420).
 
 from __future__ import annotations
 
-import io
+import os
 import re
 import tempfile
 import time
-from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote
@@ -26,7 +25,7 @@ from markupsafe import escape
 
 from kennis.cli.__main__ import main
 from kennis.engine.corpus.add import AddOptions, AddReport
-from kennis.engine.corpus.intake import convert_local_file, uploaded_as
+from kennis.engine.corpus.intake import convert_local_file
 from kennis.engine.events import EventSink
 from kennis.engine.literature.metadata import PaperMetadata
 from kennis.engine.settings import load_settings
@@ -34,7 +33,7 @@ from kennis.gui import words
 from kennis.gui.app import build_app
 from kennis.gui.icons import icon
 from kennis.gui.responses import TEMPLATES
-from kennis.gui.uploads import staged
+from platforms import needs_a_file_limit
 
 TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
@@ -1110,11 +1109,24 @@ def test_an_empty_picker_adds_only_what_was_typed(
 @pytest.mark.parametrize(
     "sent", ["../../escape.md", "/etc/escape.md", "C:\\Users\\x\\escape.md"]
 )
-def test_an_uploaded_name_cannot_place_a_file_outside_its_folder(sent: str):
+def test_an_uploaded_name_cannot_place_a_file_outside_its_folder(
+    client: TestClient, adds: list[AddCall], sent: str
+):
     """The name is the sender's to choose; only its last parts are kept."""
-    result = staged([UploadedPart(sent, b"# Kept\n")])
+    client.post(
+        "/add",
+        data={"kind": "file", "collection": "notes"},
+        files=[("upload", (sent, b"# Kept\n", "text/markdown"))],
+        headers=HTMX,
+    )
+    finished(client.app)
 
-    [path] = result.names
+    [(_, (staged_at,), _)] = adds
+    [path] = (
+        [Path(staged_at)]
+        if Path(staged_at).is_file()
+        else Path(staged_at).rglob("*.md")
+    )
     assert path.name == "escape.md"
     # Both resolved: Windows may name the temporary directory by its short
     # 8.3 name, RUNNER~1, and the resolved path by its long one.
@@ -1122,33 +1134,132 @@ def test_an_uploaded_name_cannot_place_a_file_outside_its_folder(sent: str):
     assert ".." not in path.parts
 
 
-@dataclass
-class UploadedPart:
-    name: str
-    body: bytes
-
-    @property
-    def filename(self) -> str:
-        return self.name
-
-    @property
-    def file(self) -> io.BytesIO:
-        return self.stream
-
-    def __post_init__(self) -> None:
-        self.stream = io.BytesIO(self.body)
-
-
-def test_an_uploaded_file_says_it_was_uploaded_not_where_it_was_staged():
+def test_an_uploaded_file_says_it_was_uploaded_not_where_it_was_staged(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
     """A temporary path is gone once the add is, and names nothing."""
-    result = staged([UploadedPart("notes/calibration.md", b"# Calibration\n")])
-    [path] = result.names
+    origins: list[str] = []
 
-    with uploaded_as(result.names):
-        converted = convert_local_file(path)
+    def recorded(
+        context: object,
+        destination: str,
+        identifiers: list[str],
+        options: AddOptions,
+        **rest: object,
+    ) -> AddReport:
+        staged_at = Path(identifiers[0]) / "calibration.md"
+        origins.append(convert_local_file(staged_at).origin)
+        return AddReport(outcomes=[], elapsed_seconds=0.0)
 
-    assert converted.origin == "upload:notes/calibration.md"
-    assert convert_local_file(path).origin == f"path:{path}"
+    monkeypatch.setattr("kennis.gui.routes.add.add_documents", recorded)
+    client.post(
+        "/add",
+        data={"kind": "file", "collection": "notes"},
+        files=[
+            ("upload", ("notes/calibration.md", b"# Calibration\n", "text/markdown"))
+        ],
+        headers=HTMX,
+    )
+    finished(client.app)
+
+    assert origins == ["upload:notes/calibration.md"]
+
+
+def test_a_folder_of_more_files_than_a_form_parser_allows_is_added_whole(
+    client: TestClient, adds: list[AddCall]
+):
+    """Brian's Obsidian vault, 2594 files by the folder button (#11).
+    Starlette refuses a form of more than 1000 files with a 400 that htmx
+    does not draw, so the add did not happen and nothing said so."""
+    count = 2594
+    files = [
+        (
+            "upload",
+            (
+                f"2025/day{index % 40}/note{index}.md",
+                f"# Note {index}\n".encode(),
+                "text/markdown",
+            ),
+        )
+        for index in range(count)
+    ]
+
+    answer = client.post(
+        "/add", data={"kind": "file", "collection": "notes"}, files=files, headers=HTMX
+    )
+    finished(client.app)
+
+    assert answer.status_code == 200
+    [(_, (folder,), _)] = adds
+    assert Path(folder).name == "2025"
+    assert sum(1 for _ in Path(folder).rglob("*.md")) == count
+
+
+@needs_a_file_limit
+def test_each_uploaded_file_is_closed_before_the_next_arrives(
+    client: TestClient, adds: list[AddCall]
+):
+    """Starlette holds a part past a megabyte as a temporary file, open
+    until the whole form is read, so a folder of a thousand PDFs met the
+    limit on open files. Here that limit is a few dozen above what is
+    open, and three times as many large files are sent."""
+    import resource
+
+    spare = 30
+    large = b"x" * (1024 * 1024 + 1024)
+    files = [
+        ("upload", (f"papers/p{index}.pdf", large, "application/pdf"))
+        for index in range(3 * spare)
+    ]
+    limits = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(
+        resource.RLIMIT_NOFILE, (len(os.listdir("/dev/fd")) + spare, limits[1])
+    )
+    try:
+        answer = client.post(
+            "/add",
+            data={"kind": "file", "collection": "notes"},
+            files=files,
+            headers=HTMX,
+        )
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, limits)
+    finished(client.app)
+
+    assert answer.status_code == 200
+    [(_, (folder,), _)] = adds
+    assert sum(1 for _ in Path(folder).iterdir()) == 3 * spare
+
+
+def test_a_form_kennis_cannot_read_is_said_in_the_bar(client: TestClient):
+    """A body that is not a form was a bare 400 that htmx does not draw."""
+    answer = client.post(
+        "/add",
+        content=b"not a form",
+        headers={**HTMX, "content-type": "multipart/form-data"},
+    )
+
+    assert answer.status_code == 200
+    assert str(escape(words.FORM_UNREAD)) in answer.text
+
+
+def test_a_field_too_long_to_be_typed_is_refused(
+    client: TestClient, adds: list[AddCall]
+):
+    """Text fields keep the megabyte Starlette allowed them; files do not."""
+    answer = client.post(
+        "/add",
+        data={
+            "kind": "file",
+            "collection": "notes",
+            "identifiers": "x" * (1024 * 1024 + 1),
+        },
+        files=[("upload", ("a.md", b"# A\n", "text/markdown"))],
+        headers=HTMX,
+    )
+
+    assert str(escape(words.FORM_UNREAD)) in answer.text
+    assert adds == []
 
 
 def test_a_field_beside_the_picker_takes_the_whole_row(client: TestClient):

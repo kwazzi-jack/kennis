@@ -20,7 +20,6 @@ from typing import Annotated, Final
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import HTMLResponse
-from starlette.datastructures import UploadFile
 
 from kennis.context import existing_corpus
 from kennis.engine.corpus.add import AddOptions, AddOutcome, AddReport
@@ -32,13 +31,12 @@ from kennis.engine.literature.identifiers import identifier_if_reference
 from kennis.engine.refusals import Quoted
 from kennis.gui import repairs, words
 from kennis.gui.responses import (
-    PostedForm,
     action_page,
     refused_a_post,
     refused_in_the_form,
 )
 from kennis.gui.routes.jobs import started
-from kennis.gui.uploads import staged
+from kennis.gui.uploads import PostedWithFiles
 from kennis.operations import add_documents, supply_a_pack_paper
 from kennis.render.refusals import paper_page
 
@@ -108,8 +106,9 @@ def serve_supply_form(
 
 
 @router.post("/supply")
-def start_supplying(request: Request, form: PostedForm) -> Response:
+def start_supplying(request: Request, posted: PostedWithFiles) -> Response:
     """Add every file chosen, as one job, and skip the papers left empty."""
+    form = posted.fields
     owner = str(form.get("owner") or "")
     if owner not in _OWNERS:
         return refused_a_post(request, words.SUPPLY_NO_PAPERS)
@@ -117,15 +116,12 @@ def start_supplying(request: Request, form: PostedForm) -> Response:
     names: dict[Path, str] = {}
     position = 0
     while (reference := form.get(f"paper-{position}")) is not None:
-        part = form.get(f"file-{position}")
+        sent = posted.staged(f"file-{position}")
         position += 1
         found = _wanted([str(reference)])
-        if not found or not isinstance(part, UploadFile) or not part.filename:
-            if isinstance(part, UploadFile):
-                part.file.close()
+        if not found or not sent.paths:
             continue
         paper = found[0]
-        sent = staged([part])
         chosen.extend((paper.reference, paper.value, path) for path in sent.paths)
         names.update(sent.names)
     if not chosen:
