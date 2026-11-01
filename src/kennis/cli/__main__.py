@@ -26,6 +26,8 @@ from kennis.cli.commands import (
     context_group,
     corpus_group,
     gui_command,
+    link_group,
+    open_command,
     pack_group,
     read_command,
     remember_command,
@@ -119,6 +121,8 @@ main.add_command(search_command)
 main.add_command(read_command)
 main.add_command(remember_command)
 main.add_command(gui_command)
+main.add_command(open_command)
+main.add_command(link_group)
 main.add_command(serve_command)
 main.add_command(service_group)
 
