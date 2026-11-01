@@ -56,6 +56,7 @@ EXPECTED_GROUPS = {
         "literature.request_delay",
         "literature.unpaywall_email",
     ],
+    "Citing passages": ["literature.citation_style"],
     "Command line": ["terminal.messages"],
     "Log file": [
         "logging.level",

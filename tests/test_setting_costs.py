@@ -50,6 +50,7 @@ EXPECTED = {
     "conversion.repair_ligatures": ("next_add",),
     "conversion.batch_size": ("next_add",),
     "literature.request_delay": ("next_add",),
+    "literature.citation_style": ("next_cite",),
     "terminal.messages": ("next_command",),
     # Read once, when kennis starts and opens the log.
     "logging.level": ("next_start",),

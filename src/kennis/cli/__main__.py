@@ -22,6 +22,7 @@ from kennis import __version__
 from kennis.cli import display
 from kennis.cli.commands import (
     backup_group,
+    cite_command,
     config_group,
     context_group,
     corpus_group,
@@ -119,6 +120,7 @@ main.add_command(context_group)
 main.add_command(pack_group)
 main.add_command(search_command)
 main.add_command(read_command)
+main.add_command(cite_command)
 main.add_command(remember_command)
 main.add_command(gui_command)
 main.add_command(open_command)

@@ -409,3 +409,13 @@ class ServiceBusy(KennisError):
 
     default_message = "the kennis service is running a task and was left running"
     default_resolution = "kennis service status"
+
+
+class CitationStyleUnreadable(KennisError):
+    """The `.csl` file `literature.citation_style` names cannot be read as a
+    citation style. Empty, the setting uses the style kennis ships."""
+
+    default_message = (
+        "the citation style named by literature.citation_style is unreadable"
+    )
+    default_resolution = 'kennis config set literature.citation_style ""'

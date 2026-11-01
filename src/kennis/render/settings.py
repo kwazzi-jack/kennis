@@ -25,6 +25,8 @@ def describe_cost(cost: SettingCost) -> str:
             return "takes effect at the next add"
         case "next_index":
             return "takes effect at the next index"
+        case "next_cite":
+            return "takes effect at the next citation"
         case "next_command":
             return "takes effect at the next command"
         case "next_start":

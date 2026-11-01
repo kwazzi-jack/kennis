@@ -374,6 +374,57 @@
     }
   },
   {
+    "description": "Cite passages from notes, literature or docs.\n\nCall this for every passage your answer relies on, with the hits'\n`document_id` and `chunk`, all in one call. Each comes back as:\n\n- `markdown`: the citation as a link to the passage. Write it as given.\n- `link`: the `kennis://` link alone. Write it after the citation where a\n  link cannot be shown.\n- `locator`: the figure, table, equation or section the passage is in,\n  if any, to name in your own words (\"in section 2.1 of ...\").\n- `reference`: the entry for a list of references.\n\nNever write a citation or a `kennis://` link yourself. A note saying a\ncitation reads the same as another means their links open different\npassages: say what each one is.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "items": {
+            "description": "One passage to cite.\n\n`document_id` is a search hit's, or `list_corpus`'s. `chunk` is the hit's\n`chunk`; omitted, the document is cited as a whole.",
+            "properties": {
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "document_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "type": "object"
+    },
+    "name": "cite",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
     "description": "Write something down so it is still here in a later session.\n\n**This is durable and it is not a scratchpad.** A note goes into the\nuser's corpus, is committed to its history, and will come back in\nsearches months from now. Use it for what the user has decided,\ncorrected or asked you to keep - not for working state, not for a\nsummary of what you just did, and not without their say-so.\n\n`to_context=True` writes into this project's `.context/` bundle\ninstead: for a convention or a decision that belongs to this\nrepository rather than to the user everywhere. It fails when there\nis no bundle here rather than falling back to notes, because\nrecording a project decision somewhere machine-global and reporting\nsuccess would be worse than not recording it.\n\n`title` overrides the first line, and `group` puts the note in a\nsubdirectory. The answer carries the `document_id` a `read_*` tool\ntakes.",
     "input": {
       "additionalProperties": false,

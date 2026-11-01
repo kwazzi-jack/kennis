@@ -122,6 +122,9 @@ dependencies = [
     # path uploads documents. The pin is a decision, not staleness (#130).
     "mineru[pipeline]>=3.4,<4",
     "py7zr>=1.1.3,<2",
+    # Citations formatted by a CSL style, so a person can choose one by
+    # its .csl file (#571); pure Python, beside lxml, which MinerU has.
+    "citeproc-py>=0.12.1,<0.13",
 ]
 
 [project.optional-dependencies]
@@ -213,7 +216,7 @@ warn_unreachable = true
 # the sanctioned way to say it: the project rule forbids `# type: ignore`,
 # which would silence a line rather than name a dependency.
 [[tool.mypy.overrides]]
-module = ["bm25s.*", "pypdfium2.*"]
+module = ["bm25s.*", "citeproc", "citeproc.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -27,6 +27,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from filelock import FileLock
 
+import kennis.citing
 import kennis.finding
 import kennis.holdings
 import kennis.operations
@@ -85,6 +86,7 @@ EXPECTED_OPERATIONS = frozenset(
         "sync_corpus",
         # Reads, answered on the request.
         "bundle_status",
+        "cite",
         "contents",
         "docs_versions",
         "document_marks",
@@ -321,6 +323,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "version_pages": lambda scene: {"project": "tool", "version": "1.0"},
     "document_marks": lambda scene: {"collection": "notes"},
     "found": lambda scene: {"handle": "calibration", "collection": None},
+    "cite": lambda scene: {"requests": [kennis.citing.CiteRequest("calibration")]},
     "holdings": lambda scene: {},
     "pack_listing": lambda scene: {
         name: value for name, value in installed(scene).items() if name != "pack_id"
@@ -352,6 +355,9 @@ DIRECT: dict[str, Callable[[Context], object]] = {
     "document_marks": lambda context: kennis.holdings.document_marks(context, "notes"),
     "found": lambda context: kennis.finding.found_document(
         context, "calibration", None
+    ),
+    "cite": lambda context: kennis.citing.cite(
+        context, [kennis.citing.CiteRequest("calibration")]
     ),
     "docs_versions": kennis.holdings.docs_versions,
     "history": lambda context: kennis.holdings.history_of(context, None, 5),

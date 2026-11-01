@@ -249,6 +249,14 @@ class LiteratureSettings(BaseModel):
             "is not asked, and such a paper needs your own copy."
         ),
     )
+    citation_style: str = Field(
+        default="",
+        description=(
+            "A .csl file to format citations with, such as one from the "
+            "Zotero style repository. Empty: Harvard (Cite Them Right), which "
+            "is installed with kennis."
+        ),
+    )
 
 
 class TerminalSettings(BaseModel):

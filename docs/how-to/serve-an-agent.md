@@ -50,7 +50,7 @@ it, what the corpus is for - rather than about kennis in the abstract.
 Install a pack, restart the agent, and the description changes. See
 [Author a pack](author-a-pack.md).
 
-## The nine tools
+## The ten tools
 
 | tool | what it does |
 |---|---|
@@ -62,12 +62,18 @@ Install a pack, restart the agent, and the description changes. See
 | `read_notes` | read passages from notes, several at once |
 | `read_literature` | read passages from literature, several at once |
 | `read_docs` | read passages from documentation, several at once |
+| `cite` | a citation, its reference and its `kennis://` link for each passage cited, several at once |
 | `remember` | write one note - the only tool that writes |
 
 The three `read_*` tools are **batched**: they take a list of requests, each
 naming a document and optionally a chunk and how much either side of it to
 include. An agent that has just run a search has several hits to follow, and
 one round trip is better than five.
+
+`cite` is batched the same way. The agent is told to cite through it rather
+than write a citation or a link itself, so a citation always names a document
+kennis holds and its link always opens the passage; see
+[Cite a passage and open it](cite-and-open.md).
 
 Each reply is capped, so a request for a long document returns what fits and
 says that it did rather than filling the agent's context window.

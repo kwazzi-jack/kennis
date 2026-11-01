@@ -62,6 +62,7 @@ How papers are identified and fetched.
 |---|---|---|---|
 | `request_delay` | `float` | `3.0` | Least seconds between arXiv papers. A longer `Crawl-delay` in a host's robots.txt applies instead: arxiv.org asks for 15. |
 | `unpaywall_email` | `str` | `""` | Your email address, which Unpaywall requires, to look up a free and legal copy of a paper known only by its DOI. Empty: Unpaywall is not asked, and such a paper needs your own copy. |
+| `citation_style` | `str` | `""` | A .csl file to format citations with, such as one from the Zotero style repository. Empty: Harvard (Cite Them Right), which is installed with kennis. |
 
 ### `[terminal]`
 

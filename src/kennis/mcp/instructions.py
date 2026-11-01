@@ -58,6 +58,16 @@ Call `list_corpus` when you need to know what a collection *contains*
 rather than what matches a query - which docs projects exist before
 filtering a search by one, or whether a paper is held at all.
 
+## Citing
+
+When an answer rests on a passage from `notes`, `literature` or `docs`,
+cite it with `cite`, giving every hit you rely on in one call. Write each
+citation as its `markdown` line gives it, a link that opens the passage in
+the user's kennis window; where a link cannot be shown, write the citation
+and then its `kennis://` link. Never compose a citation or a `kennis://`
+link yourself. A context hit is a file in the user's repository: cite it
+by its path.
+
 ## Writing
 
 `remember` is the only tool here that changes anything. What it writes

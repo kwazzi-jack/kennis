@@ -21,8 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kennis import finding, operations, retrieval, writing
+from kennis import citing, finding, operations, retrieval, writing
 from kennis import holdings as held
+from kennis.citing import Cited, CiteRequest
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
 from kennis.engine.context import bundle as bundles
@@ -365,6 +366,10 @@ def revision() -> str | None:
     return held.revision(existing_corpus())
 
 
+def cite(requests: list[CiteRequest]) -> Cited:
+    return citing.cite(existing_corpus(), requests)
+
+
 def found(handle: str, collection: str | None = None) -> Found:
     return finding.found_document(existing_corpus(), handle, collection)
 
@@ -451,6 +456,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(supply_paper, kind="add"),
         Operation(sync_corpus, kind="sync"),
         Operation(bundle_status),
+        Operation(cite),
         Operation(contents),
         Operation(docs_versions),
         Operation(document_marks),

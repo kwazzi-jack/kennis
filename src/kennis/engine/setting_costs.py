@@ -1,15 +1,14 @@
 """What changing a setting costs, as data (#410).
 
-Seven costs, and a setting may carry more than one. `next_search`,
-`next_add` and `next_index` take effect the next time kennis searches,
-adds or builds an index; `next_command` at the next command, which reads
-the file as it starts; `next_start` when kennis next starts, because the
-log is opened once, at the start; `rebuild`
-leaves every index on what it was built with until it is rebuilt, because
-an index records its model and chunk size in `binding.json` and a query
-embedded by another model is compared against vectors it cannot be
-compared against; `leaves_machine` sends document text to a third party
-(rules.md 4.5).
+Eight costs, and a setting may carry more than one. `next_search`,
+`next_add`, `next_index` and `next_cite` take effect the next time kennis
+searches, adds, builds an index or cites; `next_command` at the next
+command, which reads the file as it starts; `next_start` when kennis next
+starts, because the log is opened once, at the start; `rebuild` leaves every
+index on what it was built with until it is rebuilt, because an index
+records its model and chunk size in `binding.json` and a query embedded by
+another model is compared against vectors it cannot be compared against;
+`leaves_machine` sends document text to a third party (rules.md 4.5).
 
 Keyed by value as well as by key, because only the hosted backends send
 anything away. The words are in `render/settings.py`, so every front end
@@ -24,6 +23,7 @@ type SettingCost = Literal[
     "next_search",
     "next_add",
     "next_index",
+    "next_cite",
     "next_command",
     "next_start",
     "rebuild",
@@ -62,6 +62,7 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "conversion.repair_ligatures": ("next_add",),
     "conversion.batch_size": ("next_add",),
     "literature.request_delay": ("next_add",),
+    "literature.citation_style": ("next_cite",),
     # Read by each command as it starts; the window prints no hints.
     "terminal.messages": ("next_command",),
     "logging.level": ("next_start",),

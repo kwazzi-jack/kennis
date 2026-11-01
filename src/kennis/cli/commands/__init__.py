@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from kennis.cli.commands.backup import backup_group
+from kennis.cli.commands.cite import cite_command
 from kennis.cli.commands.config import config_group
 from kennis.cli.commands.context import context_group
 from kennis.cli.commands.corpus import corpus_group
@@ -16,6 +17,7 @@ from kennis.cli.commands.service import service_group
 
 __all__ = [
     "backup_group",
+    "cite_command",
     "config_group",
     "context_group",
     "corpus_group",

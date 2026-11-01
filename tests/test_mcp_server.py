@@ -265,6 +265,7 @@ def test_the_tool_is_advertised(corpus: Path):
     # the suite would notice: the in-process tests call the functions
     # directly.
     assert {tool["name"] for tool in tools} == {
+        "cite",
         "list_corpus",
         "read_docs",
         "read_literature",

@@ -19,6 +19,7 @@ from kennis.client.calls import Answered, Notice, call
 from kennis.engine.history.outofband import OutOfBandChange
 
 if TYPE_CHECKING:
+    from kennis.citing import Cited, CiteRequest
     from kennis.engine.backup import BackupReport
     from kennis.engine.context.bundle import BundleCreated
     from kennis.engine.context.notes import BundleNote
@@ -241,6 +242,12 @@ def search_scope(
             list[Hit],
         ),
     )
+
+
+def cite(corpus_root: Path, requests: Sequence[CiteRequest]) -> Cited:
+    from kennis.citing import Cited
+
+    return _read(corpus_root, "cite", {"requests": list(requests)}, Cited)
 
 
 def found(corpus_root: Path, handle: str, collection: str | None) -> Found:

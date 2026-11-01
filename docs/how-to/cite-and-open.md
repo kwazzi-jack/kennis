@@ -11,6 +11,67 @@ a search hit prints as `id=k7f2a9c1x0 chunk=14`. The link says nothing about
 where kennis is running, so it still works after the service has stopped and
 started again on another port.
 
+## Cite a passage
+
+```
+kennis cite id=k7f2a9c1x0 chunk=14
+```
+
+takes a search hit's handle as the search prints it, both words, and prints
+the citation, its link and the entry for a list of references:
+
+```text
+Cited (Smirnov, Tasse and Other, 2011, sec. 2.1)
+  + kennis://open/k7f2a9c1x0/14
+  Smirnov, O.M., Tasse, C. and Other, A. (2011) "Revisiting ...". Available at: ...
+```
+
+Several passages can be cited at once, each as `id=... chunk=...`, as a
+`kennis://` link, or as any handle `kennis read` takes (a title, a citekey, a
+DOI), which cites the whole document.
+
+An agent does the same through the MCP tool `cite`, and is told to cite
+every passage its answer relies on that way rather than writing a citation
+or a link itself. Each citation comes back as a markdown link, which opens the
+passage when clicked where links are shown, and as the bare `kennis://` link
+for where they are not.
+
+### Where in the document
+
+The citation names the narrowest place the passage can be found, by the first
+of these that the passage offers:
+
+1. a figure, table or equation the passage itself holds: a caption line such
+   as `Figure 3.` or `Table 2:`, or an equation numbered with `\tag{4}`. A
+   sentence that mentions "Figure 3" does not count, since it points
+   elsewhere;
+2. the number of the section the passage is in, such as `2.1` or `A.1`, or of
+   the nearest numbered section above it;
+3. the heading's own words, for an unnumbered section such as "Abstract".
+
+A passage before any heading is cited by the document alone. Page numbers are
+not used yet: converting a PDF does not keep them.
+
+Every locator is approximate. It is read from the converted text, and a
+converter can misread a number, or a paper can print none.
+
+If two passages cited together would read the same, as two passages of a note
+do, each is marked as reading the same as the other, because their links open
+different places.
+
+### The style
+
+Citations are formatted by a [CSL](https://citationstyles.org) style:
+Harvard (Cite Them Right) unless you name another. Any `.csl` file works,
+such as one from the [Zotero style repository](https://www.zotero.org/styles):
+
+```
+kennis config set literature.citation_style ~/styles/monthly-notices-of-the-royal-astronomical-society.csl
+```
+
+A note is not formatted by the style. It has no author or date, so it is
+cited by its title in quotes.
+
 ## Open a link or a handle
 
 ```

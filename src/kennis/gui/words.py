@@ -404,6 +404,7 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("searching", "Searching and indexing"),
     ("converting", "Converting documents"),
     ("adding", "Adding documents"),
+    ("citing", "Citing passages"),
     ("terminal", "Command line"),
     ("logging", "Log file"),
     ("service", "Background service"),
@@ -436,6 +437,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "conversion.repair_ligatures": "Repair ff, fi and fl",
     "conversion.batch_size": "Documents per converter run",
     "literature.request_delay": "Seconds between arXiv requests",
+    "literature.citation_style": "Citation style (.csl file)",
     "terminal.messages": "Messages shown",
     "logging.level": "Detail",
     "logging.max_bytes": "Size before a new file (bytes)",
@@ -510,6 +512,10 @@ SETTING_TIPS: Final[dict[str, str]] = {
         "everything in one run."
     ),
     "literature.request_delay": "arXiv asks for three seconds between requests.",
+    "literature.citation_style": (
+        "How `kennis cite` and an agent's citations are written. Empty uses "
+        "Harvard (Cite Them Right), installed with kennis."
+    ),
     "terminal.messages": (
         "Which advice the command line prints beside its reports. An error "
         "always keeps the command that resolves it."

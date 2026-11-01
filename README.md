@@ -45,7 +45,7 @@ Pre-release, published on PyPI as `kennis`. Built and tested:
   lexical index and searched alongside the corpus;
 - **packs**, the format a provider supplies domain content in, and the two
   sync commands that converge each scope with what is installed;
-- **the MCP server**, `kennis serve`, nine tools over stdio, with its
+- **the MCP server**, `kennis serve`, ten tools over stdio, with its
   description of this machine generated from the installed packs;
 - **the graphical interface**, `kennis gui`, a tab in your own browser,
   served on loopback by kennis's service with a per-run token.

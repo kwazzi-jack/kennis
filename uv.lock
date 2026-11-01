@@ -545,6 +545,18 @@ wheels = [
 ]
 
 [[package]]
+name = "citeproc-py"
+version = "0.12.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lxml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a4/44/2d265b22c554e1718b0a021aa6037f922869df2569a7f4e3e1b133baf885/citeproc_py-0.12.1.tar.gz", hash = "sha256:497c626a79e738cceb06e6144d216d120814649d7d01c157fbdbe837149f4599", size = 294688, upload-time = "2026-10-30T16:52:56.818Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/e6/b4b77a734b1dd853677f968b70e73429596fb543407eedfaa6dd9aa5ebe5/citeproc_py-0.12.1-py3-none-any.whl", hash = "sha256:41f2b5d58ca65f9184ccb71f0ccd62454a17dc4a94b8a39454f447a2d94d688f", size = 388337, upload-time = "2026-10-30T16:52:54.979Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1579,6 +1591,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "bm25s" },
+    { name = "citeproc-py" },
     { name = "click" },
     { name = "fastapi" },
     { name = "fastembed" },
@@ -1641,6 +1654,7 @@ docs = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12,<5" },
     { name = "bm25s", specifier = ">=0.2,<0.4" },
+    { name = "citeproc-py", specifier = ">=0.12.1,<0.13" },
     { name = "click", specifier = ">=8.1,<9" },
     { name = "fastapi", specifier = ">=0.115,<0.144" },
     { name = "fastembed", specifier = ">=0.5,<0.9" },

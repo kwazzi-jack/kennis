@@ -222,6 +222,9 @@ def shown_indexes(corpus_root: Path) -> list[ShownIndex]:
     return shown
 
 
+# The heading a setting sits under where its section's is not the one.
+_GROUP_OF_KEY: Final[dict[str, str]] = {"literature.citation_style": "citing"}
+
 # The heading a section's settings sit under; any other is searching's.
 _GROUP_OF_SECTION: Final[dict[str, str]] = {
     "conversion": "converting",
@@ -240,7 +243,9 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     costs = costs_of(question.key, value)
     return ShownSetting(
         key=question.key,
-        group=_GROUP_OF_SECTION.get(question.section, "searching"),
+        group=_GROUP_OF_KEY.get(
+            question.key, _GROUP_OF_SECTION.get(question.section, "searching")
+        ),
         name=words.SETTING_NAMES[question.key],
         tip=words.setting_tip(
             _sentence(question),

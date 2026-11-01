@@ -23,6 +23,7 @@ from kennis.client import api
 from kennis.context import resolve_context
 from kennis.engine.pack.installed import InstalledPack
 from kennis.mcp.instructions import instructions_for
+from kennis.mcp.tools.cite import cite
 from kennis.mcp.tools.corpus import list_corpus
 from kennis.mcp.tools.read import read_docs, read_literature, read_notes
 from kennis.mcp.tools.remember import remember
@@ -61,6 +62,7 @@ def build_server() -> FastMCP:
     server.tool(read_notes)
     server.tool(read_literature)
     server.tool(read_docs)
+    server.tool(cite)
     server.tool(remember)
     return server
 
