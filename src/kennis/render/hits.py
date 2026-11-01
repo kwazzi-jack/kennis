@@ -53,7 +53,21 @@ from kennis.render.words import ScoreStyle, group_name, snippet_of
 if TYPE_CHECKING:
     pass
 
-type Relevance = Literal["very high", "high", "medium", "low", "very low"]
+type Relevance = Literal[
+    "very high",
+    "high",
+    "medium",
+    "low",
+    "very low",
+    # The two levels an unmeasured model's cosine has: graded against what
+    # unrelated questions reach in the collection, not on a scale (#599).
+    "above unrelated",
+    "unrelated",
+]
+
+# Which scale a group's meaning levels are on: a measured model's cosine
+# cuts, an unmeasured model's unrelated reference, or both on one page.
+type MeaningScale = Literal["cosine", "unrelated", "both"]
 
 # The two legs a search can run, named for what they measure rather
 # than for how. "lexical" is the engine's own word and this interface
@@ -115,7 +129,11 @@ _LEXICAL_CUTS: Final[tuple[float, float, float, float]] = (0.8, 0.6, 0.4, 0.2)
 
 
 def relevances(
-    result: SearchResult, *, model: str | None, best: float
+    result: SearchResult,
+    *,
+    model: str | None,
+    best: float,
+    unrelated: float | None = None,
 ) -> tuple[tuple[Leg, Relevance], ...]:
     """One band per leg that actually scored this passage.
 
@@ -132,6 +150,10 @@ def relevances(
     rule the query embedding follows, and for the same reason. Each
     collection has its own index and so possibly its own model, which is
     why it arrives per hit.
+
+    `unrelated` is the collection's reference for a model with no measured
+    cuts (`engine/rag/anchors.py`): a cosine above it is "above unrelated",
+    at or below it "unrelated". A measured model keeps its five levels.
     """
     found: list[tuple[Leg, Relevance]] = []
     if result.bm25_score is not None:
@@ -142,6 +164,11 @@ def relevances(
         found.append(("lexical", _banded(share, _LEXICAL_CUTS)))
     if result.dense_score is not None and model is not None and model in _COSINE_CUTS:
         found.append(("meaning", _banded(result.dense_score, _COSINE_CUTS[model])))
+    elif result.dense_score is not None and unrelated is not None:
+        level: Relevance = (
+            "above unrelated" if result.dense_score > unrelated else "unrelated"
+        )
+        found.append(("meaning", level))
     return tuple(found)
 
 
@@ -169,7 +196,7 @@ _LEG_SCALES: Final[dict[Leg, str]] = {
 }
 
 
-def relevance_phrase(legs: Collection[Leg]) -> str:
+def relevance_phrase(legs: Collection[Leg], *, meaning: MeaningScale = "cosine") -> str:
     """What these bands are bands of, one clause per leg.
 
     Printed once per **group** rather than once per hit: it is a property of
@@ -192,7 +219,29 @@ def relevance_phrase(legs: Collection[Leg]) -> str:
     rule enforced twice is a rule whose removal from either place
     cannot be observed. Concern #379.
     """
-    return ", ".join(_LEG_SCALES[leg] for leg in LEGS if leg in legs)
+    return ", ".join(
+        _MEANING_SCALES[meaning] if leg == "meaning" else _LEG_SCALES[leg]
+        for leg in LEGS
+        if leg in legs
+    )
+
+
+_MEANING_SCALES: Final[dict[MeaningScale, str]] = {
+    "cosine": _LEG_SCALES["meaning"],
+    "unrelated": "meaning against unrelated questions",
+    "both": "meaning as an absolute cosine or against unrelated questions",
+}
+
+
+def meaning_scale_of(hits: Sequence[Hit]) -> MeaningScale:
+    """Which scale these hits' meaning levels are on."""
+    measured = any(hit.model in _COSINE_CUTS for hit in hits)
+    against = any(
+        hit.model not in _COSINE_CUTS and hit.unrelated is not None for hit in hits
+    )
+    if measured and against:
+        return "both"
+    return "unrelated" if against else "cosine"
 
 
 def hit_title(result: SearchResult) -> str:
@@ -295,6 +344,7 @@ __all__ = [
     "LEGS",
     "LEG_LABELS",
     "Leg",
+    "MeaningScale",
     "Relevance",
     "basis_phrase",
     "hit_detail_parts",
@@ -302,6 +352,7 @@ __all__ = [
     "hit_headline",
     "hit_title",
     "hit_title_parts",
+    "meaning_scale_of",
     "raw_scores",
     "relevance_phrase",
     "relevances",
@@ -337,6 +388,9 @@ class Hit:
     # the project the search ran from, the bundle's whole path for
     # another (14g). Empty for every other hit.
     place: str = ""
+    # The collection's unrelated reference, for a model with no measured
+    # cuts (#599); None where the model is measured or had no vectors.
+    unrelated: float | None = None
 
 
 def docs_versions_of(hit: Hit) -> str | None:
@@ -424,7 +478,7 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
         return reach
     if style == "raw":
         return (raw_scores(hit.result), *reach)
-    found = relevances(hit.result, model=hit.model, best=best)
+    found = relevances(hit.result, model=hit.model, best=best, unrelated=hit.unrelated)
     return (*(f"{LEG_LABELS[leg]}: {level}" for leg, level in found), *reach)
 
 
@@ -462,7 +516,7 @@ def rendered_hit(
         document_title=document_title,
         section=section,
         measures=(
-            relevances(hit.result, model=hit.model, best=best)
+            relevances(hit.result, model=hit.model, best=best, unrelated=hit.unrelated)
             if style == "human"
             else ()
         ),
@@ -488,11 +542,16 @@ def basis_phrase(hits: Sequence[Hit], style: ScoreStyle) -> str:
     present = {
         leg
         for hit in hits
-        for leg, _ in relevances(hit.result, model=hit.model, best=best_lexical(hits))
+        for leg, _ in relevances(
+            hit.result,
+            model=hit.model,
+            best=best_lexical(hits),
+            unrelated=hit.unrelated,
+        )
     }
     if not present:
         return ""
-    return relevance_phrase(present)
+    return relevance_phrase(present, meaning=meaning_scale_of(hits))
 
 
 def best_lexical(hits: Sequence[Hit]) -> float:
@@ -557,7 +616,10 @@ def score_style_for(hits: Sequence[Hit], asked: ScoreStyle) -> tuple[ScoreStyle,
     and none of it invented. Concern #379.
     """
     best = best_lexical(hits)
-    banded = any(relevances(hit.result, model=hit.model, best=best) for hit in hits)
+    banded = any(
+        relevances(hit.result, model=hit.model, best=best, unrelated=hit.unrelated)
+        for hit in hits
+    )
     if asked != "human" or banded:
         return asked, False
     return "raw", True

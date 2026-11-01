@@ -116,9 +116,14 @@ def search_scope(
             context.settings.embedding.base_url or None,
         ),
     )
-    hits = [
-        Hit(collection=collection, result=result, model=model) for result in results
-    ]
+    hits = with_unrelated_reference(
+        [Hit(collection=collection, result=result, model=model) for result in results],
+        index,
+        host=resolve_host(
+            index.binding.model.kind if index.binding.model else "",
+            context.settings.embedding.base_url or None,
+        ),
+    )
     return merged_across_versions(hits)[:wanted] if collection == "docs" else hits
 
 
@@ -545,11 +550,45 @@ def _hits_in(
             ),
         )
     ]
+    found = with_unrelated_reference(
+        found,
+        index,
+        host=resolve_host(
+            index.binding.model.kind if index.binding.model else "",
+            context.settings.embedding.base_url or None,
+        ),
+    )
     if name == "docs":
         found = merged_across_versions(found)[:wanted]
     # `top_k` per group, not across them: each group is a complete answer
     # from its source rather than a truncated share of a blend.
     return found, running != asked and asked != "bm25"
+
+
+def with_unrelated_reference(
+    hits: list[Hit], index: LoadedIndex, *, host: str | None
+) -> list[Hit]:
+    """The hits, each carrying the collection's unrelated reference when
+    the meaning leg scored them on a model with no measured cuts (#599).
+
+    A failure to embed the anchor questions leaves the hits as they were:
+    the search already succeeded, and its meaning level is what is lost.
+    """
+    from kennis.engine.rag.anchors import unrelated_reference
+    from kennis.render.hits import CALIBRATED_MODELS
+
+    model = index.binding.model
+    if model is None or model.model in CALIBRATED_MODELS:
+        return hits
+    if not any(hit.result.dense_score is not None for hit in hits):
+        return hits
+    try:
+        reference = unrelated_reference(index, host=host)
+    except KennisError:
+        return hits
+    if reference is None:
+        return hits
+    return [replace(hit, unrelated=reference) for hit in hits]
 
 
 def _is_context_group(name: str) -> bool:

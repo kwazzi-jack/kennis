@@ -44,6 +44,7 @@ EXPECTED_GROUPS = {
         "retrieval.default_top_k",
         "retrieval.corpus_method",
         "retrieval.context_method",
+        "retrieval.scores",
     ],
     "Converting documents": [
         "conversion.backend",

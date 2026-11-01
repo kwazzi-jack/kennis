@@ -166,6 +166,14 @@ class RetrievalSettings(BaseModel):
             "machines; anything else needs an embedding backend."
         ),
     )
+    scores: Literal["human", "raw", "none"] = Field(
+        default="human",
+        description=(
+            "How a search shows how well each hit matched, on the command "
+            "line and to an agent: as levels, as the raw scores, or not at "
+            "all. `kennis search --scores` overrides it for one search."
+        ),
+    )
 
 
 class CorpusSettings(BaseModel):

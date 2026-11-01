@@ -81,6 +81,7 @@ from kennis.holdings import (
 from kennis.operations import IndexBuild
 from kennis.render.backup import describe_written
 from kennis.render.hits import (
+    CALIBRATED_MODELS,
     LEG_LABELS,
     LEGS,
     Hit,
@@ -88,6 +89,7 @@ from kennis.render.hits import (
     Relevance,
     best_lexical,
     docs_versions_of,
+    meaning_scale_of,
     relevance_phrase,
     relevances,
     rendered_hit,
@@ -143,6 +145,11 @@ _STEPS: dict[Relevance, int] = {
     "medium": 3,
     "low": 2,
     "very low": 1,
+    # Two levels against unrelated questions (#599): the bottom cell for
+    # what is no closer than they come, the middle for what is closer,
+    # since how much closer is what an unmeasured model cannot say.
+    "above unrelated": 3,
+    "unrelated": 1,
 }
 
 
@@ -468,24 +475,33 @@ def shown_key(found: Sweep) -> ShownKey | None:
     """The key for every band on the page, or nothing when none is shown."""
     present: set[Leg] = set()
     models: set[str] = set()
+    graded: list[Hit] = []
     for hits in found.groups.values():
         style, _ = score_style_for(hits, _STYLE)
         if style != "human":
             continue
         best = best_lexical(hits)
         for hit in hits:
-            for leg, _ in relevances(hit.result, model=hit.model, best=best):
+            levels = relevances(
+                hit.result, model=hit.model, best=best, unrelated=hit.unrelated
+            )
+            for leg, _ in levels:
                 present.add(leg)
-                if leg == "meaning" and hit.model is not None:
-                    models.add(hit.model)
+                if leg == "meaning":
+                    graded.append(hit)
+                    # Only a model whose cuts were measured: an unmeasured
+                    # one is graded against unrelated questions (#599).
+                    if hit.model in CALIBRATED_MODELS:
+                        models.add(hit.model)
     if not present:
         return None
+    meaning = meaning_scale_of(graded)
     return ShownKey(
         lines=tuple(
             ShownKeyLine(
                 icon=words.MEASURE_ICONS[leg],
                 label=LEG_LABELS[leg],
-                scale=relevance_phrase({leg}),
+                scale=relevance_phrase({leg}, meaning=meaning),
             )
             for leg in LEGS
             if leg in present

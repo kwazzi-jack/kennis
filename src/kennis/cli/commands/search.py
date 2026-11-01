@@ -137,9 +137,9 @@ def _scopes(
 @click.option(
     "--scores",
     type=click.Choice(SCORE_STYLES),
-    default="human",
-    show_default=True,
-    help="How well each hit matched: a level, the raw per-leg numbers, or nothing.",
+    default=None,
+    help="How well each hit matched: a level, the raw per-leg numbers, or nothing. "
+    "Default: the setting retrieval.scores, human unless changed.",
 )
 def search_command(
     question: str,
@@ -151,7 +151,7 @@ def search_command(
     versions: tuple[str, ...],
     all_projects: bool,
     snippet: str,
-    scores: str,
+    scores: str | None,
 ) -> None:
     """Search the corpus and this project's context, and print the best
     passages.
@@ -199,7 +199,11 @@ def search_command(
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))
 
-    _report(found, snippet, scores)
+    _report(
+        found,
+        snippet,
+        scores if scores is not None else existing_corpus().settings.retrieval.scores,
+    )
 
 
 def _report(found: Sweep, snippet: str, scores: str) -> None:

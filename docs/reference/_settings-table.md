@@ -32,6 +32,7 @@ How a search is run.
 | `default_top_k` | `int` | `3` | How many hits a search returns from each scope it searched, so a sweep can return this many times the number of scopes. |
 | `corpus_method` | `hybrid` / `bm25` / `dense` | `hybrid` | Retrieval method for corpus collections. |
 | `context_method` | `hybrid` / `bm25` / `dense` | `bm25` | Retrieval method for a project's context bundle. bm25 keeps `kennis context init` offline and its index portable between machines; anything else needs an embedding backend. |
+| `scores` | `human` / `raw` / `none` | `human` | How a search shows how well each hit matched, on the command line and to an agent: as levels, as the raw scores, or not at all. `kennis search --scores` overrides it for one search. |
 
 ### `[corpus]`
 

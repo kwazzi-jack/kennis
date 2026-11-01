@@ -81,6 +81,25 @@ Two consequences:
 
 A collection that matched nothing gets no group.
 
+### How meaning is graded
+
+A cosine means something only on its embedding model's scale, and models
+differ widely: an unrelated question reaches 0.6 with `BAAI/bge-small-en-v1.5`
+and 0.2 with `text-embedding-3-large`. kennis has measured two models, those
+two, and grades their meaning in five levels from `very low` to `very high`.
+
+For any other model it grades against unrelated questions instead. Twenty
+fixed questions on everyday subjects (bread, football, knitting and so on)
+are embedded with the index's model, and each one's best cosine in the
+collection is noted. A hit closer than the second highest of those reads
+`meaning: above unrelated`; otherwise `meaning: unrelated`. The group's line
+then says the meaning is graded "against unrelated questions". These are
+embedded once each time the kennis service starts, one request per model.
+
+Two levels are all such a reference can tell apart: how much closer than
+unrelated a hit is needs real questions measured on the model, which kennis
+has done only for the two above. `--scores raw` shows the cosine itself.
+
 ### Narrow it
 
 ```
@@ -107,6 +126,15 @@ kennis search "query" --snippet full    # the whole chunk
 kennis search "query" --scores raw      # rrf, bm25 and cosine numbers
 kennis search "query" --scores none     # no relevance column
 ```
+
+To change what every search shows, on the command line and to an agent, set
+`retrieval.scores` to `human`, `raw` or `none`:
+
+```
+kennis config set retrieval.scores raw
+```
+
+`--scores` still overrides it for one search. The window always draws levels.
 
 ### Change how it searches
 

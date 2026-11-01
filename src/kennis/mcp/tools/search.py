@@ -30,17 +30,11 @@ from kennis.engine.context.bundle import find_bundle
 from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.projects import present_bundles, project_named
 from kennis.render.hits import best_lexical, rendered_hit, score_style_for
-from kennis.render.words import ScoreStyle
 
 # What a tool answers with when a scope holds nothing for this question.
 # A sentence rather than an empty string: an agent handed "" cannot tell
 # a miss from a broken tool.
 _NOTHING = "no matching passages"
-
-# Bands are what a reader wants and what an agent can act on; raw fused
-# scores are a function of rank and say nothing an ordered list does not.
-# Degrades to `raw` by itself when the model has no calibrated scale.
-_STYLE: ScoreStyle = "human"
 
 
 def search_notes(question: str, top_k: int = 5) -> str:
@@ -151,7 +145,7 @@ def _searched(
     # says "these are raw scores" above the report; here the detail line
     # shows the numbers and their absence of a band is self-evident, and
     # a sentence about calibration would cost tokens to say so twice.
-    style, _ = score_style_for(hits, _STYLE)
+    style, _ = score_style_for(hits, existing_corpus().settings.retrieval.scores)
     best = best_lexical(hits)
     blocks: list[str] = []
     for rank, hit in enumerate(hits, start=1):

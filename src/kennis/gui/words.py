@@ -432,6 +432,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "embedding.api_key_env": "Variable holding the OpenAI key",
     "chunking.overlap": "Passage overlap",
     "retrieval.context_method": "Way to match in a project",
+    "retrieval.scores": "How a match is shown, in a terminal and to an agent",
     "corpus.keep_original": "Keep the original file",
     "corpus.default_group": "Default group",
     "conversion.repair_ligatures": "Repair ff, fi and fl",
@@ -495,6 +496,10 @@ SETTING_TIPS: Final[dict[str, str]] = {
     "retrieval.context_method": (
         "How searches match in a project's context. Keywords only keeps "
         "the project's index small and needs no model."
+    ),
+    "retrieval.scores": (
+        "Levels say how well each hit matched in words; the raw scores are "
+        "the numbers they come from. The window always draws levels."
     ),
     "corpus.keep_original": (
         "Keep the PDF or other file a document was converted from, beside the document."
@@ -565,6 +570,11 @@ SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
     "retrieval.corpus_method": {value: label for value, label in MODE_CHOICES if value},
     "retrieval.context_method": {
         value: label for value, label in MODE_CHOICES if value
+    },
+    "retrieval.scores": {
+        "human": "Levels",
+        "raw": "The raw scores",
+        "none": "Not shown",
     },
     "terminal.messages": {
         "all": "Hints, warnings and errors",

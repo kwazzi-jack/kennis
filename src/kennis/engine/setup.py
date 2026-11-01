@@ -125,6 +125,7 @@ _ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     ("embedding.api_key_env", (("embedding.backend", "openai"),)),
     ("chunking.overlap", ()),
     ("retrieval.context_method", ()),
+    ("retrieval.scores", ()),
     ("corpus.keep_original", ()),
     ("corpus.default_group", ()),
     ("conversion.repair_ligatures", (("conversion.backend", "mineru"),)),
