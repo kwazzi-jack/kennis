@@ -92,8 +92,18 @@ _LEVELS: Final[tuple[Relevance, ...]] = (
 # A model missing from this table gets no band. The numbers describe the
 # model, not kennis, and a different embedding model puts its scores
 # somewhere else entirely.
+#
+# text-embedding-3-large, measured on 2026-11-01 over Brian's corpus (30
+# papers, 402 docs pages, 36 notes) with eight real questions and six
+# nonsense ones, best hit per collection (#597). Its scores sit far lower:
+# real questions' best hits 0.583 to 0.727 in the collection holding the
+# answer and 0.349 to 0.540 in one that only touches the topic; nonsense
+# 0.122 to 0.239 everywhere, with nothing between 0.239 and 0.349. These
+# cuts put the first in `high` and `very high`, the second in `low` and
+# `medium`, and the nonsense in `very low`.
 _COSINE_CUTS: Final[dict[str, tuple[float, float, float, float]]] = {
     "BAAI/bge-small-en-v1.5": (0.80, 0.72, 0.64, 0.56),
+    "text-embedding-3-large": (0.65, 0.55, 0.45, 0.30),
 }
 
 CALIBRATED_MODELS: Final[frozenset[str]] = frozenset(_COSINE_CUTS)

@@ -390,6 +390,53 @@ def test_the_cosine_band_does_not_depend_on_the_other_hits():
     assert alone == beside == "medium"
 
 
+_OPENAI_LARGE = "text-embedding-3-large"
+
+
+@pytest.mark.parametrize(
+    ("cosine", "expected"),
+    [
+        (0.727, "very high"),
+        (0.650, "very high"),
+        (0.640, "high"),
+        (0.583, "high"),
+        (0.540, "medium"),
+        (0.475, "medium"),
+        (0.429, "low"),
+        (0.349, "low"),
+        (0.239, "very low"),
+        (0.122, "very low"),
+    ],
+)
+def test_the_openai_large_band_matches_what_was_measured(cosine: float, expected: str):
+    """Values from the run of 2026-11-01 on Brian's corpus (#597): real
+    questions' best hits in the collection holding the answer, in one that
+    only touches the topic, and nonsense questions' best hits."""
+    hit = a_hit(dense_score=cosine)
+
+    assert _band(hit, "meaning", model=_OPENAI_LARGE) == expected
+
+
+def test_openai_large_puts_real_and_nonsense_questions_apart():
+    """Measured: real best hits 0.583 to 0.727 where the answer is held,
+    nonsense 0.122 to 0.239 in every collection, nothing between 0.239 and
+    0.349."""
+    real = [0.583, 0.627, 0.640, 0.650, 0.658, 0.673, 0.675, 0.677, 0.702, 0.712]
+    nonsense = [0.122, 0.149, 0.175, 0.199, 0.210, 0.214, 0.234, 0.239]
+
+    banded_real = {
+        _band(a_hit(dense_score=value), "meaning", model=_OPENAI_LARGE)
+        for value in real
+    }
+    banded_nonsense = {
+        _band(a_hit(dense_score=value), "meaning", model=_OPENAI_LARGE)
+        for value in nonsense
+    }
+
+    assert banded_real <= {"high", "very high"}
+    assert banded_nonsense == {"very low"}
+
+
 # ---------------------------------------------------------------------------
 # The lexical band, which is relative and says so
 # ---------------------------------------------------------------------------
