@@ -1,3 +1,9 @@
+## v0.13.1 (2026-11-01)
+
+### Test
+
+- **links**: expect the interpreter path escaped as a desktop entry writes it, which failed on Windows and kept v0.13.0 from being published; v0.13.1 carries everything listed under v0.13.0
+
 ## v0.13.0 (2026-11-01)
 
 ### Feat
