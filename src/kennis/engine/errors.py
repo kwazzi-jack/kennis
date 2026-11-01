@@ -375,6 +375,18 @@ class ServiceUnavailable(KennisError):
     default_resolution = None
 
 
+class McpExtraMissing(KennisError):
+    """`kennis serve` in an installation without the `mcp` extra, which is
+    what supplies fastmcp. A traceback there reached an MCP client only as a
+    closed connection (2026-11-01)."""
+
+    default_message = (
+        "the MCP server needs the `mcp` extra, which this installation of "
+        "kennis does not have"
+    )
+    default_resolution = 'uv tool install --reinstall "kennis[mcp]"'
+
+
 class TaskCancelled(BaseException):
     """A task stopping part way because someone asked it to (Brian,
     2026-10-27), raised in the task's own thread at the next point that can

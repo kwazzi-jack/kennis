@@ -333,8 +333,9 @@ def test_the_command_line_builds_without_the_mcp_extra():
     module scope, which is invisible to the static walk and is exactly
     the kind of thing that gets "tidied" into a top-level import.
 
-    `serve` itself is expected to fail there, and fail with an
-    ImportError naming fastmcp rather than with something obscure.
+    `serve` itself refuses there with one line naming the extra and the
+    install command, and writes nothing to stdout, which is the wire: a
+    traceback reached Claude Code only as "connection closed" (2026-11-01).
     """
     program = """
 import sys
@@ -358,8 +359,11 @@ assert helped.exit_code == 0, helped.output
 assert "serve" in helped.output, helped.output
 
 served = CliRunner().invoke(main, ["serve"])
-assert served.exit_code != 0
-assert isinstance(served.exception, ImportError), served.exception
+assert served.exit_code == 1, (served.exit_code, served.output)
+assert isinstance(served.exception, SystemExit), served.exception
+assert served.stdout == "", served.stdout
+assert "mcp" in served.stderr and 'kennis[mcp]' in served.stderr, served.stderr
+assert "Traceback" not in served.stderr, served.stderr
 """
     completed = subprocess.run(
         [sys.executable, "-c", program],

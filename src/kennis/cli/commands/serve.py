@@ -34,8 +34,21 @@ def serve_command() -> None:
     # Imported here, not at module scope. `fastmcp` is the `mcp` extra,
     # and someone who installed kennis without it must still be able to
     # run every other command - which means building the command tree
-    # must not import it. The failure is then an ImportError from this
-    # one command, which is the honest place for it.
+    # must not import it. Without it this one command refuses, on stderr,
+    # because stdout is the wire.
+    import importlib.util
+
+    from kennis.cli import display
+    from kennis.engine.errors import McpExtraMissing
+
+    display.declare_stdout_a_payload()
+    try:
+        found = importlib.util.find_spec("fastmcp")
+    except ImportError:
+        found = None
+    if found is None:
+        raise McpExtraMissing()
+
     from kennis.mcp.server import run
 
     run()
