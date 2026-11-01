@@ -43,4 +43,13 @@ def build_of_this_process() -> str:
     )
 
 
-__all__ = ["build_of", "build_of_this_process"]
+def build_on_disk() -> str:
+    """The build installed now, which differs from `build_of_this_process`
+    in a process that outlived a reinstall (#601). Asked afresh each time,
+    and only where a client is about to start or replace a service."""
+    return build_of(
+        Path(__file__).resolve().parent, Path(sysconfig.get_paths()["purelib"])
+    )
+
+
+__all__ = ["build_of", "build_of_this_process", "build_on_disk"]

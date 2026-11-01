@@ -387,6 +387,19 @@ class McpExtraMissing(KennisError):
     default_resolution = 'uv tool install --reinstall "kennis[mcp]"'
 
 
+class ClientOutdated(ServiceUnavailable):
+    """This process loaded kennis before kennis was reinstalled under it
+    (#601). Replacing the service would start one from the new code, which
+    this process could not read; no command fixes it, a restart does."""
+
+    default_message = (
+        "this kennis process was started before kennis was reinstalled, so it "
+        "cannot speak to the service the new installation runs; restart the "
+        "program that started it (in Claude Code, `/mcp reconnect kennis`)"
+    )
+    default_resolution = None
+
+
 class TaskCancelled(BaseException):
     """A task stopping part way because someone asked it to (Brian,
     2026-10-27), raised in the task's own thread at the next point that can

@@ -12,6 +12,11 @@ version, or of another build of the same version - a reinstall from the
 checkout, a dependency replaced under it (#537) - is asked to stop when it
 is idle and replaced; a busy one is waited for, because stopping it would
 end its job wherever it was.
+
+**Unless this client is the stale one** (#601). A long-lived client - the
+MCP server - can outlive a reinstall; its loaded code then differs from what
+is on disk, and any service it starts runs the code on disk. It refuses with
+`ClientOutdated` rather than stopping or starting a service.
 """
 
 from __future__ import annotations
@@ -25,8 +30,8 @@ from typing import Final
 import httpx
 
 from kennis import __version__
-from kennis.build import build_of_this_process
-from kennis.engine.errors import ServiceBusy, ServiceUnavailable
+from kennis.build import build_of_this_process, build_on_disk
+from kennis.engine.errors import ClientOutdated, ServiceBusy, ServiceUnavailable
 from kennis.engine.settings import log_dir
 from kennis.protocol.record import ServiceRecord, find_service, is_held
 from kennis.protocol.spawn import (
@@ -102,6 +107,7 @@ def ensure_service(
     while True:
         record = find_service(corpus_root)
         if record is None:
+            _refuse_if_outdated()
             return _started(corpus_root)
         answered = hello(record)
         if answered is None:
@@ -120,7 +126,17 @@ def ensure_service(
                 told = True
             time.sleep(_BUSY_POLL_SECONDS)
             continue
+        _refuse_if_outdated()
         stop_service(corpus_root, record)
+
+
+def _refuse_if_outdated() -> None:
+    """Raise `ClientOutdated` when this process's code is not what is
+    installed (#601): a service it started or replaced would run the
+    installed code, which this process could not read, so it refuses
+    before it touches the service."""
+    if build_on_disk() != build_of_this_process():
+        raise ClientOutdated()
 
 
 def stop_service(corpus_root: Path, record: ServiceRecord) -> None:

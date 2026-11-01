@@ -179,9 +179,11 @@ def test_a_service_of_another_build_is_replaced_when_idle(
 ):
     """The same version installed again over a running service (#537): the
     client is made to be of another build, the service answers the build it
-    started with."""
+    started with. The client is what is installed now, so the disk says the
+    same; a client the disk disagrees with refuses instead (#601)."""
     older = ensure_service(corpus)
     monkeypatch.setattr(client, "build_of_this_process", lambda: "another build")
+    monkeypatch.setattr(client, "build_on_disk", lambda: "another build")
 
     newer = ensure_service(corpus)
 

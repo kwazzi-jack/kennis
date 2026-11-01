@@ -18,9 +18,14 @@ Install the extra first, since the server is not part of the base package:
 uv tool install "kennis[mcp]"
 ```
 
+Without the extra, `kennis serve` refuses with one line on standard error
+naming this command, and the agent reports only that the connection closed.
+
 The agent keeps the server it started for as long as its session lasts, so
-after upgrading or reinstalling kennis, restart the agent's session. Until
-then, its server is still the earlier installation's code.
+after upgrading or reinstalling kennis, restart the agent's session (in
+Claude Code, `/mcp reconnect kennis`). Until then, its server is still the
+earlier installation's code, and every tool refuses, saying the process was
+started before kennis was reinstalled.
 
 ## Point an agent at it
 
