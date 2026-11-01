@@ -260,12 +260,22 @@ def test_registering_on_linux_writes_an_entry_that_runs_this_python(desktop: Pat
     registration = scheme.register_on_linux()
 
     entry = entry_file(desktop).read_text(encoding="utf-8")
-    assert f'Exec="{sys.executable}" -m kennis.cli.link_handler %u' in entry
+    # A Windows runner's interpreter path holds backslashes, which the entry
+    # escapes; the rule itself is the next test's.
+    quoted = sys.executable.replace("\\", "\\\\")
+    assert f'Exec="{quoted}" -m kennis.cli.link_handler %u' in entry
     assert "MimeType=x-scheme-handler/kennis;" in entry
     assert registration.written == (
         str(entry_file(desktop)),
         str(mimeapps(desktop)),
     )
+
+
+def test_the_entry_quotes_the_interpreter_as_the_specification_asks() -> None:
+    # One relative part with no forward slash, so it prints alike everywhere.
+    entry = scheme.desktop_entry(Path('my "py" $HOME `in\\python'))
+
+    assert 'Exec="my \\"py\\" \\$HOME \\`in\\\\python" -m' in entry
 
 
 def test_registering_makes_it_the_default_and_keeps_every_other_line(
