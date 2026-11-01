@@ -309,6 +309,18 @@ def test_kennis_cite_takes_a_hit_s_handle_as_search_prints_it(corpus: Path):
     assert f"kennis://open/{PAPER_ID}/{chunk}" in result.output
 
 
+def test_a_long_reference_wraps_under_its_link(corpus: Path):
+    """Every line after a citation's own is indented, so a wrapped reference
+    does not run back to the margin where the next citation begins."""
+    result = CliRunner().invoke(main, ["cite", PAPER_ID], terminal_width=60)
+
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.output.splitlines() if line.strip()]
+    assert lines[0].startswith("Cited ")
+    assert len(lines) > 3, "the reference did not wrap at this width"
+    assert all(line.startswith("  ") for line in lines[1:]), lines
+
+
 def test_kennis_cite_takes_links_and_handles_together(corpus: Path):
     chunk = chunk_holding(corpus, "docs", PAGE_ID, "partitioned by field")
 

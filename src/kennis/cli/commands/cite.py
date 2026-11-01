@@ -39,7 +39,9 @@ def cite_command(passages: tuple[str, ...]) -> None:
     for citation in cited.citations:
         display.operation("Cited", citation.citation)
         display.detail("+", citation.link)
-        display.muted(citation.reference, indent="  ")
+        # Wrapped with each line carried in, under the link: a reference is
+        # long, and one run back to the margin reads as the next citation.
+        display.body(citation.reference, indent="    ")
         if citation.alike:
             others = ", ".join(passage_named(position) for position in citation.alike)
             display.note(
