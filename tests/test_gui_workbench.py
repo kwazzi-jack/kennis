@@ -644,8 +644,10 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # and POST /copy, a document copied into a note of the person's (14g, #514);
 # 56th and 57th: GET and POST /supply, the papers kennis could not fetch
 # (#542); 58th: POST /job/{id}/cancel, a task cancelled from the window;
-# 59th: GET /presence, the stream an open window holds (Brian, 2026-10-30)
-EXPECTED_ROUTES = 59
+# 59th: GET /presence, the stream an open window holds (Brian, 2026-10-30);
+# 60th: POST /shown/{nonce}, a window taking a passage `kennis open` sent it
+# (Brian, 2026-11-01)
+EXPECTED_ROUTES = 60
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

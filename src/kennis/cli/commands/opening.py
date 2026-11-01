@@ -44,6 +44,7 @@ def open_command(
     `LINK_OR_HANDLE` is a `kennis://open/<document>/<chunk>` link, as a
     citation carries, or anything `kennis read` takes: an identifier, a
     title, a citekey, a DOI. The service is started if it is not running.
+    A kennis window already open shows it; otherwise a browser tab opens.
     """
     from kennis import __version__
     from kennis.client.process import ensure_service
@@ -69,13 +70,20 @@ def open_command(
     address = window_address(
         record.address, found.collection, found.document.id, chunk, record.token
     )
-    display.operation(
-        "Showing" if no_browser else "Opened",
-        describe_document(found.collection, found.document, corpus_root),
-    )
+    described = describe_document(found.collection, found.document, corpus_root)
+    if no_browser:
+        display.operation("Showing", described)
+        display.detail("+", address)
+        return
+    # A window already open shows it, rather than a new tab each time
+    # (Brian, 2026-11-01); a tab is opened only when none answers.
+    if api.show_in_window(corpus_root, found.collection, found.document.id, chunk):
+        display.operation("Opened", f"{described}, in the open window")
+        display.detail("+", address)
+        return
+    display.operation("Opened", described)
     display.detail("+", address)
-    if not no_browser:
-        open_quietly(address)
+    open_quietly(address)
 
 
 @click.group(name="link", cls=KennisGroup)

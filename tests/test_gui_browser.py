@@ -1280,11 +1280,34 @@ def test_a_window_whose_stream_dropped_while_kennis_runs_connects_again(
     _, app = served
     presence = app.state.presence
     assert _until(lambda: presence.open_windows() == 1)
-    held = list(presence._held)
+    held = list(presence._streams)
 
-    for loop, event in held:
-        loop.call_soon_threadsafe(event.set)
+    for stream in held:
+        stream.loop.call_soon_threadsafe(stream.ended.set)
 
-    assert _until(lambda: presence.open_windows() == 1 and presence._held != set(held))
+    assert _until(lambda: presence.open_windows() == 1 and presence._streams != held)
     page.wait_for_timeout(300)
     assert not page.locator("#service-gone").evaluate("element => element.open")
+
+
+def test_a_passage_shown_by_the_service_opens_in_this_tab(
+    served: tuple[str, FastAPI], page: playwright.Page
+) -> None:
+    """`kennis open` with a window open moves that window rather than
+    opening a tab (Brian, 2026-11-01): the page acknowledges, then goes."""
+    import threading
+
+    _, app = served
+    presence = app.state.presence
+    assert _until(lambda: presence.open_windows() == 1)
+    answers: list[bool] = []
+    asking = threading.Thread(
+        target=lambda: answers.append(presence.show("/settings", wait=5))
+    )
+
+    asking.start()
+    asking.join(10)
+
+    assert answers == [True]
+    page.wait_for_url("**/settings", timeout=_WAIT_MS)
+    assert len(page.context.pages) == 1

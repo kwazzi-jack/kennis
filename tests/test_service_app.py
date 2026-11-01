@@ -246,3 +246,83 @@ def test_a_service_for_a_folder_that_is_no_corpus_refuses_to_start(tmp_path: Pat
     assert statuses == [NO_CORPUS]
     assert not is_held(tmp_path)
     assert not record_path(tmp_path).exists()
+
+
+# --- show: a passage in a window already open (Brian, 2026-11-01) --------
+
+
+class Shows:
+    def __init__(self, answer: bool) -> None:
+        self.answer = answer
+        self.paths: list[str] = []
+
+    def __call__(self, path: str, *, wait: float = 2.0) -> bool:
+        self.paths.append(path)
+        return self.answer
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_show_asks_the_open_window_and_says_whether_it_answered(
+    app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch, answer: bool
+):
+    shows = Shows(answer)
+    monkeypatch.setattr(app.state.presence, "show", shows)
+
+    answered = client.post(
+        f"{PREFIX}/show",
+        headers=BEARER,
+        json={"collection": "literature", "document_id": "abc123", "chunk": 7},
+    )
+
+    assert answered.status_code == 200
+    assert answered.json() == {"shown": answer}
+    # Built by the service; the token is the window's cookie already.
+    assert shows.paths == ["/document/literature/abc123?chunk=7#chunk-7"]
+
+
+def test_show_builds_a_path_with_no_chunk(
+    app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    shows = Shows(True)
+    monkeypatch.setattr(app.state.presence, "show", shows)
+
+    client.post(
+        f"{PREFIX}/show",
+        headers=BEARER,
+        json={"collection": "notes", "document_id": "abc123", "chunk": None},
+    )
+
+    assert shows.paths == ["/document/notes/abc123"]
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        {"collection": "elsewhere", "document_id": "abc123", "chunk": None},
+        {"collection": "notes", "document_id": "../../x", "chunk": None},
+        {"collection": "notes", "document_id": "abc123", "chunk": -1},
+        {"collection": "notes"},
+    ],
+)
+def test_show_refuses_what_is_no_passage_of_the_corpus(
+    app: FastAPI,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    asked: dict[str, object],
+):
+    shows = Shows(True)
+    monkeypatch.setattr(app.state.presence, "show", shows)
+
+    answered = client.post(f"{PREFIX}/show", headers=BEARER, json=asked)
+
+    assert answered.status_code == 400
+    assert shows.paths == []
+
+
+def test_show_needs_the_token(client: TestClient):
+    answered = client.post(
+        f"{PREFIX}/show",
+        json={"collection": "notes", "document_id": "abc123", "chunk": None},
+    )
+
+    assert answered.status_code == 401

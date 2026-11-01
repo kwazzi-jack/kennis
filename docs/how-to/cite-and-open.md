@@ -84,6 +84,13 @@ and scrolled to. The second takes anything `kennis read` takes: an
 identifier, a title, a citekey or a DOI. The service is started if it is not
 running. `--no-browser` prints the address instead of opening it.
 
+If a kennis window is already open, the passage is shown in it rather than in
+a new tab: in the kennis tab you used last, or the one opened last. The tab
+changes where it is; most browsers do not let a page bring itself to the
+front, so you may need to switch to it. A new tab opens only when no kennis
+window answers within two seconds, for instance when none is open or the
+browser has put the tab to sleep.
+
 The passage is marked only while the collection's index is up to date, as
 for a search hit; otherwise the document opens unmarked.
 

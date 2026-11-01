@@ -135,6 +135,55 @@ def test_a_link_opens_its_document_at_its_chunk(note: str, opened: list[str]):
     assert parts.fragment == "chunk-0"
 
 
+def test_a_window_already_open_shows_the_passage_and_no_tab_opens(
+    note: str, opened: list[str], monkeypatch: pytest.MonkeyPatch
+):
+    """Brian, 2026-11-01: a click updates the kennis tab already open
+    rather than opening another each time."""
+    from kennis.client import api
+
+    asked: list[tuple[str, str, int | None]] = []
+
+    def shown(root: Path, collection: str, document_id: str, chunk: int | None) -> bool:
+        asked.append((collection, document_id, chunk))
+        return True
+
+    monkeypatch.setattr(api, "show_in_window", shown)
+
+    result = CliRunner().invoke(main, ["open", f"kennis://open/{note}/0"])
+
+    assert result.exit_code == 0, result.output
+    assert asked == [("notes", note, 0)]
+    assert opened == []
+    assert "open window" in result.output
+
+
+def test_with_no_window_answering_a_tab_is_opened(
+    note: str, opened: list[str], monkeypatch: pytest.MonkeyPatch
+):
+    from kennis.client import api
+
+    monkeypatch.setattr(api, "show_in_window", lambda *_: False)
+
+    result = CliRunner().invoke(main, ["open", f"kennis://open/{note}/0"])
+
+    assert result.exit_code == 0, result.output
+    assert len(opened) == 1
+
+
+def test_no_browser_asks_no_window_either(
+    note: str, opened: list[str], monkeypatch: pytest.MonkeyPatch
+):
+    from kennis.client import api
+
+    monkeypatch.setattr(api, "show_in_window", lambda *_: pytest.fail())
+
+    result = CliRunner().invoke(main, ["open", "--no-browser", note])
+
+    assert result.exit_code == 0, result.output
+    assert opened == []
+
+
 def test_a_link_with_no_chunk_opens_the_document(note: str, opened: list[str]):
     result = CliRunner().invoke(main, ["open", f"kennis://open/{note}"])
 

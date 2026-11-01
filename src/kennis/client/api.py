@@ -258,6 +258,29 @@ def found(corpus_root: Path, handle: str, collection: str | None) -> Found:
     )
 
 
+def show_in_window(
+    corpus_root: Path, collection: str, document_id: str, chunk: int | None
+) -> bool:
+    """Whether a window already open showed the passage (`POST show`).
+    False when none is open, none answered in time, or the service could
+    not be asked, each of which `kennis open` meets by opening a tab."""
+    import httpx
+
+    try:
+        with connection.connect(corpus_root) as client:
+            answer = client.post(
+                "show",
+                json={
+                    "collection": collection,
+                    "document_id": document_id,
+                    "chunk": chunk,
+                },
+            )
+    except httpx.HTTPError:
+        return False
+    return answer.status_code == 200 and answer.json().get("shown") is True
+
+
 def read_document(
     corpus_root: Path, handle: str, collection: str | None, *, frontmatter: bool
 ) -> DocumentRead:

@@ -15,6 +15,8 @@ operations in `calls.py` by name and watches a write's job.
   client that stopped watching and came back.
 - `POST job/<id>/cancel`: ask the job to stop; it ends with `TaskStopped`
   unless it had already begun to publish, which it then finishes.
+- `POST show` with `{"collection", "document_id", "chunk"}`: show the
+  passage in the window already open, answering `{"shown": bool}`.
 
 A refusal is `{"error": ...}` as `dump_error` writes it: 400 for a request
 the wire cannot read, 404 for a name nobody knows, 422 for a refusal the
@@ -32,14 +34,18 @@ from typing import Final
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, ConfigDict, ValidationError
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from kennis import __version__
 from kennis.build import build_of_this_process
+from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import KennisError, ServiceBusy
 from kennis.engine.events import EventSink
 from kennis.engine.history.outofband import OutOfBandChange
+from kennis.gui.presence import Presence
+from kennis.links import is_a_document_id, window_path
 from kennis.protocol.wire import API_VERSION, Json, WireError, dump, dump_error, load
 from kennis.service.calls import OPERATIONS, SERVICE_PARAMETERS, Operation
 from kennis.service.jobs import Job, Jobs
@@ -83,6 +89,38 @@ def stop(request: Request) -> JSONResponse:
     return JSONResponse(
         {"stopping": True}, background=BackgroundTask(request.app.state.on_stop)
     )
+
+
+class ShowRequest(BaseModel):
+    """A passage `kennis open` would show: checked here, because its parts
+    are put into the path a window is sent to."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    collection: str
+    document_id: str
+    chunk: int | None = None
+
+
+@router.post("/show")
+async def show(request: Request) -> JSONResponse:
+    """Show a passage in the window most recently opened, and say whether
+    it acknowledged (`gui/presence.py`). `{"shown": false}` is the client's
+    cue to open a tab: no window is open, or none answered in time."""
+    try:
+        asked = ShowRequest.model_validate(await request.json())
+    except (ValidationError, ValueError) as error:
+        return _refused(WireError(str(error)), 400)
+    if (
+        asked.collection not in COLLECTION_NAMES
+        or not is_a_document_id(asked.document_id)
+        or (asked.chunk is not None and asked.chunk < 0)
+    ):
+        return _refused(WireError("not a passage of the corpus"), 400)
+    path = window_path(asked.collection, asked.document_id, asked.chunk)
+    presence: Presence = request.app.state.presence
+    shown = await run_in_threadpool(presence.show, path)
+    return JSONResponse({"shown": shown})
 
 
 def _refused(error: BaseException, status: int) -> JSONResponse:

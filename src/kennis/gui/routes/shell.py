@@ -101,6 +101,14 @@ def hold_presence(request: Request) -> Response:
     )
 
 
+@router.post("/shown/{nonce}")
+def acknowledge_shown(nonce: str, request: Request) -> Response:
+    """A page received a `show` (`gui/presence.py`): 204 is its leave to
+    move, 410 that the asker stopped waiting and opened a tab instead."""
+    presence: Presence = request.app.state.presence
+    return Response(status_code=204 if presence.acknowledge(nonce) else 410)
+
+
 @router.get("/revision")
 def serve_revision() -> JSONResponse:
     # Answered on demand, never pushed. One `git rev-parse`, which

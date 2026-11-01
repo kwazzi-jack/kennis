@@ -138,3 +138,127 @@ def test_the_script_composes_no_words_and_shares_one_connection():
     assert "setTimeout" not in code and "setInterval" not in code
     for sentence in (words.SERVICE_GONE_HEADING, words.SERVICE_GONE):
         assert sentence not in code
+
+
+# --- showing a passage in a window already open ---------------------------
+#
+# `kennis open` asks the service to show a passage in a window already open
+# (Brian, 2026-11-01). The service sends a `show` event down the most
+# recently opened stream and waits for the page to acknowledge it; a window
+# that does not answer in time is left alone, and a new tab is opened.
+
+
+def shown_event(chunk: str) -> dict[str, str]:
+    import json
+
+    lines = dict(line.split(": ", 1) for line in chunk.strip().splitlines())
+    assert lines["event"] == "show", chunk
+    found: dict[str, str] = json.loads(lines["data"])
+    return found
+
+
+def test_with_no_window_nothing_is_shown_and_nothing_waits():
+    import time
+
+    presence = Presence()
+    began = time.monotonic()
+
+    assert presence.show("/document/notes/abc", wait=5) is False
+    assert time.monotonic() - began < 1
+
+
+def held_in_a_thread(
+    presence: Presence, count: int = 1
+) -> tuple[list[str], threading.Thread]:
+    """`count` streams held on a loop of their own, as uvicorn holds them,
+    each one's chunks after OPENED collected in order of arrival."""
+    said: list[str] = []
+    opened = threading.Event()
+
+    async def hold_all() -> None:
+        async def hold(position: int) -> None:
+            stream = presence.held()
+            await anext(stream)
+            if presence.open_windows() == count:
+                opened.set()
+            async for chunk in stream:
+                said.append(f"{position}:{chunk}")
+
+        await asyncio.gather(*(hold(position) for position in range(count)))
+
+    runner = threading.Thread(
+        target=lambda: asyncio.run(asyncio.wait_for(hold_all(), timeout=10)),
+        daemon=True,
+    )
+    runner.start()
+    assert opened.wait(5)
+    return said, runner
+
+
+def test_a_window_that_acknowledges_is_shown_the_path():
+    presence = Presence()
+    said, runner = held_in_a_thread(presence)
+
+    def acknowledge_when_told() -> None:
+        while not said:
+            threading.Event().wait(0.01)
+        nonce = shown_event(said[0].split(":", 1)[1])["nonce"]
+        assert presence.acknowledge(nonce)
+
+    threading.Thread(target=acknowledge_when_told, daemon=True).start()
+
+    assert presence.show("/document/notes/abc?chunk=2#chunk-2", wait=5) is True
+    assert shown_event(said[0].split(":", 1)[1])["path"] == (
+        "/document/notes/abc?chunk=2#chunk-2"
+    )
+    presence.end()
+    runner.join(5)
+
+
+def test_a_window_that_does_not_answer_in_time_is_not_counted_as_shown():
+    presence = Presence()
+    said, runner = held_in_a_thread(presence)
+
+    assert presence.show("/document/notes/abc", wait=0.2) is False
+
+    # Told too late: the page must not move, since a new tab was opened.
+    nonce = shown_event(said[0].split(":", 1)[1])["nonce"]
+    assert presence.acknowledge(nonce) is False
+    presence.end()
+    runner.join(5)
+
+
+def test_an_acknowledgement_nobody_asked_for_is_refused():
+    assert Presence().acknowledge("0123456789abcdef") is False
+
+
+def test_only_the_most_recently_opened_window_is_asked():
+    presence = Presence()
+    said, runner = held_in_a_thread(presence, count=2)
+
+    presence.show("/document/notes/abc", wait=0.1)
+
+    # gather starts stream 0 first, so stream 1 is the newer.
+    assert [chunk.split(":", 1)[0] for chunk in said] == ["1"]
+    presence.end()
+    runner.join(5)
+
+
+def test_the_acknowledgement_route_says_whether_it_was_still_wanted(corpus: Path):
+    app = build_app(TOKEN)
+    with TestClient(app) as client:
+        answer = client.post(
+            "/shown/0123456789abcdef", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+
+    assert answer.status_code == 410
+
+
+def test_the_script_navigates_only_once_the_service_still_wants_it():
+    code = code_of("presence.js")
+
+    assert 'addEventListener("show"' in code
+    assert '"/shown/" + ' in code
+    assert "location.assign(" in code
+    # The page moves only on the service's yes, never on the event alone.
+    assert code.index('"/shown/" + ') < code.index("location.assign(")

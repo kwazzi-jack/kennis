@@ -81,31 +81,45 @@ def target_of(text: str) -> LinkTarget:
     )
 
 
-def window_address(
-    service: str, collection: str, document_id: str, chunk: int | None, token: str
-) -> str:
-    """Where the running service's window shows the document, at the chunk.
+def window_path(collection: str, document_id: str, chunk: int | None) -> str:
+    """The window's path for the document, at the chunk, with no token.
 
     The chunk rides in the query string, which the page marks it by, and in
     the fragment, which the browser scrolls to, as a search hit's link does
-    (`gui/pages.py::_href`). The token is in the query, as `kennis gui` gives
-    it, and the window moves it to a cookie.
+    (`gui/pages.py::_href`).
     """
-    named: dict[str, str] = {"token": token}
-    fragment = ""
-    if chunk is not None:
-        named = {"chunk": str(chunk), **named}
-        fragment = f"#chunk-{chunk}"
-    path = f"document/{quote(collection)}/{quote(document_id)}"
-    return f"{service.rstrip('/')}/{path}?{urlencode(named)}{fragment}"
+    path = f"/document/{quote(collection)}/{quote(document_id)}"
+    if chunk is None:
+        return path
+    return f"{path}?{urlencode({'chunk': str(chunk)})}#chunk-{chunk}"
+
+
+def window_address(
+    service: str, collection: str, document_id: str, chunk: int | None, token: str
+) -> str:
+    """Where the running service's window shows the document, at the chunk:
+    `window_path` on the service's address, with the token in the query, as
+    `kennis gui` gives it, which the window moves to a cookie."""
+    path, _, fragment = window_path(collection, document_id, chunk).partition("#")
+    joiner = "&" if "?" in path else "?"
+    address = f"{service.rstrip('/')}{path}{joiner}{urlencode({'token': token})}"
+    return f"{address}#{fragment}" if fragment else address
+
+
+def is_a_document_id(text: str) -> bool:
+    """Whether `text` has the shape of a document identifier, so that it can
+    be put into a path of the window's address."""
+    return re.fullmatch(r"[a-z0-9]+", text) is not None
 
 
 __all__ = [
     "SCHEME",
     "LinkTarget",
     "NotAKennisLink",
+    "is_a_document_id",
     "is_a_link",
     "link_to",
     "target_of",
     "window_address",
+    "window_path",
 ]
