@@ -110,10 +110,23 @@ def _headings_of(body: str) -> list[_Heading]:
         elif not fenced:
             matched = _HEADING.match(line.rstrip("\r\n"))
             if matched is not None:
-                words = _EMPHASIS.sub("", matched.group("words")).strip()
+                words = _unspaced(_EMPHASIS.sub("", matched.group("words")).strip())
                 headings.append(_Heading(position, len(matched.group("marks")), words))
         position += len(line)
     return headings
+
+
+def _unspaced(words: str) -> str:
+    """A heading set one letter at a time, `a b s t r a c t`, as its word.
+
+    Only when every part is one character and there are at least three: a
+    PDF's letter-spaced capitals reach the markdown so, and the space
+    between its words is lost with them, so nothing else can be undone.
+    """
+    parts = words.split()
+    if len(parts) >= 3 and all(len(part) == 1 for part in parts):
+        return "".join(parts)
+    return words
 
 
 def _number_of(words: str) -> str | None:

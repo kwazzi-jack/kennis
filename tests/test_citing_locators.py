@@ -201,3 +201,20 @@ def test_captions_are_read_as_papers_write_them(caption: str, expected: Locator)
 def test_a_sentence_beginning_with_a_figure_is_not_a_caption(line: str):
     body = f"# Title\n\n## 1 Intro\n\n{line}\n"
     assert located(line, body) == Locator("section", "1")
+
+
+@pytest.mark.parametrize(
+    ("heading", "words"),
+    [
+        ("## a b s t r a c t", "abstract"),
+        ("## A B S T R A C T", "ABSTRACT"),
+        # Words of their own are kept as written.
+        ("## A New Method", "A New Method"),
+        ("## X and Y", "X and Y"),
+    ],
+)
+def test_a_letter_spaced_heading_is_read_as_its_word(heading: str, words: str):
+    """A PDF that sets a heading in spaced capitals reaches the markdown one
+    letter at a time, and `sec. a b s t r a c t` reads as noise (#597)."""
+    body = f"# Title\n\n{heading}\n\nThe text.\n"
+    assert located("The text.", body) == Locator("section", words)
