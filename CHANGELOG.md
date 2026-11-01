@@ -1,3 +1,29 @@
+## v0.13.0 (2026-11-01)
+
+### Feat
+
+- **links**: show a passage in the kennis window already open rather than a new tab
+- **search**: grade an unmeasured model's meaning against unrelated questions and set how scores are shown
+- **search**: grade text-embedding-3-large's cosine by cuts measured on a real corpus
+- **cite**: cite a passage with its figure, equation or section and a kennis:// link, from the command line and the mcp server (#8)
+- **links**: open a kennis:// link in the window and register the scheme for this account (#8)
+- **gui**: count an add's files as they are sent and as they are added (#11)
+- **gui**: keep the service while a window is open and say when it has stopped
+
+### Fix
+
+- **service**: refuse in a client older than its installation rather than replacing the service
+- **serve**: refuse without the mcp extra, naming the install command
+- **cite**: read a letter-spaced heading as its word
+- **cite**: wrap a reference under its link rather than back at the margin
+- **gui**: write each uploaded file as it arrives, with no limit on how many (#11)
+- **search**: ask an openai-compatible server for floats and document the route
+- **gui**: ask unpaywall in the add preview when an email is set (#10)
+- **service**: start the service with a console that has no window on windows (#5, #6)
+- **paths**: accept a typed path in quotes (#4)
+- **convert**: never stage a name ending in a space or a dot (#3)
+- **ci**: give a task a hexadecimal id, space fetches by their starts and give each test its own home
+
 ## v0.12.6 (2026-10-30)
 
 ### Fix
