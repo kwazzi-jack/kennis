@@ -277,3 +277,6 @@ tag_format = "v$version"
 # anywhere. A commit message is not a file in the tree, but it is read back
 # out of `git log` by everything that reads the history.
 bump_message = "bump: version $current_version -> $new_version"
+# CITATION.cff carries the version too, for GitHub and for the record Zenodo
+# mints on each release; only its `version:` line is rewritten.
+version_files = ["CITATION.cff:^version:"]

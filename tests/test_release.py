@@ -202,3 +202,97 @@ def test_an_exemption_is_still_needed():
     again the day it returns as a real request."""
     hosts = hosts_named_in_source()
     assert set(NEVER_CONTACTED) <= set(hosts), set(NEVER_CONTACTED) - set(hosts)
+
+
+# --- the citation file -------------------------------------------------------
+#
+# GitHub reads CITATION.cff for "Cite this repository", and Zenodo's GitHub
+# integration reads it for the record of the DOI it mints on each published
+# release. A record is permanent for its version, so a stale version or a
+# malformed ORCID is published for good.
+
+CITATION = PROJECT_ROOT / "CITATION.cff"
+PYPROJECT = PROJECT_ROOT / "pyproject.toml"
+
+
+def load_citation() -> dict[str, object]:
+    loaded = yaml.safe_load(CITATION.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def project_table() -> dict[str, object]:
+    import tomllib
+
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    assert isinstance(project, dict)
+    return project
+
+
+def authors_of(citation: dict[str, object]) -> list[dict[str, str]]:
+    authors = citation["authors"]
+    assert isinstance(authors, list) and authors
+    return authors
+
+
+def test_the_citation_names_this_version_licence_and_repository():
+    citation = load_citation()
+    project = project_table()
+    urls = project["urls"]
+    assert isinstance(urls, dict)
+
+    assert citation["cff-version"] == "1.2.0"
+    assert citation["type"] == "software"
+    assert citation["title"] == project["name"]
+    assert str(citation["version"]) == project["version"]
+    assert citation["license"] == project["license"]
+    assert citation["repository-code"] == urls["Repository"]
+
+
+def test_a_bump_rewrites_the_citation_s_version():
+    import tomllib
+
+    commitizen = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["tool"][
+        "commitizen"
+    ]
+    assert "CITATION.cff:^version:" in commitizen["version_files"]
+
+
+def orcid_checksum_holds(orcid: str) -> bool:
+    """ISO 7064 11-2, as ORCID defines its last character."""
+    digits = orcid.replace("-", "")
+    total = 0
+    for digit in digits[:-1]:
+        total = (total + int(digit)) * 2
+    remainder = (12 - total % 11) % 11
+    expected = "X" if remainder == 10 else str(remainder)
+    return digits[-1] == expected
+
+
+def test_the_orcid_checksum_is_computed_as_orcid_defines_it():
+    # ORCID's own example identifier, and the same with its last digit wrong.
+    assert orcid_checksum_holds("0000-0002-1825-0097")
+    assert not orcid_checksum_holds("0000-0002-1825-0098")
+
+
+def test_every_author_is_named_whole_and_carries_no_email():
+    for author in authors_of(load_citation()):
+        assert author.get("family-names") and author.get("given-names"), author
+        assert "email" not in author, author
+
+
+def test_every_orcid_is_a_full_address_whose_checksum_holds():
+    for author in authors_of(load_citation()):
+        orcid = author.get("orcid")
+        if orcid is None:
+            continue
+        matched = re.fullmatch(
+            r"https://orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])", orcid
+        )
+        assert matched is not None, orcid
+        assert orcid_checksum_holds(matched.group(1)), orcid
+
+
+def test_zenodo_reads_the_citation_file():
+    """Zenodo uses CITATION.cff only when no .zenodo.json exists."""
+    assert not (PROJECT_ROOT / ".zenodo.json").exists()
