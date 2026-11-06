@@ -122,6 +122,14 @@ def _scopes(
     "'all'. Each project's current version without it.",
 )
 @click.option(
+    "--tag",
+    "tags",
+    multiple=True,
+    metavar="NAME",
+    help="Keep only passages and documents tagged NAME (see kennis tags); "
+    "repeated, only those carrying every tag. Ranking is unchanged.",
+)
+@click.option(
     "--all-projects",
     is_flag=True,
     help="Search every project's context that `kennis context list` knows, "
@@ -149,6 +157,7 @@ def search_command(
     group: str | None,
     project: str | None,
     versions: tuple[str, ...],
+    tags: tuple[str, ...],
     all_projects: bool,
     snippet: str,
     scores: str | None,
@@ -199,6 +208,7 @@ def search_command(
         versions=versions,
         bundle=bundle,
         others=others,
+        tags=tags,
     )
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))

@@ -40,7 +40,7 @@ from kennis.engine.errors import KennisError, SearchUnavailable
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Chunk
 from kennis.finding import resolve_document
-from kennis.links import context_link, link_to
+from kennis.links import Target, context_link, link_to
 from kennis.publishing import reading
 from kennis.render.citations import (
     Formatted,
@@ -190,12 +190,24 @@ def _found(
     )
 
 
-def _found_in_bundle(position: int, request: CiteRequest, bundle: Path) -> _Found:
-    """A file in a project's bundle, found among the files it holds rather
-    than joined onto it, so a path from a client climbs nowhere."""
-    from kennis.engine.context.bundle import BUNDLE_DIRNAME, is_bundle_dir
-    from kennis.engine.context.groups import project_group
-    from kennis.engine.context.index import load_bundle_index
+def request_for(target: Target) -> CiteRequest:
+    """What a `kennis://` link names, as a request; a project by this
+    machine's list. Shared by every client and the window (#625)."""
+    from kennis.engine.context.projects import project_named
+    from kennis.links import ContextTarget, LinkTarget
+
+    match target:
+        case LinkTarget(document_id=document_id, chunk=chunk):
+            return CiteRequest(document_id, chunk)
+        case ContextTarget(project=project, path=path, chunk=chunk):
+            return CiteRequest(path, chunk, bundle=project_named(project).bundle)
+
+
+def bundle_member(bundle: Path, handle: str) -> tuple[str, Path]:
+    """The project's name and the file `handle` names in its bundle, found
+    among the files the bundle holds rather than joined onto it, so a path
+    from a client climbs nowhere. Shared with `tagging.py` (#625)."""
+    from kennis.engine.context.bundle import is_bundle_dir
     from kennis.engine.context.notes import bundle_documents
     from kennis.engine.context.projects import note_project, project_names
     from kennis.engine.errors import ContextNotFound, DocumentNotFound
@@ -207,12 +219,22 @@ def _found_in_bundle(position: int, request: CiteRequest, bundle: Path) -> _Foun
     held = {
         path.relative_to(bundle).as_posix(): path for path in bundle_documents(bundle)
     }
-    file = held.get(request.handle)
+    file = held.get(handle)
     if file is None:
         raise DocumentNotFound(
-            f"'{request.handle}' is not in the project {project}'s bundle",
+            f"'{handle}' is not in the project {project}'s bundle",
             resolution="kennis context status",
         )
+    return project, file
+
+
+def _found_in_bundle(position: int, request: CiteRequest, bundle: Path) -> _Found:
+    """A file in a project's bundle, cited as a note is."""
+    from kennis.engine.context.bundle import BUNDLE_DIRNAME
+    from kennis.engine.context.groups import project_group
+    from kennis.engine.context.index import load_bundle_index
+
+    project, file = bundle_member(bundle, request.handle)
     chunks = load_bundle_index(bundle).chunks if request.chunk is not None else ()
     return _located(
         position,

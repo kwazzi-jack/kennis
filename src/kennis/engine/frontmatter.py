@@ -70,6 +70,18 @@ def _string(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
 _Dumper.add_representer(str, _string)
 
 
+def yaml_text(data: object) -> str:
+    """`data` as block YAML in the order given, its strings written as a
+    document's frontmatter writes them - a colon quoted (#523)."""
+    return yaml.dump(
+        data,
+        Dumper=_Dumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=False,
+    )
+
+
 def join_frontmatter(frontmatter: Frontmatter, body: str) -> str:
     """Render `frontmatter` and `body` back into one document string.
 

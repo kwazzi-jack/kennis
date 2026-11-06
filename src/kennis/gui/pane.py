@@ -26,6 +26,7 @@ from kennis.engine.context.notes import bundle_documents
 from kennis.engine.context.projects import known_projects
 from kennis.engine.errors import KennisError, ProjectListUnreadable
 from kennis.engine.history.history import HistoryEntry
+from kennis.gui.tagged import ShownTag, pane_tags
 from kennis.holdings import Holding, holdings, installed_packs, last_change
 
 type PaneState = Literal["empty", "none", "behind", "current"]
@@ -69,6 +70,8 @@ class Pane:
     missing: tuple[str, ...] = ()
     packs: int = 0
     last_change: HistoryEntry | None = None
+    # Each tag and how much it holds, the corpus's and every project's (#625).
+    tags: tuple[ShownTag, ...] = ()
 
     @property
     def documents(self) -> int:
@@ -134,6 +137,7 @@ def pane_now(request: Request) -> Pane:
         missing=missing,
         packs=packs,
         last_change=newest,
+        tags=pane_tags(context),
     )
 
 

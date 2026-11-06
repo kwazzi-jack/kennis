@@ -4,7 +4,7 @@ with the passage a search led to marked where the index can place it.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -24,11 +24,13 @@ from kennis.engine.rag.models import Chunk
 from kennis.gui import words
 from kennis.gui.pages import (
     ShownDocument,
+    document_link,
     shown_bundle_document,
     shown_document,
     shown_matches,
 )
 from kennis.gui.responses import TEMPLATES, problem_page
+from kennis.gui.tagged import ShownDocumentTag, document_tags
 from kennis.holdings import (
     document_marks,
     freshness_of,
@@ -50,6 +52,8 @@ def _document_context(
     withheld: bool,
     placeable: bool | None,
     chunks: Callable[[], list[Chunk]],
+    tags: Sequence[ShownDocumentTag],
+    back: str,
 ) -> dict[str, object]:
     """What a document page needs, from either store.
 
@@ -90,6 +94,11 @@ def _document_context(
         "outline_heading": words.OUTLINE_HEADING,
         "no_headings": words.NO_HEADINGS,
         "no_matches": words.NO_MATCHES,
+        # Its tags and the link that tags it whole (#625); a Remove comes
+        # back to this page.
+        "document_tags": tags,
+        "document_link": document_link(document.collection, document.document_id),
+        "tags_back": back,
     }
 
 
@@ -214,8 +223,31 @@ def serve_document(
             chunks=lambda: document_chunks(
                 context, collection, document.document_id, bundle=None
             ),
+            tags=_tags_or_none(
+                lambda: document_tags(
+                    context, document=document.document_id, project=None, bundle=None
+                )
+            ),
+            back=_this_page(request),
         ),
     )
+
+
+def _tags_or_none(
+    read: Callable[[], list[ShownDocumentTag]],
+) -> list[ShownDocumentTag]:
+    """The document's tags, or none when a tags file cannot be read: the
+    document is still worth showing, and `kennis tags` says what is wrong."""
+    try:
+        return read()
+    except KennisError:
+        return []
+
+
+def _this_page(request: Request) -> str:
+    """This page's address within the window, for a Remove to return to."""
+    query = request.url.query
+    return request.url.path + (f"?{query}" if query else "")
 
 
 def _marked_in(chunks: list[Chunk], chunk: str) -> MarkedRange | None:
@@ -281,5 +313,14 @@ def serve_bundle_document(
             chunks=lambda: document_chunks(
                 resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
             ),
+            tags=_tags_or_none(
+                lambda: document_tags(
+                    existing_corpus(),
+                    document=relative_path,
+                    project=project,
+                    bundle=bundle,
+                )
+            ),
+            back=_this_page(request),
         ),
     )

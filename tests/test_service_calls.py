@@ -32,6 +32,7 @@ import kennis.finding
 import kennis.holdings
 import kennis.operations
 import kennis.retrieval
+import kennis.tagging
 from kennis.cli.__main__ import main
 from kennis.context import Context, existing_corpus
 from kennis.engine.context.bundle import find_bundle
@@ -50,7 +51,13 @@ from kennis.protocol.wire import Json, dump, load, load_error, wire_name
 from kennis.service.api import PREFIX
 from kennis.service.app import build_service_app
 from kennis.service.calls import OPERATIONS, Operation
-from kennis.service.jobs import CORPUS_LANE, INDEX_LANE, PROJECTS_LANE, context_lane
+from kennis.service.jobs import (
+    CORPUS_LANE,
+    INDEX_LANE,
+    PROJECTS_LANE,
+    TAGS_LANE,
+    context_lane,
+)
 from pinned import pin
 
 TOKEN = "a-test-token"
@@ -85,6 +92,8 @@ EXPECTED_OPERATIONS = frozenset(
         "supply_paper",
         "sync_bundle",
         "sync_corpus",
+        "tag",
+        "untag",
         # Reads, answered on the request.
         "bundle_status",
         "cite",
@@ -105,6 +114,7 @@ EXPECTED_OPERATIONS = frozenset(
         "search_scope",
         "status",
         "sweep",
+        "tags",
         "tree",
         "version_pages",
     }
@@ -305,6 +315,15 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "document_marks": lambda scene: {"collection": "notes"},
     "found": lambda scene: {"handle": "calibration", "collection": None},
     "cite": lambda scene: {"requests": [kennis.citing.CiteRequest("calibration")]},
+    "tag": lambda scene: {
+        "requests": [kennis.citing.CiteRequest("calibration")],
+        "names": ("reading",),
+    },
+    "untag": lambda scene: {
+        "requests": [kennis.citing.CiteRequest("calibration")],
+        "names": ("reading",),
+    },
+    "tags": lambda scene: {"bundle": None},
     "holdings": lambda scene: {},
     "pack_listing": lambda scene: {
         name: value for name, value in installed(scene).items() if name != "pack_id"
@@ -341,6 +360,7 @@ DIRECT: dict[str, Callable[[Context], object]] = {
         context, [kennis.citing.CiteRequest("calibration")]
     ),
     "docs_versions": kennis.holdings.docs_versions,
+    "tags": lambda context: kennis.tagging.tags_held(context, ()),
     "history": lambda context: kennis.holdings.history_of(context, None, 5),
     "return_preview": lambda context: kennis.holdings.return_preview(
         context, history_root(Repository(context.corpus_root))
@@ -632,6 +652,8 @@ def test_each_write_runs_in_its_own_lane(scene: Scene, name: str):
         "remember_in_context": in_the_bundle,
         "add_project": PROJECTS_LANE,
         "forget_project": PROJECTS_LANE,
+        "tag": TAGS_LANE,
+        "untag": TAGS_LANE,
         # Named by its project, and waiting on that project's bundle.
         "delete_project": in_the_bundle,
     }

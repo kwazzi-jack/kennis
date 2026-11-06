@@ -87,7 +87,7 @@ def cite(requests: list[CiteRequest]) -> str:
     asked: list[Requested] = []
     for position, request in enumerate(requests):
         try:
-            asked.append(_requested(request))
+            asked.append(requested(request))
         except KennisError as error:
             blocks[position] = _refused(
                 CiteRefusal(
@@ -115,7 +115,7 @@ def _handle_of(request: CiteRequest) -> str:
     return request.document_id or request.path or ""
 
 
-def _requested(request: CiteRequest) -> Requested:
+def requested(request: CiteRequest) -> Requested:
     """The request the service takes, a context hit's bundle found from
     where this server runs, as `kennis cite` finds it (#623)."""
     from pathlib import Path
@@ -153,4 +153,4 @@ def _refused(refusal: CiteRefusal) -> str:
     return f"[{refusal.position + 1}] {refusal.handle}: {refusal.message}.{resolution}"
 
 
-__all__ = ["CiteRequest", "cite"]
+__all__ = ["CiteRequest", "cite", "requested"]

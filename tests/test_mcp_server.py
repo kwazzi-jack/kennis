@@ -275,6 +275,7 @@ def test_the_tool_is_advertised(corpus: Path):
         "search_docs",
         "search_literature",
         "search_notes",
+        "tag",
     }
 
 

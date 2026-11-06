@@ -72,6 +72,26 @@
     {% endif %}
   </details>
   {% endif %}
+  {# The document's tags, whole or by passage, each with Remove, and the
+     dialog that tags it whole (#625). #}
+  <details class="tags" open>
+    <summary>{{ icon("chevron-right") }}{{ tags_heading }}</summary>
+    {% if document_tags %}
+    <ul class="tag-chips">
+      {% for tagged in document_tags %}
+      <li class="tag-chip-row"><a class="tag-chip" href="{{ tagged.href }}">{{ tagged.name }}</a>{% if tagged.chunk is not none %}<a class="tag-passage" href="?chunk={{ tagged.chunk }}#chunk-{{ tagged.chunk }}" title="{{ tagged.quote or tagged_passage_label }}">{{ tagged.quote or tagged_passage_label }}</a>{% endif %}
+        <form class="untag" action="/tags/remove" method="post">
+          <input type="hidden" name="tag" value="{{ tagged.name }}">
+          <input type="hidden" name="link" value="{{ tagged.link }}">
+          <input type="hidden" name="back" value="{{ tags_back }}">
+          <button type="submit" class="ghost" aria-label="{{ tagged.remove_label }}" title="{{ tagged.remove_label }}">{{ icon("x") }}</button>
+        </form></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% set tag_this = "/tags/add?link=" ~ (document_link | urlencode) %}
+    <p><a class="button tag-document" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("tag") }}<span>{{ tag_document }}</span></a></p>
+  </details>
   <details class="outline"{% if not question %} open{% endif %}>
     <summary>{{ icon("chevron-right") }}{{ outline_heading }}</summary>
     {% if document.outline %}

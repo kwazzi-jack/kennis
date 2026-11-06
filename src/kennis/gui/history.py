@@ -77,6 +77,8 @@ class Search:
     # The project a search was narrowed to, or "" for every project
     # (#519): offered again, it searches what it searched.
     project: str = ""
+    # The tags it was kept to (#625), for the same reason.
+    tags: tuple[str, ...] = ()
 
 
 def history_path() -> Path:
@@ -108,6 +110,7 @@ def recent() -> list[Search]:
                 at=float(entry["at"]),
                 versions=tuple(str(one) for one in entry.get("versions", [])),
                 project=str(entry.get("project", "")),
+                tags=tuple(str(one) for one in entry.get("tags", [])),
             )
             for entry in written
         ]
@@ -130,6 +133,7 @@ def overwrite(searches: Sequence[Search]) -> None:
                     "at": search.at,
                     "versions": list(search.versions),
                     "project": search.project,
+                    "tags": list(search.tags),
                 }
                 for search in searches
             ],
@@ -151,6 +155,7 @@ def record(
     mode: str,
     versions: tuple[str, ...] = (),
     project: str = "",
+    tags: tuple[str, ...] = (),
 ) -> None:
     """Note that this search happened, collapsing it into the last
     one where the two are the same search still being typed.
@@ -176,6 +181,7 @@ def record(
         at=time.time(),
         versions=versions,
         project=project,
+        tags=tags,
     )
     held = recent()
     # Two removals, and they are different rules.

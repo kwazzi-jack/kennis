@@ -33,6 +33,7 @@ from kennis.mcp.tools.search import (
     search_literature,
     search_notes,
 )
+from kennis.mcp.tools.tags import tag
 from kennis.protocol.spawn import holds_a_corpus
 
 SERVER_NAME = "kennis"
@@ -64,6 +65,7 @@ def build_server() -> FastMCP:
     server.tool(read_docs)
     server.tool(cite)
     server.tool(remember)
+    server.tool(tag)
     return server
 
 

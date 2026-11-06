@@ -12,10 +12,12 @@ and `detail="documents"` answers with the rows.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from kennis.client import api
 from kennis.context import existing_corpus
+from kennis.engine.context.bundle import find_bundle
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.render.words import describe_held_versions
 
@@ -74,7 +76,20 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
                 f"  ({len(contents.unreadable)} could not be read; "
                 f"run `kennis corpus status`)"
             )
+    if collection is None:
+        lines.extend(_tags_in_use(corpus_root))
     return "\n".join(lines)
+
+
+def _tags_in_use(corpus_root: Path) -> list[str]:
+    """One line naming each tag and how much it holds, the corpus's and
+    this project's (#625), for `tags=` on a search; none when nothing is
+    tagged."""
+    listed = api.tags(corpus_root, find_bundle(Path.cwd()))
+    if not listed:
+        return []
+    named = ", ".join(f"{one.name} ({len(one.targets)})" for one in listed)
+    return [f"tags: {named}"]
 
 
 __all__ = ["list_corpus"]

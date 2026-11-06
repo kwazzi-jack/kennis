@@ -54,6 +54,7 @@ from kennis.gui.routes import (
     settings,
     shell,
     supply,
+    tags,
 )
 from kennis.gui.theme import stylesheet
 from kennis.service.jobs import Jobs
@@ -365,6 +366,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         projects,
         settings,
         supply,
+        tags,
     ):
         app.include_router(routes.router)
 

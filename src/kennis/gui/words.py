@@ -690,6 +690,7 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/projects/reset": "Reset a project's context",
     "/projects/sync": "Sync a project's context",
     "/history/clear": "Clear recent searches",
+    "/tags/add": "Tag",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -805,12 +806,16 @@ UNINSTALLED_STILL_HELD = (
 )
 
 # The palette's places beyond the collections, by the pane's own names.
+# The tags' page and the pane's section (#625).
+TAGS_HEADING = "Tags"
+
 PALETTE_PAGES: Final[tuple[tuple[str, str, str], ...]] = (
     ("/corpus", CORPUS_HEADING, "database"),
     ("/", RECENTS_HEADING, "history"),
     ("/activity", ACTIVITY_HEADING, "activity"),
     ("/packs", PACKS_HEADING, "package"),
     ("/settings", SETTINGS_HEADING, "settings"),
+    ("/tags", TAGS_HEADING, "tag"),
 )
 
 NOTHING_RUN = "No tasks yet. Tasks stay listed for an hour."
@@ -840,6 +845,7 @@ JOB_DOING: Final[dict[str, str]] = {
     "remove": "Removing a document",
     "restore": "Putting a document back",
     "return": "Returning the corpus to an earlier point",
+    "tag": "Changing tags",
     "version": "Changing a docs version",
 }
 
@@ -955,6 +961,7 @@ CHANGE_KINDS: Final[dict[str, str]] = {
     "remove": "removed from",
     "return": "returned",
     "record": "recorded edits in",
+    "tag": "changed tags in",
 }
 
 
@@ -1863,6 +1870,49 @@ CHOOSE_THE_FILE = "Choose the file"
 PAPER_KINDS: Final[dict[str, str]] = {"doi": "DOI", "arxiv": "arXiv", "bibcode": "ADS"}
 
 
+# ---------------------------------------------------------------------------
+# Tags (#625)
+
+TAG_PASSAGE = "Tag this passage"
+TAG_DOCUMENT = "Tag this document"
+TAG_ACTION = "Tag"
+TAG_NAMES_LABEL = "Tags"
+TAG_NAMES_HINT = "calibration, to-cite"
+TAG_NAMES_HELP = (
+    "One word each, separated by commas; join words with a hyphen. "
+    "Tags are folded to lowercase."
+)
+SEARCH_WITHIN_TAG = "Search within this tag"
+NO_TAGS = (
+    "Nothing is tagged yet. Tag a passage from its card in the results, or a "
+    "document from its details."
+)
+REMOVE_TAG = "Remove"
+# Beside a tag in a document's inspector, when the tag is on one passage.
+TAGGED_PASSAGE = "a passage"
+KEPT_TO_TAGS = "Kept to"
+SHOW_EVERYTHING = "Show everything"
+
+
+def tagging(title: str) -> str:
+    """The tag dialog's opening sentence."""
+    return f"Tagging {title}."
+
+
+def tagged_with(title: str, names: Sequence[str]) -> str:
+    """What a tag dialog answers once the tags are written."""
+    return f"Tagged {title}: {', '.join(names)}."
+
+
+def already_tagged_with(title: str, names: Sequence[str]) -> str:
+    return f"{title} was already tagged {', '.join(names)}."
+
+
+def remove_tag_from(name: str, title: str) -> str:
+    """The label of a Remove button, for a screen reader."""
+    return f"Remove the tag {name} from {title}"
+
+
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
@@ -1980,6 +2030,7 @@ __all__ = [
     "KENNIS_SETTINGS_HEADING",
     "KENNIS_SETTINGS_NOTE",
     "KENNIS_UNCHANGED",
+    "KEPT_TO_TAGS",
     "KEYWORDS_ONLY_CHOOSE",
     "KEYWORDS_ONLY_INDEX",
     "KEY_HIGH",
@@ -2040,6 +2091,7 @@ __all__ = [
     "NO_PACKS",
     "NO_PDF",
     "NO_SUCH_JOB",
+    "NO_TAGS",
     "OPEN_AS_PAGE",
     "OPEN_AT_PASSAGE",
     "OPTIONAL",
@@ -2101,6 +2153,7 @@ __all__ = [
     "REMEMBER_PREAMBLE",
     "REMEMBER_TIP",
     "REMOVE_DOCUMENT_ACTION",
+    "REMOVE_TAG",
     "REMOVE_UNDECLARED",
     "REMOVE_VERSION_ACTION",
     "REQUIRED",
@@ -2120,6 +2173,7 @@ __all__ = [
     "SEARCHING",
     "SEARCH_ACTION",
     "SEARCH_KEY_TITLE",
+    "SEARCH_WITHIN_TAG",
     "SERVICE_GONE",
     "SERVICE_GONE_COMMAND",
     "SERVICE_GONE_HEADING",
@@ -2127,6 +2181,7 @@ __all__ = [
     "SETTING_CHOICES",
     "SETTING_NAMES",
     "SETTING_TIPS",
+    "SHOW_EVERYTHING",
     "SHOW_PASSAGE",
     "SITE_UNREACHABLE",
     "SKIP",
@@ -2150,6 +2205,14 @@ __all__ = [
     "SYNC_PROJECT",
     "SYNC_PROJECT_ACTION",
     "SYNC_TIP",
+    "TAGGED_PASSAGE",
+    "TAGS_HEADING",
+    "TAG_ACTION",
+    "TAG_DOCUMENT",
+    "TAG_NAMES_HELP",
+    "TAG_NAMES_HINT",
+    "TAG_NAMES_LABEL",
+    "TAG_PASSAGE",
     "TARGET_LABEL",
     "THEME_CHOICES",
     "TITLE_HINT",
@@ -2178,6 +2241,7 @@ __all__ = [
     "WINDOW_SETTINGS_HEADING",
     "WINDOW_SETTINGS_NOTE",
     "WINDOW_SETTINGS_TIP",
+    "already_tagged_with",
     "attention_count",
     "built_with",
     "cancelled",
@@ -2218,6 +2282,7 @@ __all__ = [
     "previewed_project",
     "previewed_version",
     "remember_targets",
+    "remove_tag_from",
     "removing_document",
     "removing_version",
     "results_for",
@@ -2229,6 +2294,8 @@ __all__ = [
     "setting_tip",
     "shortened_authors",
     "syncing_project",
+    "tagged_with",
+    "tagging",
     "time_ago",
     "tip_about",
     "to_index",

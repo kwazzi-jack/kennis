@@ -7,6 +7,10 @@
    has to be styled - a test says so. #}
 <span id="answered" data-query="{{ question }}" data-scope="{{ scope }}"
       data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
+{# What the results are kept to, and the way back to everything (#625). #}
+{% if kept_tags %}
+<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}">{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
+{% endif %}
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
 {% if resolution is for_the_window %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>
@@ -72,7 +76,11 @@
        how well it matched (the visual review, F4). #}
     <div class="hit-head">
       <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
-        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a>
+        {# Tags this passage (#625): a dialog, or the form as a page
+           without a script. #}
+        {% set tag_this = "/tags/add?link=" ~ (hit.link | urlencode) %}
+        <a class="tag-hit" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ tag_passage }}" title="{{ tag_passage }}">{{ icon("tag") }}</a></p>
       {# Which section the passage is from; the title is the document's
          alone. Marked, so `safe`. #}
       {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}

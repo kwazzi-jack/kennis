@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{# Every tag, or one tag's page (#625). A tag's passages come first, each
+   with its opening words and its link, ready to cite; then its documents;
+   then what needs attention - a passage whose words are gone, a document no
+   longer held - each with Remove. Every Remove is a plain form, so the page
+   works without a script. #}
+{% block title %}kennis - {% if tag %}{{ tag }}{% else %}{{ tags_heading }}{% endif %}{% endblock %}
+{% block main %}
+{% if tag %}
+<div class="tag-head">
+  <h1>{{ icon("tag") }}<span>{{ tag }}</span></h1>
+  <a class="button" href="{{ search_href }}">{{ icon("search") }}<span>{{ search_within_tag }}</span></a>
+</div>
+<ol class="tagged-list">
+  {% for item in tagged %}
+  <li class="tagged" data-kind="{{ item.kind }}" data-state="{{ item.state }}">
+    <p class="tagged-head">{{ icon("file-text") if item.kind == "document" else icon("hash") }}
+      {% if item.href %}<a class="title" href="{{ item.href }}">{{ item.title }}</a>{% else %}<span class="title">{{ item.title }}</span>{% endif %}</p>
+    {% if item.quote %}<blockquote class="tag-quote">{{ item.quote }}</blockquote>{% endif %}
+    <p class="tag-link role-command">{{ item.link }}</p>
+    {% if item.trouble %}<p class="tag-trouble role-warning">{{ icon("triangle-alert") }}<span>{{ item.trouble }}</span></p>{% endif %}
+    <form class="untag" action="/tags/remove" method="post">
+      <input type="hidden" name="tag" value="{{ tag }}">
+      <input type="hidden" name="link" value="{{ item.link }}">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button type="submit" class="ghost" aria-label="{{ item.remove_label }}">{{ icon("x") }}<span>{{ remove_tag }}</span></button>
+    </form>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<h1>{{ tags_heading }}</h1>
+{% if tags %}
+<ul class="tags-list">
+  {% for entry in tags %}
+  <li><a class="tag-entry" href="{{ entry.href }}">{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="role-muted">{{ no_tags }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

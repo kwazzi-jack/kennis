@@ -458,6 +458,7 @@ JOB_KINDS: Final[dict[str, str]] = {
     "remove": "Removal",
     "restore": "Putting back",
     "return": "Return",
+    "tag": "Tag change",
     "version": "Docs version change",
 }
 

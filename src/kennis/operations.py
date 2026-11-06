@@ -513,6 +513,31 @@ def restore_a_document(
     return restored
 
 
+def place_corpus_tags(context: Context, text: str, *, counts: dict[str, int]) -> None:
+    """Write the corpus's `tags.yml` and commit it as `tag(corpus)` (#625).
+
+    Held exclusively, with hand edits recorded first so they do not enter
+    history under the tag's name. No mirror: what a mirror keeps out of
+    sight is a slow preparation, and this is one file replaced by rename,
+    which is already whole or absent. Journalled, so a failure before the
+    commit puts the file back. Empty text removes the file.
+    """
+    from kennis.engine.atomic import remove_file, replace_file
+    from kennis.engine.tags import TAGS_FILENAME
+
+    store = context.corpus_root / TAGS_FILENAME
+    with exclusively(context.corpus_root):
+        record_what_was_not_recorded(context)
+        with journalled(context.corpus_root, "tag", [TAGS_FILENAME]):
+            if text:
+                replace_file(store, text)
+            else:
+                remove_file(store, missing_ok=True)
+            Repository(context.corpus_root).commit(
+                "tag", scope="corpus", summary=commit_summary(counts)
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class ReturnedCorpus:
     """What returning the corpus to a point did."""
@@ -922,6 +947,7 @@ __all__ = [
     "install_a_pack",
     "make_docs_version_current",
     "move_a_document",
+    "place_corpus_tags",
     "record_what_was_not_recorded",
     "remove_a_document",
     "remove_docs_version",

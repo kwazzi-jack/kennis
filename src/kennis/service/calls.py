@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kennis import citing, finding, operations, retrieval, writing
+from kennis import citing, finding, operations, retrieval, tagging, writing
 from kennis import holdings as held
 from kennis.citing import Cited, CiteRequest
 from kennis.context import existing_corpus
@@ -69,7 +69,14 @@ from kennis.operations import (
 )
 from kennis.render.hits import Hit
 from kennis.retrieval import Sweep
-from kennis.service.jobs import CORPUS_LANE, INDEX_LANE, PROJECTS_LANE, context_lane
+from kennis.service.jobs import (
+    CORPUS_LANE,
+    INDEX_LANE,
+    PROJECTS_LANE,
+    TAGS_LANE,
+    context_lane,
+)
+from kennis.tagging import Tagged, TagListing
 
 # The parameters the service fills and a client may never name.
 SERVICE_PARAMETERS: Final = frozenset({"events", "restored"})
@@ -101,6 +108,10 @@ def _in_the_named_project_s_bundle_lane(arguments: Mapping[str, object]) -> str:
     except KennisError:
         return PROJECTS_LANE
     return context_lane(str(bundle))
+
+
+def _in_the_tags_lane(arguments: Mapping[str, object]) -> str:
+    return TAGS_LANE
 
 
 def _in_the_projects_lane(arguments: Mapping[str, object]) -> str:
@@ -322,6 +333,14 @@ def delete_project(name: str) -> BundleDeletion:
     return deleting.delete_project(name)
 
 
+def tag(requests: list[CiteRequest], names: Sequence[str]) -> Tagged:
+    return tagging.change_tags(existing_corpus(), requests, names, remove=False)
+
+
+def untag(requests: list[CiteRequest], names: Sequence[str]) -> Tagged:
+    return tagging.change_tags(existing_corpus(), requests, names, remove=True)
+
+
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
@@ -391,6 +410,10 @@ def cite(requests: list[CiteRequest]) -> Cited:
     return citing.cite(existing_corpus(), requests)
 
 
+def tags(bundle: Path | None) -> list[TagListing]:
+    return tagging.tags_held(existing_corpus(), [] if bundle is None else [bundle])
+
+
 def found(handle: str, collection: str | None = None) -> Found:
     return finding.found_document(existing_corpus(), handle, collection)
 
@@ -417,9 +440,10 @@ def search_scope(
     *,
     bundle: Path | None,
     others: Sequence[Path] = (),
+    tags: Sequence[str] = (),
 ) -> list[Hit]:
     return retrieval.search_scope(
-        collection, question, top_k, versions, bundle=bundle, others=others
+        collection, question, top_k, versions, bundle=bundle, others=others, tags=tags
     )
 
 
@@ -434,6 +458,7 @@ def sweep(
     *,
     bundle: Path | None,
     others: Sequence[Path] = (),
+    tags: Sequence[str] = (),
 ) -> Sweep:
     return retrieval.sweep(
         question,
@@ -445,6 +470,7 @@ def sweep(
         versions=versions,
         bundle=bundle,
         others=others,
+        tags=tags,
     )
 
 
@@ -480,6 +506,8 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         ),
         Operation(supply_paper, kind="add"),
         Operation(sync_corpus, kind="sync"),
+        Operation(tag, kind="tag", lane=_in_the_tags_lane),
+        Operation(untag, kind="tag", lane=_in_the_tags_lane),
         Operation(bundle_status),
         Operation(cite),
         Operation(contents),
@@ -499,6 +527,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(search_scope),
         Operation(status),
         Operation(sweep),
+        Operation(tags),
         Operation(tree),
         Operation(version_pages),
     )

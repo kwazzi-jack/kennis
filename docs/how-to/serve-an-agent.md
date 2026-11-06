@@ -55,7 +55,7 @@ it, what the corpus is for - rather than about kennis in the abstract.
 Install a pack, restart the agent, and the description changes. See
 [Author a pack](author-a-pack.md).
 
-## The ten tools
+## The eleven tools
 
 | tool | what it does |
 |---|---|
@@ -68,7 +68,12 @@ Install a pack, restart the agent, and the description changes. See
 | `read_literature` | read passages from literature, several at once |
 | `read_docs` | read passages from documentation, several at once |
 | `cite` | a citation, its reference and its `kennis://` link for each passage cited, several at once |
-| `remember` | write one note - the only tool that writes |
+| `remember` | write one note |
+| `tag` | tag passages or documents, or take tags off them, several at once |
+
+The four `search_*` tools take `tags`, which keeps a search to what carries
+every tag named, and `list_corpus` names the tags in use. `remember` and
+`tag` are the only tools that write.
 
 The three `read_*` tools are **batched**: they take a list of requests, each
 naming a document and optionally a chunk and how much either side of it to
@@ -85,7 +90,7 @@ says that it did rather than filling the agent's context window.
 
 ## What `remember` will and will not do
 
-`remember` is the only tool that writes, and it writes one note per call
+`remember` writes one note per call
 into the corpus: committed to its history, and searchable months from now.
 
 It has **no interactive path**. Anything unresolved has to have been an
@@ -97,6 +102,16 @@ success would be worse than not recording it.
 
 The corpus write takes the corpus lock and commits. The bundle write does
 neither, because that repository is yours.
+
+## What `tag` will and will not do
+
+`tag` names each passage as a search hit gives it - a `document_id`, or a
+context hit's `path`, with its `chunk` - exactly as `cite` does, so it can
+only tag what kennis holds. The agent is told to tag only when you ask it
+to tag, bookmark or gather passages. If any passage in a call cannot be
+found, nothing is tagged, and each problem is named at its position. Tags
+are kept where `kennis tag` keeps them; see
+[Tag passages and documents](tag-passages.md).
 
 ## Searching the same thing two ways
 

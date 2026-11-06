@@ -106,6 +106,9 @@
       </div>
     </details>
     {% endif %}
+    {# The tags a search is kept to (#625), carried by every search the box
+       makes until "Show everything" drops them. #}
+    {% for name in kept_tags | default([]) %}<input type="hidden" name="tag" value="{{ name }}">{% endfor %}
     <button type="submit" class="visually-hidden" tabindex="-1">{{ search_action }}</button>
     {% if searching_here %}<p class="searching role-muted" id="searching" aria-live="polite" hidden>{{ searching }}</p>{% endif %}
   </form>
@@ -202,6 +205,17 @@
     <p class="pane-note role-muted">{{ no_context }} {{ tip("no-context", context_heading, no_context_tip) }}</p>
     {% endif %}
   </section>
+  {% if pane.tags %}
+  {# Each tag and how much it holds; the page lists its passages (#625). #}
+  <section>
+    <h2 class="pane-head"><a href="/tags">{{ tags_heading }}</a></h2>
+    <ul class="tree">
+      {% for entry in pane.tags %}
+      <li><a class="node" href="{{ entry.href }}">{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   <section>
     <h2 class="pane-head">{{ kennis_heading }}</h2>
     <ul class="tree">

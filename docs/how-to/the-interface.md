@@ -111,6 +111,14 @@ title opens the document at that passage.
 Opening a hit renders the document as HTML: headings, tables, code blocks,
 and mathematics typeset with KaTeX.
 
+The tag icon beside a hit's title tags that passage, and **Tag this
+document** in a document's details tags it whole; the details also list the
+document's tags, each with a button that removes it. The pane lists every
+tag, and a tag's page shows its passages first, each with its opening words
+and its `kennis://` link, ready to cite. **Search within this tag** keeps a
+search to it until **Show everything**. See
+[Tag passages and documents](tag-passages.md).
+
 **A figure is never fetched on your behalf.** A converted paper refers to
 images held elsewhere, and requesting one would tell that site which
 document you are reading. So remote images are blocked, the host is named,

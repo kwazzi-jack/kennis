@@ -472,6 +472,7 @@ JOB_DOING = {
     "remove": "Removing a document",
     "restore": "Putting a document back",
     "return": "Returning the corpus to an earlier point",
+    "tag": "Changing tags",
     "version": "Changing a docs version",
 }
 
