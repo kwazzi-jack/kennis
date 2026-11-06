@@ -95,8 +95,7 @@ def search_context(
     **Returns file locations, not content.** A bundle lives in the
     user's own repository, so each hit's handle is a path: open it with
     your native file tools. There is no `read_context`. Advice from a
-    pack the project uses comes after, with a `pack=` handle and the
-    passage itself.
+    pack the project uses is among them, as files its sync copied in.
 
     `projects` widens the search: `"all"` for every project on this
     machine, or a list of project names. Each other project's hits name
@@ -151,8 +150,7 @@ def _searched(
     for rank, hit in enumerate(hits, start=1):
         # A bundle hit's body is left out: the handle is a path and the
         # agent opens the file, so a snippet would be a second copy of
-        # text it is about to read in full. A pack's file is in kennis's
-        # store, which the agent has no path to, so it gets the passage.
+        # text it is about to read in full.
         snippet = "none" if hit.collection == CONTEXT_COLLECTION else "short"
         shown = rendered_hit(hit, rank=rank, style=style, best=best, snippet=snippet)
         lines = [shown.headline, f"  {shown.detail}"]

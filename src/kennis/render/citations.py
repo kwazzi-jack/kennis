@@ -34,7 +34,10 @@ from kennis.engine.errors import CitationStyleUnreadable
 from kennis.engine.literature.names import is_braced, split_names, unbraced
 
 if TYPE_CHECKING:
+    from citeproc import CitationStylesStyle
+
     from kennis.engine.citing.locators import Locator
+    from kennis.engine.pack.schema import LiteratureEntry
 
 # A CSL-JSON item, as citeproc-py reads one.
 type CslItem = dict[str, object]
@@ -74,7 +77,6 @@ def formatted(passages: Sequence[ToCite], style: Path) -> list[Formatted]:
         Citation,
         CitationItem,
         CitationStylesBibliography,
-        CitationStylesStyle,
         formatter,
     )
     from citeproc.source import Locator as CslLocator
@@ -87,20 +89,8 @@ def formatted(passages: Sequence[ToCite], style: Path) -> list[Formatted]:
     }
     if not items:
         return [_note(passage) for passage in passages]
-    try:
-        with warnings.catch_warnings():
-            # citeproc-py warns of the style elements it does not implement;
-            # what it does with the rest is what is returned.
-            warnings.simplefilter("ignore")
-            loaded = CitationStylesStyle(str(style), validate=False)
-    except Exception as error:
-        # Any exception: a missing file, a file that is not XML, XML that is
-        # not a style - each is the one fault the setting can have.
-        raise CitationStyleUnreadable(
-            f"the citation style {style} cannot be read (literature.citation_style)"
-        ) from error
     bibliography = CitationStylesBibliography(
-        loaded, CiteProcJSON(list(items.values())), formatter.plain
+        _loaded_style(style), CiteProcJSON(list(items.values())), formatter.plain
     )
     citations: list[Citation | None] = []
     for passage in passages:
@@ -141,6 +131,77 @@ def formatted(passages: Sequence[ToCite], style: Path) -> list[Formatted]:
     return results
 
 
+def references(items: Sequence[CslItem], style: Path) -> dict[str, str]:
+    """Each item's entry in a list of references by `style`, by its id.
+
+    One bibliography for all of them, as `formatted` makes one, so a style
+    that tells two works by one author and year apart can. citeproc-py keys
+    its entries by the id lower-cased, so ids must differ by more than case.
+    """
+    from citeproc import (
+        Citation,
+        CitationItem,
+        CitationStylesBibliography,
+        formatter,
+    )
+    from citeproc.source.json import CiteProcJSON
+
+    if not items:
+        return {}
+    bibliography = CitationStylesBibliography(
+        _loaded_style(style), CiteProcJSON(list(items)), formatter.plain
+    )
+    for item in items:
+        bibliography.register(Citation([CitationItem(str(item["id"]))]))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        by_key = {
+            str(key): str(entry)
+            for key, entry in zip(
+                bibliography.keys, bibliography.bibliography(), strict=True
+            )
+        }
+    return {str(item["id"]): by_key[str(item["id"]).lower()] for item in items}
+
+
+def _loaded_style(style: Path) -> CitationStylesStyle:
+    from citeproc import CitationStylesStyle
+
+    try:
+        with warnings.catch_warnings():
+            # citeproc-py warns of the style elements it does not implement;
+            # what it does with the rest is what is returned.
+            warnings.simplefilter("ignore")
+            return CitationStylesStyle(str(style), validate=False)
+    except Exception as error:
+        # Any exception: a missing file, a file that is not XML, XML that is
+        # not a style - each is the one fault the setting can have.
+        raise CitationStyleUnreadable(
+            f"the citation style {style} cannot be read (literature.citation_style)"
+        ) from error
+
+
+def pack_paper_item(entry: LiteratureEntry, item_id: str) -> CslItem:
+    """A paper a pack declares, as CSL-JSON, from what its entry gives.
+
+    The same shape `csl_item` makes of a held paper's frontmatter. An entry
+    carries no journal, so a style writes it as an article.
+    """
+    item: CslItem = {"id": item_id, "type": "article"}
+    if entry.title:
+        item["title"] = entry.title
+    if entry.authors:
+        item["author"] = [_name(name) for name in entry.authors]
+    if entry.year is not None:
+        item["issued"] = {"date-parts": [[entry.year]]}
+    paper = entry.paper
+    if paper.kind == "doi":
+        item["DOI"] = paper.value
+    elif paper.kind == "arxiv":
+        item["URL"] = f"https://arxiv.org/abs/{paper.value}"
+    return item
+
+
 def _unknown(item: object) -> None:
     """citeproc-py's report of a citation naming no item; every item cited
     here was registered, so there is nothing to report."""
@@ -155,6 +216,17 @@ def _note(passage: ToCite) -> Formatted:
     locator = passage.locator
     citation = title if locator is None else f"{title}, {locator.kind} {locator.value}"
     return Formatted(citation=citation, reference=passage.frontmatter.title)
+
+
+def located_note(title: str, locator: Locator | None, where: str) -> Formatted:
+    """A context passage cited as a note is (#623): by its title and
+    locator, with a reference that says where the file is, since a
+    project's file and a pack's are not in the corpus."""
+    quoted = f'"{title}"'
+    citation = (
+        quoted if locator is None else f"{quoted}, {locator.kind} {locator.value}"
+    )
+    return Formatted(citation=citation, reference=f"{quoted}, {where}")
 
 
 def csl_item(frontmatter: DocumentFrontmatter) -> CslItem:
@@ -201,4 +273,4 @@ def _name(name: str) -> dict[str, str]:
     return {"family": last, "given": " ".join(givens)}
 
 
-__all__ = ["Formatted", "ToCite", "csl_item", "formatted", "style_path"]
+__all__ = ["Formatted", "ToCite", "csl_item", "formatted", "located_note", "style_path"]

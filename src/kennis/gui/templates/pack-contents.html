@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "outline.html" import pack_actions, pack_body with context %}
+{% block title %}kennis - {{ pack.name }}{% endblock %}
+{% block main %}
+<div class="page-actions"><a class="button" href="/packs" title="{{ packs_heading }}">{{ icon("package") }}<span>{{ packs_heading }}</span></a></div>
+<h1>{{ pack.name }}</h1>
+<p class="role-muted">{{ pack.pack_id }}, {{ pack.summary }}</p>
+{{ pack_actions(pack, own_page=True) }}
+{{ pack_body(pack) }}
+{% endblock %}

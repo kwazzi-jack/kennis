@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
 
-from kennis.engine.context.groups import pack_of_group, project_of_group
+from kennis.engine.context.groups import project_of_group
 from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
 
@@ -332,22 +332,18 @@ def index_state(outcome: IndexOutcome, chunk_count: int) -> str:
 
 
 def group_name(name: str) -> str:
-    """A search group's name: `notes`, `context`, `context thesis` for
-    another project's notes, or `pack alpha` for a pack's context, each
-    searched in its own group (14g)."""
-    pack = pack_of_group(name)
-    if pack is not None:
-        return f"pack {pack}"
+    """A search group's name: `notes`, `context`, or `context thesis` for
+    another project's notes, each searched in its own group (14g)."""
     project = project_of_group(name)
     return f"context {project}" if project is not None else name
 
 
 def group_title(name: str) -> str:
-    """`group_name` as a heading: `Notes`, `Pack alpha`."""
+    """`group_name` as a heading: `Notes`, `Context thesis`."""
     return group_name(name).capitalize()
 
 
-def describe_skipped(names: Sequence[str], *, installed: bool = True) -> str:
+def describe_skipped(names: Sequence[str]) -> str:
     """Which scopes a search did not reach, and why.
 
     One line for every scope sharing a remedy, not one per scope: on
@@ -359,8 +355,6 @@ def describe_skipped(names: Sequence[str], *, installed: bool = True) -> str:
     The sentence lives here and not on `retrieval.Skipped`, which
     carries the scope and the command as fields. Concern #81.
     """
-    if not installed:
-        return f"not searched, declared but not installed: {', '.join(names)}"
     return f"not searched, no index yet: {', '.join(names)}"
 
 
@@ -427,7 +421,9 @@ JOB_KINDS: Final[dict[str, str]] = {
     "context-sync": "Project context sync",
     "context": "Project context change",
     "context-index": "Project context index",
+    "context-delete": "Project context deletion",
     "pack": "Pack install",
+    "pack-uninstall": "Pack uninstall",
     "backup": "Backup",
     "remember": "Note",
     "copy": "Copy",

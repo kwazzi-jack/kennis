@@ -356,6 +356,17 @@ body {
   gap: 0.5rem;
 }
 .pane-head a { color: inherit; text-decoration: none; }
+/* A section's one action, at its heading's right-hand end, as small as
+   the row menus beside it. */
+.pane-head .pane-add {
+  margin-left: auto;
+  padding: 0.1rem;
+  border: none;
+  border-radius: 4px;
+  color: var(--role-muted);
+}
+.pane-head .pane-add:hover { background: var(--raised); color: var(--ink); }
+.pane-head .pane-add .icon { width: 0.9rem; height: 0.9rem; }
 .pane-head a:hover { color: var(--ink); }
 /* A project's name, as it is spelled on disk. */
 .pane-head .project {
@@ -431,6 +442,12 @@ details[open] > summary.node > .icon:first-child { transform: rotate(90deg); }
    its siblings' names. */
 .node.leaf { padding-left: 1.6rem; }
 .node[aria-current="page"] { background: var(--brand-wash); }
+/* A project whose folder has gone: listed, so it can be forgotten, with
+   nothing to open. */
+.node.missing { cursor: default; }
+.node.missing:hover { background: none; }
+.node.missing .name { color: var(--role-muted); font-weight: 400; }
+.node.missing .count { color: var(--role-warning); }
 
 .pane .count {
   font-size: 0.75rem;
@@ -517,7 +534,7 @@ details.menu[open] > .menu-button { opacity: 1; }
   box-shadow: 0 4px 14px var(--rule);
   transition: opacity 0.12s ease, translate 0.12s ease;
 }
-.menu-items form.index, .menu-items form.make-current { margin: 0; }
+.menu-items form.index, .menu-items form.index-project, .menu-items form.make-current { margin: 0; }
 /* Removing a version says what goes above the form, which holds only
    the foot. */
 form.remove-version, form.remove-document, form.return-corpus { margin-top: 1rem; }
@@ -934,17 +951,6 @@ button.segment:hover, a.segment:hover { background: var(--ground); color: var(--
   margin: 0 0 1rem;
 }
 .recents form { margin-top: 1.25rem; }
-.recents button {
-  background: none;
-  border: none;
-  padding: 0;
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-  color: var(--role-muted);
-  cursor: pointer;
-  text-decoration: underline;
-}
-.recents button:hover { color: var(--ink); }
 
 
 /* ---------------------------------------------------------------- */
@@ -1698,24 +1704,121 @@ blockquote {
 .holdings td { padding: 0.55rem 1.25rem 0.55rem 0; vertical-align: top; }
 .holdings tr + tr td { border-top: 1px solid var(--rule); }
 
-.documents, .packs, .items { list-style: none; margin: 0; padding: 0; }
-.documents li, .packs li { padding: 0.35rem 0; font-size: 0.9375rem; }
-/* A document in a list is a row to open, as in the pane: its icon, its
-   title, a wash on hover - not an underlined line of the column. */
-.documents a {
+.items { list-style: none; margin: 0; padding: 0; }
+/* A folder tree in the column: a collection's documents and a pack's
+   items. Each folder is named by its last part beside a count, and the
+   folders inside it hang from a hairline, as in the pane, so a path is
+   never written out twice. A folder opens and closes by its row. */
+.outline { list-style: none; margin: 0; padding: 0; }
+.outline .outline, .outline-section > .outline {
+  margin-left: 0.55rem;
+  padding-left: 0.8rem;
+  border-left: 1px solid var(--rule);
+}
+.outline-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 -0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 5px;
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--gutter);
+}
+.outline-head::-webkit-details-marker { display: none; }
+.outline-head:hover { background: var(--raised); }
+.outline-head .icon { flex: none; width: 1rem; height: 1rem; color: var(--collection); }
+.outline-head > .icon:first-child { color: var(--role-muted); transition: transform 0.12s; }
+details[open] > .outline-head > .icon:first-child { transform: rotate(90deg); }
+.outline-head .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.outline-head .count {
+  margin-left: auto;
+  padding-left: 1rem;
+  font-size: 0.8125rem;
+  color: var(--role-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.outline-folder > details > .outline-head .name { font-weight: 500; }
+/* An item's own row starts under its folder's name, past the chevron.
+   A pack's item is marked by what it is, as a document is by its icon,
+   so one entry is told from the next (Brian, 2026-11-04). */
+.outline-item { padding: 0.3rem 0 0.3rem 1.45rem; font-size: 0.9375rem; }
+.outline-item[data-kind] {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding-left: 1.45rem;
+}
+.outline-item[data-kind] > .icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.1rem;
+  color: var(--collection, var(--role-muted));
+}
+.item-text { min-width: 0; }
+.outline-item .document {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  margin: 0 -0.5rem;
-  padding: 0.35rem 0.5rem;
+  margin: -0.3rem -0.5rem -0.3rem -1.95rem;
+  padding: 0.35rem 0.5rem 0.35rem 1.95rem;
   border-radius: 5px;
   color: var(--ink);
   font-family: var(--gutter);
   text-decoration: none;
 }
-.documents a:hover, .documents a:focus-visible { background: var(--raised); }
-.documents a .icon { flex: none; width: 1rem; height: 1rem; color: var(--collection, var(--role-muted)); }
-.documents li { padding: 0; }
+a.document:hover, a.document:focus-visible { background: var(--raised); }
+.outline-item .document .icon { flex: none; width: 1rem; height: 1rem; color: var(--collection, var(--role-muted)); }
+/* A citekey or a file name is typed elsewhere, so it is set as typed; a
+   reference or an address beneath it is said, so it is muted prose. */
+.item-name { display: block; font-family: var(--mono); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.item-detail {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--role-muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.outline-section { margin-top: 1rem; }
+.outline-section > .outline-head .name { font-size: 1.05rem; }
+
+/* A region of the corpus page, folded by its heading. */
+.region { margin-top: 2rem; }
+.region-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+}
+.region-head::-webkit-details-marker { display: none; }
+.region-head h2 { margin: 0; }
+.region-head .count { margin-left: auto; color: var(--role-muted); font-variant-numeric: tabular-nums; }
+.region-head > .icon { width: 1.1rem; height: 1.1rem; color: var(--role-muted); transition: transform 0.12s; }
+.region[open] > .region-head > .icon { transform: rotate(90deg); }
+.region-head:hover h2 { color: var(--brand); }
+/* A pack on the corpus page: a card that opens on what it contains. */
+.pack {
+  margin-top: 0.6rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--raised);
+}
+.pack > .outline-head { margin: 0 -0.25rem; padding: 0.45rem 0.25rem; }
+.pack > .outline-head:hover { background: transparent; }
+.pack > .outline-head .icon + .icon { color: var(--brand); }
+.pack-body { padding: 0 0 0.6rem 1.45rem; }
+/* A pack's buttons, and a page's own, above what they act on. */
+.pack-actions, .page-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
+.pack-actions .button, .page-actions .button { gap: 0.4rem; padding: 0.35rem 0.7rem; }
+.pack-actions .icon, .page-actions .icon { width: 0.9rem; height: 0.9rem; }
+.pack-description { margin: 0 0 0.5rem; color: var(--role-muted); font-size: 0.9375rem; }
+
 /* A collection on the corpus page: its icon in its colour, its name. */
 .holdings a {
   display: inline-flex;
@@ -1727,7 +1830,6 @@ blockquote {
 }
 .holdings a:hover { color: var(--collection); }
 .holdings a .icon { width: 1rem; height: 1rem; color: var(--collection); }
-.documents .role-muted { font-family: var(--gutter); font-size: 0.75rem; }
 
 .items li { padding: 0.3rem 0; font-size: 0.9375rem; }
 .items .marker { font-family: var(--gutter); }
@@ -1962,6 +2064,21 @@ button:focus-visible, a:focus-visible {
    the Note dialog's two fields were 12rem tall. */
 .labelled > input,
 .fields .labelled > input[type="text"] { width: 100%; flex: none; }
+/* A path field with its Browse button, under a label of its own, and the
+   chooser it opens beneath both: each a whole line of the row, or the
+   field went to the far end of the label's line and the chooser filled
+   half the dialog (the Pack dialog, until 2026-11-04). */
+.fields > label.labelled, .fields > .entry-row, .fields > .chooser { flex: 1 1 100%; }
+.fields > .entry-row { display: flex; gap: 0.4rem; }
+.fields > .entry-row input { flex: 1 1 auto; min-width: 0; }
+.fields > .chooser:empty { display: none; }
+/* A list of checkboxes in a dialog, one per line. */
+form > .checks, .dialog-body > .checks, form + .checks, p + .checks {
+  list-style: none;
+  margin: 0.4rem 0 0.8rem;
+  padding: 0;
+}
+form > .checks .check, p + .checks .check { margin: 0 0 0.3rem; }
 
 /* ---- the Add dialog ---- */
 
@@ -2178,6 +2295,34 @@ button.primary, a.button.primary {
   border-color: var(--ink);
   color: var(--ground);
 }
+
+/* A control that removes something wears the removal colour and a trash
+   icon, so it reads as a removal before its words are read (Brian,
+   2026-11-04). Filled where it is a dialog's one action; outlined where it
+   sits on a page beside other things. Ground on the role is the role on
+   ground, whose contrast the theme tests. */
+button.danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: 1px solid var(--role-removed);
+  border-radius: 3px;
+  color: var(--role-removed);
+}
+button.danger.primary {
+  background: var(--role-removed);
+  border-color: var(--role-removed);
+  color: var(--ground);
+}
+button.danger:hover, a.button.danger:hover { border-color: var(--ink); }
+button.danger .icon, a.button.danger .icon { width: 0.95rem; height: 0.95rem; flex: none; }
+a.button.danger {
+  gap: 0.4rem;
+  border-color: var(--role-removed);
+  color: var(--role-removed);
+}
+.recents-foot { margin-top: 1.25rem; }
 
 /* A group of Several by group. */
 .add-tab .block {

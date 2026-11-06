@@ -43,6 +43,7 @@ from kennis.gui.pages import (
 )
 from kennis.gui.pane import Pane, pane_now, present_projects
 from kennis.gui.preferences import (
+    folders_open,
     preferences_of,
 )
 from kennis.holdings import (
@@ -113,6 +114,8 @@ def _inspector_state(request: Request) -> str:
 # Every preference of this window, rendered onto `<html>` from its
 # cookie (`gui/preferences.py`), for the reason the pane's is.
 TEMPLATES.env.globals["preferences"] = preferences_of
+# Whether a page's folders and regions are drawn open, by the same cookie.
+TEMPLATES.env.globals["folders_open"] = folders_open
 
 
 def _version_choices(request: Request) -> list[ShownVersionProject]:
@@ -207,6 +210,19 @@ TEMPLATES.env.globals.update(
         "palette_title": words.PALETTE_TITLE,
         "settings_heading": words.SETTINGS_HEADING,
         "packs_heading": words.PACKS_HEADING,
+        # A pack card's and a project row's buttons, drawn on several pages.
+        "pack_own_page": words.PACK_OWN_PAGE,
+        "uninstall_pack": words.UNINSTALL_PACK,
+        "forget_project": words.FORGET_PROJECT,
+        "delete_project": words.DELETE_PROJECT,
+        "project_missing": words.PROJECT_MISSING,
+        "new_project": words.NEW_PROJECT,
+        "project_packs": words.PROJECT_PACKS,
+        "index_project": words.INDEX_PROJECT,
+        "sync_project": words.SYNC_PROJECT,
+        "reset_project": words.RESET_PROJECT,
+        # A row menu's name, which the pane's project rows carry on every page.
+        "menu_for": words.menu_for,
         "documents_held": words.documents_held,
         "index_every": words.INDEX_EVERY,
         # A function, because the projects vary: a note may go to any.

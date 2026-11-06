@@ -223,8 +223,8 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     # thirds of the output before the answer, and the reader learns the
     # same thing from one - but two scopes needing different commands need
     # different lines, which is why the grouping is by resolution.
-    for (resolution, installed), names in _by_resolution(found.skipped).items():
-        display.note(describe_skipped(names, installed=installed))
+    for resolution, names in _by_resolution(found.skipped).items():
+        display.note(describe_skipped(names))
         display.next_step(resolution)
 
     groups = found.groups
@@ -256,12 +256,34 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
             )
             display.hit(shown.headline)
             display.hit_detail(shown.detail)
+            # The command line's own line, after the shared ones: an agent
+            # is told to cite through `cite` and never to write a link, so
+            # the MCP server's search answer has none.
+            link = _link_of(hit)
+            if link is not None:
+                display.hit_link(link)
             if shown.body is not None:
                 display.body(shown.body, indent="      ")
     _read_hint(everything)
 
 
-def _by_resolution(skipped: Sequence[Skipped]) -> dict[tuple[str, bool], list[str]]:
+def _link_of(hit: Hit) -> str | None:
+    """The `kennis://` link that opens the hit, for a corpus or a project
+    hit alike (#622); None only for a project hit whose project has no name
+    here, which a search does not produce."""
+    from kennis.engine.context.groups import is_bundle_group
+    from kennis.engine.corpus.schema import COLLECTION_NAMES
+    from kennis.links import context_link, link_to
+
+    chunk = hit.result.chunk
+    if hit.collection in COLLECTION_NAMES:
+        return link_to(chunk.document_id, chunk.chunk_index)
+    if is_bundle_group(hit.collection) and hit.project:
+        return context_link(hit.project, chunk.document_id, chunk.chunk_index)
+    return None
+
+
+def _by_resolution(skipped: Sequence[Skipped]) -> dict[str, list[str]]:
     """The skipped scopes grouped by one command that covers them all.
 
     Insertion-ordered, so the scopes appear in `SCOPE_NAMES` order and
@@ -282,11 +304,11 @@ def _by_resolution(skipped: Sequence[Skipped]) -> dict[tuple[str, bool], list[st
     from kennis.engine.corpus.schema import COLLECTION_NAMES
 
     corpus_scopes = [scope.name for scope in skipped if scope.name in COLLECTION_NAMES]
-    grouped: dict[tuple[str, bool], list[str]] = {}
+    grouped: dict[str, list[str]] = {}
     for scope in skipped:
         shared = scope.name in COLLECTION_NAMES and len(corpus_scopes) > 1
         resolution = "kennis corpus index" if shared else scope.resolution
-        grouped.setdefault((resolution, scope.installed), []).append(scope.name)
+        grouped.setdefault(resolution, []).append(scope.name)
     return grouped
 
 

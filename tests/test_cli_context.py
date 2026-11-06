@@ -20,7 +20,6 @@ from kennis.cli.__main__ import main
 from kennis.context import resolve_context
 from kennis.engine.context.bundle import BUNDLE_DIRNAME
 from kennis.engine.context.index import load_bundle_index
-from kennis.engine.pack.content import content_digest
 from kennis.engine.rag.embedding import ModelBinding
 from kennis.engine.rag.index import BuildReport
 from kennis.engine.rag.search import search
@@ -830,10 +829,11 @@ def synced(
     return workspace
 
 
-def test_sync_writes_nothing_of_a_pack_and_says_what_the_project_uses(
+def test_sync_copies_a_declared_pack_and_says_what_the_project_uses(
     synced: Path, run: CliRunner, tmp_path: Path
 ):
-    """A pack's context is searched in the store (14g, #513)."""
+    """A pack's context is copied into the project (#624), and the index
+    is derived from the copies, so the reader is told what to type (#244)."""
     path = a_context_pack(tmp_path / "provider", run)
     assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
@@ -841,68 +841,73 @@ def test_sync_writes_nothing_of_a_pack_and_says_what_the_project_uses(
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert not (synced / BUNDLE_DIRNAME / "one.md").exists()
+    assert (synced / BUNDLE_DIRNAME / "one.md").is_file()
     assert "this project uses boepie" in result.output
-    assert "kennis context index" not in result.output
+    assert "kennis context index" in result.output
 
 
-def an_old_copy(bundle: Path, body: str = "One.\n") -> Path:
-    """A file as the copying sync of earlier versions wrote it."""
-    digest = content_digest(b"One.\n")
-    path = bundle / "one.md"
-    path.write_text(
-        "---\ntitle: one\nowner: pack:boepie\nsource:\n  via: pack\n"
-        f"  pack: boepie\n  address: one.md\n  sha256: {digest}\n---\n{body}",
-        encoding="utf-8",
-    )
-    return path
-
-
-def test_sync_removes_an_old_copy_and_names_the_index_command(
-    synced: Path, run: CliRunner
+def test_a_second_sync_changes_nothing_and_names_no_index(
+    synced: Path, run: CliRunner, tmp_path: Path
 ):
-    """The index is derived from these documents and sync did not rebuild
-    it, so a reader is told what to type. Concern #244."""
-    copy = an_old_copy(synced / BUNDLE_DIRNAME)
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
-    assert not copy.exists()
-    assert "1 copy of a pack's file removed" in result.output
-    assert "kennis context index" in result.output
+    assert "nothing to change" in result.output
+    assert "kennis context index" not in result.output
 
 
-def test_a_declared_pack_s_content_is_searchable_with_no_copy(
+def test_a_declared_pack_s_content_is_searchable_once_copied(
     synced: Path, run: CliRunner, tmp_path: Path
 ):
-    """The crossing test, again: content one path stored is what another
-    path searches."""
+    """The crossing test, again: content one path copied is what another
+    path searches, as the project's own."""
     del synced
     path = a_context_pack(
         tmp_path / "provider",
         run,
-        files={"content/one.md": "Calibration runs in four-minute chunks.\n"},
+        files={
+            "content/one.md": "---\ntitle: One\n---\n"
+            "Calibration runs in four-minute chunks.\n"
+        },
     )
     assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
     assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
 
     result = run.invoke(main, ["search", "four-minute chunks"])
 
     assert result.exit_code == 0, result.output
-    assert "Pack boepie" in result.output
-    assert "pack=boepie/one.md" in result.output
+    assert "path=.context/one.md" in result.output
+    assert "pack=" not in result.output
 
 
-def test_sync_makes_an_edited_old_copy_yours_and_says_so(synced: Path, run: CliRunner):
-    copy = an_old_copy(synced / BUNDLE_DIRNAME, body="Mine now.\n")
+def test_sync_leaves_an_edited_copy_and_says_how_to_keep_it(
+    synced: Path, run: CliRunner, tmp_path: Path
+):
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+    copy = synced / BUNDLE_DIRNAME / "one.md"
+    copy.write_text(copy.read_text(encoding="utf-8") + "Mine now.\n", "utf-8")
+    path = a_context_pack(
+        tmp_path / "provider", run, files={"content/one.md": "One, revised.\n"}
+    )
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
 
     result = run.invoke(main, ["context", "sync"])
 
     assert result.exit_code == 0, result.output
     assert "Mine now." in copy.read_text(encoding="utf-8")
-    assert "owner: user" in copy.read_text(encoding="utf-8")
-    assert "1 edited copy made yours" in result.output
+    said = " ".join(result.output.split())
+    assert "set `owner: user`" in said
+    assert "one.md" in said
 
 
 def test_sync_in_a_project_declaring_nothing_offers_each_installed_pack(
@@ -937,10 +942,12 @@ def test_sync_makes_no_commit_in_the_users_repository(
 ):
     """The invariant every context command is held to: the bundle lives
     in a repository kennis does not own."""
-    del tmp_path
-    an_old_copy(synced / BUNDLE_DIRNAME)
+    path = a_context_pack(tmp_path / "provider", run)
+    assert run.invoke(main, ["pack", "install", str(path)]).exit_code == 0
+    assert run.invoke(main, ["context", "packs", "boepie"]).exit_code == 0
 
     assert run.invoke(main, ["context", "sync"]).exit_code == 0
+    assert (synced / BUNDLE_DIRNAME / "one.md").is_file()
 
     log = subprocess.run(
         ["git", "log", "--oneline"],

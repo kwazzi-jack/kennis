@@ -8,9 +8,18 @@ sentence could not rewrap it, group it, or say it differently. Concern #81.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
-from kennis.engine.pack.installed import InstalledPack, Overlap, PackRemoval
+from kennis.engine.pack.installed import (
+    InstalledPack,
+    Overlap,
+    PackContents,
+    PackRemoval,
+)
 from kennis.engine.pack.resolve import Action, Verdict
+from kennis.engine.pack.schema import DocsEntry, LiteratureEntry, NoteFile, NoteLink
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.pack.update import PackUpdate
 from kennis.engine.pack.validate import PackProblem, PackReport, VersionRefusal
@@ -324,6 +333,206 @@ def describe_lost_source(installed: InstalledPack) -> str:
     )
 
 
+# What an item is, for a front end to mark it by: a paper, a documentation
+# site, a note fetched from an address, or a file the pack ships.
+type ItemKind = Literal["paper", "site", "address", "file"]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentsItem:
+    """One item a pack declares: what it is, the name a reader looks for,
+    and what there is to say of it - a paper's reference, a site's address."""
+
+    kind: ItemKind
+    name: str
+    detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ContentsFolder:
+    """A folder of items, and the folders inside it.
+
+    `path` is the whole path, empty for a section's top level; `name` is its
+    last part, which is what it is called where it is drawn inside its
+    parent. `count` is every item beneath it.
+    """
+
+    path: str
+    items: tuple[ContentsItem, ...]
+    folders: tuple[ContentsFolder, ...]
+    count: int
+
+    @property
+    def name(self) -> str:
+        return self.path.rpartition("/")[2]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentsSection:
+    """One kind of item a pack declares, as a counted heading over a tree.
+
+    `kind` is the collection the items go to, which the window colours by.
+    """
+
+    kind: str
+    heading: str
+    top: ContentsFolder
+
+
+def contents_sections(
+    contents: PackContents, style: Path | None
+) -> tuple[ContentsSection, ...]:
+    """What a pack contains, one section per kind it declares.
+
+    A paper is its citekey over its reference in `style`, the style
+    `kennis cite` uses; with no style, or one that cannot be read, a plain
+    line of the same facts, because a broken setting must not stop a
+    listing. One function for `pack show` and the window, so the two say
+    the same.
+    """
+    notes = [
+        *(_placed_file(address) for address in contents.shipped_notes),
+        *((_group(link.group), _note_link(link)) for link in contents.note_links),
+        *((_group(note.group), _note_file(note)) for note in contents.note_files),
+    ]
+    sections = (
+        ContentsSection(
+            "literature",
+            count_of(len(contents.papers), "paper"),
+            _folder_tree(_papers(contents.papers, style)),
+        ),
+        ContentsSection(
+            "docs",
+            count_of(len(contents.docs), "documentation project"),
+            _folder_tree([("", _docs(entry)) for entry in contents.docs]),
+        ),
+        ContentsSection("notes", count_of(len(notes), "note"), _folder_tree(notes)),
+        ContentsSection(
+            "context",
+            count_of(len(contents.context), "context file"),
+            _folder_tree([_placed_file(address) for address in contents.context]),
+        ),
+    )
+    return tuple(section for section in sections if section.top.count)
+
+
+def describe_unread_contents() -> str:
+    """A pack whose stored declaration will not parse, so says nothing."""
+    return "what this pack contains cannot be read: its stored declaration is damaged"
+
+
+type Placed = tuple[str, ContentsItem]
+
+
+def _folder_tree(placed: Sequence[Placed], path: str = "") -> ContentsFolder:
+    """The items placed at `path` and, as folders, every path one level down.
+
+    Items keep the order given; folders are sorted by name.
+    """
+    items = tuple(item for folder, item in placed if folder == path)
+    prefix = f"{path}/" if path else ""
+    children = sorted(
+        {
+            folder.removeprefix(prefix).partition("/")[0]
+            for folder, _ in placed
+            if folder != path and folder.startswith(prefix)
+        }
+    )
+    folders = tuple(
+        _folder_tree(placed, f"{path}/{child}" if path else child) for child in children
+    )
+    return ContentsFolder(
+        path=path,
+        items=items,
+        folders=folders,
+        count=len(items) + sum(folder.count for folder in folders),
+    )
+
+
+def _group(group: str | None) -> str:
+    return group.strip("/") if group else ""
+
+
+def _placed_file(address: str) -> Placed:
+    folder, _, name = address.rpartition("/")
+    return folder, ContentsItem("file", name)
+
+
+def _papers(papers: Sequence[LiteratureEntry], style: Path | None) -> list[Placed]:
+    """Each paper under its group, ordered by its reference as a list of
+    references is. The id given citeproc is the entry's position, because
+    it lower-cases ids and two citekeys may differ only in case."""
+    written: dict[str, str] = {}
+    if style is not None and papers:
+        from kennis.engine.errors import CitationStyleUnreadable
+        from kennis.render.citations import pack_paper_item, references
+
+        try:
+            written = references(
+                [
+                    pack_paper_item(entry, str(index))
+                    for index, entry in enumerate(papers)
+                ],
+                style,
+            )
+        except CitationStyleUnreadable:
+            written = {}
+    placed = [
+        (
+            _group(entry.group),
+            ContentsItem(
+                "paper",
+                _paper_name(entry),
+                written.get(str(index)) or _plain_reference(entry),
+            ),
+        )
+        for index, entry in enumerate(papers)
+    ]
+    return sorted(placed, key=lambda one: (one[1].detail or "").casefold())
+
+
+def _paper_name(entry: LiteratureEntry) -> str:
+    # A citekey is absent only before `pack update` has run on the file.
+    return entry.citekey or entry.identifier or entry.url or entry.file or "?"
+
+
+def _plain_reference(entry: LiteratureEntry) -> str:
+    """The entry's own facts, for when no style can write them."""
+    parts: list[str] = []
+    if entry.authors:
+        first = entry.authors[0]
+        if len(entry.authors) == 2:
+            parts.append(f"{first} and {entry.authors[1]}")
+        elif len(entry.authors) > 2:
+            parts.append(f"{first} et al.")
+        else:
+            parts.append(first)
+    if entry.year is not None:
+        parts.append(f"({entry.year})")
+    if entry.title:
+        parts.append(entry.title)
+    return " ".join(parts) or entry.paper.value
+
+
+def _docs(entry: DocsEntry) -> ContentsItem:
+    name = f"{entry.project} {entry.version}" if entry.version else entry.project
+    if entry.base_url:
+        return ContentsItem("site", name, entry.base_url)
+    return ContentsItem("site", name, f"{count_of(len(entry.pages), 'page')} shipped")
+
+
+def _note_link(link: NoteLink) -> ContentsItem:
+    if link.title:
+        return ContentsItem("address", link.title, link.url)
+    return ContentsItem("address", link.url)
+
+
+def _note_file(note: NoteFile) -> ContentsItem:
+    if note.title:
+        return ContentsItem("file", note.title, note.file)
+    return ContentsItem("file", note.file.rpartition("/")[2])
+
+
 def describe_removal(removal: PackRemoval) -> str:
     """What `pack uninstall` dropped from the store.
 
@@ -442,37 +651,60 @@ def describe_after_install() -> str:
     )
 
 
-def describe_bundle_sync(removed: int, made_yours: int) -> str:
-    """The line above a context sync's detail: what it changed, counted.
-
-    A sync writes nothing new any more (14g), so a project whose bundle
-    no earlier kennis copied into is told that nothing changed.
-    """
+def describe_bundle_sync(written: int, updated: int, removed: int) -> str:
+    """The line above a context sync's detail: the files it wrote, updated
+    and removed, counted; "nothing to change" when it did none of them."""
     parts = [
-        *(
-            [f"{count_of(removed, 'copy', 'copies')} of a pack's file removed"]
-            if removed
-            else []
-        ),
-        *(
-            [f"{count_of(made_yours, 'edited copy', 'edited copies')} made yours"]
-            if made_yours
-            else []
-        ),
+        (count, word)
+        for count, word in (
+            (written, "written"),
+            (updated, "updated"),
+            (removed, "removed"),
+        )
+        if count
     ]
-    return ", ".join(parts) if parts else "nothing to change"
+    if not parts:
+        return "nothing to change"
+    (first, word), *rest = parts
+    return ", ".join(
+        [f"{count_of(first, 'file')} {word}", *(f"{n} {w}" for n, w in rest)]
+    )
 
 
-def describe_made_yours() -> str:
-    """Why a pack's file in the bundle is now the person's.
-
-    Said once above the list, because every such file has the one cause:
-    an earlier kennis copied it, the person edited it, and an edit is
-    kept rather than replaced by the pack's text.
-    """
+def describe_edited_copies() -> str:
+    """Why a pack's copy was not updated: somebody typed in it. Said once,
+    above the list, with what to do about it (#624)."""
     return (
-        "an edited copy of a pack's file is yours now and replaces the "
-        "pack's in this project's search"
+        "a pack's copy that was edited is left as it is: set `owner: user` "
+        "in its header to keep it as yours, or delete it to take the pack's"
+    )
+
+
+def describe_yours(count: int) -> str:
+    """Files at an address a declared pack ships that the person owns."""
+    return (
+        f"{count_of(count, 'file')} a pack ships "
+        f"{'is' if count == 1 else 'are'} yours, so no release reaches "
+        f"{'it' if count == 1 else 'them'}"
+    )
+
+
+def describe_undeclared(count: int) -> str:
+    """Copies of packs the project no longer declares, kept (#624)."""
+    return (
+        f"{count_of(count, 'copy', 'copies')} of packs this project no longer "
+        "declares kept"
+    )
+
+
+def describe_without_frontmatter(count: int) -> str:
+    """Files a project leaves out of its index for having no header (#624),
+    and the switch that puts them in."""
+    return (
+        f"{count_of(count, 'file')} with no frontmatter "
+        f"{'is' if count == 1 else 'are'} not indexed; give "
+        f"{'it' if count == 1 else 'each'} a header, or set "
+        '"index_without_frontmatter": true in bundle.json'
     )
 
 
@@ -481,13 +713,13 @@ def describe_declared(declared: Sequence[str]) -> str:
 
 
 def describe_not_installed(missing: Sequence[str]) -> str:
-    """Packs a project declares that this machine has not got: its search
-    leaves them out until they are added."""
+    """Packs a project declares that this machine has not got: a sync
+    cannot copy them, and leaves the copies it finds of them."""
     return f"declared but not installed here: {', '.join(missing)}"
 
 
 def describe_no_declaration() -> str:
-    return "this project declares no packs, so its search reads none"
+    return "this project declares no packs, so a sync copies none"
 
 
 def describe_kept_copies(count: int) -> str:
@@ -563,8 +795,9 @@ def describe_what_uninstall_cannot_reach() -> str:
     """
     return (
         "nothing this pack supplied has been removed: the corpus keeps its "
-        "documents until the next sync, and each project keeps its content "
-        "until it is synchronised there"
+        "documents until the next sync, and each project keeps its copies of "
+        "the pack's context until it stops using the pack and removes them "
+        "at a sync"
     )
 
 
@@ -579,13 +812,13 @@ __all__ = [
     "describe_deferred",
     "describe_deleted",
     "describe_described",
+    "describe_edited_copies",
     "describe_holdings",
     "describe_install",
     "describe_installed",
     "describe_kept_copies",
     "describe_kept_copy",
     "describe_lost_source",
-    "describe_made_yours",
     "describe_no_declaration",
     "describe_not_installed",
     "describe_outcome_of",
@@ -596,6 +829,7 @@ __all__ = [
     "describe_removal",
     "describe_sync",
     "describe_sync_summary",
+    "describe_undeclared",
     "describe_undescribed",
     "describe_unfetched",
     "describe_unreadable",
@@ -605,5 +839,7 @@ __all__ = [
     "describe_what_uninstall_cannot_reach",
     "describe_when",
     "describe_why_unfetched",
+    "describe_without_frontmatter",
+    "describe_yours",
     "verdict_word",
 ]

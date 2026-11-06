@@ -31,7 +31,13 @@ from kennis.engine.atomic import remove_tree
 from kennis.engine.errors import PackInvalid, PackNotInstalled
 from kennis.engine.events import EventSink, ItemFinished, OperationFinished, Outcome
 from kennis.engine.pack.resolve import Declaration
-from kennis.engine.pack.schema import Pack
+from kennis.engine.pack.schema import (
+    DocsEntry,
+    LiteratureEntry,
+    NoteFile,
+    NoteLink,
+    Pack,
+)
 from kennis.engine.pack.store import PackState
 
 if TYPE_CHECKING:
@@ -275,6 +281,56 @@ def _destinations(state: PackState, source: ContentSource) -> list[tuple[str, st
             continue
         addresses.append((f"{group}/{relative}" if group else relative, recorded))
     return addresses
+
+
+@dataclass(frozen=True, slots=True)
+class PackContents:
+    """What one installed pack declares, item by item, for a reader.
+
+    Papers and docs projects are the declaration's own entries. A shipped
+    folder (`source:`) is given as the addresses its files land at, read
+    from the store's record as `_declared_items` reads it, so what is shown
+    is what a sync will act on. A note named by address or shipped as one
+    file is its entry.
+    """
+
+    pack_id: str
+    papers: tuple[LiteratureEntry, ...]
+    docs: tuple[DocsEntry, ...]
+    shipped_notes: tuple[str, ...]
+    note_links: tuple[NoteLink, ...]
+    note_files: tuple[NoteFile, ...]
+    context: tuple[str, ...]
+
+
+def contents_of(installed: InstalledPack) -> PackContents | None:
+    """Every item `installed` declares, or None when its stored
+    declaration will not parse and so says nothing."""
+    declaration = installed.declaration
+    if declaration is None:
+        return None
+    corpus = declaration.corpus
+    return PackContents(
+        pack_id=installed.state.pack_id,
+        papers=tuple(corpus.literature),
+        docs=tuple(corpus.docs),
+        shipped_notes=tuple(
+            sorted(
+                address
+                for source in corpus.note_sources
+                for address, _ in _destinations(installed.state, source)
+            )
+        ),
+        note_links=tuple(corpus.note_links),
+        note_files=tuple(corpus.note_files),
+        context=tuple(
+            sorted(
+                address
+                for source in declaration.context
+                for address, _ in _destinations(installed.state, source)
+            )
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)

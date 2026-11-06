@@ -63,15 +63,15 @@ def test_a_header_that_will_not_parse_is_reported(bundle: Path):
     indexed lately has never seen."""
     a_file(bundle, "broken.md", "---\ntitle: [unclosed\n---\n\nSomething.\n")
     remember_in_bundle(bundle, "A sound one.")
-    # A file a user wrote by hand with no header at all. That is a file
-    # without metadata, which is allowed, and reporting it would tell people
-    # to fix something that is not wrong.
+    # A file a user wrote by hand with no header at all: not broken, and not
+    # indexed by default either (#624), so it is named apart.
     a_file(bundle, "plain.md", "# Plain\n\nNo frontmatter here.\n")
 
     status = bundle_status(bundle)
 
     assert status.unreadable == ("broken.md",)
-    assert status.document_count == 3
+    assert status.without_frontmatter == ("plain.md",)
+    assert status.document_count == 1
 
 
 # ---------------------------------------------------------------------------

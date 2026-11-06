@@ -175,6 +175,7 @@ Found 1 in notes
 Notes keywords as a fraction of the best match here
   [1] Why fusion uses ranks
       keywords: very high  id=30ed1x2rt8 chunk=0
+      kennis://open/30ed1x2rt8/0
 
   hint: run `kennis read 30ed1x2rt8 --chunks 0:2` to read one in context
 ```

@@ -166,6 +166,18 @@ class ProjectNotKnown(KennisError):
     default_resolution = "kennis context list"
 
 
+class BundleNotDeletable(KennisError):
+    """A listed project whose folder is not a bundle by both its name and
+    its manifest, so kennis will not delete it (2026-11-04).
+
+    The list is paths read from a file; a delete aimed by it removes a
+    whole tree, so it is aimed only at a `.context` folder holding
+    `bundle.json`. Forgetting the project takes the entry off the list.
+    """
+
+    default_message = "that project's folder is not a context bundle kennis can delete"
+
+
 class ProjectListUnreadable(KennisError):
     """The list of the machine's projects could not be read (14g).
 

@@ -1,0 +1,20 @@
+{# The packs a project declares, as checkboxes: saving declares exactly
+   what is checked. A declared pack this machine lacks is drawn checked,
+   so a save keeps it. #}
+<p class="role-muted">{{ project_packs_preamble }}</p>
+<form class="packs" action="/projects/packs" method="post">
+  <input type="hidden" name="project" value="{{ project }}">
+  {% if choices %}
+  <ul class="checks">
+    {% for pack_id, name, checked, installed in choices %}
+    <li class="check"><label><input type="checkbox" name="pack" value="{{ pack_id }}"{% if checked %} checked{% endif %}> {{ name }} <code>{{ pack_id }}</code>{% if not installed %} <span class="role-warning">{{ not_installed_here }}</span>{% endif %}</label></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="role-muted">{{ no_packs }}</p>
+  {% endif %}
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("package") }}{{ project_packs_action }}</button>
+  </div>
+</form>

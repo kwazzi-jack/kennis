@@ -6,9 +6,11 @@ Found 2 in notes
 Notes keywords as a fraction of the best match here
   [1] calibration - Phase
       keywords: very high  id=doc0000001 chunk=2
+      kennis://open/doc0000001/2
       ## Phase Phase calibration follows the bandpass.
   [2] calibration
       keywords: high  id=doc0000001 chunk=0
+      kennis://open/doc0000001/0
       # Calibration Calibration solves for antenna gains and phase.
 
   hint: run `kennis read doc0000001 --chunks 1:4` to read one in context

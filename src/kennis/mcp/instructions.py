@@ -60,13 +60,13 @@ filtering a search by one, or whether a paper is held at all.
 
 ## Citing
 
-When an answer rests on a passage from `notes`, `literature` or `docs`,
-cite it with `cite`, giving every hit you rely on in one call. Write each
-citation as its `markdown` line gives it, a link that opens the passage in
-the user's kennis window; where a link cannot be shown, write the citation
-and then its `kennis://` link. Never compose a citation or a `kennis://`
-link yourself. A context hit is a file in the user's repository: cite it
-by its path.
+When an answer rests on a passage from `notes`, `literature`, `docs` or a
+project's context, cite it with `cite`, giving every hit you rely on in one
+call: a corpus hit by its `document_id`, a context hit by its `path`, each
+with its `chunk`. Write each citation as its `markdown` line gives it, a
+link that opens the passage in the user's kennis window; where a link
+cannot be shown, write the citation and then its `kennis://` link. Never
+compose a citation or a `kennis://` link yourself.
 
 ## Writing
 

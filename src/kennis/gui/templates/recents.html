@@ -9,8 +9,6 @@
     </li>
     {% endfor %}
   </ol>
-  <form action="/history/clear" method="post" hx-post="/history/clear" hx-target="#recents" hx-swap="outerHTML">
-    <button type="submit">{{ recents_clear }}</button>
-  </form>
+  <p class="recents-foot"><a class="button danger" href="/history/clear" hx-get="/history/clear" hx-target="#dialog" hx-swap="innerHTML">{{ icon("trash-2") }}{{ recents_clear }}</a></p>
 {% endif %}
 </section>

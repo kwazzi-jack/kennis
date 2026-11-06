@@ -45,7 +45,7 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Literal
 
-from kennis.engine.context.groups import is_bundle_group, pack_of_group
+from kennis.engine.context.groups import is_bundle_group
 from kennis.engine.docs.versions import version_order
 from kennis.engine.rag.models import SearchResult
 from kennis.render.words import ScoreStyle, group_name, snippet_of
@@ -306,19 +306,13 @@ def bundle_hit_handle(result: SearchResult, *, bundle_name: str) -> str:
     handle is the path, prefixed with the bundle's directory so it can be
     opened from the workspace root without working out where it lives.
 
-    No chunk index, because there is no command here that takes a pair.
+    With the chunk, because `kennis cite` and the `cite` tool take the
+    pair, as they take a corpus hit's (#623).
     """
-    return f"path={bundle_name}/{result.chunk.document_id}"
-
-
-def pack_hit_handle(result: SearchResult, *, pack_id: str) -> str:
-    """Where a pack's context hit is: the pack and the file's address, which
-    is what `kennis context copy` takes to make the file the project's own.
-
-    Not a path, because the file is in kennis's store and is not to be
-    edited there (14g).
-    """
-    return f"pack={pack_id}/{result.chunk.document_id}"
+    return (
+        f"path={bundle_name}/{result.chunk.document_id} "
+        f"chunk={result.chunk.chunk_index}"
+    )
 
 
 def raw_scores(result: SearchResult) -> str:
@@ -388,6 +382,10 @@ class Hit:
     # the project the search ran from, the bundle's whole path for
     # another (14g). Empty for every other hit.
     place: str = ""
+    # The project a project's note is in, by this machine's name for it,
+    # which its `kennis://context/...` link names (#623). Empty for every
+    # other hit.
+    project: str = ""
     # The collection's unrelated reference, for a model with no measured
     # cuts (#599); None where the model is measured or had no vectors.
     unrelated: float | None = None
@@ -449,8 +447,7 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     """How well a hit matched and how to reach it, one field per part.
 
     A context hit's handle is a path rather than an identifier, because
-    a bundle document lives in the user's own project and there is no
-    `read_context` to take a pair.
+    a bundle document lives in the user's own project and has none.
 
     **The parts rather than the line, because a narrow margin has to
     break between fields and cannot be trusted to find the break
@@ -462,12 +459,9 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     """
     from kennis.engine.context.bundle import BUNDLE_DIRNAME
 
-    pack = pack_of_group(hit.collection)
     handle = (
         bundle_hit_handle(hit.result, bundle_name=hit.place or BUNDLE_DIRNAME)
         if is_bundle_group(hit.collection)
-        else pack_hit_handle(hit.result, pack_id=pack)
-        if pack is not None
         else hit_handle(hit.result)
     )
     # Which version a docs passage is from travels with its handle, so the

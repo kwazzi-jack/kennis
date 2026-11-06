@@ -1,0 +1,18 @@
+{# A new project: a folder with a bundle is listed, one without gets one.
+   The answer is the window drawn whole, so the pane lists it. #}
+<p class="role-muted" id="new-project-preamble">{{ new_project_preamble }}</p>
+<form class="new-project" action="/projects/new" method="post" hx-post="/projects/new" hx-disinherit="*">
+  <div id="new-project-problem" class="form-problem" role="alert"></div>
+  <div class="fields">
+    <label class="labelled" for="new-project-folder"><span class="name">{{ new_project_folder }}</span></label>
+    <span class="entry-row">
+      <input id="new-project-folder" type="text" name="folder" placeholder="/path/to/project" aria-describedby="new-project-preamble" autofocus>
+      <button type="button" class="ghost browse" hx-get="/browse?target=folder&amp;folders=1" hx-target="#chooser-new-project" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+    </span>
+    <div class="chooser" id="chooser-new-project"></div>
+  </div>
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("folder-plus") }}{{ new_project_action }}</button>
+  </div>
+</form>

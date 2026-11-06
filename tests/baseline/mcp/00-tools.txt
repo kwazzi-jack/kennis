@@ -151,7 +151,7 @@
     }
   },
   {
-    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses comes after, with a `pack=` handle and the\npassage itself.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.",
+    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses is among them, as files its sync copied in.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.",
     "input": {
       "additionalProperties": false,
       "properties": {
@@ -374,13 +374,13 @@
     }
   },
   {
-    "description": "Cite passages from notes, literature or docs.\n\nCall this for every passage your answer relies on, with the hits'\n`document_id` and `chunk`, all in one call. Each comes back as:\n\n- `markdown`: the citation as a link to the passage. Write it as given.\n- `link`: the `kennis://` link alone. Write it after the citation where a\n  link cannot be shown.\n- `locator`: the figure, table, equation or section the passage is in,\n  if any, to name in your own words (\"in section 2.1 of ...\").\n- `reference`: the entry for a list of references.\n\nNever write a citation or a `kennis://` link yourself. A note saying a\ncitation reads the same as another means their links open different\npassages: say what each one is.",
+    "description": "Cite passages from notes, literature, docs or a project's context.\n\nCall this for every passage your answer relies on, all in one call:\na hit's `document_id`, or a context hit's `path`, with its `chunk`.\nEach comes back as:\n\n- `markdown`: the citation as a link to the passage. Write it as given.\n- `link`: the `kennis://` link alone. Write it after the citation where a\n  link cannot be shown.\n- `locator`: the figure, table, equation or section the passage is in,\n  if any, to name in your own words (\"in section 2.1 of ...\").\n- `reference`: the entry for a list of references.\n\nNever write a citation or a `kennis://` link yourself. A note saying a\ncitation reads the same as another means their links open different\npassages: say what each one is.",
     "input": {
       "additionalProperties": false,
       "properties": {
         "requests": {
           "items": {
-            "description": "One passage to cite.\n\n`document_id` is a search hit's, or `list_corpus`'s. `chunk` is the hit's\n`chunk`; omitted, the document is cited as a whole.",
+            "description": "One passage to cite, named by exactly one of two handles.\n\n`document_id` for a hit from notes, literature or docs (or from\n`list_corpus`); `path` for a project's context hit, as its `path=`\ngives it. `chunk` is the hit's `chunk`; omitted, the document is cited whole.",
             "properties": {
               "chunk": {
                 "anyOf": [
@@ -394,12 +394,28 @@
                 "default": null
               },
               "document_id": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
               }
             },
-            "required": [
-              "document_id"
-            ],
             "type": "object"
           },
           "type": "array"

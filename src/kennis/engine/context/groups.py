@@ -1,4 +1,4 @@
-"""The names of search groups for project and pack context.
+"""The names of search groups for project context.
 
 Pure functions over strings, kept apart from the modules that index and
 search a bundle so that a client naming a group in its output imports
@@ -10,10 +10,6 @@ from __future__ import annotations
 from typing import Final
 
 CONTEXT_COLLECTION: Final = "context"
-
-# A pack's context group in a search, and the prefix of what a project's
-# copy says it replaces.
-PACK_GROUP_PREFIX: Final = "pack:"
 
 
 def project_group(project: str) -> str:
@@ -33,26 +29,9 @@ def is_bundle_group(name: str) -> bool:
     return name == CONTEXT_COLLECTION or project_of_group(name) is not None
 
 
-def pack_group(pack_id: str) -> str:
-    return f"{PACK_GROUP_PREFIX}{pack_id}"
-
-
-def pack_of_group(name: str) -> str | None:
-    """The pack id a search group is named for, or None for any other
-    group."""
-    return (
-        name.removeprefix(PACK_GROUP_PREFIX)
-        if name.startswith(PACK_GROUP_PREFIX)
-        else None
-    )
-
-
 __all__ = [
     "CONTEXT_COLLECTION",
-    "PACK_GROUP_PREFIX",
     "is_bundle_group",
-    "pack_group",
-    "pack_of_group",
     "project_group",
     "project_of_group",
 ]

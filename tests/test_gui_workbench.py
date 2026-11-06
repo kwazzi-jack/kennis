@@ -319,7 +319,7 @@ def test_the_pane_lists_every_collection(corpus: Path, client: TestClient):
 EXPECTED_KENNIS_PLACES = [
     ("/", "Recent searches"),
     ("/activity", "Activity"),
-    ("/corpus#packs", "Packs"),
+    ("/packs", "Packs"),
     ("/settings", "Settings"),
 ]
 
@@ -572,9 +572,11 @@ ICONS = STATIC / "vendor" / "icons"
 def icons_named() -> set[str]:
     """Every icon a template or `words` asks for by name."""
     named: set[str] = set()
-    for template in TEMPLATES.glob("*.html"):
+    for template in TEMPLATES.rglob("*.html"):
         named |= set(
-            re.findall(r"icon\(\"([a-z-]+)\"\)", template.read_text(encoding="utf-8"))
+            re.findall(
+                r"icon\(\"([a-z0-9-]+)\"\)", template.read_text(encoding="utf-8")
+            )
         )
     for _, _, icon_name in words.ACTIONS:
         named.add(icon_name)
@@ -646,8 +648,10 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # (#542); 58th: POST /job/{id}/cancel, a task cancelled from the window;
 # 59th: GET /presence, the stream an open window holds (Brian, 2026-10-30);
 # 60th: POST /shown/{nonce}, a window taking a passage `kennis open` sent it
-# (Brian, 2026-11-01)
-EXPECTED_ROUTES = 60
+# (Brian, 2026-11-01); 61st: GET /packs/{id}, what an installed pack contains;
+# 62nd to 66th: GET /packs, GET and POST /packs/{id}/uninstall, GET and POST
+# /projects/forget (Brian, 2026-11-04)
+EXPECTED_ROUTES = 77
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

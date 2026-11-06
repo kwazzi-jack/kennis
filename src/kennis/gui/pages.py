@@ -24,14 +24,13 @@ import yaml
 
 from kennis.context import Context
 from kennis.engine.backup import BackupReport
+from kennis.engine.context.deleting import BundleDeletion
 from kennis.engine.context.groups import (
-    pack_group,
-    pack_of_group,
     project_group,
     project_of_group,
 )
 from kennis.engine.context.notes import bundle_documents
-from kennis.engine.context.packs import pack_files
+from kennis.engine.context.reset import BundleReset
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOutcome, AddReport
 from kennis.engine.corpus.collection import Collection
@@ -52,10 +51,11 @@ from kennis.engine.docs.versions import (
     project_versions,
     versions_holding,
 )
-from kennis.engine.errors import DocumentNotFound, KennisError, PackNotInstalled
+from kennis.engine.errors import DocumentNotFound, KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
-from kennis.engine.pack.installed import list_installed
+from kennis.engine.pack.installed import InstalledPack, PackRemoval
+from kennis.engine.pack.installed import contents_of as pack_contents_of
 from kennis.engine.pack.resolve import ACTING
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Chunk
@@ -78,7 +78,7 @@ from kennis.holdings import (
     contents_of,
     document_marks,
 )
-from kennis.operations import IndexBuild
+from kennis.operations import BundleIndexBuild, IndexBuild
 from kennis.render.backup import describe_written
 from kennis.render.hits import (
     CALIBRATED_MODELS,
@@ -106,24 +106,32 @@ from kennis.render.html import (
     to_html,
 )
 from kennis.render.packs import (
+    ContentsSection,
+    contents_sections,
     describe_bundle_sync,
     describe_declarations,
     describe_declared,
     describe_deferred,
+    describe_edited_copies,
     describe_install,
+    describe_installed,
     describe_kept_copies,
     describe_kept_copy,
-    describe_made_yours,
     describe_no_declaration,
     describe_not_installed,
     describe_outcome_of,
+    describe_removal,
     describe_sync,
+    describe_undeclared,
     describe_unfetched,
+    describe_unread_contents,
     describe_why_unfetched,
+    describe_yours,
 )
 from kennis.render.refusals import paper_page, refusal_fact, remedies_for_refusal
 from kennis.render.words import (
     ScoreStyle,
+    count_of,
     describe_busy_indexes,
     group_name,
 )
@@ -537,9 +545,6 @@ def _href(
             f"/bundle/{quote(document_id)}?project={quote(project)}"
             f"&chunk={chunk_index}{asked}#chunk-{chunk_index}"
         )
-    pack = pack_of_group(collection)
-    if pack is not None:
-        return f"/pack/{quote(pack)}/{quote(document_id)}{tail}"
     return f"/document/{quote(collection)}/{quote(document_id)}{tail}"
 
 
@@ -975,68 +980,6 @@ def shown_bundle_document(
     )
 
 
-def shown_pack_document(
-    corpus_root: Path,
-    pack_id: str,
-    address: str,
-    *,
-    load_remote_images: bool,
-    marked: MarkedRange | None = None,
-    question: str = "",
-) -> ShownDocument:
-    """One of a pack's context files, as the store holds it (14g).
-
-    Looked up among the files the pack declares, never joined onto a
-    path, for the reason `shown_bundle_document` gives. Read only: the
-    file is the pack's, and a project that wants its own version copies
-    it with `kennis context copy`.
-    """
-    held = {one.state.pack_id: one for one in list_installed(corpus_root).packs}
-    if pack_id not in held:
-        raise PackNotInstalled(f"no pack '{pack_id}' is installed")
-    file = pack_files(corpus_root, held[pack_id]).get(address)
-    if file is None:
-        raise DocumentNotFound(
-            f"the pack '{pack_id}' ships no context file '{address}'",
-            resolution=f"kennis pack status {pack_id}",
-        )
-    text = file.path.read_text(encoding="utf-8")
-    try:
-        frontmatter, body = split_frontmatter(text)
-    except yaml.YAMLError:
-        frontmatter, body = {}, text
-    title = str(frontmatter.get("title") or Path(address).stem)
-    return ShownDocument(
-        title=title,
-        document_id=address,
-        collection=pack_group(pack_id),
-        crumb_name=group_name(pack_group(pack_id)),
-        crumb_href="/corpus#packs",
-        path=f"{pack_id}/{address}",
-        body_html=to_html(
-            body,
-            load_remote_images=load_remote_images,
-            marked=marked,
-            without_title=title,
-            heading_anchors=True,
-            terms=terms_of(question),
-        ),
-        has_blocked_images=_refers_remotely(body),
-        handle=f"{pack_id}/{address}",
-        details=(
-            ShownDetail(
-                words.DETAIL_LABELS["collection"], group_name(pack_group(pack_id))
-            ),
-            ShownDetail(
-                words.DETAIL_LABELS["copy"],
-                f"kennis context copy {pack_id}/{address}",
-                verbatim=True,
-            ),
-        ),
-        outline=tuple(headings_of(body, without_title=title)),
-    )
-
-
 def _refers_remotely(markdown: str) -> bool:
     """Whether the body refers to an image kennis would have to fetch.
 
@@ -1081,13 +1024,13 @@ __all__ = [
     "shown_backup",
     "shown_bundle_document",
     "shown_document",
-    "shown_groups",
     "shown_groups_of",
     "shown_hits",
     "shown_key",
     "shown_matches",
     "shown_measures",
     "shown_orders",
+    "shown_pack",
     "shown_rows",
     "shown_skips",
     "shown_tree",
@@ -1126,25 +1069,35 @@ def shown_rows(held: Sequence[Holding]) -> list[ShownRow]:
     ]
 
 
-def shown_groups(
-    context: Context, collection: str
-) -> tuple[list[tuple[str, list[ShownEntry]]], int]:
-    """A collection's documents by group, and how many could not be read.
+@dataclass(frozen=True, slots=True)
+class ShownPack:
+    """One installed pack, as its page and its region of the corpus page
+    draw it: who it is, and each kind of item it declares as a tree.
 
-    Grouped by the directory a document sits in, which is what the
-    corpus layout means by a group - `corpus tree` shows the same
-    shape. The ungrouped ones come first under an empty name, because
-    a collection with no groups should not lead with a heading.
+    `unread` is the sentence for a pack whose stored declaration will not
+    parse, which then has no sections.
     """
-    corpus_root = context.corpus_root
-    contents = contents_of(context, collection)
-    grouped: dict[str, list[ShownEntry]] = {}
-    for document in sorted(contents.documents, key=_sort_key):
-        grouped.setdefault(
-            _group_of(corpus_root, collection, _anchor(document)), []
-        ).append(ShownEntry(title=document.frontmatter.title, document_id=document.id))
-    ordered = sorted(grouped.items(), key=lambda pair: (pair[0] != "", pair[0]))
-    return ordered, len(contents.unreadable)
+
+    pack_id: str
+    name: str
+    description: str | None
+    summary: str
+    sections: tuple[ContentsSection, ...]
+    unread: str | None
+
+
+def shown_pack(installed: InstalledPack, style: Path) -> ShownPack:
+    """`installed` in the pieces a page arranges, papers in `style`."""
+    contents = pack_contents_of(installed)
+    declaration = installed.declaration
+    return ShownPack(
+        pack_id=installed.state.pack_id,
+        name=declaration.pack.name if declaration else installed.state.pack_id,
+        description=declaration.pack.description if declaration else None,
+        summary=describe_installed(installed),
+        sections=contents_sections(contents, style) if contents else (),
+        unread=None if contents else describe_unread_contents(),
+    )
 
 
 def _sort_key(document: Document) -> str:
@@ -1813,37 +1766,56 @@ def capitalised(said: str) -> str:
 
 
 def shown_bundle_sync(result: BundleSync) -> ShownJob:
-    """A context sync. No commit happened and the page has to say so."""
+    """A context sync (#624): the files written, updated and removed, the
+    copies it left and why. No commit happened and the page says so."""
     notes: list[str] = [words.BUNDLE_NOT_COMMITTED]
-    if result.made_yours:
-        notes.append(describe_made_yours())
+    if result.edited:
+        notes.append(describe_edited_copies())
+    if result.yours:
+        notes.append(describe_yours(len(result.yours)))
+    if result.deferred:
+        notes.append(describe_deferred(result.deferred))
+    if result.undeclared:
+        notes.append(describe_undeclared(len(result.undeclared)))
     if result.declared:
         notes.append(describe_declared(result.declared))
     if result.missing:
         notes.append(describe_not_installed(result.missing))
     if not result.declared and not result.missing:
         notes.append(describe_no_declaration())
-    acted = bool(result.removed or result.made_yours)
     return ShownJob(
         headline=capitalised(
-            describe_bundle_sync(len(result.removed), len(result.made_yours))
+            describe_bundle_sync(
+                len(result.written), len(result.updated), len(result.removed)
+            )
         ),
-        role="role-added" if acted else "role-muted",
+        role="role-added" if result.changed_anything else "role-muted",
         items=(
+            *(
+                ShownItem(marker="+", name=address, outcome="written")
+                for address in result.written
+            ),
+            *(
+                ShownItem(marker="~", name=address, outcome="updated")
+                for address in result.updated
+            ),
             *(
                 ShownItem(marker="-", name=address, outcome="removed")
                 for address in result.removed
             ),
             *(
-                ShownItem(marker="~", name=address, outcome="made yours")
-                for address in result.made_yours
+                ShownItem(marker="!", name=address, outcome="edited, left")
+                for address in result.edited
+            ),
+            *(
+                ShownItem(marker="=", name=address, outcome="kept")
+                for address in result.undeclared
             ),
         ),
         notes=tuple(notes),
-        # `kennis context index` stays a command, unlike the corpus
-        # one: this interface has no control that indexes a bundle, so
-        # the terminal really is where that is done.
-        next_steps=("kennis context index",) if acted else (),
+        # The project's own menu indexes it; the command is named for the
+        # command line's reader of this outcome too.
+        next_steps=("kennis context index",) if result.changed_anything else (),
     )
 
 
@@ -1852,6 +1824,71 @@ def shown_backup(report: BackupReport) -> ShownJob:
     return ShownJob(
         headline=f"Backed up to {describe_written(report)}",
         redraws=(("backup", "/settings/backup"),),
+    )
+
+
+def shown_uninstall(removal: PackRemoval) -> ShownJob:
+    """A pack uninstall, and the sync that takes its documents out, offered
+    as a button and never run by itself: one action, one role, as an
+    install leaves the sync that brings them in (Brian, 2026-11-04)."""
+    return ShownJob(
+        headline=f"Uninstalled {removal.pack_id}",
+        items=(
+            ShownItem(
+                marker="-",
+                name=removal.pack_id,
+                outcome="removed",
+                detail=describe_removal(removal),
+            ),
+        ),
+        notes=(words.UNINSTALLED_STILL_HELD,),
+        sync_after=True,
+    )
+
+
+def shown_bundle_index(built: BundleIndexBuild) -> ShownJob:
+    """A project's context indexed, as `kennis context index` says it."""
+    report = built.report
+    return ShownJob(
+        headline=(
+            f"Indexed {count_of(report.document_count, 'document')} as "
+            f"{count_of(report.chunk_count, 'chunk')}"
+        ),
+        notes=(words.bundle_index_model(built.model_kind, built.model_name),),
+    )
+
+
+def shown_bundle_reset(reset: BundleReset) -> ShownJob:
+    """A project's context reset: each file kennis owned, and the index."""
+    removed = len(reset.removed) + (1 if reset.index_removed else 0)
+    return ShownJob(
+        headline=(
+            f"Removed {count_of(len(reset.removed), 'file')}"
+            + (" and the context index" if reset.index_removed else "")
+            if removed
+            else words.NOTHING_TO_RESET
+        ),
+        items=tuple(
+            ShownItem(marker="-", name=path, outcome="removed")
+            for path in reset.removed
+        ),
+        role="role-added" if removed else "role-muted",
+    )
+
+
+def shown_deletion(deletion: BundleDeletion) -> ShownJob:
+    """A project's context deleted. The pane's rows are drawn again by
+    every job's outcome, so the project leaves it at once."""
+    return ShownJob(
+        headline=f"Deleted {deletion.project.name}'s context",
+        items=(
+            ShownItem(
+                marker="-",
+                name=str(deletion.project.bundle),
+                outcome="removed",
+                detail=count_of(deletion.files, "file"),
+            ),
+        ),
     )
 
 

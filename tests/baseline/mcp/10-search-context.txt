@@ -1,4 +1,4 @@
 $ search_context {"question": "CASA"}
 --- error False
 [1] CASA is used here
-  keywords: very high  path=.context/CASA is used here.md
+  keywords: very high  path=.context/CASA is used here.md chunk=0

@@ -72,6 +72,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from rich.style import Style
 from rich.text import Text
 
 from kennis.cli.theme import rich_style_name, rich_theme, syntax_theme
@@ -87,14 +88,66 @@ if TYPE_CHECKING:
 
 _THEME = rich_theme()
 
+# The bar drawn now, if any; set by `progress_bar` for its `with` block.
+_live_bar: Progress | None = None
+
+
+@contextlib.contextmanager
+def _bar_set_aside() -> Iterator[None]:
+    """Erase the live bar for the length of the block, then draw it again.
+
+    rich puts a line above a live bar only when it is printed through the
+    bar's own console, because `Console.file` unwraps the stdout proxy a
+    live display installs. The report and the errors have consoles of their
+    own, so a line printed through them was written after the bar and
+    erased by its next redraw, which left a frozen copy of the bar where the
+    line had been (#621). Moving those lines onto the bar's console would
+    put them on stderr, so a redirected stdout would lose them; the bar is
+    erased and redrawn instead, and every line keeps its stream.
+    """
+    bar = _live_bar
+    if bar is None or not bar.live.is_started:
+        yield
+        return
+    bar.stop()
+    # `stop` erases the bar but its renderer keeps the erased frame's
+    # height, and the first redraw after `start` moves up by that height
+    # before drawing - over the line just printed. rich offers no public
+    # way to forget it; `test_cli_live_bar.py` fails if this stops working.
+    bar.live._live_render._shape = None
+    try:
+        yield
+    finally:
+        bar.start()
+
+
+class _BesideTheBar(Console):
+    """A console whose every write lands above a live bar, not under it.
+
+    Every write - `print`, `log`, `control`, and `line`, `rule`, `out` and
+    `print_json` through them - reaches the file through `_check_buffer`,
+    once the outermost buffer context closes, so that one method is where
+    the bar is set aside. It is rich's own and private, as `_shape` is, and
+    `test_cli_live_bar.py` is what says it still works. The bar's console is
+    a plain `Console`, so its redraws never come back here.
+    """
+
+    def _check_buffer(self) -> None:
+        if self._buffer_index or not self._buffer:
+            super()._check_buffer()
+            return
+        with _bar_set_aside():
+            super()._check_buffer()
+
+
 # highlight=False: rich's default ReprHighlighter guesses at numbers, paths and
 # repr syntax in any string printed, which is unpredictable over payloads that
 # are already structured. Every renderer below states its own highlighter.
-console = Console(theme=_THEME, highlight=False)
+console = _BesideTheBar(theme=_THEME, highlight=False)
 
 # Errors follow click's convention of going to stderr, so a piped command's
 # stdout stays clean.
-error_console = Console(theme=_THEME, highlight=False, stderr=True)
+error_console = _BesideTheBar(theme=_THEME, highlight=False, stderr=True)
 
 # Progress bars go to stderr so a redirected stdout keeps only the report.
 _progress_console = Console(theme=_THEME, highlight=False, stderr=True)
@@ -537,6 +590,70 @@ def tree_document(identifier: str | None, name: str, depth: int) -> None:
     console.print(line, soft_wrap=True)
 
 
+# What marks each item of a tree that is not a corpus document, so one
+# entry is told from the next when each runs to several lines.
+_ITEM_MARKER = "- "
+
+
+def tree_item(
+    name: str,
+    detail: str | None,
+    depth: int,
+    *,
+    beside: bool = False,
+    name_width: int = 0,
+) -> None:
+    """An item in a tree that is not a corpus document, such as a pack's
+    paper: a marker, its name at full weight, and what there is to say of it.
+
+    The detail goes below the name, wrapped with every line under the
+    name's first letter, so a reference that runs to three lines still
+    reads as belonging to the name above it. With `beside`, a detail that
+    fits on the name's line goes there instead, as an address beside a
+    project's name does, the name padded to `name_width` so a folder's
+    details line up.
+    """
+    if _quiet:
+        return
+    indent = len(_DETAIL_INDENT) + len(_TREE_STEP) * depth
+    lead = (" " * indent + _ITEM_MARKER, "muted")
+    padded = name.ljust(name_width)
+    room = console.width - indent - len(_ITEM_MARKER) - len(padded) - 2
+    if beside and detail is not None and len(detail) <= room:
+        console.print(
+            Text.assemble(
+                lead,
+                (padded, rich_style_name("identifier")),
+                (f"  {detail}", "muted"),
+            ),
+            soft_wrap=True,
+        )
+        return
+    console.print(
+        Text.assemble(lead, (name, rich_style_name("identifier"))), soft_wrap=True
+    )
+    if detail:
+        muted_block(detail, indent=indent + len(_ITEM_MARKER))
+
+
+def muted_block(text: str, *, indent: int) -> None:
+    """Dim text wrapped to the terminal with every line `indent` in.
+
+    `muted(indent=)` indents the first line only, which a paragraph long
+    enough to wrap shows at once. Wrapped here rather than by rich, whose
+    wrapped lines are padded with spaces to the terminal's width.
+    """
+    if _quiet:
+        return
+    import textwrap
+
+    width = max(console.width - indent, 20)
+    for line in textwrap.wrap(
+        text, width=width, break_on_hyphens=False, break_long_words=False
+    ) or [""]:
+        console.print(Text.assemble(" " * indent, (line, "muted")), soft_wrap=True)
+
+
 def row(identifier: str, text: str) -> None:
     """One line of a listing that *is* the command's output.
 
@@ -779,6 +896,8 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
         console=_progress_console,
         transient=True,
     ) as progress:
+        global _live_bar
+        _live_bar = progress
         task_id = progress.add_task(description, total=total)
 
         def update(
@@ -795,7 +914,10 @@ def progress_bar(description: str, total: int | None) -> Iterator[ProgressUpdate
                 return
             progress.update(task_id, completed=completed, total=total)
 
-        yield update
+        try:
+            yield update
+        finally:
+            _live_bar = None
 
 
 # ---------------------------------------------------------------------------
@@ -977,6 +1099,39 @@ def hit_detail(text: str) -> None:
     line = Text(f"{_HIT_CONTENT_INDENT}{text}")
     _HIT_HIGHLIGHTER.highlight(line)
     console.print(line, soft_wrap=True)
+
+
+def hit_link(link: str) -> None:
+    """The `kennis://` link that opens the hit above it in the window."""
+    line = Text(_HIT_CONTENT_INDENT)
+    line.append_text(_linked(link))
+    console.print(line, soft_wrap=True)
+
+
+def detail_link(marker: str, link: str) -> None:
+    """A detail line whose item is a `kennis://` link, as `detail` draws the
+    marker, the link drawn as `hit_link` draws it."""
+    if _quiet:
+        return
+    line = Text.assemble(
+        _DETAIL_INDENT, (marker, rich_style_name(marker_role(marker))), " "
+    )
+    line.append_text(_linked(link))
+    console.print(line, soft_wrap=True)
+
+
+def _linked(link: str) -> Text:
+    """`link` as text that is a hyperlink to itself (Brian, 2026-11-06).
+
+    The text is the link, so it can be copied and read wherever it lands;
+    on a terminal it is an OSC 8 hyperlink to that same link, drawn in the
+    URL role (underlined), because terminals mark a hyperlink only on
+    hover and a dim line read as plain text. rich writes neither the
+    hyperlink nor the style where the output is not a terminal.
+    """
+    text = Text(link, style=rich_style_name("md_url"))
+    text.stylize(Style(link=link))
+    return text
 
 
 def body(text: str, *, indent: str = "") -> None:

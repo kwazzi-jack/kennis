@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from kennis.citing import Cited, CiteRequest
     from kennis.engine.backup import BackupReport
     from kennis.engine.context.bundle import BundleCreated
+    from kennis.engine.context.deleting import BundleDeletion
     from kennis.engine.context.notes import BundleNote
     from kennis.engine.context.projects import Project
     from kennis.engine.context.reset import BundleReset
@@ -258,24 +259,16 @@ def found(corpus_root: Path, handle: str, collection: str | None) -> Found:
     )
 
 
-def show_in_window(
-    corpus_root: Path, collection: str, document_id: str, chunk: int | None
-) -> bool:
-    """Whether a window already open showed the passage (`POST show`).
-    False when none is open, none answered in time, or the service could
+def show_in_window(corpus_root: Path, link: str, collection: str | None) -> bool:
+    """Whether a window already open showed the passage `link` names
+    (`POST show`), with the corpus collection a corpus link's document is
+    in. False when none is open, none answered in time, or the service could
     not be asked, each of which `kennis open` meets by opening a tab."""
     import httpx
 
     try:
         with connection.connect(corpus_root) as client:
-            answer = client.post(
-                "show",
-                json={
-                    "collection": collection,
-                    "document_id": document_id,
-                    "chunk": chunk,
-                },
-            )
+            answer = client.post("show", json={"link": link, "collection": collection})
     except httpx.HTTPError:
         return False
     return answer.status_code == 200 and answer.json().get("shown") is True
@@ -515,6 +508,7 @@ def sync_bundle(
     corpus_root: Path,
     bundle: Path,
     *,
+    remove_undeclared: bool = False,
     events: EventSink | None = None,
     on_waiting: Waiting | None = None,
 ) -> Written[BundleSync]:
@@ -523,7 +517,7 @@ def sync_bundle(
     return _write(
         corpus_root,
         "sync_bundle",
-        {"bundle": bundle.resolve()},
+        {"bundle": bundle.resolve(), "remove_undeclared": remove_undeclared},
         BundleSync,
         events=events,
         on_waiting=on_waiting,
@@ -588,17 +582,6 @@ def declare_packs(
     return cast(tuple[str, ...], answered.result)
 
 
-def copy_pack_file(corpus_root: Path, bundle: Path, reference: str) -> Path:
-    return _write(
-        corpus_root,
-        "copy_pack_file",
-        {"bundle": bundle.resolve(), "reference": reference},
-        Path,
-        events=None,
-        on_waiting=None,
-    ).result
-
-
 def reset_bundle(corpus_root: Path, bundle: Path) -> BundleReset:
     from kennis.engine.context.reset import BundleReset
 
@@ -656,6 +639,25 @@ def forget_project(corpus_root: Path, name: str) -> Project:
         events=None,
         on_waiting=None,
     ).result
+
+
+def delete_project(corpus_root: Path, name: str) -> BundleDeletion:
+    from kennis.engine.context.deleting import BundleDeletion
+
+    return _write(
+        corpus_root,
+        "delete_project",
+        {"name": name},
+        BundleDeletion,
+        events=None,
+        on_waiting=None,
+    ).result
+
+
+def deletion_preview(corpus_root: Path, name: str) -> BundleDeletion:
+    from kennis.engine.context.deleting import BundleDeletion
+
+    return _read(corpus_root, "deletion_preview", {"name": name}, BundleDeletion)
 
 
 def bundle_status(corpus_root: Path, bundle: Path) -> BundleStatus:
@@ -731,8 +733,9 @@ __all__ = [
     "bundle_status",
     "contents",
     "copy_document",
-    "copy_pack_file",
     "declare_packs",
+    "delete_project",
+    "deletion_preview",
     "docs_versions",
     "forget_project",
     "found",

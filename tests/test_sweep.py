@@ -221,7 +221,7 @@ def test_a_skipped_scope_carries_no_sentence(corpus: Path):
     line cannot group two skips onto one line. Concern #81."""
     fields = {field for field in Skipped.__dataclass_fields__}
 
-    assert fields == {"name", "resolution", "installed"}
+    assert fields == {"name", "resolution"}
 
 
 # ---------------------------------------------------------------------------

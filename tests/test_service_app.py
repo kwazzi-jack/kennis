@@ -271,7 +271,7 @@ def test_show_asks_the_open_window_and_says_whether_it_answered(
     answered = client.post(
         f"{PREFIX}/show",
         headers=BEARER,
-        json={"collection": "literature", "document_id": "abc123", "chunk": 7},
+        json={"link": "kennis://open/abc123/7", "collection": "literature"},
     )
 
     assert answered.status_code == 200
@@ -289,19 +289,41 @@ def test_show_builds_a_path_with_no_chunk(
     client.post(
         f"{PREFIX}/show",
         headers=BEARER,
-        json={"collection": "notes", "document_id": "abc123", "chunk": None},
+        json={"link": "kennis://open/abc123", "collection": "notes"},
     )
 
     assert shows.paths == ["/document/notes/abc123"]
 
 
+def test_show_builds_a_context_path_from_the_link_alone(
+    app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """A context link names its project and file; no collection is sent,
+    and the path is built by the links' own reader (#623)."""
+    shows = Shows(True)
+    monkeypatch.setattr(app.state.presence, "show", shows)
+
+    answered = client.post(
+        f"{PREFIX}/show",
+        headers=BEARER,
+        json={"link": "kennis://context/tron/2?path=notes%2Fa+b.md"},
+    )
+
+    assert answered.status_code == 200
+    assert shows.paths == ["/bundle/notes/a%20b.md?project=tron&chunk=2#chunk-2"]
+
+
 @pytest.mark.parametrize(
     "asked",
     [
-        {"collection": "elsewhere", "document_id": "abc123", "chunk": None},
-        {"collection": "notes", "document_id": "../../x", "chunk": None},
-        {"collection": "notes", "document_id": "abc123", "chunk": -1},
+        {"link": "kennis://open/abc123", "collection": "elsewhere"},
+        {"link": "kennis://open/abc123"},  # a corpus link with no collection
+        {"link": "kennis://open/../../x", "collection": "notes"},
+        {"link": "kennis://open/abc123/-1", "collection": "notes"},
+        {"link": "kennis://context/p/1?path=..%2Fx.md"},
+        {"link": "/document/notes/abc123", "collection": "notes"},  # a path
         {"collection": "notes"},
+        {"collection": "notes", "document_id": "abc123", "chunk": None},
     ],
 )
 def test_show_refuses_what_is_no_passage_of_the_corpus(
@@ -322,7 +344,7 @@ def test_show_refuses_what_is_no_passage_of_the_corpus(
 def test_show_needs_the_token(client: TestClient):
     answered = client.post(
         f"{PREFIX}/show",
-        json={"collection": "notes", "document_id": "abc123", "chunk": None},
+        json={"link": "kennis://open/abc123", "collection": "notes"},
     )
 
     assert answered.status_code == 401

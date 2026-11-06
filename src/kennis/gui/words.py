@@ -350,6 +350,11 @@ PREFERENCE_WORDS: Final[dict[str, tuple[str, str]]] = {
         "Match strength",
         "Show how well a result matched as bars and a word, or the word alone.",
     ),
+    "folders": (
+        "Folders",
+        "Whether the folders and sections of a page start closed or open. "
+        "It takes effect on the next page drawn.",
+    ),
     "labels": (
         "Measure labels",
         "Show each measure as an icon, a word, or both.",
@@ -380,6 +385,7 @@ PREFERENCE_CHOICES: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ("reading", "Reading width"),
     ),
     "strength": (("bars", "Bars and words"), ("words", "Words only")),
+    "folders": (("closed", "Closed"), ("open", "Open")),
     "labels": (("icons", "Icons"), ("words", "Words"), ("both", "Both")),
     "scale": (
         ("viridis", "Viridis"),
@@ -676,6 +682,14 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/document/remove": "Remove a document",
     "/corpus/return": "Return the corpus to a point",
     "/supply": "Papers kennis could not fetch",
+    "/packs/uninstall": "Uninstall a pack",
+    "/projects/forget": "Forget a project",
+    "/projects/delete": "Delete a project's context",
+    "/projects/new": "Add a project",
+    "/projects/packs": "Packs this project uses",
+    "/projects/reset": "Reset a project's context",
+    "/projects/sync": "Sync a project's context",
+    "/history/clear": "Clear recent searches",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -743,13 +757,59 @@ KENNIS_HEADING = "kennis"
 ACTIVITY_HEADING = "Activity"
 
 PACKS_HEADING = "Packs"
+# The corpus page's region holding the collections' table.
+COLLECTIONS_HEADING = "Collections"
+# A pack card's buttons: its own page, and uninstalling it.
+PACK_OWN_PAGE = "Open this pack on its own page"
+UNINSTALL_PACK = "Uninstall"
+UNINSTALL_PACK_ACTION = "Uninstall pack"
+# A project's row menu in the pane, and its dialog's button.
+FORGET_PROJECT = "Forget this project"
+FORGET_PROJECT_ACTION = "Forget project"
+DELETE_PROJECT = "Delete this project's context"
+PROJECT_MISSING = "missing"
+NEW_PROJECT = "New project"
+NEW_PROJECT_ACTION = "Add project"
+NEW_PROJECT_FOLDER = "Project folder"
+NEW_PROJECT_PREAMBLE = (
+    "Choose the project's folder. If it already has a .context/ folder, kennis "
+    "lists it; otherwise kennis creates one there, as kennis context init does, "
+    "and lists it."
+)
+PROJECT_PACKS = "Packs this project uses"
+PROJECT_PACKS_ACTION = "Save"
+NOT_INSTALLED_HERE = "not installed here"
+INDEX_PROJECT = "Index this project's context"
+SYNC_PROJECT = "Sync this project's context"
+SYNC_PROJECT_ACTION = "Sync"
+SYNC_LABELS: Final[dict[str, str]] = {
+    "written": "is copied in",
+    "updated": "is replaced by the pack's new release",
+}
+NOTHING_TO_SYNC = "Every pack's file is already the pack's current text."
+REMOVE_UNDECLARED = "Remove them"
+RESET_PROJECT = "Reset this project's context"
+RESET_PROJECT_ACTION = "Reset"
+RESET_INDEX_ITEM = "the context index"
+NOTHING_TO_RESET = (
+    "There is nothing to remove: every file here is yours, and there is no index."
+)
+CLEAR_HISTORY_ACTION = "Clear history"
+CLEAR_HISTORY_ASKED = (
+    "kennis forgets every recent search: the words you searched for, where, and "
+    "when. This cannot be undone."
+)
+DELETE_PROJECT_ACTION = "Delete permanently"
+UNINSTALLED_STILL_HELD = (
+    "Uninstalled. Its documents stay in the corpus until Sync takes them out."
+)
 
 # The palette's places beyond the collections, by the pane's own names.
 PALETTE_PAGES: Final[tuple[tuple[str, str, str], ...]] = (
     ("/corpus", CORPUS_HEADING, "database"),
     ("/", RECENTS_HEADING, "history"),
     ("/activity", ACTIVITY_HEADING, "activity"),
-    ("/corpus#packs", PACKS_HEADING, "package"),
+    ("/packs", PACKS_HEADING, "package"),
     ("/settings", SETTINGS_HEADING, "settings"),
 )
 
@@ -770,7 +830,9 @@ JOB_DOING: Final[dict[str, str]] = {
     "context-sync": "Syncing the project context",
     "context": "Changing a project's context",
     "context-index": "Indexing a project's context",
+    "context-delete": "Deleting a project's context",
     "pack": "Installing a pack",
+    "pack-uninstall": "Uninstalling a pack",
     "backup": "Backing up",
     "remember": "Writing a note",
     "copy": "Copying a document",
@@ -1848,7 +1910,10 @@ __all__ = [
     "CHOOSE_A_COLLECTION",
     "CHOOSE_FOLDER",
     "CHOOSE_THE_FILE",
+    "CLEAR_HISTORY_ACTION",
+    "CLEAR_HISTORY_ASKED",
     "CLOSE",
+    "COLLECTIONS_HEADING",
     "COLLECTION_ICONS",
     "CONTEXT_HEADING",
     "CONVERTER_MISSING",
@@ -1868,6 +1933,8 @@ __all__ = [
     "CREDENTIAL_UNSET",
     "CRUMBS_LABEL",
     "CURRENT_VERSION",
+    "DELETE_PROJECT",
+    "DELETE_PROJECT_ACTION",
     "DETAILS_HEADING",
     "DETAIL_LABELS",
     "DISCOVERY_WORDS",
@@ -1877,6 +1944,8 @@ __all__ = [
     "EVERY_PROJECT",
     "FIELD_LABELS",
     "FIELD_TIPS",
+    "FORGET_PROJECT",
+    "FORGET_PROJECT_ACTION",
     "FORM_UNREAD",
     "GROUP_HINT",
     "GROUP_LABEL",
@@ -1889,6 +1958,7 @@ __all__ = [
     "INDEX_EVERY",
     "INDEX_NOW",
     "INDEX_PREAMBLE",
+    "INDEX_PROJECT",
     "INDEX_STATES",
     "INDEX_TIP",
     "INDEX_WHICH_LABEL",
@@ -1942,6 +2012,10 @@ __all__ = [
     "MOVE_GROUP_LABEL",
     "NEEDS_INDEXING",
     "NEVER_INDEXED",
+    "NEW_PROJECT",
+    "NEW_PROJECT_ACTION",
+    "NEW_PROJECT_FOLDER",
+    "NEW_PROJECT_PREAMBLE",
     "NOTE_TEXT_LABEL",
     "NOTHING_FOUND",
     "NOTHING_HELD",
@@ -1950,9 +2024,12 @@ __all__ = [
     "NOTHING_TO_ADD",
     "NOTHING_TO_INDEX",
     "NOTHING_TO_REMEMBER",
+    "NOTHING_TO_RESET",
     "NOTHING_TO_SHOW",
+    "NOTHING_TO_SYNC",
     "NOT_A_FIELD",
     "NOT_FOUND_HEADING",
+    "NOT_INSTALLED_HERE",
     "NOT_SEARCHABLE_YET",
     "NO_CHANGES",
     "NO_CONTEXT",
@@ -1973,6 +2050,7 @@ __all__ = [
     "OUTLINE_HEADING",
     "PACKS_HEADING",
     "PACK_ACTION",
+    "PACK_OWN_PAGE",
     "PACK_PATH_LABEL",
     "PACK_PREAMBLE",
     "PACK_TIP",
@@ -2003,6 +2081,9 @@ __all__ = [
     "PROBLEM_HEADING",
     "PROGRESS_LABEL",
     "PROJECT_LABEL",
+    "PROJECT_MISSING",
+    "PROJECT_PACKS",
+    "PROJECT_PACKS_ACTION",
     "PROJECT_UNNAMED",
     "PUT_BACK",
     "QUIT",
@@ -2020,8 +2101,12 @@ __all__ = [
     "REMEMBER_PREAMBLE",
     "REMEMBER_TIP",
     "REMOVE_DOCUMENT_ACTION",
+    "REMOVE_UNDECLARED",
     "REMOVE_VERSION_ACTION",
     "REQUIRED",
+    "RESET_INDEX_ITEM",
+    "RESET_PROJECT",
+    "RESET_PROJECT_ACTION",
     "RESIZE_LABELS",
     "RESULTS_HEADING",
     "RETURNED_HEADING",
@@ -2060,13 +2145,19 @@ __all__ = [
     "SUPPLY_PREAMBLE",
     "SYNC_CONTEXT_ACTION",
     "SYNC_CORPUS_ACTION",
+    "SYNC_LABELS",
     "SYNC_PREAMBLE",
+    "SYNC_PROJECT",
+    "SYNC_PROJECT_ACTION",
     "SYNC_TIP",
     "TARGET_LABEL",
     "THEME_CHOICES",
     "TITLE_HINT",
     "TITLE_LABEL",
     "UNDO",
+    "UNINSTALLED_STILL_HELD",
+    "UNINSTALL_PACK",
+    "UNINSTALL_PACK_ACTION",
     "UPLOAD_CLEAR",
     "UPLOAD_FILES",
     "UPLOAD_FOLDER",
@@ -2137,9 +2228,11 @@ __all__ = [
     "searchable_summary",
     "setting_tip",
     "shortened_authors",
+    "syncing_project",
     "time_ago",
     "tip_about",
     "to_index",
+    "undeclared_copies",
     "unknown_collection",
     "unknown_mode",
     "unknown_order",
@@ -2200,6 +2293,95 @@ def unknown_collection(asked: str) -> str:
     return (
         f"'{asked}' is not a collection. The collections are "
         f"{joined(COLLECTION_NAMES)}."
+    )
+
+
+def uninstalling_pack(name: str, pack_id: str) -> str:
+    """What uninstalling a pack does, said before it is done."""
+    return (
+        f"{name} ({pack_id}) is taken out of this machine's store. The papers, "
+        "pages and notes it brought stay in the corpus until you run Sync, "
+        "which removes those no other installed pack lists."
+    )
+
+
+def forgetting_project(name: str, bundle: str, *, present: bool = True) -> str:
+    """What forgetting a project does, said before it is done."""
+    if not present:
+        return (
+            f"kennis stops listing {name}. Its context folder, {bundle}, is "
+            "not there any more, so nothing else changes. If the folder comes "
+            "back, kennis lists it again the next time a kennis command runs "
+            "there."
+        )
+    return (
+        f"kennis stops listing {name}. Its files stay where they are, in "
+        f"{bundle}, and nothing in them is changed. kennis lists it again the "
+        "next time a kennis command runs in that folder."
+    )
+
+
+def deleting_project(name: str, bundle: str, files: str) -> str:
+    """What deleting a project's context does, said before it is done."""
+    return (
+        f"kennis deletes {bundle}, with its {files} and its index, and stops "
+        f"listing {name}. This cannot be undone: kennis keeps no history of "
+        "it, so only what you committed to the project's repository can be "
+        "brought back, with git. The rest of the project is not touched."
+    )
+
+
+def bundle_index_model(kind: str | None, name: str | None) -> str:
+    """Which model a project's index was built with, as the command line
+    says it after `kennis context index`."""
+    if kind:
+        return f"Built with {kind} {name}."
+    return "Built for lexical search only, which is what a bundle is indexed with."
+
+
+def no_such_folder(given: str) -> str:
+    """A project folder that is not there, quoted back as `no_such_pack`
+    quotes a path."""
+    if not given:
+        return "Enter the project's folder."
+    return f"No folder at '{given}'. Check the path."
+
+
+def project_packs_preamble(name: str) -> str:
+    """What choosing a project's packs does."""
+    return (
+        f"{name} holds a copy of the context of each pack checked here, made "
+        "when you sync it next. The choice is written to the project's "
+        "bundle.json, so it is committed with the project and shared by "
+        "anyone who clones it."
+    )
+
+
+def syncing_project(name: str, bundle: str) -> str:
+    """What a sync does, said before it is done (#624)."""
+    return (
+        f"kennis copies the context of the packs {name} uses into {bundle}, "
+        "as kennis context sync does. A file you own is never touched, and "
+        "kennis does not commit."
+    )
+
+
+def undeclared_copies(count: int) -> str:
+    """Copies of packs the project no longer declares, which a sync keeps
+    unless asked."""
+    return (
+        f"{count_of(count, 'copy', 'copies')} of packs this project no longer "
+        f"uses {'stays' if count == 1 else 'stay'} unless you remove "
+        f"{'it' if count == 1 else 'them'}:"
+    )
+
+
+def resetting_project(name: str, bundle: str) -> str:
+    """What a reset does, said before it is done."""
+    return (
+        f"kennis removes these from {bundle}, as kennis context reset does. "
+        f"Your own files in {name}'s context are kept. kennis keeps no history "
+        "of the bundle, so only what you committed can be brought back, with git."
     )
 
 

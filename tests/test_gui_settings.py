@@ -38,6 +38,8 @@ EXPECTED_PREFERENCES = {
     # Brian, 2026-10-12: the text fits the pane unless asked otherwise;
     # the reading measure the window had until then is the last choice.
     "width": (("pane", "wide", "reading"), "reading"),
+    # Brian, 2026-11-04: a page's folders and regions start closed.
+    "folders": (("closed", "open"), "closed"),
     "strength": (("bars", "words"), "bars"),
     "labels": (("icons", "words", "both"), "icons"),
     "scale": (("viridis", "cividis", "plasma", "magma", "greys"), "viridis"),

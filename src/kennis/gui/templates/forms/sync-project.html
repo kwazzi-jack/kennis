@@ -1,0 +1,35 @@
+{# What a sync of this project's context would do, from the sync's own plan
+   (#624): the files it would write and update, the copies it leaves, and
+   the copies of packs no longer declared, which it removes only when the
+   box is ticked. The answer is the task's page. #}
+<p>{{ syncing }}</p>
+{% if plan.written or plan.updated %}
+<ul class="checks">
+  {% for address in plan.written %}<li class="check"><code>{{ address }}</code> {{ sync_labels.written }}</li>{% endfor %}
+  {% for address in plan.updated %}<li class="check"><code>{{ address }}</code> {{ sync_labels.updated }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if plan.edited %}
+<p class="role-warning">{{ edited_copies }}</p>
+<ul class="checks">
+  {% for address in plan.edited %}<li class="check"><code>{{ address }}</code></li>{% endfor %}
+</ul>
+{% endif %}
+{% if missing %}<p class="role-warning">{{ missing }}</p>{% endif %}
+{% if nothing_to_do %}<p class="role-muted">{{ nothing_to_sync }}</p>{% endif %}
+<form class="sync-project" action="/projects/sync" method="post">
+  <input type="hidden" name="project" value="{{ project }}">
+  {% if plan.undeclared %}
+  <p>{{ undeclared }}</p>
+  <ul class="checks">
+    {% for address in plan.undeclared %}<li class="check"><code>{{ address }}</code></li>{% endfor %}
+  </ul>
+  <ul class="checks">
+    <li class="check"><label><input type="checkbox" name="remove_undeclared" value="on"> {{ remove_undeclared }}</label></li>
+  </ul>
+  {% endif %}
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ icon("refresh-cw") }}{{ sync_project_action }}</button>
+  </div>
+</form>

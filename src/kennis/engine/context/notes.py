@@ -28,7 +28,11 @@ from pathlib import Path
 import yaml
 
 from kennis.engine.atomic import replace_file
-from kennis.engine.context.bundle import INDEX_DIRNAME, LANDING_FILENAME
+from kennis.engine.context.bundle import (
+    INDEX_DIRNAME,
+    LANDING_FILENAME,
+    indexes_without_frontmatter,
+)
 from kennis.engine.context.projects import note_project
 from kennis.engine.corpus.intake import sha256_of
 from kennis.engine.corpus.layout import title_filename, unique_filename
@@ -119,6 +123,30 @@ def bundle_documents(bundle: Path) -> list[Path]:
         if path.name != LANDING_FILENAME
         and not any(part.startswith(".") for part in path.relative_to(bundle).parts)
     )
+
+
+def indexed_documents(bundle: Path) -> list[Path]:
+    """The bundle documents its index is built from.
+
+    `bundle_documents` less every file without a frontmatter header, unless
+    the project's `bundle.json` asks for those too (#624). A header that is
+    empty, is not a mapping or is not YAML counts as none: nothing in it
+    describes the file.
+    """
+    documents = bundle_documents(bundle)
+    if indexes_without_frontmatter(bundle):
+        return documents
+    return [path for path in documents if has_frontmatter(path)]
+
+
+def has_frontmatter(path: Path) -> bool:
+    """Whether the file opens with a frontmatter header that reads as a
+    non-empty mapping."""
+    try:
+        header, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return False
+    return bool(header)
 
 
 def bundle_files(bundle: Path) -> list[Path]:
@@ -234,4 +262,11 @@ def _document(title: str, body: str, digest: str) -> str:
     )
 
 
-__all__ = ["BundleNote", "bundle_documents", "bundle_files", "remember_in_bundle"]
+__all__ = [
+    "BundleNote",
+    "bundle_documents",
+    "bundle_files",
+    "has_frontmatter",
+    "indexed_documents",
+    "remember_in_bundle",
+]

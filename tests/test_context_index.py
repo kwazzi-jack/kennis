@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from kennis.engine.context.bundle import index_root_for, init_bundle
+from kennis.engine.context.bundle import MANIFEST_FILENAME, index_root_for, init_bundle
 from kennis.engine.context.index import BundleLoader, index_bundle, load_bundle_index
 from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.errors import NothingToIndex
@@ -36,11 +36,24 @@ def bundle(tmp_path: Path) -> Path:
     return init_bundle(tmp_path / "project").path
 
 
-def a_file(bundle: Path, relative: str, text: str) -> Path:
+def a_file(bundle: Path, relative: str, text: str, *, headed: bool = True) -> Path:
+    """A file in the bundle, under a header unless `headed` is False or
+    the text brings its own: by default a file without one is not indexed
+    (#624)."""
     path = bundle / relative
     path.parent.mkdir(parents=True, exist_ok=True)
+    if headed and not text.startswith("---"):
+        text = f"---\ntitle: {path.stem}\n---\n{text}"
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def indexing_every_file(bundle: Path) -> None:
+    """The project's switch for indexing files without frontmatter."""
+    manifest_path = bundle / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["index_without_frontmatter"] = True
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -98,10 +111,18 @@ def test_frontmatter_becomes_metadata(bundle: Path):
     assert document.text.strip() == "Names are lowercase."
 
 
+def test_a_file_with_no_frontmatter_is_not_a_document_by_default(bundle: Path):
+    a_file(bundle, "jotting.md", "# Jotting\n\nNames are lowercase.\n", headed=False)
+
+    assert BundleLoader(bundle).documents() == []
+
+
 def test_a_file_with_no_frontmatter_is_a_document_and_not_a_complaint(bundle: Path):
-    """A user writes a file by hand without the block. That is a file with
-    no metadata, not a broken file, and the whole of it is its text."""
-    a_file(bundle, "jotting.md", "# Jotting\n\nNames are lowercase.\n")
+    """In a project that indexes every file, a file written by hand without
+    the block is a file with no metadata, not a broken file, and the whole
+    of it is its text."""
+    indexing_every_file(bundle)
+    a_file(bundle, "jotting.md", "# Jotting\n\nNames are lowercase.\n", headed=False)
     events = Recorder()
 
     documents = BundleLoader(bundle).documents(events=events)
@@ -114,9 +135,10 @@ def test_a_file_with_no_frontmatter_is_a_document_and_not_a_complaint(bundle: Pa
 def test_frontmatter_that_does_not_parse_is_reported_and_the_body_kept(bundle: Path):
     """Three ways to have a block that yields nothing - unterminated, not a
     mapping, and not YAML at all - and one statement covers them: something
-    here looks like frontmatter and none of it was read. The file is still
-    indexed, because dropping a user's file over its header would lose the
-    text they wanted found."""
+    here looks like frontmatter and none of it was read. In a project that
+    indexes every file it is still indexed, because dropping a user's file
+    over its header would lose the text they wanted found."""
+    indexing_every_file(bundle)
     a_file(bundle, "broken.md", "---\ntitle: [unclosed\n---\n\nNames are lowercase.\n")
     events = Recorder()
 

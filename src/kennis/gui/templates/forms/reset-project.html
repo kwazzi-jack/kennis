@@ -1,0 +1,19 @@
+{# What a reset removes, from the reset's own rule; nothing to remove
+   offers no button. The answer is the task's page. #}
+{% if owned or has_index %}
+<p>{{ resetting }}</p>
+<ul class="checks">
+  {% for path in owned %}<li class="check"><code>{{ path }}</code></li>{% endfor %}
+  {% if has_index %}<li class="check">{{ reset_index_item }}</li>{% endif %}
+</ul>
+<form class="reset" action="/projects/reset" method="post">
+  <input type="hidden" name="project" value="{{ project }}">
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary danger">{{ icon("trash-2") }}{{ reset_project_action }}</button>
+  </div>
+</form>
+{% else %}
+<p class="role-muted">{{ nothing_to_reset }}</p>
+<div class="form-foot"><a class="button" href="/" data-close>{{ cancel_label }}</a></div>
+{% endif %}

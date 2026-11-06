@@ -64,6 +64,9 @@ class Pane:
     # window belongs to no one project (14g, #512).
     projects: tuple[str, ...]
     readable: bool = True
+    # Every listed project whose bundle is not there, so it can be forgotten
+    # from the window; never offered to search or to write into.
+    missing: tuple[str, ...] = ()
     packs: int = 0
     last_change: HistoryEntry | None = None
 
@@ -109,13 +112,14 @@ def pane_now(request: Request) -> Pane:
     """The pane as it is at this request."""
     del request
     projects = present_projects()
+    missing = missing_projects()
     try:
         context = existing_corpus()
         held = holdings(context)
         packs = len(installed_packs(context))
         newest = last_change(context)
     except KennisError:
-        return Pane(collections=(), projects=projects, readable=False)
+        return Pane(collections=(), projects=projects, readable=False, missing=missing)
     return Pane(
         collections=tuple(
             PaneCollection(
@@ -127,6 +131,7 @@ def pane_now(request: Request) -> Pane:
             for holding in held
         ),
         projects=projects,
+        missing=missing,
         packs=packs,
         last_change=newest,
     )
@@ -140,6 +145,17 @@ def present_projects() -> tuple[str, ...]:
     """
     try:
         return tuple(project.name for project in known_projects() if project.present)
+    except ProjectListUnreadable:
+        return ()
+
+
+def missing_projects() -> tuple[str, ...]:
+    """The name of every known project whose bundle is not where the list
+    says: a folder moved, deleted or on a disk not mounted."""
+    try:
+        return tuple(
+            project.name for project in known_projects() if not project.present
+        )
     except ProjectListUnreadable:
         return ()
 
@@ -169,6 +185,7 @@ __all__ = [
     "PaneCollection",
     "PaneState",
     "bundle_folders",
+    "missing_projects",
     "pane_now",
     "present_projects",
     "state_of",

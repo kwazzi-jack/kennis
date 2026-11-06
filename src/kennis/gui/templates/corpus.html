@@ -1,7 +1,10 @@
 {% extends "base.html" %}
+{% from "outline.html" import fold, pack_card with context %}
 {% block title %}kennis - {{ corpus_heading }}{% endblock %}
 {% block main %}
 <h1>{{ corpus_heading }}</h1>
+<details class="region" id="holdings"{{ fold() }}>
+<summary class="region-head">{{ icon("chevron-right") }}<h2>{{ collections_heading }}</h2><span class="count">{{ documents_count }}</span></summary>
 {% if empty %}<p class="role-muted">{{ nothing_held }}</p>{% endif %}
 <table class="holdings">
   <thead><tr>{% for column in holdings_columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
@@ -15,11 +18,12 @@
   {% endfor %}
   </tbody>
 </table>
+</details>
 
-<h2 id="packs">{{ packs_heading }}</h2>
-{% if packs %}
-<ul class="packs">{% for line in packs %}<li>{{ line }}</li>{% endfor %}</ul>
-{% else %}
+<details class="region" id="packs"{{ fold() }}>
+<summary class="region-head">{{ icon("chevron-right") }}<h2>{{ packs_heading }}</h2><span class="count">{{ packs_count }}</span></summary>
+{% for pack in packs %}{{ pack_card(pack) }}{% else %}
 <p class="role-muted">{{ no_packs }}</p>
-{% endif %}
+{% endfor %}
+</details>
 {% endblock %}

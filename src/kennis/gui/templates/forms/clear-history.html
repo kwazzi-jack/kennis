@@ -1,0 +1,9 @@
+{# Clearing recent searches, asked first: they are the person's own words
+   and kennis keeps no other copy. #}
+<p>{{ clear_history_asked }}</p>
+<form class="clear-history" action="/history/clear" method="post">
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary danger">{{ icon("trash-2") }}{{ clear_history_action }}</button>
+  </div>
+</form>

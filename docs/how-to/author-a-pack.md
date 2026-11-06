@@ -462,11 +462,13 @@ declares. There is one per scope:
 | command | scope | what it applies |
 |---|---|---|
 | `kennis corpus sync` | machine-global | the pack's notes, as corpus documents |
-| `kennis context sync` | the project you are standing in | the pack's context content |
+| `kennis context sync` | the project you are standing in | the context content of each pack that project declares |
 
-See [Apply a pack](project-context.md#apply-a-pack) for the rules both
-follow - they are the same rules, and neither will overwrite something you
-own or something you have edited.
+A project's context sync copies only the packs the project declares
+(`kennis context packs <id>`), and only when it is run in that project, so
+a pack's release reaches a project's repository when that project's owner
+asks. See [Use a pack](project-context.md#use-a-pack) for its rules;
+neither sync overwrites something you own or something you have edited.
 
 Calling it repeatedly is cheap. A second `add` of an unchanged pack reports
 `Unchanged` and rewrites nothing, which is why a provider can call it
@@ -601,6 +603,20 @@ holds for it. The id is the column you copy out of and hand to
 `kennis pack uninstall`.
 
 ```
+kennis pack show [PACK_ID]...
+```
+
+What each pack contains, kind by kind, each item under the groups it is
+filed in: its papers, each by its citekey over its reference in the style
+`literature.citation_style` names (the one `kennis cite` uses); its
+documentation projects, with the address each is crawled from or how many
+pages the pack ships; its notes and its context files, at the addresses
+they land at. With no id, every installed pack. In the window, each pack is
+a card on the Packs page and on the Corpus page that opens on the same tree,
+and has a page of its own at `/packs/<id>`. Folders and regions start closed;
+the Folders setting on the settings page draws them open.
+
+```
 kennis pack status
 ```
 
@@ -659,6 +675,12 @@ state file.
 stay where they are, and so does this pack's content in any project you have
 checked out - kennis keeps no registry of your projects, so it cannot reach
 into them. Each of those converges when it is next synchronised.
+
+In the window, each pack's card on the Packs page has an Uninstall button,
+which asks first and says the same. The uninstall runs as a task in the
+strip, like an install, and its outcome has a Sync button: pressing it takes
+the pack's documents out of the corpus. Nothing syncs unless you press it,
+just as an install leaves the sync that brings documents in to you.
 
 Removing a pack that was never installed fails rather than reporting
 success, because the realistic cause is a mistyped id and "removed" would

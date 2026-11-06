@@ -142,10 +142,10 @@ def test_a_window_already_open_shows_the_passage_and_no_tab_opens(
     rather than opening another each time."""
     from kennis.client import api
 
-    asked: list[tuple[str, str, int | None]] = []
+    asked: list[tuple[str, str | None]] = []
 
-    def shown(root: Path, collection: str, document_id: str, chunk: int | None) -> bool:
-        asked.append((collection, document_id, chunk))
+    def shown(root: Path, link: str, collection: str | None) -> bool:
+        asked.append((link, collection))
         return True
 
     monkeypatch.setattr(api, "show_in_window", shown)
@@ -153,7 +153,7 @@ def test_a_window_already_open_shows_the_passage_and_no_tab_opens(
     result = CliRunner().invoke(main, ["open", f"kennis://open/{note}/0"])
 
     assert result.exit_code == 0, result.output
-    assert asked == [("notes", note, 0)]
+    assert asked == [(f"kennis://open/{note}/0", "notes")]
     assert opened == []
     assert "open window" in result.output
 

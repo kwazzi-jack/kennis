@@ -22,9 +22,7 @@ from typing import TYPE_CHECKING, Final, cast, get_args
 from kennis.context import Context, existing_corpus, resolve_context
 from kennis.engine.context.groups import (
     CONTEXT_COLLECTION,
-    PACK_GROUP_PREFIX,
     is_bundle_group,
-    pack_group,
     project_group,
 )
 from kennis.engine.context.projects import project_names
@@ -83,7 +81,7 @@ def search_scope(
 
     context = context_for(collection)
     if collection == CONTEXT_COLLECTION:
-        # The bundle and each pack it declares, one after the other: an
+        # This project's bundle and each other project asked for: an
         # agent's lines carry each hit's handle, which says which it is.
         found = sweep(
             question,
@@ -231,9 +229,6 @@ class Skipped:
 
     name: str
     resolution: str
-    # False for a pack the project declares and this machine has not
-    # installed, which no index would change.
-    installed: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,20 +388,14 @@ def _sweep_context(
     mode: str | None,
 ) -> None:
     """The context scope: the project the search was run from, as
-    `context`; each other project asked for, as `context:<name>`; and each
-    pack any of them declares, once, as `pack:<id>` (14g).
+    `context`, and each other project asked for, as `context:<name>`.
 
-    **A pack's file is left out only when every searched project that
-    declares the pack has its own copy**, so one project's version does
-    not hide the pack's text from another project in the same search.
+    A declared pack's context is in each project's bundle as copies its
+    sync wrote (#624), so it is searched with the project's own files and
+    has no group of its own.
     """
     from kennis.engine.context.bundle import BUNDLE_DIRNAME
-    from kennis.engine.context.notes import bundle_documents
-    from kennis.engine.context.packs import (
-        load_pack_context_index,
-        packs_of,
-        replaced_in,
-    )
+    from kennis.engine.context.notes import indexed_documents
 
     homes = [home] if home is not None else []
     resolved_home = home.resolve() if home is not None else None
@@ -414,20 +403,9 @@ def _sweep_context(
         dict.fromkeys(bundle for bundle in others if bundle.resolve() != resolved_home)
     )
     names = project_names(elsewhere)
-    declarations = {
-        bundle: packs_of(bundle, context.corpus_root) for bundle in homes + elsewhere
-    }
-    packs = {
-        pack.state.pack_id: pack
-        for found in declarations.values()
-        for pack in found.installed
-    }
-    # The project's own missing index is fatal only for a scope the
-    # reader named and with nothing else in it to search: a project that
-    # declares packs is still searched for their advice.
     if home is None and not elsewhere and named:
         raise ContextNotFound
-    lone = named and not packs and not elsewhere
+    lone = named and not elsewhere
     for bundle in homes + elsewhere:
         mine = bundle is home
         group = CONTEXT_COLLECTION if mine else project_group(names[bundle])
@@ -443,7 +421,7 @@ def _sweep_context(
             else:
                 unsearched = (
                     Skipped(group, f"kennis context index --project {names[bundle]}")
-                    if bundle_documents(bundle)
+                    if indexed_documents(bundle)
                     else None
                 )
             if unsearched is not None:
@@ -460,39 +438,16 @@ def _sweep_context(
             choice=_NO_VERSIONS,
         )
         # Where the file is, as the reader is told: this project's from
-        # its own root, another project's whole.
+        # its own root, another project's whole. The name is asked after
+        # the load, which records the project, so a link names it as the
+        # list does (#623).
         place = BUNDLE_DIRNAME if mine else str(bundle)
-        into.add(group, [replace(hit, place=place) for hit in hits], fell_back)
-    for pack_id in sorted(packs):
-        group = pack_group(pack_id)
-        declarers = [
-            bundle
-            for bundle, found in declarations.items()
-            if pack_id in {pack.state.pack_id for pack in found.installed}
-        ]
-        replaced = frozenset.intersection(
-            *(replaced_in(bundle) for bundle in declarers)
-        )
+        project = project_names([bundle])[bundle] if mine else names[bundle]
         into.add(
             group,
-            *_hits_in(
-                context,
-                load_pack_context_index(context.corpus_root, packs[pack_id]),
-                group,
-                question,
-                wanted=wanted,
-                filters=_without_replaced(filters, group, replaced),
-                mode=mode,
-                choice=_NO_VERSIONS,
-            ),
+            [replace(hit, place=place, project=project) for hit in hits],
+            fell_back,
         )
-    missing = sorted(
-        {pack for found in declarations.values() for pack in found.missing} - set(packs)
-    )
-    into.skipped.extend(
-        Skipped(pack_group(pack), "kennis pack list", installed=False)
-        for pack in missing
-    )
 
 
 def _hits_in(
@@ -511,14 +466,13 @@ def _hits_in(
     from kennis.engine.rag.embedding import resolve_host
     from kennis.engine.rag.search import search
 
-    # Per group, not once for the sweep. A bundle's method - and a pack's
-    # context, which is advice of the same kind - is its own setting with
-    # its own default, because a dense bundle index costs what
+    # Per group, not once for the sweep. A bundle's method is its own
+    # setting with its own default, because a dense bundle index costs what
     # `retrieval.context_method` exists to avoid. An explicit mode
     # overrides both.
     asked = mode or (
         context.settings.retrieval.context_method
-        if _is_context_group(name)
+        if is_bundle_group(name)
         else context.settings.retrieval.corpus_method
     )
     running = _runnable(index, asked)
@@ -589,25 +543,6 @@ def with_unrelated_reference(
     if reference is None:
         return hits
     return [replace(hit, unrelated=reference) for hit in hits]
-
-
-def _is_context_group(name: str) -> bool:
-    return is_bundle_group(name) or name.startswith(PACK_GROUP_PREFIX)
-
-
-def _without_replaced(
-    filters: list[Filter] | None, group: str, replaced: frozenset[str]
-) -> list[Filter] | None:
-    """`filters`, leaving out the pack's files this project has its own
-    copy of; the copy is found in the project's own group instead."""
-    addresses = sorted(
-        reference.removeprefix(f"{group}/")
-        for reference in replaced
-        if reference.startswith(f"{group}/")
-    )
-    if not addresses:
-        return filters
-    return [*(filters or []), Filter(field="address", op="not_in", value=addresses)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -767,12 +702,12 @@ def _why_skipped(
     that command would leave the same warning on the next search.
     Nobody believes a store they have never filled was searched.
     """
-    from kennis.engine.context.notes import bundle_documents
+    from kennis.engine.context.notes import indexed_documents
 
     if name == CONTEXT_COLLECTION:
-        # A bundle with no notes yet, which a project that only declares
-        # packs is, holds nothing an index would add.
-        if bundle is None or not bundle_documents(bundle):
+        # A bundle with nothing to index yet holds nothing an index would
+        # add.
+        if bundle is None or not indexed_documents(bundle):
             return None
         return Skipped(name, "kennis context index")
     if not corpus_exists:

@@ -3,8 +3,8 @@
 The command line and an agent search the project they stand in, and every
 known project when asked; the window searches every known project and does
 not depend on where it was started. Each project's notes are their own
-group, because each index has its own scale; a pack declared by several
-projects is searched once.
+group, because each index has its own scale; a pack's context is each
+project's own copy (#624), found in that project's group.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from kennis.engine.context.bundle import declare_packs, init_bundle
 from kennis.engine.context.index import index_bundle
 from kennis.engine.context.notes import remember_in_bundle
 from kennis.engine.context.projects import ProjectNotKnown
+from kennis.engine.context.sync import sync_bundle
 from kennis.engine.pack.update import update_pack
 from kennis.gui.app import build_app
 from kennis.mcp.tools.search import search_context
@@ -134,29 +135,23 @@ def test_a_hit_in_another_project_says_where_the_file_is(two: Path):
     assert f"path={two}/" in hit_detail(hit, style="none", best=1.0)
 
 
-def test_a_pack_two_projects_declare_is_searched_once(two: Path, tmp_path: Path):
+def test_a_pack_two_projects_declare_is_found_in_each_project_s_copy(
+    two: Path, tmp_path: Path, corpus: Path
+):
+    """Each project holds its own copy (#624), so the pack's passage comes
+    back once per project that synced it, in that project's group."""
     here = Path.cwd() / ".context"
     installed(tmp_path)
-    declare_packs(here, ["alpha"])
-    declare_packs(two, ["alpha"])
+    for bundle in (here, two):
+        declare_packs(bundle, ["alpha"])
+        sync_bundle(bundle, corpus)
+        index_bundle(bundle)
 
     groups = groups_of(None, [here, two])
 
-    assert groups["pack:alpha"] == ["solving.md"]
-
-
-def test_one_project_s_copy_does_not_hide_the_pack_from_another(
-    two: Path, tmp_path: Path
-):
-    here = Path.cwd() / ".context"
-    installed(tmp_path)
-    declare_packs(here, ["alpha"])
-    declare_packs(two, ["alpha"])
-    answered = CliRunner().invoke(main, ["context", "copy", "alpha/solving.md"])
-    assert answered.exit_code == 0, answered.output
-
-    assert "pack:alpha" not in groups_of(here, [])
-    assert groups_of(here, [two])["pack:alpha"] == ["solving.md"]
+    assert "solving.md" in groups["context:pipelines"]
+    assert "solving.md" in groups["context:thesis"]
+    assert not any(name.startswith("pack:") for name in groups)
 
 
 def test_an_unindexed_other_project_names_the_command_for_it(two: Path, tmp_path: Path):
@@ -400,15 +395,14 @@ def test_a_plain_context_target_is_refused_even_beside_a_project_called_context(
     )
 
 
-def test_more_from_a_project_or_a_pack_asks_for_a_scope_the_window_has(
+def test_more_from_a_project_asks_for_a_scope_the_window_has(
     window: TestClient,
 ):
-    """`scope=pack:alpha` or `scope=context:thesis` would be refused as an
-    unknown scope; both are the context scope, a project's narrowed."""
+    """`scope=context:thesis` would be refused as an unknown scope; it is
+    the context scope, narrowed to the project."""
     from kennis.gui.routes.search import scope_query
 
     assert scope_query("context:old/thesis") == "scope=context&project=old/thesis"
-    assert scope_query("pack:alpha") == "scope=context"
     assert scope_query("notes") == "scope=notes"
     answer = window.get(f"/hits?q=gains&{scope_query('context:thesis')}")
     assert group_names(answer.text) == ["context thesis"]

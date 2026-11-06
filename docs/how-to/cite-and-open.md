@@ -7,9 +7,32 @@ kennis://open/k7f2a9c1x0/14
 ```
 
 `k7f2a9c1x0` is the document's identifier and `14` the chunk, the same pair
-a search hit prints as `id=k7f2a9c1x0 chunk=14`. The link says nothing about
-where kennis is running, so it still works after the service has stopped and
+a search hit prints as `id=k7f2a9c1x0 chunk=14`, and `kennis search` prints
+each hit's link on the line under that. The link says nothing about where
+kennis is running, so it still works after the service has stopped and
 started again on another port.
+
+On a terminal the printed link is also a hyperlink to itself, drawn
+underlined: the text you see is the link, so it can be copied as it is, and
+a terminal that supports hyperlinks opens it on a click (most need Ctrl or
+Cmd held, and some ask first). Piped into a file, it is the text alone.
+
+### A passage of a project's context
+
+A file in a project's `.context/` has no identifier, so its link names the
+project and the file:
+
+```text
+kennis://context/tron/2?path=decisions%2Fimaging.md
+```
+
+`tron` is this machine's name for the project (`kennis context list`), the
+path is the file's place in its `.context/`, and `2` the chunk. A search
+prints such a hit as `path=.context/decisions/imaging.md chunk=2`, with the
+link under it. The link opens wherever the project is known by that name; a
+renamed file, or a project known by another name on another machine, breaks
+it. A pack's context is a copy in the project (see
+[Use a pack](project-context.md#use-a-pack)), so it is linked the same way.
 
 ## Cite a passage
 
@@ -27,8 +50,11 @@ Cited (Smirnov, Tasse and Other, 2011, sec. 2.1)
 ```
 
 Several passages can be cited at once, each as `id=... chunk=...`, as a
-`kennis://` link, or as any handle `kennis read` takes (a title, a citekey, a
-DOI), which cites the whole document.
+project's `path=... chunk=...`, as a `kennis://` link, or as any handle
+`kennis read` takes (a title, a citekey, a DOI), which cites the whole
+document. A project's passage is cited as a note is, by its title in quotes,
+with the project and file as its reference; a `path=` that starts at
+`.context/` is the project you run `kennis cite` in.
 
 An agent does the same through the MCP tool `cite`, and is told to cite
 every passage its answer relies on that way rather than writing a citation

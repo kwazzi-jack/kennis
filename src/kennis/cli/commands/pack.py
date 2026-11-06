@@ -3,7 +3,7 @@
 **Two roles, told apart by their object** (design section 9). `init`,
 `add`, `remove`, `update` and `validate` act on a `.ken.yml` at a path -
 authoring, which is what a provider does in its own release pipeline.
-`install`, `uninstall`, `list` and `status` act on the installed store -
+`install`, `uninstall`, `list`, `status` and `show` act on the installed store -
 consuming. `validate` serves both.
 """
 
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     )
     from kennis.engine.pack.update import PackUpdate
     from kennis.engine.pack.validate import PackReport
+    from kennis.render.packs import ContentsFolder
 
 # What a pack declares, as `--collection` takes it: the corpus's three and a
 # project's context. Built here rather than imported from `editing`, which
@@ -589,6 +590,69 @@ def status_command() -> None:
         _report_unreadable(listing)
     if not listing.packs and not listing.unreadable:
         display.note("no packs installed")
+
+
+@pack_group.command(name="show", cls=KennisCommand)
+@click.argument("pack_ids", nargs=-1, metavar="[PACK_ID]...")
+def show_command(pack_ids: tuple[str, ...]) -> None:
+    """What each installed pack contains: its papers, documentation
+    projects, notes and context files.
+
+    With no PACK_ID, every installed pack. A PACK_ID that is not installed
+    is refused before anything is printed, naming `kennis pack list`.
+    """
+    from kennis.engine.errors import PackNotInstalled
+    from kennis.engine.pack.installed import contents_of
+    from kennis.render.citations import style_path
+    from kennis.render.packs import (
+        contents_sections,
+        describe_installed,
+        describe_unread_contents,
+    )
+
+    context = existing_corpus()
+    listing = api.pack_listing(context.corpus_root)
+    held = {one.state.pack_id: one for one in listing.packs}
+    missing = [pack_id for pack_id in pack_ids if pack_id not in held]
+    if missing:
+        raise PackNotInstalled(f"no pack called '{missing[0]}' is installed")
+    chosen = [held[pack_id] for pack_id in pack_ids] if pack_ids else listing.packs
+    if not chosen:
+        display.note("no packs installed")
+        return
+    style = style_path(context.settings.literature.citation_style)
+    for position, installed in enumerate(chosen):
+        if position:
+            display.plain("")
+        display.operation(installed.state.pack_id, describe_installed(installed))
+        declaration = installed.declaration
+        if declaration is not None:
+            display.muted_block(declaration.pack.name, indent=2)
+            if declaration.pack.description:
+                display.muted_block(declaration.pack.description, indent=2)
+        contents = contents_of(installed)
+        if contents is None:
+            display.detail("!", describe_unread_contents())
+            continue
+        for section in contents_sections(contents, style):
+            display.plain("")
+            display.heading(section.heading, indent="  ")
+            # A reference is read as a paragraph; an address or a file
+            # beside its name reads as a row.
+            beside = section.kind != "literature"
+            _show_folder(section.top, depth=1, beside=beside)
+
+
+def _show_folder(folder: ContentsFolder, *, depth: int, beside: bool) -> None:
+    """A folder's own items, then each folder inside it one step in."""
+    width = max((len(item.name) for item in folder.items), default=0)
+    for item in folder.items:
+        display.tree_item(
+            item.name, item.detail, depth, beside=beside, name_width=width
+        )
+    for inner in folder.folders:
+        display.tree_group(inner.name, depth)
+        _show_folder(inner, depth=depth + 1, beside=beside)
 
 
 def _report_damage(installed: InstalledPack) -> None:

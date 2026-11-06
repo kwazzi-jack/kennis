@@ -1,0 +1,11 @@
+{# Deleting a project's context, said before anything goes, because
+   kennis cannot undo it. The answer is the task's page, and every task's
+   outcome draws the pane again, so the project leaves it. #}
+<p>{{ deleting }}</p>
+<form class="delete" action="/projects/delete" method="post">
+  <input type="hidden" name="project" value="{{ project }}">
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary danger">{{ icon("trash-2") }}{{ delete_project_action }}</button>
+  </div>
+</form>

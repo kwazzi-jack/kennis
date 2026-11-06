@@ -45,7 +45,14 @@ from kennis.engine.errors import KennisError, ServiceBusy
 from kennis.engine.events import EventSink
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui.presence import Presence
-from kennis.links import is_a_document_id, window_path
+from kennis.links import (
+    LinkTarget,
+    NotAKennisLink,
+    is_a_document_id,
+    target_of,
+    window_path,
+    window_path_of,
+)
 from kennis.protocol.wire import API_VERSION, Json, WireError, dump, dump_error, load
 from kennis.service.calls import OPERATIONS, SERVICE_PARAMETERS, Operation
 from kennis.service.jobs import Job, Jobs
@@ -92,14 +99,15 @@ def stop(request: Request) -> JSONResponse:
 
 
 class ShowRequest(BaseModel):
-    """A passage `kennis open` would show: checked here, because its parts
-    are put into the path a window is sent to."""
+    """A passage `kennis open` would show, as its link names it, and the
+    collection a corpus link's document is in. Read here with the links'
+    own strict reader, because its parts are put into the path a window is
+    sent to: the service never takes a path from a client (#623)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    collection: str
-    document_id: str
-    chunk: int | None = None
+    link: str
+    collection: str | None = None
 
 
 @router.post("/show")
@@ -111,13 +119,18 @@ async def show(request: Request) -> JSONResponse:
         asked = ShowRequest.model_validate(await request.json())
     except (ValidationError, ValueError) as error:
         return _refused(WireError(str(error)), 400)
-    if (
-        asked.collection not in COLLECTION_NAMES
-        or not is_a_document_id(asked.document_id)
-        or (asked.chunk is not None and asked.chunk < 0)
-    ):
-        return _refused(WireError("not a passage of the corpus"), 400)
-    path = window_path(asked.collection, asked.document_id, asked.chunk)
+    try:
+        named = target_of(asked.link)
+    except NotAKennisLink as error:
+        return _refused(WireError(str(error)), 400)
+    if isinstance(named, LinkTarget):
+        if asked.collection not in COLLECTION_NAMES or not is_a_document_id(
+            named.document_id
+        ):
+            return _refused(WireError("not a passage of the corpus"), 400)
+        path = window_path(asked.collection, named.document_id, named.chunk)
+    else:
+        path = window_path_of(named)
     presence: Presence = request.app.state.presence
     shown = await run_in_threadpool(presence.show, path)
     return JSONResponse({"shown": shown})

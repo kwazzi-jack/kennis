@@ -48,6 +48,7 @@ from kennis.gui.routes import (
     corpus,
     documents,
     jobs,
+    projects,
     remember,
     search,
     settings,
@@ -361,6 +362,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         remember,
         add,
         jobs,
+        projects,
         settings,
         supply,
     ):

@@ -153,14 +153,51 @@
     </ul>
   </section>
   <section>
-    <h2 class="pane-head">{{ context_heading }}</h2>
-    {% if pane.projects %}
+    <h2 class="pane-head">{{ context_heading }}<a class="button pane-add" href="/projects/new" hx-get="/projects/new" hx-target="#dialog" hx-swap="innerHTML" title="{{ new_project }}" aria-label="{{ new_project }}">{{ icon("folder-plus") }}</a></h2>
+    {% if pane.projects or pane.missing %}
+    {# Each project with a row menu beside it, as a folder has: a menu in
+       the `<summary>` would be content a summary may not hold. #}
+    <ul class="tree">
     {% for project in pane.projects %}
+    {% set forget = "/projects/forget?project=" ~ (project | urlencode) %}
+    {% set delete = "/projects/delete?project=" ~ (project | urlencode) %}
+    {% set packs = "/projects/packs?project=" ~ (project | urlencode) %}
+    {% set reset = "/projects/reset?project=" ~ (project | urlencode) %}
+    {% set sync = "/projects/sync?project=" ~ (project | urlencode) %}
+    <li class="group project">
     <details hx-get="/tree/context?project={{ project | urlencode }}" hx-trigger="toggle once" hx-target="find .branch">
       <summary class="node top">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ project }}</span></summary>
       <div class="branch"></div>
     </details>
+    <details class="menu">
+      <summary class="menu-button" aria-label="{{ menu_for(project) }}">{{ icon("ellipsis") }}</summary>
+      <div class="menu-items">
+        <a class="item" href="{{ packs }}" hx-get="{{ packs }}" hx-target="#dialog" hx-swap="innerHTML">{{ project_packs }}</a>
+        <a class="item" href="{{ sync }}" hx-get="{{ sync }}" hx-target="#dialog" hx-swap="innerHTML">{{ sync_project }}</a>
+        <form class="index-project" action="/projects/index" method="post">
+          <input type="hidden" name="project" value="{{ project }}">
+          <button type="submit" class="item">{{ index_project }}</button>
+        </form>
+        <a class="item" href="{{ reset }}" hx-get="{{ reset }}" hx-target="#dialog" hx-swap="innerHTML">{{ reset_project }}</a>
+        <a class="item" href="{{ forget }}" hx-get="{{ forget }}" hx-target="#dialog" hx-swap="innerHTML">{{ forget_project }}</a>
+        <a class="item" href="{{ delete }}" hx-get="{{ delete }}" hx-target="#dialog" hx-swap="innerHTML">{{ delete_project }}</a>
+      </div>
+    </details>
+    </li>
     {% endfor %}
+    {# A project whose folder has gone: nothing to open or delete, and
+       Forget, which is the one thing left to do with it. #}
+    {% for project in pane.missing %}
+    {% set forget = "/projects/forget?project=" ~ (project | urlencode) %}
+    <li class="row project missing">
+      <div class="node top leaf missing">{{ icon("folder") }}<span class="name">{{ project }}</span><span class="count">{{ project_missing }}</span></div>
+      <details class="menu">
+        <summary class="menu-button" aria-label="{{ menu_for(project) }}">{{ icon("ellipsis") }}</summary>
+        <div class="menu-items"><a class="item" href="{{ forget }}" hx-get="{{ forget }}" hx-target="#dialog" hx-swap="innerHTML">{{ forget_project }}</a></div>
+      </details>
+    </li>
+    {% endfor %}
+    </ul>
     {% else %}
     <p class="pane-note role-muted">{{ no_context }} {{ tip("no-context", context_heading, no_context_tip) }}</p>
     {% endif %}
@@ -170,7 +207,7 @@
     <ul class="tree">
       <li><a class="node" href="/">{{ icon("history") }}<span class="name">{{ recents_heading }}</span></a></li>
       <li><a class="node" href="/activity">{{ icon("activity") }}<span class="name">{{ activity_heading }}</span></a></li>
-      <li><a class="node" href="/corpus#packs">{{ icon("package") }}<span class="name">{{ packs_heading }}</span><span class="count">{{ pane.packs }}</span></a></li>
+      <li><a class="node" href="/packs">{{ icon("package") }}<span class="name">{{ packs_heading }}</span><span class="count">{{ pane.packs }}</span></a></li>
       <li><a class="node" href="/settings">{{ icon("settings") }}<span class="name">{{ settings_heading }}</span></a></li>
     </ul>
   </section>

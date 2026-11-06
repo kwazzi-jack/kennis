@@ -758,16 +758,25 @@ def supply_a_pack_paper(
 
 
 def synchronise_bundle(
-    bundle: Path, context: Context, *, events: EventSink | None = None
+    bundle: Path,
+    context: Context,
+    *,
+    remove_undeclared: bool = False,
+    events: EventSink | None = None,
 ) -> BundleSync:
-    """Converge one project's bundle with every installed pack.
+    """Copy each pack the project declares into its bundle (#624).
 
     Neither lock nor commit. **kennis does not commit here**: the bundle
     is in the user's repository. And it takes no corpus lock because it
-    only reads the pack store, while writing into a directory no other
-    kennis process is touching.
+    only reads the pack store, while writing into a directory only this
+    bundle's lane writes to.
     """
-    return sync_bundle(bundle, context.corpus_root, events=events)
+    return sync_bundle(
+        bundle,
+        context.corpus_root,
+        remove_undeclared=remove_undeclared,
+        events=events,
+    )
 
 
 @dataclass(frozen=True, slots=True)

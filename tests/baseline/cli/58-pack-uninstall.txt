@@ -4,7 +4,8 @@ $ kennis pack uninstall provider
 Uninstalled provider
   - 1 file dropped from the store
 nothing this pack supplied has been removed: the corpus keeps its documents until the next sync, and
-each project keeps its content until it is synchronised there
+each project keeps its copies of the pack's context until it stops using the pack and removes them 
+at a sync
   hint: run `kennis corpus sync`
   hint: run `kennis context sync` in each project that has its content
 --- stderr

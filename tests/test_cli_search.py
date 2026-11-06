@@ -87,10 +87,13 @@ def hits_in(output: str, collection: str | None = None) -> int:
     set to and nothing else does. Two spellings, because a corpus hit's
     handle is `id=` plus a chunk index and a context hit's is `path=` - a
     bundle document is addressed by where it is, not by an identifier
-    kennis minted.
+    kennis minted. Not the `path=` in a context hit's `kennis://` link
+    below its handle (#623), which follows a `?`.
     """
+    import re
+
     text = output if collection is None else group_of(output, collection)
-    return text.count("id=") + text.count("path=")
+    return len(re.findall(r"(?<![?&\w])(?:id|path)=", text))
 
 
 def a_docs_page(corpus: Path, page: str, body: str) -> None:
@@ -1107,3 +1110,63 @@ def test_the_default_can_still_be_raised(corpus: Path, run: CliRunner, tmp_path:
     result = run.invoke(main, ["search", "sediment", "-k", "5"])
 
     assert hits_in(result.output, "notes") == 5
+
+
+# Written by hand rather than taken from `links.link_to`, so a test that
+# compares the output with the function that made it is not all there is.
+_HANDLE = re.compile(r"id=(?P<id>[a-z0-9]+) chunk=(?P<chunk>[0-9]+)")
+_LINK = re.compile(r"^\s+kennis://open/(?P<id>[a-z0-9]+)/(?P<chunk>[0-9]+)$")
+
+
+def test_each_corpus_hit_carries_the_link_that_opens_it(
+    corpus: Path, run: CliRunner, tmp_path: Path
+) -> None:
+    """The line after a corpus hit's handle is its `kennis://` link, at the
+    same document and chunk, for every hit and only one per hit."""
+    indexed_notes(
+        run,
+        tmp_path,
+        rivers="Rivers carry sediment to the delta.\n\n## Delta\n\nSediment settles.",
+        lakes="Lakes hold sediment for a long time.",
+    )
+
+    found = run.invoke(main, ["search", "sediment"])
+
+    assert found.exit_code == 0, found.output
+    lines = found.output.splitlines()
+    handles = [
+        (index, matched)
+        for index, line in enumerate(lines)
+        if (matched := _HANDLE.search(line)) is not None
+    ]
+    assert len(handles) >= 2, found.output
+    for index, handle in handles:
+        link = _LINK.match(lines[index + 1])
+        assert link is not None, (lines[index + 1], found.output)
+        assert link.group("id", "chunk") == handle.group("id", "chunk")
+    assert sum(_LINK.match(line) is not None for line in lines) == len(handles)
+
+
+def test_a_context_hit_carries_its_project_s_link(
+    workspace: Path, run: CliRunner
+) -> None:
+    """A context hit opens with `kennis open` too (#623): its link names the
+    project, the file and the chunk, under the path handle."""
+    from kennis.links import ContextTarget, target_of
+
+    indexed_context(run, Chunking="This project calibrates in four-minute chunks.")
+
+    result = run.invoke(
+        main, ["search", "four-minute chunks", "--collection", "context"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert hits_in(result.output, "context") == 1
+    (link,) = [
+        line.strip()
+        for line in result.output.splitlines()
+        if line.strip().startswith("kennis://")
+    ]
+    named = target_of(link)
+    assert isinstance(named, ContextTarget)
+    assert (named.path, named.chunk) == ("Chunking.md", 0)

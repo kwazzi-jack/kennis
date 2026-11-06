@@ -43,6 +43,7 @@ GITIGNORE_FILENAME: Final = ".gitignore"
 INDEX_DIRNAME: Final = ".index"
 
 SCHEMA_VERSION: Final = 1
+INDEX_WITHOUT_FRONTMATTER: Final = "index_without_frontmatter"
 
 _OVERRIDE_VARIABLE: Final = "KENNIS_CONTEXT_DIR"
 _GIT_DIRNAME: Final = ".git"
@@ -196,6 +197,17 @@ def declare_packs(bundle: Path, packs: Sequence[str]) -> tuple[str, ...]:
     return declared
 
 
+def indexes_without_frontmatter(bundle: Path) -> bool:
+    """Whether this project indexes a file that has no frontmatter header.
+
+    False unless `bundle.json` says `"index_without_frontmatter": true`
+    (Brian, 2026-11-06, #624): a header is what makes a file a note kennis
+    can describe, so a README or an export kept beside the notes stays out
+    of the search unless the project asks for it.
+    """
+    return _read_manifest(bundle).get(INDEX_WITHOUT_FRONTMATTER) is True
+
+
 def _read_manifest(bundle: Path) -> dict[str, object]:
     path = bundle / MANIFEST_FILENAME
     try:
@@ -245,6 +257,9 @@ def _manifest() -> str:
                 "schema_version": SCHEMA_VERSION,
                 "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "created_by": f"kennis {__version__}",
+                # Written with its default so a person reading the file
+                # finds the switch (#624).
+                INDEX_WITHOUT_FRONTMATTER: False,
             },
             indent=2,
         )
@@ -350,6 +365,7 @@ form.
 __all__ = [
     "BUNDLE_DIRNAME",
     "INDEX_DIRNAME",
+    "INDEX_WITHOUT_FRONTMATTER",
     "LANDING_FILENAME",
     "MANIFEST_FILENAME",
     "SCHEMA_VERSION",
@@ -360,6 +376,7 @@ __all__ = [
     "declared_packs",
     "find_bundle",
     "index_root_for",
+    "indexes_without_frontmatter",
     "init_bundle",
     "is_bundle_dir",
     "workspace_root",

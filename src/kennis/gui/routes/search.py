@@ -15,7 +15,7 @@ from fastapi.responses import (
 )
 
 from kennis.context import existing_corpus
-from kennis.engine.context.groups import pack_of_group, project_of_group
+from kennis.engine.context.groups import project_of_group
 from kennis.engine.context.projects import present_bundles, project_named
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.docs.versions import chosen_or_default, project_versions
@@ -31,7 +31,7 @@ from kennis.gui.pages import (
     shown_skips,
     versions_query,
 )
-from kennis.gui.responses import SCOPES, TEMPLATES, from_htmx
+from kennis.gui.responses import SCOPES, TEMPLATES, action_page, from_htmx
 from kennis.retrieval import sweep
 from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
@@ -229,14 +229,11 @@ def _hits_context(
 
 
 def scope_query(group: str) -> str:
-    """The address's scope for more of one group: a project's notes and a
-    pack's context are both the context scope, the first narrowed to its
-    project."""
+    """The address's scope for more of one group: a project's notes are
+    the context scope narrowed to its project."""
     project = project_of_group(group)
     if project is not None:
         return f"scope=context&project={quote(project)}"
-    if pack_of_group(group) is not None:
-        return "scope=context"
     return f"scope={quote(group)}"
 
 
@@ -292,6 +289,21 @@ def serve_search(
     context["recents_heading"] = words.RECENTS_HEADING
     context["recents_clear"] = words.RECENTS_CLEAR
     return TEMPLATES.TemplateResponse(request, "search.html", context)
+
+
+@router.get("/history/clear")
+def ask_to_clear_history(request: Request) -> HTMLResponse:
+    """The question, asked before the reader's own words are removed. A GET
+    that removes nothing, so a prefetcher following it costs nothing."""
+    return action_page(
+        request,
+        "/history/clear",
+        "forms/clear-history.html",
+        {
+            "clear_history_asked": words.CLEAR_HISTORY_ASKED,
+            "clear_history_action": words.CLEAR_HISTORY_ACTION,
+        },
+    )
 
 
 @router.post("/history/clear")

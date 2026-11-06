@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% from "outline.html" import pack_card with context %}
+{% block title %}kennis - {{ packs_heading }}{% endblock %}
+{% block main %}
+<h1>{{ packs_heading }}</h1>
+{% for pack in packs %}{{ pack_card(pack) }}{% else %}<p class="role-muted">{{ no_packs }}</p>{% endfor %}
+{% endblock %}

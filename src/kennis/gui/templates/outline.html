@@ -1,0 +1,67 @@
+{# Folders drawn inside folders, each by its last part with a count. One
+   shape for a collection's documents and for what a pack contains, so the
+   two read alike. Every fold starts closed unless the window's `folders`
+   preference says open (Brian, 2026-11-04); `fold()` writes the attribute. #}
+{% macro fold() %}{% if folders_open(request) %} open{% endif %}{% endmacro %}
+{% macro folder_head(name, count) %}<summary class="outline-head">{{ icon("chevron-right") }}{{ icon("folder") }}<span class="name">{{ name }}</span><span class="count">{{ count }}</span></summary>{% endmacro %}
+
+{# A collection's branch, as `shown_tree` builds it for the pane. An
+   unreadable document has no identifier to open, so it is not a link. #}
+{% macro branch(tree_branch, collection) %}
+{% for entry in tree_branch.entries %}
+<li class="outline-item">{% if entry.document_id %}<a class="document" href="/document/{{ collection }}/{{ entry.document_id }}" title="{{ entry.document_id }}">{{ icon("file-text") }}<span>{{ entry.title }}</span></a>{% else %}<span class="document role-error">{{ icon("file-text") }}<span>{{ entry.title }}</span></span>{% endif %}</li>
+{% endfor %}
+{% for child in tree_branch.children %}
+<li class="outline-folder"><details{{ fold() }}>{{ folder_head(child.name, child.count) }}
+<ul class="outline">{{ branch(child, collection) }}</ul>
+</details></li>
+{% endfor %}
+{% endmacro %}
+
+{# A pack's folder of items: each marked by what it is, its name, and what
+   there is to say of it beneath. #}
+{% macro contents(folder) %}
+{% set item_icons = {"paper": "file-text", "site": "globe", "address": "globe", "file": "file-text"} %}
+{% for item in folder.items %}
+<li class="outline-item" data-kind="{{ item.kind }}">{{ icon(item_icons[item.kind]) }}<div class="item-text"><span class="item-name">{{ item.name }}</span>{% if item.detail %}<span class="item-detail">{{ item.detail }}</span>{% endif %}</div></li>
+{% endfor %}
+{% for inner in folder.folders %}
+<li class="outline-folder"><details{{ fold() }}>{{ folder_head(inner.name, inner.count) }}
+<ul class="outline">{{ contents(inner) }}</ul>
+</details></li>
+{% endfor %}
+{% endmacro %}
+
+{% macro section(shown) %}
+<details class="outline-section" data-collection="{{ shown.kind }}"{{ fold() }}>
+<summary class="outline-head">{{ icon("chevron-right") }}{{ icon(collection_icons.get(shown.kind, "folder")) }}<span class="name">{{ shown.heading }}</span></summary>
+<ul class="outline">{{ contents(shown.top) }}</ul>
+</details>
+{% endmacro %}
+
+{# A pack's buttons: its own page unless this is it, and uninstalling it.
+   Buttons with a symbol, never a line of link text (Brian, 2026-11-04). #}
+{% macro pack_actions(pack, own_page=False) %}
+<div class="pack-actions">
+{% if not own_page %}<a class="button" href="/packs/{{ pack.pack_id }}" title="{{ pack_own_page }}">{{ icon("arrow-up-right") }}<span class="visually-hidden">{{ pack_own_page }}</span></a>{% endif %}
+<a class="button" href="/packs/{{ pack.pack_id }}/uninstall" hx-get="/packs/{{ pack.pack_id }}/uninstall" hx-target="#dialog" hx-swap="innerHTML" title="{{ uninstall_pack }}">{{ icon("x") }}<span>{{ uninstall_pack }}</span></a>
+</div>
+{% endmacro %}
+
+{% macro pack_body(pack) %}
+{% if pack.description %}<p class="pack-description">{{ pack.description }}</p>{% endif %}
+{% if pack.unread %}<p class="role-warning">{{ pack.unread }}</p>{% endif %}
+{% for shown in pack.sections %}{{ section(shown) }}{% endfor %}
+{% endmacro %}
+
+{# A pack as a card that opens on what it contains: on the corpus page and
+   on the Packs page alike. #}
+{% macro pack_card(pack) %}
+<details class="pack"{{ fold() }}>
+<summary class="outline-head">{{ icon("chevron-right") }}{{ icon("package") }}<span class="name">{{ pack.name }}</span><span class="count">{{ pack.summary }}</span></summary>
+<div class="pack-body">
+{{ pack_actions(pack) }}
+{{ pack_body(pack) }}
+</div>
+</details>
+{% endmacro %}

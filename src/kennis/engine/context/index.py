@@ -28,7 +28,7 @@ import yaml
 
 from kennis.engine.context.bundle import index_root_for
 from kennis.engine.context.groups import CONTEXT_COLLECTION
-from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.notes import indexed_documents
 from kennis.engine.context.projects import note_project
 from kennis.engine.errors import NothingToIndex
 from kennis.engine.events import (
@@ -63,18 +63,18 @@ class BundleLoader:
         return CONTEXT_COLLECTION
 
     def documents(self, *, events: EventSink | None = None) -> list[Document]:
-        """Every file in the bundle that counts as knowledge.
+        """Every file in the bundle that counts as knowledge: by default,
+        each with a frontmatter header (#624).
 
-        **A header that will not parse costs its metadata and not the file.**
-        `CollectionLoader` reports a document it cannot read and does not
-        index it, because a corpus document without its frontmatter has no
-        identity. A bundle file has one regardless - its path - so the
-        stricter rule would throw away text the user wanted found over a
-        header they can fix in place.
+        **A header that will not parse costs its metadata and not the file**
+        in a project that indexes files without frontmatter: there a bundle
+        file's identity is its path, so the stricter corpus rule would throw
+        away text the person wanted found. By default such a file is left
+        out with the rest that have no header, and `context status` names it.
         """
         return [
             self._document(path, events=events)
-            for path in bundle_documents(self._bundle)
+            for path in indexed_documents(self._bundle)
         ]
 
     def _document(self, path: Path, *, events: EventSink | None) -> Document:

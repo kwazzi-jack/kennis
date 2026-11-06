@@ -72,6 +72,10 @@ PREFERENCES: Final[dict[str, Preference]] = {
         _preference("size", "normal", "appearance"),
         _preference("spacing", "normal", "appearance"),
         _preference("width", "reading", "appearance"),
+        # Closed by default (Brian, 2026-11-04). Drawn as `open` on each
+        # `<details>` by the server, not by a `data-` rule, so a change shows
+        # on the next page rather than at once.
+        _preference("folders", "closed", "appearance"),
         _preference("strength", "bars", "results"),
         _preference("labels", "icons", "results"),
         _preference("scale", "viridis", "results"),
@@ -89,6 +93,11 @@ def preference_of(request: Request, name: str) -> str:
     preference = PREFERENCES[name]
     asked = request.cookies.get(name, preference.default)
     return asked if preference.offers(asked) else preference.default
+
+
+def folders_open(request: Request) -> bool:
+    """Whether the folders and regions of a page are drawn open."""
+    return preference_of(request, "folders") == "open"
 
 
 def preferences_of(request: Request) -> dict[str, str]:
@@ -116,6 +125,7 @@ __all__ = [
     "Preference",
     "Section",
     "chosen_in",
+    "folders_open",
     "preference_of",
     "preferences_of",
 ]

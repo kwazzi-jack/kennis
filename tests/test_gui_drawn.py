@@ -128,19 +128,19 @@ def test_a_segmented_control_is_as_wide_as_its_buttons():
 
 def test_a_collection_lists_each_document_as_a_row(client: TestClient):
     page = BeautifulSoup(client.get("/collection/notes").text, "html.parser")
-    row = page.select_one("ul.documents li a")
+    row = page.select_one("ul.outline li a.document")
 
     assert isinstance(row, Tag)
     assert row.find("svg") is not None
     assert row.get_text(strip=True) == "rivers"
     # The id is a handle for a program, not a word for a reader.
     document_id = str(row["href"]).rsplit("/", 1)[1]
-    assert document_id not in page.select_one("ul.documents").get_text()
+    assert document_id not in page.select_one("ul.outline").get_text()
     assert row["title"] == document_id
 
 
 def test_a_document_row_is_not_underlined():
-    rows = rule_for(code(), ".documents a")
+    rows = rule_for(code(), ".outline-item .document")
 
     assert "text-decoration: none" in rows
     assert "display: flex" in rows

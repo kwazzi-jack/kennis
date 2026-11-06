@@ -27,10 +27,11 @@ from kennis.citing import Cited, CiteRequest
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
 from kennis.engine.context import bundle as bundles
+from kennis.engine.context import deleting
 from kennis.engine.context import projects as known
 from kennis.engine.context.bundle import BUNDLE_DIRNAME, BundleCreated
+from kennis.engine.context.deleting import BundleDeletion
 from kennis.engine.context.notes import BundleNote
-from kennis.engine.context.packs import copy_pack_file as copied_into_bundle
 from kennis.engine.context.projects import Project
 from kennis.engine.context.reset import BundleReset
 from kennis.engine.context.reset import reset_bundle as reset_the_bundle
@@ -42,6 +43,7 @@ from kennis.engine.corpus.collection import CollectionContents
 from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.sync import CorpusSync
 from kennis.engine.docs.versions import ProjectVersions
+from kennis.engine.errors import KennisError
 from kennis.engine.events import EventSink
 from kennis.engine.history.history import HistoryEntry, RestoredDocument, ReturnChanges
 from kennis.engine.history.outofband import OutOfBandChange
@@ -88,6 +90,17 @@ def _in_the_bundle_s_lane(arguments: Mapping[str, object]) -> str:
 def _in_the_folder_s_bundle_lane(arguments: Mapping[str, object]) -> str:
     """`context init` names the folder; its bundle is the lane."""
     return context_lane(str(Path(str(arguments["folder"])) / BUNDLE_DIRNAME))
+
+
+def _in_the_named_project_s_bundle_lane(arguments: Mapping[str, object]) -> str:
+    """A delete names the project; its bundle is the lane, so it waits for
+    an index build or a sync of that bundle. A name the list does not hold
+    is the projects lane, where the call itself refuses it."""
+    try:
+        bundle = known.project_named(str(arguments["name"])).bundle
+    except KennisError:
+        return PROJECTS_LANE
+    return context_lane(str(bundle))
 
 
 def _in_the_projects_lane(arguments: Mapping[str, object]) -> str:
@@ -239,8 +252,12 @@ def return_corpus(commit: str) -> ReturnedCorpus:
     return operations.return_corpus_to(existing_corpus(), commit)
 
 
-def sync_bundle(bundle: Path, *, events: EventSink) -> BundleSync:
-    return operations.synchronise_bundle(bundle, existing_corpus(), events=events)
+def sync_bundle(
+    bundle: Path, *, remove_undeclared: bool = False, events: EventSink
+) -> BundleSync:
+    return operations.synchronise_bundle(
+        bundle, existing_corpus(), remove_undeclared=remove_undeclared, events=events
+    )
 
 
 def supply_paper(
@@ -282,10 +299,6 @@ def declare_packs(
     return operations.declare_bundle_packs(bundle, added, dropped, clear=clear)
 
 
-def copy_pack_file(bundle: Path, reference: str) -> Path:
-    return copied_into_bundle(bundle, existing_corpus().corpus_root, reference)
-
-
 def reset_bundle(bundle: Path) -> BundleReset:
     return reset_the_bundle(bundle)
 
@@ -305,6 +318,10 @@ def forget_project(name: str) -> Project:
     return known.forget_project(name)
 
 
+def delete_project(name: str) -> BundleDeletion:
+    return deleting.delete_project(name)
+
+
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
@@ -316,6 +333,10 @@ def bundle_status(bundle: Path) -> BundleStatus:
 
 def reset_preview(bundle: Path) -> BundleResetPreview:
     return operations.what_a_reset_removes(bundle)
+
+
+def deletion_preview(name: str) -> BundleDeletion:
+    return deleting.what_deleting_removes(name)
 
 
 def status() -> CorpusStatus:
@@ -440,7 +461,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(move_document, kind="move"),
         Operation(remember, kind="remember"),
         Operation(remove_document, kind="remove"),
-        Operation(uninstall_pack, kind="pack"),
+        Operation(uninstall_pack, kind="pack-uninstall"),
         Operation(remove_version, kind="version"),
         Operation(restore_document, kind="restore"),
         Operation(return_corpus, kind="return"),
@@ -448,11 +469,15 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(init_bundle, kind="context", lane=_in_the_folder_s_bundle_lane),
         Operation(index_bundle, kind="context-index", lane=_in_the_bundle_s_lane),
         Operation(declare_packs, kind="context", lane=_in_the_bundle_s_lane),
-        Operation(copy_pack_file, kind="context", lane=_in_the_bundle_s_lane),
         Operation(reset_bundle, kind="context", lane=_in_the_bundle_s_lane),
         Operation(remember_in_context, kind="remember", lane=_in_the_bundle_s_lane),
         Operation(add_project, kind="context", lane=_in_the_projects_lane),
         Operation(forget_project, kind="context", lane=_in_the_projects_lane),
+        Operation(
+            delete_project,
+            kind="context-delete",
+            lane=_in_the_named_project_s_bundle_lane,
+        ),
         Operation(supply_paper, kind="add"),
         Operation(sync_corpus, kind="sync"),
         Operation(bundle_status),
@@ -468,6 +493,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(read_document),
         Operation(read_passage),
         Operation(reset_preview),
+        Operation(deletion_preview),
         Operation(return_preview),
         Operation(revision),
         Operation(search_scope),

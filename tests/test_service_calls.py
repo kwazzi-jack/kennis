@@ -35,6 +35,7 @@ import kennis.retrieval
 from kennis.cli.__main__ import main
 from kennis.context import Context, existing_corpus
 from kennis.engine.context.bundle import find_bundle
+from kennis.engine.context.deleting import what_deleting_removes
 from kennis.engine.context.status import bundle_status
 from kennis.engine.corpus.add import AddOptions
 from kennis.engine.corpus.collection import Collection
@@ -64,8 +65,8 @@ EXPECTED_OPERATIONS = frozenset(
         "add_project",
         "back_up",
         "copy_document",
-        "copy_pack_file",
         "declare_packs",
+        "delete_project",
         "forget_project",
         "index_bundle",
         "init_bundle",
@@ -98,6 +99,7 @@ EXPECTED_OPERATIONS = frozenset(
         "read_document",
         "read_passage",
         "reset_preview",
+        "deletion_preview",
         "return_preview",
         "revision",
         "search_scope",
@@ -186,28 +188,6 @@ def a_pack_s_note(scene: Scene) -> Mapping[str, object]:
 
 def bundle_of(scene: Scene) -> Path:
     return scene.scratch / "project" / ".context"
-
-
-def a_pack_s_context_file(scene: Scene) -> Mapping[str, object]:
-    """A pack with one context file, installed, for a project to copy."""
-    root = scene.scratch / "context-provider"
-    (root / "context").mkdir(parents=True)
-    (root / "context" / "solving.md").write_text("Solve per scan.\n", "utf-8")
-    declaration = root / "solver.ken.yml"
-    declaration.write_text(
-        "kennis:\n  schema_version: 1\npack:\n  id: solver\n"
-        '  name: "a solver"\n  version: "0.1.0"\n'
-        "context:\n  - source: context/\n",
-        encoding="utf-8",
-    )
-    runner = CliRunner()
-    for arguments in (
-        ["pack", "update", str(declaration)],
-        ["pack", "install", str(declaration)],
-    ):
-        answered = runner.invoke(main, arguments)
-        assert answered.exit_code == 0, answered.output
-    return {"bundle": bundle_of(scene), "reference": "solver/solving.md"}
 
 
 def a_bundle_with_a_note(scene: Scene) -> Mapping[str, object]:
@@ -302,7 +282,6 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "init_bundle": lambda scene: {"folder": scene.scratch / "project"},
     "index_bundle": a_bundle_with_a_note,
     "declare_packs": lambda scene: {"bundle": bundle_of(scene), "added": ("provider",)},
-    "copy_pack_file": a_pack_s_context_file,
     "reset_bundle": lambda scene: {"bundle": bundle_of(scene)},
     "remember_in_context": lambda scene: {
         "bundle": bundle_of(scene),
@@ -310,6 +289,8 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     },
     "add_project": lambda scene: {"folder": scene.scratch / "project"},
     "forget_project": a_known_project,
+    "delete_project": a_known_project,
+    "deletion_preview": a_known_project,
     "bundle_status": lambda scene: {"bundle": bundle_of(scene)},
     "reset_preview": lambda scene: {"bundle": bundle_of(scene)},
     "supply_paper": a_pack_s_paper_by_hand,
@@ -383,6 +364,7 @@ DIRECT: dict[str, Callable[[Context], object]] = {
     "reset_preview": lambda context: kennis.operations.what_a_reset_removes(
         find_bundle(Path.cwd()) or Path()
     ),
+    "deletion_preview": lambda context: what_deleting_removes("project"),
     "search_scope": lambda context: kennis.retrieval.search_scope(
         "notes", "calibration", bundle=None
     ),
@@ -646,11 +628,12 @@ def test_each_write_runs_in_its_own_lane(scene: Scene, name: str):
         "init_bundle": in_the_bundle,
         "index_bundle": in_the_bundle,
         "declare_packs": in_the_bundle,
-        "copy_pack_file": in_the_bundle,
         "reset_bundle": in_the_bundle,
         "remember_in_context": in_the_bundle,
         "add_project": PROJECTS_LANE,
         "forget_project": PROJECTS_LANE,
+        # Named by its project, and waiting on that project's bundle.
+        "delete_project": in_the_bundle,
     }
     operation = OPERATIONS[name]
     arguments = CALLS[name](scene) if name != "restore_document" else {}

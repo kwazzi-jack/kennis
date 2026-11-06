@@ -22,6 +22,8 @@ from markupsafe import Markup
 
 from kennis.context import existing_corpus
 from kennis.engine.backup import BackupReport
+from kennis.engine.context.deleting import BundleDeletion
+from kennis.engine.context.reset import BundleReset
 from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddReport
 from kennis.engine.corpus.schema import COLLECTION_NAMES
@@ -36,6 +38,7 @@ from kennis.engine.events import EventSink
 from kennis.engine.history.history import read_history, removed_in
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
+from kennis.engine.pack.installed import PackRemoval
 from kennis.engine.pack.store import PackInstall
 from kennis.engine.typed import without_quotes
 from kennis.gui import words
@@ -43,10 +46,14 @@ from kennis.gui.pages import (
     ShownJob,
     shown_add,
     shown_backup,
+    shown_bundle_index,
+    shown_bundle_reset,
     shown_bundle_sync,
     shown_corpus_sync,
+    shown_deletion,
     shown_index,
     shown_install,
+    shown_uninstall,
 )
 from kennis.gui.responses import (
     TEMPLATES,
@@ -61,6 +68,7 @@ from kennis.gui.responses import (
 )
 from kennis.gui.stream import as_stream, sent_event
 from kennis.operations import (
+    BundleIndexBuild,
     IndexBuild,
     build_indexes,
     install_a_pack,
@@ -87,7 +95,16 @@ _COMMITTING_JOBS: Final = frozenset({"add", "index", "sync"})
 # `_shown_result` matches them exhaustively, so mypy refuses a report added
 # here without one - the rule `render/refusals.py` keeps for refusals.
 JobReport = (
-    AddReport | IndexBuild | CorpusSync | BundleSync | PackInstall | BackupReport
+    AddReport
+    | IndexBuild
+    | CorpusSync
+    | BundleSync
+    | PackInstall
+    | PackRemoval
+    | BundleDeletion
+    | BundleIndexBuild
+    | BundleReset
+    | BackupReport
 )
 
 
@@ -114,6 +131,14 @@ def _shown_result(job: Job) -> ShownJob:
             return shown_bundle_sync(report)
         case PackInstall():
             return shown_install(report)
+        case PackRemoval():
+            return shown_uninstall(report)
+        case BundleDeletion():
+            return shown_deletion(report)
+        case BundleIndexBuild():
+            return shown_bundle_index(report)
+        case BundleReset():
+            return shown_bundle_reset(report)
         case BackupReport():
             return shown_backup(report)
         case _:

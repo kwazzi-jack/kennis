@@ -257,8 +257,9 @@ def test_clearing_the_history_is_a_post(corpus: Path, client: TestClient):
     admitted(client)
     client.get("/hits", params={"q": "gains", "scope": "notes"})
 
-    refused = client.get("/history/clear")
-    assert refused.status_code in (404, 405)
+    # The GET is the question, and asking it removes nothing.
+    asked = client.get("/history/clear")
+    assert asked.status_code == 200
     assert history.recent() != []
 
     cleared = posted(client, "/history/clear")
@@ -414,7 +415,7 @@ def test_a_search_filtered_to_a_project_is_offered_again_filtered(
     recent = history.recent()
     assert [search.project for search in recent] == ["rivers"]
     page = client.get("/", params={"scope": "context"})
-    recents = BeautifulSoup(page.text, "html.parser").select("#recents a[href]")
+    recents = BeautifulSoup(page.text, "html.parser").select("#recents li a[href]")
     # The offered link itself, not the page: the project pane carries
     # `project=rivers` in links of its own.
     assert [anchor["href"] for anchor in recents] == [

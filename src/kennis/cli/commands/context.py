@@ -65,6 +65,7 @@ def init_command(here: bool, packs: tuple[str, ...]) -> None:
     if packs:
         declared = api.declare_packs(corpus_root, created.path, packs)
         display.detail("+", f"declares {', '.join(declared)}")
+        display.next_step("kennis context sync", note="to copy their context in")
 
 
 def _report_init(created: BundleCreated) -> None:
@@ -151,39 +152,72 @@ def index_command_for_context(project: str | None) -> None:
 
 
 @context_group.command(name="sync", cls=KennisCommand)
-def sync_command_for_context() -> None:
-    """Check this project's bundle against the packs it declares.
+@click.option(
+    "--remove-undeclared",
+    is_flag=True,
+    help="Also remove the unedited copies of packs this project no longer declares.",
+)
+def sync_command_for_context(remove_undeclared: bool) -> None:
+    """Copy the context of the packs this project declares into its bundle.
 
-    A pack's context is searched where `kennis pack install` stored it, so
-    nothing is copied into the project. A copy an earlier kennis made is
-    removed, unless you edited it: then it is yours, and this project
-    searches it in place of the pack's file. Says which declared packs
-    this machine has not got, and, when the project declares none, which
-    installed packs it could.
+    Each pack's files land at the addresses the pack gives, owned by the
+    pack, and a new release replaces a copy nobody edited. **A file whose
+    owner is `user` is never touched**: to keep a pack's file as your own,
+    set `owner: user` in its header. A copy you edited without doing so is
+    left as it is and named. A pack this project stops declaring leaves its
+    copies until you sync with `--remove-undeclared`.
 
     **Offline**, and **kennis does not commit**: the bundle is in your
-    repository.
+    repository, and what changed is a diff you can read before you commit.
     """
-    from kennis.render.packs import describe_bundle_sync, describe_made_yours
+    from kennis.render.packs import (
+        describe_bundle_sync,
+        describe_deferred,
+        describe_edited_copies,
+        describe_undeclared,
+        describe_yours,
+    )
 
     corpus_root = existing_corpus().corpus_root
     bundle = require_bundle()
     with DisplaySink() as shown:
         result = api.sync_bundle(
-            corpus_root, bundle, events=shown, on_waiting=say_waiting
+            corpus_root,
+            bundle,
+            remove_undeclared=remove_undeclared,
+            events=shown,
+            on_waiting=say_waiting,
         ).result
     display.operation(
         "Synchronised",
-        describe_bundle_sync(len(result.removed), len(result.made_yours)),
+        describe_bundle_sync(
+            len(result.written), len(result.updated), len(result.removed)
+        ),
     )
-    for address in result.removed:
-        display.detail("-", address)
-    for address in result.made_yours:
-        display.detail("~", address)
-    if result.made_yours:
-        display.guidance(describe_made_yours())
+    for marker, addresses in (
+        ("+", result.written),
+        ("~", result.updated),
+        ("-", result.removed),
+    ):
+        for address in addresses:
+            display.detail(marker, address)
+    for address, where in result.moved:
+        display.detail("=", f"{address} is at {where}")
+    if result.edited:
+        display.note(describe_edited_copies())
+        for address in result.edited:
+            display.detail("!", address)
+    if result.yours:
+        display.info(describe_yours(len(result.yours)))
+    if result.deferred:
+        display.note(describe_deferred(result.deferred))
+    if result.undeclared:
+        display.note(describe_undeclared(len(result.undeclared)))
+        for address in result.undeclared:
+            display.detail("=", address)
+        display.next_step("kennis context sync --remove-undeclared")
     _report_the_declaration(result)
-    if result.removed or result.made_yours:
+    if result.changed_anything:
         # The index is derived from these documents and this command did
         # not rebuild it, for the same reason `remember --context` does
         # not: indexing is a separate decision with its own cost.
@@ -222,8 +256,9 @@ def packs_command_for_context(
     """The packs this project uses: shown with no arguments, added to with
     some.
 
-    A project reads only the packs it declares, so the stimela pack's
-    advice reaches the projects that use stimela and no others. The
+    A project holds a copy of the context of the packs it declares, made by
+    `kennis context sync`, so the stimela pack's advice reaches the projects
+    that use stimela and no others. The
     declaration is in `.context/bundle.json`, committed with the project,
     so whoever clones it declares the same packs. The ids given are added
     to the declaration, never put in place of it, so a command printed
@@ -241,6 +276,9 @@ def packs_command_for_context(
             corpus_root, bundle, packs, dropped, clear=declare_none
         )
         display.operation("Declared", ", ".join(declared) if declared else "no packs")
+        # Declaring copies nothing: the files arrive, or go, at a sync the
+        # person runs, so the bundle changes only when they ask (#624).
+        display.next_step("kennis context sync", note="to copy their context in")
         return
     declared = declared_packs(bundle)
     if not declared:
@@ -248,22 +286,6 @@ def packs_command_for_context(
         display.next_step("kennis context packs --help")
         return
     display.operation("Declares", ", ".join(declared))
-
-
-@context_group.command(name="copy", cls=KennisCommand)
-@click.argument("reference", metavar="PACK/ADDRESS")
-def copy_command_for_context(reference: str) -> None:
-    """Make one of a pack's context files this project's own.
-
-    Copies `alpha/solving.md` - the `pack=` a search printed - into the
-    bundle with you as its owner. This project then searches your copy
-    in place of the pack's file; other projects still read the pack's.
-    """
-    corpus_root = existing_corpus().corpus_root
-    bundle = require_bundle()
-    written = api.copy_pack_file(corpus_root, bundle, reference)
-    display.operation("Copied", written.relative_to(bundle.parent).as_posix())
-    display.next_step("kennis context index")
 
 
 @context_group.command(name="list", cls=KennisCommand)
@@ -312,6 +334,35 @@ def forget_command_for_context(name: str) -> None:
     display.operation("Forgot", f"{forgotten.name}, {forgotten.bundle.parent}")
 
 
+@context_group.command(name="delete", cls=KennisCommand)
+@click.argument("name")
+@click.option("-y", "--yes", is_flag=True, help="Do not ask first.")
+def delete_command_for_context(name: str, yes: bool) -> None:
+    """Delete a project's `.context/` folder and take it off the list.
+
+    kennis cannot undo this. The bundle is in the project's own repository,
+    which kennis keeps no history of: what was committed there comes back
+    with git, and nothing else does. `kennis context forget` unlists a
+    project and leaves its folder.
+    """
+    from kennis.render.paths import from_home
+    from kennis.render.words import count_of
+
+    corpus_root = existing_corpus().corpus_root
+    if not yes:
+        # Asked of the engine's own refusals and count, so the question is
+        # never put about a folder the delete would then refuse.
+        preview = api.deletion_preview(corpus_root, name)
+        click.confirm(
+            f"Delete {from_home(str(preview.project.bundle))} and its "
+            f"{count_of(preview.files, 'file')}? kennis cannot undo this",
+            abort=True,
+        )
+    deleted = api.delete_project(corpus_root, name)
+    display.operation("Deleted", f"{deleted.project.name}, {deleted.project.bundle}")
+    display.detail("-", count_of(deleted.files, "file"))
+
+
 @context_group.command(name="status", cls=KennisCommand)
 def status_command_for_context() -> None:
     """What this project's context holds, and whether its index is in step.
@@ -323,6 +374,7 @@ def status_command_for_context() -> None:
     digests the index stored instead.
     """
     from kennis.engine.context.groups import CONTEXT_COLLECTION
+    from kennis.render.packs import describe_without_frontmatter
     from kennis.render.words import count_of, describe_freshness
 
     corpus_root = existing_corpus().corpus_root
@@ -343,7 +395,11 @@ def status_command_for_context() -> None:
             # missing value rather than as "here".
             display.row(group or "(top level)", count_of(held, "document"))
     for relative in status.unreadable:
-        display.detail("!", f"{relative}: frontmatter could not be read")
+        display.detail("!", f"{relative}: frontmatter could not be read, not indexed")
+    if status.without_frontmatter:
+        display.note(describe_without_frontmatter(len(status.without_frontmatter)))
+        for relative in status.without_frontmatter:
+            display.detail("=", relative)
 
     if status.freshness is None:
         if status.document_count:

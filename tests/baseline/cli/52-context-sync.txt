@@ -2,6 +2,6 @@ $ kennis context sync
 --- exit 0
 --- stdout
 Synchronised nothing to change
-this project declares no packs, so its search reads none
+this project declares no packs, so a sync copies none
   hint: run `kennis context packs provider`
 --- stderr

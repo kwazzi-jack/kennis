@@ -1,0 +1,11 @@
+{# Forgetting a project, said before it is done: the list loses it, the
+   folder keeps its files. The answer is the window drawn whole, so the
+   pane no longer lists it. #}
+<p>{{ forgetting }}</p>
+<form class="forget" action="/projects/forget" method="post">
+  <input type="hidden" name="project" value="{{ project }}">
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary">{{ forget_project_action }}</button>
+  </div>
+</form>

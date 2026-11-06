@@ -18,6 +18,7 @@ from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.docs.versions import pages_of_version, project_versions
 from kennis.engine.errors import (
     KennisError,
+    PackNotInstalled,
     UnknownCollection,
 )
 from kennis.engine.history.history import what_a_return_changes
@@ -25,7 +26,7 @@ from kennis.engine.history.outofband import OutOfBandChange
 from kennis.engine.history.repository import Repository
 from kennis.gui import words
 from kennis.gui.pages import (
-    shown_groups,
+    shown_pack,
     shown_rows,
     shown_tree,
 )
@@ -40,6 +41,7 @@ from kennis.gui.responses import (
     refused_a_post,
     written,
 )
+from kennis.gui.routes.jobs import started
 from kennis.holdings import (
     holdings,
     installed_packs,
@@ -52,9 +54,11 @@ from kennis.operations import (
     remove_docs_version,
     restore_a_document,
     return_corpus_to,
+    uninstall_a_pack,
 )
-from kennis.render.packs import describe_holdings
+from kennis.render.citations import style_path
 from kennis.render.words import (
+    count_of,
     describe_change,
     describe_return_changes,
     describe_returned,
@@ -161,6 +165,8 @@ def remove_a_version(request: Request, form: PostedForm) -> Response:
 def serve_corpus(request: Request) -> HTMLResponse:
     context = existing_corpus()
     held = holdings(context)
+    style = style_path(context.settings.literature.citation_style)
+    packs = [shown_pack(one, style) for one in installed_packs(context)]
     return TEMPLATES.TemplateResponse(
         request,
         "corpus.html",
@@ -168,10 +174,87 @@ def serve_corpus(request: Request) -> HTMLResponse:
             "rows": shown_rows(held),
             "holdings_columns": words.HOLDINGS_COLUMNS,
             "empty": not any(holding.documents for holding in held),
-            "packs": describe_holdings(installed_packs(context)),
+            "packs": packs,
+            # Said beside each region's heading, so a closed one says what
+            # it holds.
+            "documents_count": count_of(
+                sum(holding.documents for holding in held), "document"
+            ),
+            "packs_count": count_of(len(packs), "pack"),
+            "collections_heading": words.COLLECTIONS_HEADING,
             "nothing_held": words.NOTHING_HELD,
             "no_packs": words.NO_PACKS,
         },
+    )
+
+
+@router.get("/packs")
+def serve_packs(request: Request) -> HTMLResponse:
+    """Every installed pack as a card that opens on what it contains: where
+    the pane's Packs entry goes, since the corpus page's region of them
+    starts closed."""
+    context = existing_corpus()
+    style = style_path(context.settings.literature.citation_style)
+    return TEMPLATES.TemplateResponse(
+        request,
+        "packs.html",
+        {
+            "packs": [shown_pack(one, style) for one in installed_packs(context)],
+            "no_packs": words.NO_PACKS,
+        },
+    )
+
+
+@router.get("/packs/{pack_id}/uninstall")
+def ask_to_uninstall_a_pack(request: Request, pack_id: str) -> HTMLResponse:
+    """What uninstalling the pack does, and the form that does it, so
+    nothing goes on one click."""
+    held = {one.state.pack_id: one for one in installed_packs(existing_corpus())}
+    if pack_id not in held:
+        return problem_page(request, _not_installed(pack_id))
+    declaration = held[pack_id].declaration
+    name = declaration.pack.name if declaration else pack_id
+    return action_page(
+        request,
+        "/packs/uninstall",
+        "forms/uninstall-pack.html",
+        {
+            "pack_id": pack_id,
+            "uninstalling": words.uninstalling_pack(name, pack_id),
+            "uninstall_pack_action": words.UNINSTALL_PACK_ACTION,
+        },
+    )
+
+
+@router.post("/packs/{pack_id}/uninstall")
+def uninstall_a_pack_here(request: Request, pack_id: str) -> Response:
+    """Drop the pack from the store, as `kennis pack uninstall` does, as a
+    task: its outcome says the documents stay and offers Sync, as an
+    install's offers it, and runs no sync itself (Brian, 2026-11-04)."""
+    context = existing_corpus()
+    if pack_id not in {one.state.pack_id for one in installed_packs(context)}:
+        return problem_page(request, _not_installed(pack_id))
+    return started(
+        request,
+        "pack-uninstall",
+        lambda events: uninstall_a_pack(context, pack_id, events=events),
+    )
+
+
+def _not_installed(pack_id: str) -> PackNotInstalled:
+    return PackNotInstalled(f"no pack called '{pack_id}' is installed")
+
+
+@router.get("/packs/{pack_id}")
+def serve_pack_contents(request: Request, pack_id: str) -> HTMLResponse:
+    """What one installed pack contains, as `kennis pack show` says it."""
+    context = existing_corpus()
+    held = {one.state.pack_id: one for one in installed_packs(context)}
+    if pack_id not in held:
+        return problem_page(request, _not_installed(pack_id))
+    style = style_path(context.settings.literature.citation_style)
+    return TEMPLATES.TemplateResponse(
+        request, "pack-contents.html", {"pack": shown_pack(held[pack_id], style)}
     )
 
 
@@ -182,14 +265,20 @@ def serve_collection(request: Request, collection: str) -> HTMLResponse:
         return problem_page(
             request, UnknownCollection(words.unknown_collection(collection))
         )
-    groups, unreadable = shown_groups(context, collection)
+    tree = shown_tree(context, collection)
+    # An unreadable document is listed with no identifier to open (11f).
+    every = [
+        *tree.top.entries,
+        *(entry for branch in tree.branches for entry in branch.beneath()),
+    ]
+    unreadable = sum(1 for entry in every if not entry.document_id)
     held = next(h for h in holdings(context) if h.collection == collection)
     return TEMPLATES.TemplateResponse(
         request,
         "collection.html",
         {
             "collection": collection,
-            "groups": groups,
+            "tree": tree,
             "summary": words.describe_count(held),
             "unreadable": words.unreadable_note(unreadable),
         },

@@ -44,7 +44,7 @@ EXPECTED_ENTRIES = [
     ("Corpus", "/corpus", "page"),
     ("Recent searches", "/", "page"),
     ("Activity", "/activity", "page"),
-    ("Packs", "/corpus#packs", "page"),
+    ("Packs", "/packs", "page"),
     ("Settings", "/settings", "page"),
 ]
 

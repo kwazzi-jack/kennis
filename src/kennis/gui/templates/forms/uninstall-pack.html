@@ -1,0 +1,9 @@
+{# Uninstalling a pack, said before anything goes. The answer is the
+   Packs page drawn whole, so the pane's count is drawn again too. #}
+<p>{{ uninstalling }}</p>
+<form class="uninstall" action="/packs/{{ pack_id }}/uninstall" method="post">
+  <div class="form-foot">
+    <a class="button" href="/packs" data-close>{{ cancel_label }}</a>
+    <button type="submit" class="primary danger">{{ icon("trash-2") }}{{ uninstall_pack_action }}</button>
+  </div>
+</form>

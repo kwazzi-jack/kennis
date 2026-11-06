@@ -218,11 +218,11 @@ def test_search_context_answers_with_a_path_and_no_snippet(
     assert len(lines) == 2, lines
 
 
-def test_search_context_gives_a_declared_pack_s_hit_with_its_passage(
+def test_search_context_gives_a_declared_pack_s_copy_as_a_path(
     corpus: Path, isolated: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
 ):
-    """A pack's file is in kennis's store, which the agent has no path to,
-    so its hit carries a `pack=` handle and the passage itself (14g)."""
+    """A pack's context is copied into the project by its sync (#624), so
+    an agent opens it with its own file tools, as any context hit."""
     provider = isolated / "provider"
     (provider / "content").mkdir(parents=True)
     (provider / "content" / "imaging.md").write_text(
@@ -241,8 +241,10 @@ def test_search_context_gives_a_declared_pack_s_hit_with_its_passage(
     project.mkdir()
     monkeypatch.chdir(project)
     assert run.invoke(main, ["context", "init", "--pack", "alpha"]).exit_code == 0
+    assert run.invoke(main, ["context", "sync"]).exit_code == 0
+    assert run.invoke(main, ["context", "index"]).exit_code == 0
 
     answered = search_context("sub-bands")
 
-    assert "pack=alpha/imaging.md" in answered
-    assert "join them afterwards" in answered
+    assert "path=.context/imaging.md" in answered
+    assert "pack=" not in answered

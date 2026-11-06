@@ -37,6 +37,27 @@ Re-running it is safe, and converging rather than merely harmless: a
 scaffold file you deleted is written again, and anything you added is left
 alone.
 
+## In the window
+
+The window manages projects from the pane's Context section. The button at
+the right of the Context heading adds a project: choose its folder, and
+kennis lists it if it already has a `.context/` folder, or creates one there
+and lists it. The window uses the folder you chose; unlike `kennis context
+init`, it does not walk up to the repository's root.
+
+Each project's menu, the button at the right of its row, has:
+
+| entry | what it does | the command |
+|---|---|---|
+| Packs this project uses | a checkbox per installed pack; saving declares exactly what is checked, then opens the sync dialog. A pack the project declares that this machine has not installed is shown checked, so saving keeps it | `kennis context packs` |
+| Sync this project's context | says which pack files it will copy in or update and which it leaves, then copies them; the copies of a pack the project no longer uses go only if you tick "Remove them" | `kennis context sync` |
+| Index this project's context | builds its index, as a task in the strip | `kennis context index` |
+| Reset this project's context | lists what goes, then removes it | `kennis context reset` |
+| Forget this project | takes it off the list; its files stay | `kennis context forget` |
+| Delete this project's context | deletes `.context/`, after asking | `kennis context delete` |
+
+A project whose folder has gone is listed as missing, with Forget alone.
+
 ## Write something down
 
 ```
@@ -88,8 +109,15 @@ settings.
 
 ## What is and is not indexed
 
-Two rules, and they are the whole of it:
+Three rules, and they are the whole of it:
 
+- **A file with no frontmatter is not indexed.** The header - the block
+  between two `---` lines at the top - is what makes a file a note kennis
+  can describe, so a README or an export kept beside your notes stays out
+  of search. Everything kennis writes has one. A header that is empty or
+  cannot be read counts as none. To index such files too, set
+  `"index_without_frontmatter": true` in `bundle.json`; `kennis context
+  init` writes the key, set to `false`, so you can find it.
 - **A dot-prefixed path is never indexed or searched**, at any depth. That
   is why the templates are `.skeleton.md`: a template matches every query
   about its own section and answers none of them. Rename any file of your
@@ -122,9 +150,11 @@ stored. Same three counts either way:
 `remember --context` does not index, so the middle line is the ordinary
 state of a bundle rather than a brief window.
 
-A file whose frontmatter block could not be read is listed with a `!`. It is
-still indexed - a bundle document's identity is its path, so a broken header
-costs its metadata and not the file.
+A file whose frontmatter block could not be read is listed with a `!`, and
+the files with no frontmatter are listed after a note saying they are not
+indexed. Neither is indexed unless `bundle.json` says
+`"index_without_frontmatter": true`; then a broken header costs only its
+metadata, since a bundle document's identity is its path.
 
 ## Start again
 
@@ -150,53 +180,86 @@ There is no undo inside kennis. A bundle lives in your repository and kennis
 keeps no history of it, so `git checkout` is the way back - if you
 committed.
 
-## Apply a pack
+## Stop listing a project
 
 ```
-kennis context sync
+kennis context forget <name>
+```
+
+Takes the project off kennis's list of projects, which is what the window's
+pane and `kennis context list` show. Nothing in its folder is changed: the
+bundle keeps every file. kennis lists the project again the next time a
+kennis command runs in that folder. In the window, the same is "Forget this
+project" in the project's row menu in the pane, which asks first.
+
+## Delete a project's context
+
+```
+kennis context delete <name>
+```
+
+Deletes the project's `.context/` folder - every file in it and its index -
+and takes the project off the list. **kennis cannot undo this.** The bundle
+lives in your repository and kennis keeps no history of it, so what you
+committed comes back with `git checkout`, and nothing else comes back. The
+rest of the project is not touched.
+
+It asks first, naming the folder and how many files it holds; `-y` skips the
+question. It refuses a project whose bundle is no longer there, and a listed
+folder that is not a `.context` folder holding `bundle.json`, and names
+`kennis context forget` for both. In the window, the same is "Delete this
+project's context" in the project's row menu, which asks in a dialog first.
+
+## Use a pack
+
+```
+kennis context packs <id>       # declare it; --drop <id> to stop
+kennis context sync             # copy its context in
 ```
 
 A **pack** is knowledge that arrives from outside, as data - see
 [Author a pack](author-a-pack.md). `kennis pack install` puts it in this
-machine's store; this command applies the context half of every installed
-pack to the project you are standing in.
+machine's store. A project declares the packs it uses in `bundle.json`,
+which is committed, so whoever clones the project declares the same ones.
+`kennis context sync` then copies the context of each declared pack into
+`.context/`, at the paths the pack gives, and the project indexes and
+searches those copies as its own files.
 
-**Offline.** The content is already on this machine, so this copies and
-never fetches.
+**Nothing reaches a project except through its own sync.** Declaring a pack
+copies nothing, and a new release of a pack changes no project until you
+run `sync` there. What it changed is then a diff in your repository, to read
+before you commit. **Offline**: the content is already on this machine.
 
 Each file it writes carries `owner: pack:<id>`, which is what tells kennis's
-files from yours. Nothing you own is touched:
+files from yours:
 
-| your file | what sync does |
+| the file | what sync does |
 |---|---|
-| anything with `owner: user`, or no frontmatter | never touched, never mentioned |
-| a file with `owner: user` that a pack also declares | left alone and **reported every run** |
-| a pack's file you have edited in place | left alone and reported; your edit stays |
-| a pack's file you have not touched | rewritten when the provider ships a change |
-| a pack's file no pack declares any more | removed - unless you edited it |
+| anything with `owner: user`, or no frontmatter | never touched |
+| a file with `owner: user` at a path a pack ships | left alone, and said |
+| a pack's copy you have edited in place | left alone and named; your edit stays |
+| a pack's copy you have not touched | replaced when the pack ships a change |
+| a copy of a pack the project no longer declares | kept, and said, until you sync with `--remove-undeclared`; an edited one is kept even then |
+| a copy of a pack the project declares and this machine has not installed | kept: whoever has the pack relies on it |
 
-The second row is reported on every run rather than once. A pack wanting a
-file you own is a standing disagreement, not an event, and you are entitled
-to know about it each time.
-
-**An edit is never overwritten and never deleted.** If you open a
-pack-shipped note, fix an error and save it, kennis notices - it compares
-the body against the digest it recorded when it wrote the file - and leaves
-it alone from then on, saying so. To settle it, change `owner:` to `user` in
-that file: it becomes yours, and the pack stops asking.
+**To make a pack's file yours, say so in its header.** Change `owner:` to
+`user`: from then on no release reaches it. A copy you edited without doing
+so is left as it is and named on every sync, with that instruction; delete
+it to take the pack's text again.
 
 **A damaged pack stops the sync rather than emptying your bundle.** If a
 pack's store is missing content, or its stored declaration will not parse,
-kennis refuses and names the pack. It does not read "I cannot see what this
-pack ships" as "this pack ships nothing", because that reading deletes every
-file the pack owns. `kennis pack status` says what is wrong and how to
-repair it.
+kennis refuses and names the pack. `kennis pack status` says what is wrong
+and how to repair it.
 
 Two things a pack may not do, both refused with the file named:
 
 - **ship a dot-prefixed file.** A dot-prefixed path is never indexed, so the
   file would be copied and then invisible to search.
 - **write `LANDING.md`.** It is the entry point, and it is yours.
+
+When two declared packs ship the same path, the one installed first keeps
+it, and the sync says so.
 
 `sync` does not index. It names `kennis context index` when it changed
 something, for the same reason `remember --context` does.

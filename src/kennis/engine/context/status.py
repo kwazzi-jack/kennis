@@ -31,7 +31,7 @@ import yaml
 from kennis.engine.context.bundle import index_root_for
 from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.context.index import BundleLoader
-from kennis.engine.context.notes import bundle_documents
+from kennis.engine.context.notes import bundle_documents, indexed_documents
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.history.freshness import Freshness
 from kennis.engine.rag.binding import document_digest
@@ -44,17 +44,21 @@ _FRONTMATTER_DELIMITER = "---"
 class BundleStatus:
     """What a bundle holds, as facts rather than as a report.
 
+    `document_count` and `groups` count what the index is built from;
     `groups` maps a directory relative to the bundle to how many documents
-    it holds, with `""` for the bundle root. `unreadable` names the files
-    whose frontmatter block could not be read - they are still indexed, and
-    still counted here, because a bundle document's identity is its path and
-    losing the header costs metadata rather than the file.
+    it holds, with `""` for the bundle root. Two lists name what is left
+    out of it (#624): `unreadable`, the files opening with a frontmatter
+    block that could not be read, and `without_frontmatter`, the files with
+    none (or an empty one). In a project that indexes files without
+    frontmatter both lists stay empty: nothing is left out, and a broken
+    header costs only its metadata.
     """
 
     path: Path
     document_count: int
     groups: dict[str, int]
     unreadable: tuple[str, ...]
+    without_frontmatter: tuple[str, ...]
     # None when the bundle has never been indexed, which is a different
     # thing from an index that is in step with an empty bundle.
     freshness: Freshness | None
@@ -62,21 +66,26 @@ class BundleStatus:
 
 def bundle_status(bundle: Path) -> BundleStatus:
     """Everything `context status` reports, read in one pass."""
-    documents = bundle_documents(bundle)
+    indexed = set(indexed_documents(bundle))
     groups: dict[str, int] = {}
     unreadable: list[str] = []
-    for path in documents:
+    without: list[str] = []
+    for path in bundle_documents(bundle):
         relative = path.relative_to(bundle)
+        if path not in indexed:
+            (unreadable if _header_is_broken(path) else without).append(
+                relative.as_posix()
+            )
+            continue
         directory = relative.parent.as_posix()
         key = "" if directory == "." else directory
         groups[key] = groups.get(key, 0) + 1
-        if _header_is_broken(path):
-            unreadable.append(relative.as_posix())
     return BundleStatus(
         path=bundle,
-        document_count=len(documents),
+        document_count=len(indexed),
         groups=groups,
         unreadable=tuple(unreadable),
+        without_frontmatter=tuple(without),
         freshness=bundle_freshness(bundle),
     )
 
@@ -116,21 +125,23 @@ def bundle_freshness(bundle: Path) -> Freshness | None:
 
 
 def _header_is_broken(path: Path) -> bool:
-    """Whether this file opens with a frontmatter block that yielded nothing.
+    """Whether this file opens with a frontmatter block that could not be
+    read.
 
     The same three cases `BundleLoader` reports while indexing - unterminated,
-    not a mapping, and not YAML at all - asked here so that a reader who has
-    not indexed lately still hears about it. A file with no `---` line is not
-    one of them: that is a file without metadata, which is allowed.
+    not a mapping, and not YAML at all. A file with no `---` line is not one
+    of them, and nor is an empty block: both are files without metadata.
+    `split_frontmatter` hands the whole text back as the body in the first
+    two cases and only there, which is how they are told from an empty one.
     """
     text = path.read_text(encoding="utf-8")
     if not text.lstrip().startswith(_FRONTMATTER_DELIMITER):
         return False
     try:
-        frontmatter, _ = split_frontmatter(text)
+        frontmatter, body = split_frontmatter(text)
     except yaml.YAMLError:
         return True
-    return not frontmatter
+    return not frontmatter and body == text
 
 
 __all__ = ["BundleStatus", "bundle_freshness", "bundle_status"]

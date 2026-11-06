@@ -1,18 +1,15 @@
 {% extends "base.html" %}
+{% from "outline.html" import branch, fold, folder_head with context %}
 {% block title %}kennis - {{ collection }}{% endblock %}
 {% block main %}
 <div data-collection="{{ collection }}">
 <h1>{{ collection }}</h1>
 <p class="role-muted">{{ summary }}</p>
-{% for group, documents in groups %}
-  {% if group %}<h2 class="role-muted">{{ group }}</h2>{% endif %}
-  <ul class="documents">
-  {% for document in documents %}
-    {# The id is a handle for a program; a reader opens the row (#476). #}
-    <li><a href="/document/{{ collection }}/{{ document.document_id }}" title="{{ document.document_id }}">{{ icon("file-text") }}<span>{{ document.title }}</span></a></li>
-  {% endfor %}
-  </ul>
-{% endfor %}
+<ul class="outline">{{ branch(tree.top, collection) }}{% for child in tree.branches %}
+<li class="outline-folder"><details{{ fold() }}>{{ folder_head(child.name, child.count) }}
+<ul class="outline">{{ branch(child, collection) }}</ul>
+</details></li>
+{% endfor %}</ul>
 </div>
 {% if unreadable %}
 <p class="role-error">{{ unreadable }}</p>

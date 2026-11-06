@@ -14,12 +14,18 @@ Found 2 in docs
 Docs relevance by cosine similarity
   [1] Recipe variable assignments - Step assignments
       relevance: high  id=yusk5agyfk chunk=3
+      kennis://open/yusk5agyfk/3
       ## Step assignments Any step definition can contain an `assign`
       section of its own. Use this if you need to change the value of
       recipe variable just for that one step. ...
 ```
 
-`id=` and `chunk=` are the coordinates you pass to `read`.
+`id=` and `chunk=` are the coordinates you pass to `read`. The line under
+them is the passage's `kennis://` link: `kennis open` with it shows the
+passage in the kennis window, and so does clicking it, once `kennis link
+register` has made the desktop open such links (see
+[Cite a passage and open it](cite-and-open.md)). A hit in a project's context
+has no link, because its handle is already the file's path.
 
 ## Scopes: the corpus and this project
 
