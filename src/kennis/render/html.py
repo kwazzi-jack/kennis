@@ -92,6 +92,18 @@ class MarkedRange:
     anchor: str
 
 
+@dataclass(frozen=True, slots=True)
+class MarginNote:
+    """HTML to set before the block holding the source offset `start`.
+
+    The caller composes the HTML - the tags a passage carries (#627) - and
+    `render/` only places it, as it places a mark it was told of.
+    """
+
+    start: int
+    html: str
+
+
 def to_html(
     markdown: str,
     *,
@@ -100,6 +112,7 @@ def to_html(
     without_title: str | None = None,
     terms: Sequence[str] = (),
     heading_anchors: bool = False,
+    margins: Sequence[MarginNote] = (),
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
 
@@ -129,6 +142,10 @@ def to_html(
     `heading_anchors` gives each heading the id `headings_of` names, for
     a page that offers an outline. Off by default, because a results
     page draws several passages and the same id twice is not HTML.
+
+    `margins` are set before the top-level block each one's offset falls
+    in, after the title is dropped so a note on the first chunk does not
+    keep the repeated title in place.
     """
     parser = _parser(load_remote_images=load_remote_images)
     pattern = query_pattern(terms)
@@ -137,6 +154,7 @@ def to_html(
         and without_title is None
         and pattern is None
         and not heading_anchors
+        and not margins
     ):
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
@@ -144,6 +162,8 @@ def to_html(
         tokens = _wrapped(tokens, markdown, marked)
     if without_title is not None:
         tokens = _without_title(tokens, without_title)
+    if margins:
+        tokens = _with_margins(tokens, markdown, margins)
     if pattern is not None:
         _mark_text(tokens, pattern)
     if heading_anchors:
@@ -463,6 +483,39 @@ def _wrapped(tokens: list[Token], markdown: str, marked: MarkedRange) -> list[To
     ]
 
 
+def _with_margins(
+    tokens: list[Token], markdown: str, margins: Sequence[MarginNote]
+) -> list[Token]:
+    """`tokens` with each note set before the first top-level block that
+    reaches the line its offset is on; a note past every block is dropped,
+    as a mark that reaches no block is."""
+    offsets = _line_offsets(markdown)
+    before: dict[int, list[str]] = {}
+    for note in margins:
+        line = max(0, bisect_right(offsets, note.start) - 1)
+        position = next(
+            (
+                position
+                for position, token in enumerate(tokens)
+                if token.level == 0
+                and token.nesting != -1
+                and token.map is not None
+                and token.map[1] > line
+            ),
+            None,
+        )
+        if position is not None:
+            before.setdefault(position, []).append(note.html)
+    placed: list[Token] = []
+    for position, token in enumerate(tokens):
+        for html in before.get(position, ()):
+            block = Token("html_block", "", 0)
+            block.content = html if html.endswith("\n") else f"{html}\n"
+            placed.append(block)
+        placed.append(token)
+    return placed
+
+
 def _closes_at(tokens: list[Token], position: int) -> int:
     """One past the token that closes the block opening at `position`.
 
@@ -703,6 +756,7 @@ __all__ = [
     "IMAGE_BLOCKED",
     "IMAGE_MISSING",
     "Heading",
+    "MarginNote",
     "MarkedRange",
     "PassageHtml",
     "headings_of",

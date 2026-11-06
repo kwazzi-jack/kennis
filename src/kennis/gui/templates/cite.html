@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{# A passage's citation (#627), for a reader without a script: the card's
+   Copy citation entry links here, and with a script copies instead. #}
+{% block title %}kennis - {{ citation_heading }}{% endblock %}
+{% block main %}
+<h1>{{ citation_heading }}</h1>
+<dl class="citation">
+  <dt>{{ citation_text }}</dt>
+  <dd><p class="citation-text">{{ citation.citation }}</p></dd>
+  <dt>{{ citation_reference }}</dt>
+  <dd><p class="citation-text">{{ citation.reference }}</p></dd>
+</dl>
+<p class="tag-link role-command">{{ citation.link }}</p>
+{% endblock %}

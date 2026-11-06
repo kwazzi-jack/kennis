@@ -9,7 +9,7 @@
       data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
 {# What the results are kept to, and the way back to everything (#625). #}
 {% if kept_tags %}
-<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}">{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
+<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" data-tag-colour="{{ (kept_tag_colours | default({})).get(name, "") }}">{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
 {% endif %}
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
@@ -69,18 +69,29 @@
 <h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.name }}</span><span class="count">{{ group.count }}</span></h2>
 <ol class="results">
 {% for hit in group.hits %}
-  <li class="hit" data-collection="{{ group.collection }}">
+  <li class="hit" data-collection="{{ group.collection }}"{% if hit.tags %} data-tag-colour="{{ hit.tags[0].colour }}"{% endif %}>
+    {# The bookmark tab on the card's edge (#627): what can be done with
+       this passage. Shown on hover and while anything in it has focus, so
+       a pointer, a keyboard and a tap all reach it, with no script. A
+       tagged passage's tab wears its first tag's colour. #}
+    {% set tag_this = "/tags/add?link=" ~ (hit.link | urlencode) %}
+    {% set cite_this = (hit.link | urlencode) %}
+    <div class="bookmark">
+      <button type="button" class="bookmark-tab" aria-label="{{ passage_actions }}" title="{{ passage_actions }}"{% if hit.tags %} data-tagged{% endif %}>{{ icon("bookmark") }}</button>
+      <div class="menu-items bookmark-items">
+        <a class="item" href="{{ hit.href }}">{{ icon("arrow-up-right") }}<span>{{ open_at_passage }}</span></a>
+        <a class="item" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("tag") }}<span>{{ tag_passage }}</span></a>
+        <a class="item copy-citation" href="/cite?link={{ cite_this }}" data-text="/cite/text?link={{ cite_this }}" data-copied="{{ copied_citation }}">{{ icon("quote") }}<span>{{ copy_citation }}</span></a>
+      </div>
+    </div>
     {# The card's head (Brian, 2026-10-12): the document and the section,
        then how well it matched and its handle, in a band over the
        passage it quotes. Title first, so a card says what it is before
        how well it matched (the visual review, F4). #}
     <div class="hit-head">
-      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
-        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a>
-        {# Tags this passage (#625): a dialog, or the form as a page
-           without a script. #}
-        {% set tag_this = "/tags/add?link=" ~ (hit.link | urlencode) %}
-        <a class="tag-hit" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ tag_passage }}" title="{{ tag_passage }}">{{ icon("tag") }}</a></p>
+      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a></p>
+      {# The tags on this passage, and on its whole document (#627). #}
+      {% if hit.tags %}<p class="hit-tags">{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" data-tag-colour="{{ chip.colour }}"{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
       {# Which section the passage is from; the title is the document's
          alone. Marked, so `safe`. #}
       {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}

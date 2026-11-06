@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     )
     from kennis.render.hits import Hit
     from kennis.retrieval import Sweep
-    from kennis.tagging import Tagged, TagListing
+    from kennis.tagging import TagColoured, Tagged, TagListing
 
 type Waiting = Callable[[Notice], None]
 
@@ -283,6 +283,26 @@ def untag(
         "untag",
         {"requests": list(requests), "names": list(names)},
         Tagged,
+        events=None,
+        on_waiting=None,
+    )
+
+
+def colour_tags(
+    corpus_root: Path,
+    names: Sequence[str],
+    colour: str | None,
+    bundles: Sequence[Path],
+) -> Written[TagColoured]:
+    """Choose a colour for each tag, or with None the one derived from its
+    name, in every store of the corpus and `bundles` holding it (#627)."""
+    from kennis.tagging import TagColoured
+
+    return _write(
+        corpus_root,
+        "colour_tags",
+        {"names": list(names), "colour": colour, "bundles": list(bundles)},
+        TagColoured,
         events=None,
         on_waiting=None,
     )

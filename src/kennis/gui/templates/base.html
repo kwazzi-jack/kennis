@@ -13,6 +13,7 @@
 <script defer src="/static/vendor/katex.min.js"></script>
 <script defer src="/static/typeset.js"></script>
 <script defer src="/static/passage.js"></script>
+<script defer src="/static/cite.js"></script>
 <script defer src="/static/revision.js"></script>
 <script defer src="/static/presence.js"></script>
 <script defer src="/static/redraws.js"></script>
@@ -211,7 +212,7 @@
     <h2 class="pane-head"><a href="/tags">{{ tags_heading }}</a></h2>
     <ul class="tree">
       {% for entry in pane.tags %}
-      <li><a class="node" href="{{ entry.href }}">{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+      <li><a class="node tag-node" href="{{ entry.href }}" data-tag-colour="{{ entry.colour }}">{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
       {% endfor %}
     </ul>
   </section>

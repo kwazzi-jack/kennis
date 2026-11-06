@@ -7,10 +7,26 @@
 {% block title %}kennis - {% if tag %}{{ tag }}{% else %}{{ tags_heading }}{% endif %}{% endblock %}
 {% block main %}
 {% if tag %}
-<div class="tag-head">
+<div class="tag-head" data-tag-colour="{{ colour }}">
   <h1>{{ icon("tag") }}<span>{{ tag }}</span></h1>
   <a class="button" href="{{ search_href }}">{{ icon("search") }}<span>{{ search_within_tag }}</span></a>
 </div>
+{# The tag's colour (#627): a swatch each, "from its name" showing the one
+   derived. A plain form; with a script it is sent on each change and the
+   page drawn again, since every chip of the tag changes colour. #}
+<form class="tag-colour" action="/tags/colour" method="post" hx-post="/tags/colour" hx-trigger="change">
+  <input type="hidden" name="tag" value="{{ tag }}">
+  <fieldset>
+    <legend>{{ colour_label }}</legend>
+    {% for value, label in colour_choices %}
+    <label class="colour-swatch" data-tag-colour="{{ derived_colour if value == "auto" else value }}">
+      <input type="radio" name="colour" value="{{ value }}"{% if value == chosen_colour %} checked{% endif %}>
+      <span class="dot"></span><span>{{ label }}</span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  <button type="submit" class="ghost">{{ colour_set }}</button>
+</form>
 <ol class="tagged-list">
   {% for item in tagged %}
   <li class="tagged" data-kind="{{ item.kind }}" data-state="{{ item.state }}">
@@ -33,7 +49,7 @@
 {% if tags %}
 <ul class="tags-list">
   {% for entry in tags %}
-  <li><a class="tag-entry" href="{{ entry.href }}">{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+  <li><a class="tag-entry" href="{{ entry.href }}" data-tag-colour="{{ entry.colour }}"><span class="dot"></span><span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
   {% endfor %}
 </ul>
 {% else %}

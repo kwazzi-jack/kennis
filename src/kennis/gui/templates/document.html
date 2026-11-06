@@ -79,7 +79,7 @@
     {% if document_tags %}
     <ul class="tag-chips">
       {% for tagged in document_tags %}
-      <li class="tag-chip-row"><a class="tag-chip" href="{{ tagged.href }}">{{ tagged.name }}</a>{% if tagged.chunk is not none %}<a class="tag-passage" href="?chunk={{ tagged.chunk }}#chunk-{{ tagged.chunk }}" title="{{ tagged.quote or tagged_passage_label }}">{{ tagged.quote or tagged_passage_label }}</a>{% endif %}
+      <li class="tag-chip-row"><a class="tag-chip" href="{{ tagged.href }}" data-tag-colour="{{ tagged.colour }}">{{ tagged.name }}</a>{% if tagged.chunk is not none %}<a class="tag-passage" href="?chunk={{ tagged.chunk }}#chunk-{{ tagged.chunk }}" title="{{ tagged.quote or tagged_passage_label }}">{{ tagged.quote or tagged_passage_label }}</a>{% endif %}
         <form class="untag" action="/tags/remove" method="post">
           <input type="hidden" name="tag" value="{{ tagged.name }}">
           <input type="hidden" name="link" value="{{ tagged.link }}">

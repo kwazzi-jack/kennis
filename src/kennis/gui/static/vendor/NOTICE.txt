@@ -52,13 +52,13 @@ Lucide 0.460.0 (lucide-static)
   Icons for the bar, the pane, the dialogs and the search results.
   Only the icons the interface uses are carried, as the SVG files
   Lucide publishes, inlined by the server so they take the text colour.
-  icons/activity.svg, icons/arrow-up-right.svg, icons/book-open.svg,
+  icons/activity.svg, icons/arrow-up-right.svg, icons/book-open.svg, icons/bookmark.svg,
   icons/brain.svg, icons/chevron-down.svg, icons/chevron-right.svg,
   icons/circle-check.svg, icons/circle-x.svg, icons/command.svg,
   icons/database.svg, icons/ellipsis.svg, icons/file-plus.svg, icons/file-text.svg, icons/folder.svg, icons/folder-plus.svg,
   icons/git-commit-horizontal.svg, icons/globe.svg, icons/hash.svg, icons/history.svg, icons/info.svg,
   icons/package.svg, icons/panel-left.svg, icons/panel-right.svg, icons/pencil.svg,
-  icons/power.svg, icons/refresh-cw.svg, icons/search.svg, icons/settings.svg,
+  icons/power.svg, icons/quote.svg, icons/refresh-cw.svg, icons/search.svg, icons/settings.svg,
   icons/sticky-note.svg, icons/tag.svg, icons/trash-2.svg, icons/triangle-alert.svg,
   icons/wand-sparkles.svg, icons/whole-word.svg, icons/x.svg
   https://github.com/lucide-icons/lucide

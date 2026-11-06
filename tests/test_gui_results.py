@@ -321,15 +321,17 @@ def test_a_measure_is_an_icon_a_word_and_a_bar(corpus: Path, client: TestClient)
 
 
 def test_the_document_is_opened_by_a_named_icon(corpus: Path, client: TestClient):
+    """From the bookmark tab on the card's edge (#627), an entry with an
+    icon and its words."""
     document_id = a_note(corpus, "calibration", "Calibration solves for antenna gains.")
 
-    item = items_of(hits_of(client, "antenna"))[0]
-    opener = re.search(r'<a class="open"[^>]*>.*?</a>', item, re.S)
+    item = BeautifulSoup(items_of(hits_of(client, "antenna"))[0], "html.parser")
+    opener = item.select_one(".bookmark-items a.item")
 
-    assert opener, item
-    assert f'aria-label="{words.OPEN_AT_PASSAGE}"' in opener.group(0)
-    assert f"/document/notes/{document_id}" in opener.group(0)
-    assert "<svg" in opener.group(0)
+    assert opener is not None, item
+    assert opener.get_text(strip=True) == words.OPEN_AT_PASSAGE
+    assert f"/document/notes/{document_id}" in str(opener["href"])
+    assert opener.find("svg") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -540,7 +542,7 @@ def test_a_hit_has_one_way_to_its_document_and_a_chevron_to_open_it(
     summary = passage.find("summary")
     assert isinstance(summary, Tag)
 
-    assert {" ".join(link.get("class") or []) for link in links} == {"title", "open"}
+    assert {" ".join(link.get("class") or []) for link in links} == {"title", "item"}
     assert passage.find("a") is None or not any(
         f"/document/notes/{document_id}" in str(link.get("href"))
         for link in passage.find_all("a")

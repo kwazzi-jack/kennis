@@ -105,15 +105,21 @@ the other versions under **Also held** (see
 
 The passage under a hit shows the part around the first match. **Show the
 whole passage** opens it in place to the whole chunk, the text before and
-after appearing around what was already shown, and the arrow beside the
-title opens the document at that passage.
+after appearing around what was already shown, and the hit's title opens
+the document at that passage.
+
+The bookmark tab on a hit's top edge lists what can be done with the
+passage: open the document at it, tag it, or copy its citation. Point at
+the tab, move to it with Tab, or tap it.
 
 Opening a hit renders the document as HTML: headings, tables, code blocks,
 and mathematics typeset with KaTeX.
 
-The tag icon beside a hit's title tags that passage, and **Tag this
-document** in a document's details tags it whole; the details also list the
-document's tags, each with a button that removes it. The pane lists every
+A hit shows the tags on its passage and on its document, each in its
+tag's colour. **Tag this passage** in the bookmark tab tags it, and **Tag
+this document** in a document's details tags it whole; the details also
+list the document's tags, each with a button that removes it, and the
+text shows each tagged passage's tags beside it. The pane lists every
 tag, and a tag's page shows its passages first, each with its opening words
 and its `kennis://` link, ready to cite. **Search within this tag** keeps a
 search to it until **Show everything**. See

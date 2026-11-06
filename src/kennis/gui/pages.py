@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -97,6 +97,7 @@ from kennis.render.hits import (
 )
 from kennis.render.html import (
     Heading,
+    MarginNote,
     MarkedRange,
     PassageHtml,
     headings_of,
@@ -180,6 +181,22 @@ class ShownMeasure:
 
 
 @dataclass(frozen=True, slots=True)
+class ShownChip:
+    """A tag as a chip: its name, its page, its colour, and whether it is on
+    the whole document rather than this passage (#627)."""
+
+    name: str
+    href: str
+    colour: str
+    whole: bool
+
+
+# The tags a hit's chunk carries, given its group: the window's tags are
+# read once per page by `gui/tagged.py`, which hands this in.
+type ChipsOf = Callable[[str, Chunk], tuple[ShownChip, ...]]
+
+
+@dataclass(frozen=True, slots=True)
 class ShownHit:
     """One hit, in the pieces a page arranges.
 
@@ -213,6 +230,8 @@ class ShownHit:
     # The passage's `kennis://` link, which is what the card's tag control
     # names it by (#625): one form for a corpus hit and a project's.
     link: str = ""
+    # The tags on this passage or its document (#627).
+    tags: tuple[ShownChip, ...] = ()
 
     @property
     def opens(self) -> bool:
@@ -241,7 +260,9 @@ def shown_measures(
 _PASSAGE_FITS: Final = 360
 
 
-def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
+def shown_hits(
+    hits: list[Hit], *, question: str = "", chips_of: ChipsOf | None = None
+) -> list[ShownHit]:
     """Every hit, rendered once, in rank order."""
     if not hits:
         return []
@@ -283,6 +304,11 @@ def shown_hits(hits: list[Hit], *, question: str = "") -> list[ShownHit]:
                     hit.collection,
                     hit.result.chunk.document_id,
                     hit.result.chunk.chunk_index,
+                ),
+                tags=(
+                    ()
+                    if chips_of is None
+                    else chips_of(hit.collection, hit.result.chunk)
                 ),
             )
         )
@@ -401,7 +427,9 @@ class ShownSkip:
     resolution: str
 
 
-def shown_groups_of(found: Sweep, question: str, order: str = "") -> list[ShownGroup]:
+def shown_groups_of(
+    found: Sweep, question: str, order: str = "", chips_of: ChipsOf | None = None
+) -> list[ShownGroup]:
     """A sweep, in the pieces a page arranges."""
     return [
         ShownGroup(
@@ -409,7 +437,9 @@ def shown_groups_of(found: Sweep, question: str, order: str = "") -> list[ShownG
             name=group_name(name),
             # The bundle is drawn as a folder in the pane, so here too.
             icon=words.COLLECTION_ICONS.get(name, "folder"),
-            hits=shown_hits(ordered_by(hits, order), question=question),
+            hits=shown_hits(
+                ordered_by(hits, order), question=question, chips_of=chips_of
+            ),
         )
         for name, hits in found.groups.items()
     ]
@@ -876,6 +906,7 @@ def shown_document(
     marked: MarkedRange | None = None,
     marks: DocumentMarks | None = None,
     question: str = "",
+    margins: Sequence[MarginNote] = (),
 ) -> ShownDocument:
     """Read one document and render it.
 
@@ -909,6 +940,7 @@ def shown_document(
             without_title=frontmatter.title,
             heading_anchors=True,
             terms=terms_of(question),
+            margins=margins,
         ),
         has_blocked_images=_refers_remotely(document.body),
         group=group,
@@ -983,6 +1015,7 @@ def shown_bundle_document(
     load_remote_images: bool,
     marked: MarkedRange | None = None,
     question: str = "",
+    margins: Sequence[MarginNote] = (),
 ) -> ShownDocument:
     """One note out of this project's bundle, rendered.
 
@@ -1030,6 +1063,7 @@ def shown_bundle_document(
             without_title=str(title),
             heading_anchors=True,
             terms=terms_of(question),
+            margins=margins,
         ),
         has_blocked_images=_refers_remotely(body),
         handle=relative_path,

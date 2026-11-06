@@ -35,15 +35,20 @@ from kennis.context import Context
 from kennis.engine.errors import DocumentNotFound, KennisError, SearchUnavailable
 from kennis.engine.rag.models import Chunk
 from kennis.engine.tags import (
+    TAG_COLOURS,
     TAGS_FILENAME,
     Anchor,
     Detached,
     Placed,
     Tags,
+    TagStore,
     Unchecked,
+    colour_of,
     placed,
     quote_of,
+    read_store,
     read_tags,
+    rehinted,
     tag_name,
     with_tags,
     without_tags,
@@ -61,7 +66,7 @@ MISSING: Final = "missing"
 # them: the window writes on its request's thread and the command line and
 # agents through the `tags` lane, and two read-modify-writes of one file
 # interleaved would lose one of them.
-_WRITING: Final = threading.Lock()
+WRITING_TAGS: Final = threading.Lock()
 
 # How a target in one store is linked: the corpus by identifier, a
 # project by its name and the path.
@@ -96,6 +101,18 @@ class Tagged:
 
     changes: list[TagChange]
     refused: list[TagRefusal]
+
+
+@dataclass(frozen=True, slots=True)
+class TagColoured:
+    """A colour chosen, or cleared: the tags, the colour each is drawn in
+    now, and how many stores were written."""
+
+    names: tuple[str, ...]
+    # None when the colour derived from the name was asked for.
+    colour: str | None
+    shown: dict[str, str]
+    stores: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +171,7 @@ def change_tags(
     remove: bool,
 ) -> Tagged:
     """Tag, or untag, every request with every name, or refuse the batch."""
-    with _WRITING:
+    with WRITING_TAGS:
         return _changed_tags(context, requests, names, remove=remove)
 
 
@@ -165,8 +182,6 @@ def _changed_tags(
     *,
     remove: bool,
 ) -> Tagged:
-    from kennis.operations import place_corpus_tags
-
     folded = tuple(dict.fromkeys(tag_name(name) for name in names))
     if not folded:
         raise KennisError("no tag was named", resolution="kennis tag --help")
@@ -216,20 +231,99 @@ def _changed_tags(
             )
         )
 
-    corpus_store = _corpus_store(context)
     for store, tags in held.items():
         if tags == before[store]:
             continue
-        text = written(tags)
-        if store == corpus_store:
-            place_corpus_tags(
-                context,
-                text,
-                counts=_counts(changes, named, store, remove=remove),
-            )
-        else:
-            _place_bundle_tags(store, text)
+        _write_store(
+            context,
+            store,
+            TagStore(tags, read_store(store).colours),
+            counts=_counts(changes, named, store, remove=remove),
+        )
     return Tagged(changes=changes, refused=[])
+
+
+def _write_store(
+    context: Context, store: Path, held: TagStore, *, counts: dict[str, int]
+) -> None:
+    """Write one store, the corpus's committed, a project's left for the
+    person to commit.
+
+    Every hint in it is first set to where its passage is now (#626): only
+    the nearest occurrence of repeated words is found by the hint, and a
+    stale one can be nearer another.
+    """
+    from kennis.operations import place_corpus_tags
+
+    corpus = store == _corpus_store(context)
+    chunks = corpus_chunks(context) if corpus else _bundle_chunks(store.parent)
+    text = written(rehinted(held.tags, chunks), colours=held.colours)
+    if corpus:
+        place_corpus_tags(context, text, counts=counts)
+    else:
+        _place_bundle_tags(store, text)
+
+
+def colour_tags(
+    context: Context,
+    names: Sequence[str],
+    colour: str | None,
+    bundles: Sequence[Path],
+) -> TagColoured:
+    """Choose `colour` for each of `names`, or with None go back to the
+    one derived from the name, in every store - the corpus's and each of
+    `bundles` - that holds the tag (#627)."""
+    with WRITING_TAGS:
+        folded = tuple(dict.fromkeys(tag_name(name) for name in names))
+        if not folded:
+            raise KennisError("no tag was named", resolution="kennis tag --help")
+        if colour is not None and colour not in TAG_COLOURS:
+            raise KennisError(
+                f"'{colour}' is not a tag colour: choose one of "
+                f"{', '.join(TAG_COLOURS)}, or auto"
+            )
+        stores = [
+            _corpus_store(context),
+            *(bundle / TAGS_FILENAME for bundle in bundles),
+        ]
+        held = {store: read_store(store) for store in stores}
+        nowhere = [
+            name
+            for name in folded
+            if not any(name in one.tags for one in held.values())
+        ]
+        if nowhere:
+            raise KennisError(
+                f"nothing is tagged {', '.join(nowhere)}", resolution="kennis tags"
+            )
+        changed = 0
+        for store, one in held.items():
+            colours = dict(one.colours)
+            for name in folded:
+                if name not in one.tags:
+                    continue
+                if colour is None:
+                    colours.pop(name, None)
+                else:
+                    colours[name] = colour
+            if colours == one.colours:
+                continue
+            changed += 1
+            _write_store(
+                context,
+                store,
+                TagStore(one.tags, colours),
+                counts={"coloured": len(folded)},
+            )
+        return TagColoured(
+            names=folded,
+            colour=colour,
+            shown={
+                name: colour_of(name, {name: colour} if colour else {})
+                for name in folded
+            },
+            stores=changed,
+        )
 
 
 def _stored_as(
@@ -283,6 +377,30 @@ def _corpus_store(context: Context) -> Path:
     return context.corpus_root / TAGS_FILENAME
 
 
+def corpus_chunks(context: Context) -> list[Chunk]:
+    """The chunks of every corpus collection with an index here."""
+    from kennis.engine.corpus.layout import index_root
+    from kennis.engine.corpus.schema import COLLECTION_NAMES
+    from kennis.engine.rag.index import load_chunks
+
+    chunks: list[Chunk] = []
+    for name in COLLECTION_NAMES:
+        try:
+            chunks.extend(load_chunks(index_root(context.corpus_root), name))
+        except KennisError:
+            continue
+    return chunks
+
+
+def _bundle_chunks(bundle: Path) -> list[Chunk]:
+    from kennis.engine.context.index import load_bundle_index
+
+    try:
+        return load_bundle_index(bundle).chunks
+    except KennisError:
+        return []
+
+
 def _named(
     context: Context,
     request: CiteRequest,
@@ -293,7 +411,7 @@ def _named(
     if request.bundle is not None:
         return _named_in_bundle(request, request.bundle, held, remove=remove)
     from kennis.engine.corpus.layout import index_root
-    from kennis.engine.rag.index import load_index
+    from kennis.engine.rag.index import load_chunks
     from kennis.finding import resolve_document
 
     store = _corpus_store(context)
@@ -316,7 +434,7 @@ def _named(
     try:
         chunks = tuple(
             chunk
-            for chunk in load_index(index_root(context.corpus_root), where.name).chunks
+            for chunk in load_chunks(index_root(context.corpus_root), where.name)
             if chunk.document_id == document.id
         )
     except KennisError:
@@ -460,7 +578,7 @@ def _listed_corpus(
     context: Context, tags: Tags, listed: dict[str, list[TaggedTarget]]
 ) -> None:
     from kennis.engine.corpus.layout import index_root
-    from kennis.engine.rag.index import load_index
+    from kennis.engine.rag.index import load_chunks
     from kennis.finding import resolve_document
     from kennis.publishing import shared
 
@@ -477,8 +595,9 @@ def _listed_corpus(
                     continue
                 if where.name not in indexes:
                     try:
-                        loaded = load_index(index_root(context.corpus_root), where.name)
-                        indexes[where.name] = tuple(loaded.chunks)
+                        indexes[where.name] = tuple(
+                            load_chunks(index_root(context.corpus_root), where.name)
+                        )
                     except KennisError:
                         indexes[where.name] = None
                 listed.setdefault(name, []).append(
@@ -566,12 +685,16 @@ __all__ = [
     "MISSING",
     "PLACED",
     "UNCHECKED",
+    "WRITING_TAGS",
     "TagChange",
+    "TagColoured",
     "TagListing",
     "TagRefusal",
     "Tagged",
     "TaggedTarget",
     "bundle_title",
     "change_tags",
+    "colour_tags",
+    "corpus_chunks",
     "tags_held",
 ]

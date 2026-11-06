@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from kennis.citing import request_for
 from kennis.context import existing_corpus
 from kennis.engine.errors import KennisError
-from kennis.engine.tags import split_tag_names, tag_name
+from kennis.engine.tags import TAG_COLOURS, colour_of, split_tag_names, tag_name
 from kennis.gui import words
 from kennis.gui.pages import ShownOutcome
 from kennis.gui.responses import (
@@ -28,8 +28,10 @@ from kennis.gui.responses import (
     refused_in_the_form,
 )
 from kennis.gui.tagged import (
+    chosen_colours_here,
     listings,
     pane_tags,
+    present_bundles,
     shown_tagged,
     tag_href,
     tags_in_use,
@@ -60,6 +62,7 @@ def serve_tags(request: Request, tag: str = "") -> HTMLResponse:
             raise KennisError(f"nothing is tagged {name}", resolution="kennis tags")
     except KennisError as error:
         return problem_page(request, error)
+    chosen = chosen_colours_here(context)
     return TEMPLATES.TemplateResponse(
         request,
         "tags.html",
@@ -69,6 +72,15 @@ def serve_tags(request: Request, tag: str = "") -> HTMLResponse:
             "tagged": shown_tagged(listing),
             "search_href": f"/?tag={name}",
             "back": tag_href(name),
+            "colour": colour_of(name, chosen),
+            "chosen_colour": chosen.get(name, "auto"),
+            "colour_choices": (
+                ("auto", words.TAG_COLOUR_AUTOMATIC),
+                *((one, words.TAG_COLOUR_NAMES[one]) for one in TAG_COLOURS),
+            ),
+            "colour_label": words.TAG_COLOUR_LABEL,
+            "colour_set": words.TAG_COLOUR_SET,
+            "derived_colour": colour_of(name, {}),
         },
     )
 
@@ -134,6 +146,28 @@ def remove_tag(request: Request, form: PostedForm) -> Response:
     if not back.startswith("/") or back.startswith("//"):
         back = tag_href(name)
     return RedirectResponse(back, status_code=303)
+
+
+@router.post("/tags/colour")
+def colour_tag(request: Request, form: PostedForm) -> Response:
+    """Choose a tag's colour, or go back to the one from its name (#627),
+    in the corpus and every project that holds it; then its page again."""
+    from kennis.tagging import colour_tags
+
+    colour = str(form.get("colour") or "")
+    try:
+        name = tag_name(str(form.get("tag") or ""))
+        colour_tags(
+            existing_corpus(),
+            [name],
+            None if colour in ("", "auto") else colour,
+            present_bundles(),
+        )
+    except KennisError as error:
+        return refused_a_post(request, str(error), resolution=error.resolution)
+    if from_htmx(request):
+        return Response(headers={"HX-Refresh": "true"})
+    return RedirectResponse(tag_href(name), status_code=303)
 
 
 def _refused(request: Request, problem: str, resolution: str | None) -> Response:

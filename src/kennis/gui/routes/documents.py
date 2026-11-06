@@ -19,6 +19,7 @@ from kennis.engine.context.status import bundle_freshness
 from kennis.engine.errors import (
     KennisError,
 )
+from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.repository import Repository
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
@@ -35,7 +36,7 @@ from kennis.holdings import (
     document_marks,
     freshness_of,
 )
-from kennis.render.html import MarkedRange
+from kennis.render.html import MarginNote, MarkedRange
 from kennis.retrieval import (
     chunk_range,
     document_chunks,
@@ -194,6 +195,9 @@ def serve_document(
     load_remote = images == "on"
     context = existing_corpus()
     marked, withheld = _marked(context, collection, document_id, chunk)
+    tags = _tags_or_none(
+        lambda: document_tags(context, document=document_id, project=None, bundle=None)
+    )
     try:
         document = shown_document(
             context.corpus_root,
@@ -203,6 +207,15 @@ def serve_document(
             marked=marked,
             marks=document_marks(context, collection),
             question=q,
+            margins=_tag_margins(
+                tags,
+                in_step=lambda: _in_step(
+                    freshness_of(context, Repository(context.corpus_root), collection)
+                ),
+                chunks=lambda: document_chunks(
+                    context, collection, document_id, bundle=None
+                ),
+            ),
         )
     except KennisError as error:
         return problem_page(request, error)
@@ -223,14 +236,47 @@ def serve_document(
             chunks=lambda: document_chunks(
                 context, collection, document.document_id, bundle=None
             ),
-            tags=_tags_or_none(
-                lambda: document_tags(
-                    context, document=document.document_id, project=None, bundle=None
-                )
-            ),
+            tags=tags,
             back=_this_page(request),
         ),
     )
+
+
+def _in_step(freshness: Freshness | None) -> bool:
+    """Whether an index's offsets address the document as it is now."""
+    return freshness is not None and freshness.state == "in step"
+
+
+def _tag_margins(
+    tags: Sequence[ShownDocumentTag],
+    *,
+    in_step: Callable[[], bool],
+    chunks: Callable[[], list[Chunk]],
+) -> list[MarginNote]:
+    """Beside each tagged passage, its tags (#627).
+
+    By the rule that withholds a mark: a passage placed by the index is
+    set beside the offsets that index recorded, which address the document
+    only while the index is in step with it. Neither the freshness nor the
+    chunks are read when nothing is tagged by passage.
+    """
+    by_chunk: dict[int, list[ShownDocumentTag]] = {}
+    for tagged in tags:
+        if tagged.chunk is not None and tagged.placed:
+            by_chunk.setdefault(tagged.chunk, []).append(tagged)
+    if not by_chunk or not in_step():
+        return []
+    margin = TEMPLATES.get_template("tag-margin.html")
+    return [
+        MarginNote(
+            start=chunk.char_start,
+            html=margin.render(
+                chips=by_chunk[chunk.chunk_index], chunk=chunk.chunk_index
+            ),
+        )
+        for chunk in chunks()
+        if chunk.chunk_index in by_chunk
+    ]
 
 
 def _tags_or_none(
@@ -289,6 +335,11 @@ def serve_bundle_document(
         return problem_page(request, error)
     marked, withheld = _marked_in_bundle(bundle, relative_path, chunk)
     load_remote = images == "on"
+    tags = _tags_or_none(
+        lambda: document_tags(
+            existing_corpus(), document=relative_path, project=project, bundle=bundle
+        )
+    )
     try:
         document = shown_bundle_document(
             bundle,
@@ -297,6 +348,13 @@ def serve_bundle_document(
             load_remote_images=load_remote,
             marked=marked,
             question=q,
+            margins=_tag_margins(
+                tags,
+                in_step=lambda: _in_step(bundle_freshness(bundle)),
+                chunks=lambda: document_chunks(
+                    resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
+                ),
+            ),
         )
     except KennisError as error:
         return problem_page(request, error)
@@ -313,14 +371,7 @@ def serve_bundle_document(
             chunks=lambda: document_chunks(
                 resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
             ),
-            tags=_tags_or_none(
-                lambda: document_tags(
-                    existing_corpus(),
-                    document=relative_path,
-                    project=project,
-                    bundle=bundle,
-                )
-            ),
+            tags=tags,
             back=_this_page(request),
         ),
     )

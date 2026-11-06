@@ -27,8 +27,9 @@ chunk texts rather than the body, so a stale index cannot put offsets out.
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -40,6 +41,20 @@ from kennis.engine.rag.models import Chunk, ChunkPredicate
 
 TAGS_FILENAME: Final = "tags.yml"
 
+# A tag's colour is one of these names (#627); each theme of the window
+# draws a name from its own measured value, so the file holds no colour
+# value and a theme can change without touching it.
+TAG_COLOURS: Final = (
+    "red",
+    "orange",
+    "yellow",
+    "green",
+    "teal",
+    "blue",
+    "purple",
+    "pink",
+)
+
 # Long enough to be one passage's own words, short enough that a chunker
 # drawing its boundaries elsewhere still holds them in one chunk.
 _QUOTE_LENGTH: Final = 80
@@ -48,6 +63,8 @@ _PATH_KEY: Final = "path"
 _CHUNK_KEY: Final = "chunk"
 _QUOTE_KEY: Final = "quote"
 _BUNDLE_SUFFIX: Final = ".md"
+_COLOUR_KEY: Final = "colour"
+_TARGETS_KEY: Final = "targets"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +84,14 @@ class Anchor:
 
 
 type Tags = dict[str, tuple[Anchor, ...]]
+
+
+@dataclass(frozen=True, slots=True)
+class TagStore:
+    """One `tags.yml`: its tags, and the colours chosen for some of them."""
+
+    tags: Tags = field(default_factory=dict)
+    colours: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,20 +142,31 @@ def split_tag_names(text: str) -> tuple[str, ...]:
 
 def read_tags(path: Path) -> Tags:
     """The tags `path` holds; none when it does not exist."""
+    return read_store(path).tags
+
+
+def read_store(path: Path) -> TagStore:
+    """The tags `path` holds and their chosen colours; empty when it does
+    not exist.
+
+    A tag's value is its list of targets, or, when a colour was chosen, a
+    mapping of `colour` and `targets` (#627).
+    """
     from kennis.engine.pack.schema import read_yaml
 
     if not path.is_file():
-        return {}
+        return TagStore()
     try:
         document = read_yaml(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as error:
         raise _unreadable(path, f"it is not YAML: {error}") from error
     if document is None:
-        return {}
+        return TagStore()
     if not isinstance(document, dict):
         raise _unreadable(path, "it is not a mapping of tags to their targets")
     held: Tags = {}
-    for key, targets in document.items():
+    colours: dict[str, str] = {}
+    for key, value in document.items():
         if not isinstance(key, str):
             raise _unreadable(path, f"the tag {key!r} is not a name")
         try:
@@ -139,12 +175,51 @@ def read_tags(path: Path) -> Tags:
             raise _unreadable(path, str(refused)) from refused
         if name != key:
             raise _unreadable(path, f"the tag '{key}' is written as '{name}'")
+        targets = value
+        if isinstance(value, dict):
+            targets, colour = _coloured(path, key, value)
+            colours[name] = colour
         if targets is None:
             continue
         if not isinstance(targets, list):
             raise _unreadable(path, f"the tag '{key}' holds no list of targets")
         held[name] = tuple(_anchor(path, key, target) for target in targets)
-    return {name: anchors for name, anchors in held.items() if anchors}
+    kept = {name: anchors for name, anchors in held.items() if anchors}
+    return TagStore(
+        tags=kept, colours={name: colours[name] for name in colours if name in kept}
+    )
+
+
+def _coloured(path: Path, name: str, value: dict[object, object]) -> tuple[object, str]:
+    """A coloured tag's targets and colour."""
+    unknown = set(value) - {_COLOUR_KEY, _TARGETS_KEY}
+    if unknown:
+        raise _unreadable(
+            path, f"the tag '{name}' has {', '.join(sorted(map(str, unknown)))}"
+        )
+    if _TARGETS_KEY not in value:
+        raise _unreadable(path, f"the tag '{name}' has a colour and no targets")
+    colour = value.get(_COLOUR_KEY)
+    if colour not in TAG_COLOURS:
+        raise _unreadable(
+            path,
+            f"the tag '{name}' has the colour {colour!r}, which is not one of "
+            f"{', '.join(TAG_COLOURS)}",
+        )
+    assert isinstance(colour, str)
+    return value[_TARGETS_KEY], colour
+
+
+def colour_of(name: str, chosen: Mapping[str, str]) -> str:
+    """The colour `name` is drawn in: the one chosen, or one of
+    `TAG_COLOURS` derived from the name.
+
+    crc32 rather than `hash`, which Python seeds afresh in every process,
+    so a tag keeps its colour across windows and restarts.
+    """
+    if name in chosen:
+        return chosen[name]
+    return TAG_COLOURS[zlib.crc32(name.encode("utf-8")) % len(TAG_COLOURS)]
 
 
 def _anchor(path: Path, name: str, target: object) -> Anchor:
@@ -178,14 +253,23 @@ def _unreadable(path: Path, why: str) -> TagsUnreadable:
     )
 
 
-def written(held: Mapping[str, Sequence[Anchor]]) -> str:
+def written(held: Mapping[str, Sequence[Anchor]], *, colours: Mapping[str, str]) -> str:
     """`held` as the file's text: tags in order of name, targets in the
-    order they were tagged. A tag with no targets is left out."""
-    document = {
-        name: [_target(anchor) for anchor in held[name]]
-        for name in sorted(held)
-        if held[name]
-    }
+    order they were tagged, a coloured tag as a mapping. A tag with no
+    targets is left out, and its colour with it.
+
+    `colours` has no default: a writer that did not say which colours it
+    keeps would drop every chosen colour on the next change.
+    """
+    document: dict[str, object] = {}
+    for name in sorted(held):
+        if not held[name]:
+            continue
+        targets = [_target(anchor) for anchor in held[name]]
+        if name in colours:
+            document[name] = {_COLOUR_KEY: colours[name], _TARGETS_KEY: targets}
+        else:
+            document[name] = targets
     return yaml_text(document) if document else ""
 
 
@@ -276,6 +360,67 @@ def placed(anchor: Anchor, chunks: Sequence[Chunk]) -> Placement:
     return Placed(min(holding, key=lambda number: (abs(number - hint), number)))
 
 
+def rehinted(held: Mapping[str, Sequence[Anchor]], chunks: Sequence[Chunk]) -> Tags:
+    """`held` with each passage's hint set to where it is placed among
+    `chunks` now (#626).
+
+    The nearest occurrence of repeated words is taken by the hint, so a hint
+    left behind by several edits can pick the wrong one; rewritten after
+    each, it follows its passage. A detached or unchecked passage keeps its
+    hint, there being nothing better to say. Two targets of one tag placed
+    at one chunk are one target, and the first is kept.
+    """
+    by_document = _by_document(chunks)
+    changed: Tags = {}
+    for name, anchors in held.items():
+        kept: list[Anchor] = []
+        for anchor in anchors:
+            moved = anchor
+            if anchor.chunk is not None:
+                where = placed(anchor, by_document.get(anchor.document, ()))
+                if isinstance(where, Placed) and where.chunk is not None:
+                    moved = Anchor(anchor.document, where.chunk, anchor.quote)
+            if not any(each.names_the_same(moved) for each in kept):
+                kept.append(moved)
+        changed[name] = tuple(kept)
+    return changed
+
+
+def tags_on(
+    held: Mapping[str, Sequence[Anchor]], chunk: Chunk
+) -> list[tuple[str, bool]]:
+    """The tags `chunk` carries, in order of name, each with whether it is
+    on the whole document.
+
+    **The hint is trusted, with the words checked in the chunk itself**: a
+    store's hints are set to where each passage is placed at every write
+    and at every corpus index build (#626), which is the only time a
+    chunk's number changes. A caller holding a store whose hints may be
+    older - a project's, rewritten only when its tags change - rehints it
+    in memory first.
+    """
+    words_here = _collapsed(chunk.text)
+    carried: list[tuple[str, bool]] = []
+    for name in sorted(held):
+        own = [anchor for anchor in held[name] if anchor.document == chunk.document_id]
+        if any(anchor.chunk is None for anchor in own):
+            carried.append((name, True))
+        elif any(
+            anchor.chunk == chunk.chunk_index
+            and (anchor.quote is None or _collapsed(anchor.quote) in words_here)
+            for anchor in own
+        ):
+            carried.append((name, False))
+    return carried
+
+
+def _by_document(chunks: Sequence[Chunk]) -> dict[str, list[Chunk]]:
+    by_document: dict[str, list[Chunk]] = {}
+    for chunk in chunks:
+        by_document.setdefault(chunk.document_id, []).append(chunk)
+    return by_document
+
+
 def admitting(
     held: Mapping[str, Sequence[Anchor]], names: Sequence[str], chunks: Sequence[Chunk]
 ) -> ChunkPredicate:
@@ -288,9 +433,7 @@ def admitting(
     # Each passage is placed among its own document's chunks, grouped once:
     # placing it among all of them cost a pass over the index per tagged
     # passage, 100 ms for a hundred over ten thousand chunks.
-    by_document: dict[str, list[Chunk]] = {}
-    for chunk in chunks:
-        by_document.setdefault(chunk.document_id, []).append(chunk)
+    by_document = _by_document(chunks)
     admitted: list[tuple[frozenset[str], frozenset[tuple[str, int]]]] = []
     for name in names:
         documents: set[str] = set()
@@ -320,20 +463,26 @@ def _collapsed(text: str) -> str:
 
 __all__ = [
     "TAGS_FILENAME",
+    "TAG_COLOURS",
     "Anchor",
     "Detached",
     "Placed",
     "Placement",
     "TagNameRefused",
+    "TagStore",
     "Tags",
     "TagsUnreadable",
     "Unchecked",
     "admitting",
+    "colour_of",
     "placed",
     "quote_of",
+    "read_store",
     "read_tags",
+    "rehinted",
     "split_tag_names",
     "tag_name",
+    "tags_on",
     "with_tags",
     "without_tags",
     "written",

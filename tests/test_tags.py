@@ -27,6 +27,7 @@ from kennis.engine.tags import (
     read_tags,
     split_tag_names,
     tag_name,
+    tags_on,
     with_tags,
     without_tags,
     written,
@@ -93,7 +94,7 @@ def test_tags_are_written_and_read_back(tmp_path: Path):
     held = with_tags({}, ("calibration",), whole)
     held = with_tags(held, ("calibration", "to-cite"), passage)
     path = tmp_path / "tags.yml"
-    path.write_text(written(held), encoding="utf-8")
+    path.write_text(written(held, colours={}), encoding="utf-8")
 
     assert read_tags(path) == {
         "calibration": (whole, passage),
@@ -104,7 +105,7 @@ def test_tags_are_written_and_read_back(tmp_path: Path):
 def test_the_file_is_keyed_by_tag_for_a_person_reading_it(tmp_path: Path):
     held = with_tags({}, ("to-cite",), Anchor(DOCUMENT, chunk=3, quote="Gains drift"))
 
-    text = written(held)
+    text = written(held, colours={})
 
     assert text.startswith("to-cite:\n")
     assert "chunk: 3" in text
@@ -114,7 +115,7 @@ def test_the_file_is_keyed_by_tag_for_a_person_reading_it(tmp_path: Path):
 def test_a_context_target_is_written_as_a_path(tmp_path: Path):
     held = with_tags({}, ("mine",), Anchor("notes/a b.md", chunk=0, quote="Ours"))
 
-    text = written(held)
+    text = written(held, colours={})
 
     assert "path: notes/a b.md" in text
     assert "document:" not in text
@@ -277,3 +278,35 @@ def test_a_document_the_index_does_not_hold_is_unchecked_not_detached():
 
 def test_a_whole_document_is_placed_while_the_index_holds_it():
     assert placed(Anchor(DOCUMENT), [a_chunk(0, "Intro.")]) == Placed(None)
+
+
+# ---------------------------------------------------------------------------
+# The tags a chunk carries (#627)
+
+
+def test_a_chunk_carries_its_passage_tags_and_its_document_s():
+    chunk = a_chunk(4, "Before. The gains are solved per scan.")
+    held = {
+        "whole": (Anchor(DOCUMENT),),
+        "here": (Anchor(DOCUMENT, chunk=4, quote="The gains are solved"),),
+        "elsewhere": (Anchor(DOCUMENT, chunk=3, quote="Intro"),),
+        "other": (Anchor("other00001"),),
+    }
+
+    assert tags_on(held, chunk) == [("here", False), ("whole", True)]
+
+
+def test_a_hint_whose_words_are_not_in_the_chunk_carries_nothing():
+    """A detached passage keeps its old hint; the chunk now at that number
+    holds other words and must not wear the tag."""
+    chunk = a_chunk(4, "Something else entirely.")
+    held = {"gone": (Anchor(DOCUMENT, chunk=4, quote="The gains are solved"),)}
+
+    assert tags_on(held, chunk) == []
+
+
+def test_a_tag_on_the_document_and_a_passage_is_said_once():
+    chunk = a_chunk(4, "The gains are solved.")
+    held = {"a": (Anchor(DOCUMENT, chunk=4, quote="The gains"), Anchor(DOCUMENT))}
+
+    assert tags_on(held, chunk) == [("a", True)]

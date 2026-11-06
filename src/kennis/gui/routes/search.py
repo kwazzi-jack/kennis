@@ -33,6 +33,7 @@ from kennis.gui.pages import (
     versions_query,
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, action_page, from_htmx
+from kennis.gui.tagged import chips_finder, tag_colours
 from kennis.retrieval import sweep
 from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
@@ -168,7 +169,10 @@ def _hits_context(
             others=others,
             tags=tags,
         )
-        context["groups"] = shown_groups_of(found, question, order)
+        context["groups"] = shown_groups_of(
+            found, question, order, chips_finder(existing_corpus(), others)
+        )
+        context["kept_tag_colours"] = tag_colours(existing_corpus())
         found_count = sum(len(hits) for hits in found.groups.values())
         # Any scope that filled its quota had more to give, so the
         # total is a floor. `default_top_k` is 3 per scope, which is

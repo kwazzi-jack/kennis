@@ -53,8 +53,9 @@ def fields_of(form: Tag, **typed: str) -> dict[str, list[str]]:
 
 
 def tag_button_for(page: BeautifulSoup, link: str) -> str:
-    """The address of the tag control on the card whose link is `link`."""
-    for control in page.select("li.hit a.tag-hit"):
+    """The address of the tag entry in the bookmark tab of the card whose
+    link is `link` (#627)."""
+    for control in page.select("li.hit .bookmark-items a[href^='/tags/add']"):
         address = str(control["href"])
         if parse_qs(urlsplit(address).query).get("link") == [link]:
             return address

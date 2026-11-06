@@ -7,16 +7,48 @@ opens each passage, ready to cite.
 
 ## In the window
 
-Each result has a tag icon beside its title: it opens a small dialog where
-you type one or more tags, with the tags you already use offered as you
-type. A document's details have **Tag this document**, and list the tags
-on it, whole or on a passage, each with a button that removes it.
+Each result has a bookmark tab on its top edge. Point at it, tab to it or
+tap it, and it lists what you can do with that passage:
+
+- **Open at this passage**, the document with the passage marked;
+- **Tag this passage**, a small dialog where you type one or more tags, with
+  the tags you already use offered as you type;
+- **Copy citation**, the citation `kennis cite` writes for the passage, in
+  your citation style, put on the clipboard. Without a script it opens a
+  page showing the citation and its reference, to copy by hand.
+
+A result shows the tags on its passage under its title, and the tags on
+its whole document with a dashed border. A tagged passage's tab is drawn
+in its first tag's colour.
+
+A document's details have **Tag this document**, and list the tags on it,
+whole or on a passage, each with a button that removes it. In the text, a
+tagged passage has its tags at the right of its first line.
 
 The pane lists every tag with how much it holds. A tag's page shows its
 passages first, each with its opening words, its link and a way into the
 document at that passage, then its documents, then anything that needs
 attention, such as a detached passage. **Search within this tag** runs the
 search box kept to the tag until you choose **Show everything**.
+
+## Colours
+
+Every tag is drawn in one of eight colours: red, orange, yellow, green,
+teal, blue, purple or pink. Unless you choose one, the colour is derived
+from the tag's name, so a tag keeps its colour wherever it appears. The
+name is always written beside the colour, because some of these colours
+look alike to people with red-green colour blindness.
+
+Choose a colour on the tag's page, or from the command line:
+
+```text
+kennis tag calibration --colour teal
+kennis tag calibration --colour auto     # back to the colour from its name
+```
+
+A chosen colour is kept in the same `tags.yml` as the tag. The command
+line prints tag names in one colour whatever you choose, because a
+terminal's colours depend on its theme.
 
 ## Tag a search hit from the command line
 
@@ -110,5 +142,9 @@ there is nothing to compare the words with. `kennis corpus index` (or
   writes it and leaves it for you to commit with the project, so the
   project's collaborators see the same tags.
 
-Both files are plain YAML, listed by tag, and can be edited by hand. A file
-kennis cannot read is reported with its path and left as it is.
+Both files are plain YAML, listed by tag, and can be edited by hand. A tag
+with a chosen colour is written as `colour:` and `targets:` under its name;
+any other tag is its list of targets. Each passage's chunk number is
+rewritten to where its words are now whenever the file's tags change, and
+the corpus's after every `kennis corpus index`, in the index's own commit.
+A file kennis cannot read is reported with its path and left as it is.

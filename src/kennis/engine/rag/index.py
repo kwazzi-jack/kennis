@@ -398,6 +398,40 @@ def read_binding(index_root: Path, collection: str) -> Binding | None:
 
 def load_index(index_root: Path, collection: str) -> LoadedIndex:
     """Read back the published index for `collection`."""
+    index_dir = _published_dir(index_root, collection)
+    chunks = _read_chunks(index_dir)
+    binding = Binding.from_recorded(
+        json.loads((index_dir / _BINDING_FILE).read_text(encoding="utf-8"))
+    )
+    vectors_path = index_dir / _VECTORS_FILE
+    matrix = (
+        np.load(vectors_path, allow_pickle=False) if vectors_path.is_file() else None
+    )
+    return LoadedIndex(
+        collection=collection,
+        chunks=chunks,
+        bm25=Bm25Index.load(index_dir / _BM25_DIR, count=len(chunks)),
+        binding=binding,
+        matrix=matrix,
+    )
+
+
+def load_chunks(index_root: Path, collection: str) -> list[Chunk]:
+    """The published index's chunks alone, for a reader that needs their
+    text and not the search structures: a docs index's vectors are hundreds
+    of megabytes (#626)."""
+    return _read_chunks(_published_dir(index_root, collection))
+
+
+def _read_chunks(index_dir: Path) -> list[Chunk]:
+    return [
+        Chunk.model_validate_json(line)
+        for line in (index_dir / _CHUNKS_FILE).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _published_dir(index_root: Path, collection: str) -> Path:
     collection_root = index_root / collection
     pointer_path = collection_root / _POINTER_FILE
     if not pointer_path.is_file():
@@ -415,26 +449,7 @@ def load_index(index_root: Path, collection: str) -> LoadedIndex:
             f"the '{collection}' collection's index has not been built here",
             resolution=f"kennis corpus index --collection {collection}",
         )
-
-    chunks = [
-        Chunk.model_validate_json(line)
-        for line in (index_dir / _CHUNKS_FILE).read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    binding = Binding.from_recorded(
-        json.loads((index_dir / _BINDING_FILE).read_text(encoding="utf-8"))
-    )
-    vectors_path = index_dir / _VECTORS_FILE
-    matrix = (
-        np.load(vectors_path, allow_pickle=False) if vectors_path.is_file() else None
-    )
-    return LoadedIndex(
-        collection=collection,
-        chunks=chunks,
-        bm25=Bm25Index.load(index_dir / _BM25_DIR, count=len(chunks)),
-        binding=binding,
-        matrix=matrix,
-    )
+    return index_dir
 
 
 def _refuse_if_empty(

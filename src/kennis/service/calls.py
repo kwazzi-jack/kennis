@@ -76,7 +76,7 @@ from kennis.service.jobs import (
     TAGS_LANE,
     context_lane,
 )
-from kennis.tagging import Tagged, TagListing
+from kennis.tagging import TagColoured, Tagged, TagListing
 
 # The parameters the service fills and a client may never name.
 SERVICE_PARAMETERS: Final = frozenset({"events", "restored"})
@@ -341,6 +341,12 @@ def untag(requests: list[CiteRequest], names: Sequence[str]) -> Tagged:
     return tagging.change_tags(existing_corpus(), requests, names, remove=True)
 
 
+def colour_tags(
+    names: Sequence[str], colour: str | None, bundles: list[Path]
+) -> TagColoured:
+    return tagging.colour_tags(existing_corpus(), names, colour, bundles)
+
+
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
@@ -508,6 +514,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(sync_corpus, kind="sync"),
         Operation(tag, kind="tag", lane=_in_the_tags_lane),
         Operation(untag, kind="tag", lane=_in_the_tags_lane),
+        Operation(colour_tags, kind="tag", lane=_in_the_tags_lane),
         Operation(bundle_status),
         Operation(cite),
         Operation(contents),

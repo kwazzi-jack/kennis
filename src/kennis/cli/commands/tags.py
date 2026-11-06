@@ -26,8 +26,15 @@ if TYPE_CHECKING:
 
 @click.command(cls=KennisCommand, name="tag")
 @click.argument("names", metavar="NAMES")
-@click.argument("passages", nargs=-1, required=True, metavar="PASSAGE...")
-def tag_command(names: str, passages: tuple[str, ...]) -> None:
+@click.argument("passages", nargs=-1, metavar="[PASSAGE]...")
+@click.option(
+    "--colour",
+    metavar="COLOUR",
+    help="Draw these tags in COLOUR in the window: red, orange, yellow, green, "
+    "teal, blue, purple or pink; auto goes back to the colour derived from "
+    "the name. With no PASSAGE, only the colour is set.",
+)
+def tag_command(names: str, passages: tuple[str, ...], colour: str | None) -> None:
     """Tag passages or documents with each of `NAMES`.
 
     `NAMES` is one or more tags separated by commas, such as
@@ -35,7 +42,12 @@ def tag_command(names: str, passages: tuple[str, ...]) -> None:
     `PASSAGE` is named as `kennis cite` takes it: a hit's `id=X chunk=N` or
     `path=P chunk=N`, a `kennis://` link, or a handle for the whole document.
     """
-    _changed(names, passages, remove=False)
+    if not passages and colour is None:
+        raise click.UsageError("name at least one PASSAGE, or give --colour")
+    if passages:
+        _changed(names, passages, remove=False)
+    if colour is not None:
+        _coloured(names, colour)
 
 
 @click.command(cls=KennisCommand, name="untag")
@@ -82,6 +94,25 @@ def _changed(names: str, passages: tuple[str, ...], *, remove: bool) -> None:
     call = api.untag if remove else api.tag
     tagged = call(root, requests, folded).result
     _report(tagged, folded, remove=remove)
+
+
+def _coloured(names: str, colour: str) -> None:
+    from pathlib import Path
+
+    from kennis.engine.context.bundle import find_bundle
+    from kennis.engine.tags import split_tag_names
+    from kennis.render.tags import coloured
+
+    asked = colour.strip().lower()
+    bundle = find_bundle(Path.cwd())
+    done = api.colour_tags(
+        existing_corpus().corpus_root,
+        split_tag_names(names),
+        None if asked == "auto" else asked,
+        [] if bundle is None else [bundle],
+    ).result
+    for name in done.names:
+        display.operation("Coloured", coloured(name, done.shown[name], done.colour))
 
 
 def _report(tagged: Tagged, names: tuple[str, ...], *, remove: bool) -> None:

@@ -693,17 +693,49 @@ def _commit_the_index(
     collection: str | None,
     built: Sequence[BuiltIndex],
 ) -> None:
+    from kennis.engine.tags import TAGS_FILENAME
+    from kennis.tagging import WRITING_TAGS
+
     documents = sum(index.documents for index in built)
     chunks = sum(index.chunks for index in built)
-    with exclusively(context.corpus_root):
-        # One commit for one user action, with what it actually built in
-        # the subject rather than a tally of outcomes, which an index has
-        # none of. It waits for a publish under way rather than giving up.
+    # The tag lock before the corpus, the order a tag change takes them in.
+    # One commit for one user action, with what it actually built in the
+    # subject rather than a tally of outcomes, which an index has none of.
+    # It waits for a publish under way rather than giving up. The tags'
+    # hints are rewritten for what was built and go into the same commit
+    # (#626).
+    with (
+        WRITING_TAGS,
+        exclusively(context.corpus_root),
+        journalled(context.corpus_root, "index", [TAGS_FILENAME]),
+    ):
+        _rehint_corpus_tags(context, [index.collection for index in built])
         repository.commit(
             "index",
             scope=collection or "corpus",
             summary=commit_summary({"documents": documents, "chunks": chunks}),
         )
+
+
+def _rehint_corpus_tags(context: Context, collections: Sequence[str]) -> None:
+    """Set each tagged passage's hint in `tags.yml` to where the indexes
+    just built place it, writing the file only when one moved (#626)."""
+    from kennis.engine.atomic import replace_file
+    from kennis.engine.rag.index import load_chunks
+    from kennis.engine.tags import TAGS_FILENAME, read_store, rehinted, written
+
+    store = context.corpus_root / TAGS_FILENAME
+    held = read_store(store)
+    if not held.tags:
+        return
+    chunks = [
+        chunk
+        for name in collections
+        for chunk in load_chunks(index_root(context.corpus_root), name)
+    ]
+    moved = rehinted(held.tags, chunks)
+    if moved != held.tags:
+        replace_file(store, written(moved, colours=held.colours))
 
 
 def _kept_when_cancelled(built: Sequence[BuiltIndex]) -> str:

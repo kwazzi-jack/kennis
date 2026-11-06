@@ -20,6 +20,13 @@ def not_tagged(names: tuple[str, ...]) -> str:
     return f"was not tagged {joined_names(names)}"
 
 
+def coloured(name: str, shown: str, chosen: str | None) -> str:
+    """`calibration: purple`, or `calibration: teal, derived from its name`."""
+    if chosen is None:
+        return f"{name}: {shown}, derived from its name"
+    return f"{name}: {shown}"
+
+
 def target_state(target: TaggedTarget) -> str | None:
     """What is wrong with a target, or None when it is where it was put."""
     if target.state == DETACHED:
@@ -46,6 +53,7 @@ def target_title(target: TaggedTarget) -> str:
 
 __all__ = [
     "already_tagged",
+    "coloured",
     "joined_names",
     "not_tagged",
     "target_state",

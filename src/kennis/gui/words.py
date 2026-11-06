@@ -1892,6 +1892,29 @@ REMOVE_TAG = "Remove"
 TAGGED_PASSAGE = "a passage"
 KEPT_TO_TAGS = "Kept to"
 SHOW_EVERYTHING = "Show everything"
+# A chip for a tag on the whole document, shown on one of its passages.
+TAG_ON_DOCUMENT = "On the whole document"
+# The bookmark tab on a hit card, and what it holds (#627).
+PASSAGE_ACTIONS = "Actions on this passage"
+COPY_CITATION = "Copy citation"
+COPIED_CITATION = "Copied"
+CITATION_HEADING = "Citation"
+CITATION_TEXT = "In the text"
+CITATION_REFERENCE = "In the references"
+# A tag's colour, on its page.
+TAG_COLOUR_LABEL = "Colour"
+TAG_COLOUR_AUTOMATIC = "From its name"
+TAG_COLOUR_SET = "Set colour"
+TAG_COLOUR_NAMES: Final[dict[str, str]] = {
+    "red": "Red",
+    "orange": "Orange",
+    "yellow": "Yellow",
+    "green": "Green",
+    "teal": "Teal",
+    "blue": "Blue",
+    "purple": "Purple",
+    "pink": "Pink",
+}
 
 
 def tagging(title: str) -> str:
@@ -1960,6 +1983,9 @@ __all__ = [
     "CHOOSE_A_COLLECTION",
     "CHOOSE_FOLDER",
     "CHOOSE_THE_FILE",
+    "CITATION_HEADING",
+    "CITATION_REFERENCE",
+    "CITATION_TEXT",
     "CLEAR_HISTORY_ACTION",
     "CLEAR_HISTORY_ASKED",
     "CLOSE",
@@ -1968,7 +1994,9 @@ __all__ = [
     "CONTEXT_HEADING",
     "CONVERTER_MISSING",
     "CONVERTER_NAMES",
+    "COPIED_CITATION",
     "COPIED_LABEL",
+    "COPY_CITATION",
     "COPY_LABEL",
     "CORPUS_AT_LABEL",
     "CORPUS_CHANGED",
@@ -2120,6 +2148,7 @@ __all__ = [
     "PANE_SHOW",
     "PANE_STATES",
     "PAPER_KINDS",
+    "PASSAGE_ACTIONS",
     "PASSWORDS_DIFFER",
     "PASSWORD_NEEDED",
     "PREFERENCE_CHOICES",
@@ -2208,10 +2237,15 @@ __all__ = [
     "TAGGED_PASSAGE",
     "TAGS_HEADING",
     "TAG_ACTION",
+    "TAG_COLOUR_AUTOMATIC",
+    "TAG_COLOUR_LABEL",
+    "TAG_COLOUR_NAMES",
+    "TAG_COLOUR_SET",
     "TAG_DOCUMENT",
     "TAG_NAMES_HELP",
     "TAG_NAMES_HINT",
     "TAG_NAMES_LABEL",
+    "TAG_ON_DOCUMENT",
     "TAG_PASSAGE",
     "TARGET_LABEL",
     "THEME_CHOICES",

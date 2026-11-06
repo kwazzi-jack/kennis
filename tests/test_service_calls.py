@@ -94,6 +94,7 @@ EXPECTED_OPERATIONS = frozenset(
         "sync_corpus",
         "tag",
         "untag",
+        "colour_tags",
         # Reads, answered on the request.
         "bundle_status",
         "cite",
@@ -129,6 +130,16 @@ class Scene:
     corpus: Path
     note: str
     first_commit: str
+
+
+def tagged_reading(scene: Scene) -> str:
+    """Tags the note `reading`, so a colour has a tag to be chosen for."""
+    from kennis.engine.tags import TAGS_FILENAME
+
+    (scene.corpus / TAGS_FILENAME).write_text(
+        f"reading:\n- document: {scene.note}\n", encoding="utf-8"
+    )
+    return "reading"
 
 
 @pytest.fixture
@@ -322,6 +333,11 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "untag": lambda scene: {
         "requests": [kennis.citing.CiteRequest("calibration")],
         "names": ("reading",),
+    },
+    "colour_tags": lambda scene: {
+        "names": (tagged_reading(scene),),
+        "colour": "teal",
+        "bundles": [],
     },
     "tags": lambda scene: {"bundle": None},
     "holdings": lambda scene: {},
@@ -654,6 +670,7 @@ def test_each_write_runs_in_its_own_lane(scene: Scene, name: str):
         "forget_project": PROJECTS_LANE,
         "tag": TAGS_LANE,
         "untag": TAGS_LANE,
+        "colour_tags": TAGS_LANE,
         # Named by its project, and waiting on that project's bundle.
         "delete_project": in_the_bundle,
     }

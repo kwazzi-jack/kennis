@@ -167,6 +167,26 @@ COLLECTION_COLOURS: Final[dict[str, dict[str, str]]] = {
 }
 
 
+# Each tag colour's value per theme (#627), the names `engine.tags.
+# TAG_COLOURS` stores. Drawn as a chip's border, a dot and a light tint
+# behind ink, so a colour is non-text and needs 3:1 on the ground and on a
+# card; `tests/test_gui_tag_colours.py` holds each to that, ink on its tint
+# to 4.5:1, and every pair to dE 25. **Eight hues cannot all be told apart
+# by a deuteranope** - the closest pairs measure 5.2 (orange and yellow,
+# light) and 7.3 (red and green, dark) - so the name is always written on
+# the chip and the colour only groups what the eye is already reading.
+TAG_COLOURS: Final[dict[str, dict[str, str]]] = {
+    "red": {"light": "#C62828", "dark": "#FF7A70"},
+    "orange": {"light": "#C25E00", "dark": "#FFA94D"},
+    "yellow": {"light": "#8F7A00", "dark": "#F2D13D"},
+    "green": {"light": "#2E7D32", "dark": "#7BD67F"},
+    "teal": {"light": "#00796B", "dark": "#5FE0CF"},
+    "blue": {"light": "#1F5FD1", "dark": "#7AA8FF"},
+    "purple": {"light": "#7B3FC4", "dark": "#C39BFF"},
+    "pink": {"light": "#C2185B", "dark": "#E45C9C"},
+}
+
+
 _BRAND: Final = Path(__file__).parent / "static" / "brand"
 _BRAND_MARKS: Final[dict[str, str]] = {
     scheme: quote((_BRAND / f"mark-{scheme}.svg").read_text(encoding="utf-8"), safe="")
@@ -230,6 +250,8 @@ def css_variables(
         )
     for name, accents in COLLECTION_COLOURS.items():
         lines.append(f"  --collection-{name}: {accents[scheme]};")
+    for name, accents in TAG_COLOURS.items():
+        lines.append(f"  --tag-{name}: {accents[scheme]};")
     # The open book in the bar, in this theme's drawing. Here because the
     # theme blocks are what choose light or dark; a data address because
     # the locked and stopped pages fetch nothing; percent-encoded rather
