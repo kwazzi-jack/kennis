@@ -20,6 +20,7 @@ from fastapi.responses import (
     HTMLResponse,
 )
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kennis.context import Context, existing_corpus
@@ -109,6 +110,25 @@ def _pane_state(request: Request) -> str:
 def _inspector_state(request: Request) -> str:
     """The document inspector's, by the pane's rule."""
     return _CLOSED if request.cookies.get(_INSPECTOR_COOKIE) == _CLOSED else _OPEN
+
+
+def tag_paint(colour: str) -> Markup:
+    """The attributes that draw an element in a tag's colour (#627, #629):
+    a name of the eight chooses a measured value by the layout's rule; a
+    typed hex carries its value for each theme, moved until it is seen."""
+    from kennis.engine.tags import is_hex_colour
+    from kennis.gui.theme import tag_colour_on
+
+    if not colour:
+        return Markup("")
+    if not is_hex_colour(colour):
+        return Markup('data-tag-colour="{}"').format(colour)
+    return Markup(
+        'data-tag-custom style="--tag-on-light: {}; --tag-on-dark: {};"'
+    ).format(tag_colour_on(colour, "light"), tag_colour_on(colour, "dark"))
+
+
+TEMPLATES.env.globals["tag_paint"] = tag_paint
 
 
 # Every preference of this window, rendered onto `<html>` from its

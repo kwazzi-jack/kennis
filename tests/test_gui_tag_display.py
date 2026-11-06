@@ -13,6 +13,7 @@ import itertools
 import math
 import re
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from bs4 import BeautifulSoup, Tag
@@ -292,7 +293,7 @@ def test_the_tag_page_chooses_a_colour_and_every_chip_wears_it(corpus: Path):
     form = page_of(client, "/tags?tag=calibration").select_one("form.tag-colour")
     assert form is not None
     offered = [str(radio["value"]) for radio in form.select("input[name=colour]")]
-    assert offered == ["auto", *TAG_COLOURS]
+    assert offered == ["auto", *TAG_COLOURS, "own"]
     checked = form.select_one("input[name=colour][checked]")
     assert checked is not None and checked["value"] == "auto"
 
@@ -399,3 +400,98 @@ def test_a_document_changed_since_its_index_withholds_the_marks(corpus: Path):
     page = page_of(opened(), f"/document/literature/{PAPER_ID}")
 
     assert page.select("aside.chunk-tags") == []
+
+
+# ---------------------------------------------------------------------------
+# A colour of one's own (#629)
+
+TYPED = ["#ffe600", "#000000", "#ffffff", "#808080", "#ff00ff", "#1f5fd1", "#00ffff"]
+
+
+@pytest.mark.parametrize("theme", sorted(THEMES))
+@pytest.mark.parametrize("typed", TYPED)
+def test_a_typed_colour_is_moved_until_it_is_seen(theme: str, typed: str):
+    from kennis.gui.theme import tag_colour_on
+
+    ground, palette = THEMES[theme]
+    scheme: Literal["light", "dark"] = "light" if theme == "light" else "dark"
+    drawn = _rgb(tag_colour_on(typed, scheme))
+    page = _rgb(ground)
+
+    assert _contrast(drawn, page) >= 3
+    assert _contrast(drawn, _raised(ground, palette["bright_black"])) >= 3
+    assert _contrast(_rgb(palette["white"]), _mixed(drawn, page, 0.24)) >= 4.5
+
+
+def test_a_typed_colour_that_is_seen_is_drawn_as_typed():
+    from kennis.gui.theme import tag_colour_on
+
+    assert tag_colour_on("#1f5fd1", "light") == "#1f5fd1"
+    assert tag_colour_on("#ffe600", "dark") == "#ffe600"
+
+
+def test_a_typed_colour_keeps_its_hue():
+    import colorsys
+
+    from kennis.gui.theme import tag_colour_on
+
+    typed = colorsys.rgb_to_hls(*_rgb("#ffe600"))[0]
+    drawn = colorsys.rgb_to_hls(*_rgb(tag_colour_on("#ffe600", "light")))[0]
+
+    assert abs(typed - drawn) < 0.01
+
+
+def test_a_typed_colour_carries_both_themes_and_the_rules_choose_one(corpus: Path):
+    from kennis.gui.theme import tag_colour_on
+
+    run("tag", "calibration", f"id={PAPER_ID}", "--colour", "#ffe600")
+
+    page = page_of(opened(), "/tags?tag=calibration")
+
+    head = page.select_one(".tag-head")
+    assert head is not None and head.has_attr("data-tag-custom")
+    assert f"--tag-on-light: {tag_colour_on('#ffe600', 'light')};" in str(head["style"])
+    assert f"--tag-on-dark: {tag_colour_on('#ffe600', 'dark')};" in str(head["style"])
+    code = re.sub(r"/\*.*?\*/", "", stylesheet(), flags=re.S)
+    assert "[data-tag-custom] { --tag: var(--tag-on-light); }" in code
+    assert (
+        'html[data-theme="dark"] [data-tag-custom] { --tag: var(--tag-on-dark); }'
+        in code
+    )
+
+
+def test_the_picker_sets_a_colour_without_its_radio_being_pressed(corpus: Path):
+    """Moving a colour picker does not press the radio beside it, so the
+    picker moved since it was drawn is the choice."""
+    run("tag", "calibration", f"id={PAPER_ID}")
+    client = opened()
+    form = page_of(client, "/tags?tag=calibration").select_one("form.tag-colour")
+    assert form is not None
+    sent = {
+        str(field["name"]): str(field.get("value", ""))
+        for field in form.select("input[name]")
+        if field.get("type") != "radio"
+    }
+    sent["colour"] = "auto"
+    sent["hex"] = "#123456"
+
+    client.post(str(form["action"]), data=sent)
+
+    assert read_store(corpus / TAGS_FILENAME).colours == {"calibration": "#123456"}
+
+
+def test_the_picker_left_alone_changes_nothing_but_the_radio(corpus: Path):
+    run("tag", "calibration", f"id={PAPER_ID}")
+    client = opened()
+    form = page_of(client, "/tags?tag=calibration").select_one("form.tag-colour")
+    assert form is not None
+    sent = {
+        str(field["name"]): str(field.get("value", ""))
+        for field in form.select("input[name]")
+        if field.get("type") != "radio"
+    }
+    sent["colour"] = "pink"
+
+    client.post(str(form["action"]), data=sent)
+
+    assert read_store(corpus / TAGS_FILENAME).colours == {"calibration": "pink"}

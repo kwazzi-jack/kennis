@@ -212,7 +212,7 @@
     <h2 class="pane-head"><a href="/tags">{{ tags_heading }}</a></h2>
     <ul class="tree">
       {% for entry in pane.tags %}
-      <li><a class="node tag-node" href="{{ entry.href }}" data-tag-colour="{{ entry.colour }}">{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+      <li><a class="node tag-node" href="{{ entry.href }}" {{ tag_paint(entry.colour) }}>{{ icon("tag") }}<span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
       {% endfor %}
     </ul>
   </section>

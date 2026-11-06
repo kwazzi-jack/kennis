@@ -1905,6 +1905,7 @@ CITATION_REFERENCE = "In the references"
 TAG_COLOUR_LABEL = "Colour"
 TAG_COLOUR_AUTOMATIC = "From its name"
 TAG_COLOUR_SET = "Set colour"
+TAG_COLOUR_OWN = "Your own"
 TAG_COLOUR_NAMES: Final[dict[str, str]] = {
     "red": "Red",
     "orange": "Orange",
@@ -2240,6 +2241,7 @@ __all__ = [
     "TAG_COLOUR_AUTOMATIC",
     "TAG_COLOUR_LABEL",
     "TAG_COLOUR_NAMES",
+    "TAG_COLOUR_OWN",
     "TAG_COLOUR_SET",
     "TAG_DOCUMENT",
     "TAG_NAMES_HELP",

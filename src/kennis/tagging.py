@@ -35,7 +35,6 @@ from kennis.context import Context
 from kennis.engine.errors import DocumentNotFound, KennisError, SearchUnavailable
 from kennis.engine.rag.models import Chunk
 from kennis.engine.tags import (
-    TAG_COLOURS,
     TAGS_FILENAME,
     Anchor,
     Detached,
@@ -49,6 +48,7 @@ from kennis.engine.tags import (
     read_store,
     read_tags,
     rehinted,
+    tag_colour,
     tag_name,
     with_tags,
     without_tags,
@@ -277,11 +277,8 @@ def colour_tags(
         folded = tuple(dict.fromkeys(tag_name(name) for name in names))
         if not folded:
             raise KennisError("no tag was named", resolution="kennis tag --help")
-        if colour is not None and colour not in TAG_COLOURS:
-            raise KennisError(
-                f"'{colour}' is not a tag colour: choose one of "
-                f"{', '.join(TAG_COLOURS)}, or auto"
-            )
+        if colour is not None:
+            colour = tag_colour(colour)
         stores = [
             _corpus_store(context),
             *(bundle / TAGS_FILENAME for bundle in bundles),

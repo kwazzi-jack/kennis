@@ -15,7 +15,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from kennis.citing import request_for
 from kennis.context import existing_corpus
 from kennis.engine.errors import KennisError
-from kennis.engine.tags import TAG_COLOURS, colour_of, split_tag_names, tag_name
+from kennis.engine.tags import (
+    TAG_COLOURS,
+    colour_of,
+    is_hex_colour,
+    split_tag_names,
+    tag_name,
+)
 from kennis.gui import words
 from kennis.gui.pages import ShownOutcome
 from kennis.gui.responses import (
@@ -36,10 +42,14 @@ from kennis.gui.tagged import (
     tag_href,
     tags_in_use,
 )
+from kennis.gui.theme import TAG_COLOURS as TAG_COLOUR_VALUES
 from kennis.links import target_of
 from kennis.tagging import Tagged, change_tags
 
 router = APIRouter()
+
+# The colour form's choice that sends its picker's value instead (#629).
+_OWN_COLOUR = "own"
 
 # Where a refusal in the tag dialog is answered, above its still-filled field.
 _OUTCOME = "#tag-outcome"
@@ -74,6 +84,9 @@ def serve_tags(request: Request, tag: str = "") -> HTMLResponse:
             "back": tag_href(name),
             "colour": colour_of(name, chosen),
             "chosen_colour": chosen.get(name, "auto"),
+            "chosen_hex": chosen[name] if is_hex_colour(chosen.get(name, "")) else "",
+            "derived_hex": TAG_COLOUR_VALUES[colour_of(name, {})]["light"].lower(),
+            "colour_own": words.TAG_COLOUR_OWN,
             "colour_choices": (
                 ("auto", words.TAG_COLOUR_AUTOMATIC),
                 *((one, words.TAG_COLOUR_NAMES[one]) for one in TAG_COLOURS),
@@ -155,6 +168,9 @@ def colour_tag(request: Request, form: PostedForm) -> Response:
     from kennis.tagging import colour_tags
 
     colour = str(form.get("colour") or "")
+    picked = str(form.get("hex") or "")
+    if colour == _OWN_COLOUR or (picked and picked != form.get("drawn-hex")):
+        colour = picked
     try:
         name = tag_name(str(form.get("tag") or ""))
         colour_tags(

@@ -43,8 +43,20 @@ Choose a colour on the tag's page, or from the command line:
 
 ```text
 kennis tag calibration --colour teal
-kennis tag calibration --colour auto     # back to the colour from its name
+kennis tag calibration --colour '#1f5fd1'  # any colour, as a hex code
+kennis tag calibration --colour auto       # back to the colour from its name
 ```
+
+A colour of your own is chosen on the tag's page with **Your own**, or
+given as a hex code (quoted, because a shell reads `#` as the start of a
+comment). The window keeps its hue and makes it lighter on the dark theme
+or darker on the light one only as far as it takes to be seen against the
+page, so a pale yellow is drawn as a darker yellow on a white page. The
+file keeps the colour exactly as you chose it.
+
+The colour derived from a name comes from a checksum of the name's letters,
+not from what the name means, so `calibration` and `calibrations` are not
+given similar colours.
 
 A chosen colour is kept in the same `tags.yml` as the tag. The command
 line prints tag names in one colour whatever you choose, because a

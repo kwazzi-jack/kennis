@@ -3117,7 +3117,7 @@ a.button:active { translate: 0 1px; }
   font-size: 0.8125rem;
   cursor: pointer;
 }
-.colour-swatch input { position: absolute; opacity: 0; pointer-events: none; }
+.colour-swatch input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
 .colour-swatch .dot {
   width: 0.9rem;
   height: 0.9rem;
@@ -3127,6 +3127,19 @@ a.button:active { translate: 0 1px; }
 }
 .colour-swatch:has(input:checked) .dot { box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--ink); }
 .colour-swatch:has(input:focus-visible) .dot { outline: 2px solid var(--brand); outline-offset: 4px; }
+/* Your own colour: the picker is the swatch, ringed when chosen. */
+.own-colour input[type="color"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.own-colour:has(input[type="radio"]:checked) input[type="color"] {
+  box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--ink);
+}
 .tag-head h1 .icon { color: var(--tag); }
 .tag-entry .dot {
   width: 0.6rem;

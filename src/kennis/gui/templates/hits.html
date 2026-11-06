@@ -9,7 +9,7 @@
       data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
 {# What the results are kept to, and the way back to everything (#625). #}
 {% if kept_tags %}
-<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" data-tag-colour="{{ (kept_tag_colours | default({})).get(name, "") }}">{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
+<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" {{ tag_paint((kept_tag_colours | default({})).get(name, "")) }}>{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
 {% endif %}
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
@@ -69,7 +69,7 @@
 <h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.name }}</span><span class="count">{{ group.count }}</span></h2>
 <ol class="results">
 {% for hit in group.hits %}
-  <li class="hit" data-collection="{{ group.collection }}"{% if hit.tags %} data-tag-colour="{{ hit.tags[0].colour }}"{% endif %}>
+  <li class="hit" data-collection="{{ group.collection }}"{% if hit.tags %} {{ tag_paint(hit.tags[0].colour) }}{% endif %}>
     {# The bookmark tab on the card's edge (#627): what can be done with
        this passage. Shown on hover and while anything in it has focus, so
        a pointer, a keyboard and a tap all reach it, with no script. A
@@ -91,7 +91,7 @@
     <div class="hit-head">
       <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a></p>
       {# The tags on this passage, and on its whole document (#627). #}
-      {% if hit.tags %}<p class="hit-tags">{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" data-tag-colour="{{ chip.colour }}"{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
+      {% if hit.tags %}<p class="hit-tags">{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
       {# Which section the passage is from; the title is the document's
          alone. Marked, so `safe`. #}
       {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}

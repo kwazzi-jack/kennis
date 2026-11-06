@@ -27,6 +27,7 @@ chunk texts rather than the body, so a stale index cannot put offsets out.
 
 from __future__ import annotations
 
+import re
 import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -35,15 +36,15 @@ from typing import Final
 
 import yaml
 
-from kennis.engine.errors import TagNameRefused, TagsUnreadable
+from kennis.engine.errors import TagColourRefused, TagNameRefused, TagsUnreadable
 from kennis.engine.frontmatter import yaml_text
 from kennis.engine.rag.models import Chunk, ChunkPredicate
 
 TAGS_FILENAME: Final = "tags.yml"
 
-# A tag's colour is one of these names (#627); each theme of the window
-# draws a name from its own measured value, so the file holds no colour
-# value and a theme can change without touching it.
+# A tag's colour is one of these names (#627), whose value each theme of
+# the window draws from its own measured table, or a hex colour a person
+# typed (#629).
 TAG_COLOURS: Final = (
     "red",
     "orange",
@@ -64,6 +65,8 @@ _CHUNK_KEY: Final = "chunk"
 _QUOTE_KEY: Final = "quote"
 _BUNDLE_SUFFIX: Final = ".md"
 _COLOUR_KEY: Final = "colour"
+_HEX: Final = re.compile(r"#[0-9a-f]{6}")
+_SHORT_HEX: Final = re.compile(r"#[0-9a-f]{3}")
 _TARGETS_KEY: Final = "targets"
 
 
@@ -200,14 +203,37 @@ def _coloured(path: Path, name: str, value: dict[object, object]) -> tuple[objec
     if _TARGETS_KEY not in value:
         raise _unreadable(path, f"the tag '{name}' has a colour and no targets")
     colour = value.get(_COLOUR_KEY)
-    if colour not in TAG_COLOURS:
-        raise _unreadable(
-            path,
-            f"the tag '{name}' has the colour {colour!r}, which is not one of "
-            f"{', '.join(TAG_COLOURS)}",
-        )
-    assert isinstance(colour, str)
-    return value[_TARGETS_KEY], colour
+    if not isinstance(colour, str):
+        raise _unreadable(path, f"the tag '{name}' has the colour {colour!r}")
+    try:
+        return value[_TARGETS_KEY], tag_colour(colour)
+    except TagColourRefused as refused:
+        raise _unreadable(path, str(refused)) from refused
+
+
+def tag_colour(text: str) -> str:
+    """`text` as a tag colour: one of `TAG_COLOURS`, or a hex colour as
+    `#rrggbb` (a typed `#rgb` is widened), in lowercase; otherwise
+    `TagColourRefused`.
+
+    A hex colour is kept as typed; the window moves its lightness per theme
+    until it can be seen (#629), so the file says what the person chose.
+    """
+    colour = text.strip().lower()
+    if colour in TAG_COLOURS:
+        return colour
+    if _SHORT_HEX.fullmatch(colour):
+        colour = "#" + "".join(digit * 2 for digit in colour[1:])
+    if _HEX.fullmatch(colour):
+        return colour
+    raise TagColourRefused(
+        f"'{text}' is not a tag colour: choose one of {', '.join(TAG_COLOURS)}, "
+        "or a hex colour such as #1f5fd1"
+    )
+
+
+def is_hex_colour(colour: str) -> bool:
+    return _HEX.fullmatch(colour) is not None
 
 
 def colour_of(name: str, chosen: Mapping[str, str]) -> str:
@@ -468,6 +494,7 @@ __all__ = [
     "Detached",
     "Placed",
     "Placement",
+    "TagColourRefused",
     "TagNameRefused",
     "TagStore",
     "Tags",
@@ -475,12 +502,14 @@ __all__ = [
     "Unchecked",
     "admitting",
     "colour_of",
+    "is_hex_colour",
     "placed",
     "quote_of",
     "read_store",
     "read_tags",
     "rehinted",
     "split_tag_names",
+    "tag_colour",
     "tag_name",
     "tags_on",
     "with_tags",

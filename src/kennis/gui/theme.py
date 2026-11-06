@@ -187,6 +187,102 @@ TAG_COLOURS: Final[dict[str, dict[str, str]]] = {
 }
 
 
+# What a tag colour must reach on each theme's page and on a card: a border
+# and a dot are non-text, so 3:1 (WCAG 1.4.11); and the name, in ink, on the
+# chip's tint when pointed at, 4.5:1.
+_TAG_EDGE_CONTRAST: Final = 3.0
+_TAG_INK_CONTRAST: Final = 4.5
+_TAG_TINT: Final = 0.24
+# The raised surface as drawn: the muted grey at 0x14 over the ground.
+_RAISED_ALPHA: Final = 0x14 / 255
+_LIGHTNESS_STEP: Final = 0.005
+
+type Rgb = tuple[float, float, float]
+
+
+def tag_colour_on(colour: str, scheme: Literal["light", "dark"]) -> str:
+    """A typed hex tag colour as `scheme` draws it (#629).
+
+    Its hue and saturation are kept and its lightness moved - darker on the
+    light page, lighter on the dark one - only as far as the edge and the
+    name need. A colour that already passes is drawn exactly as typed.
+    """
+    import colorsys
+
+    ground = LIGHT_GROUND if scheme == "light" else DARK_GROUND
+    palette = CSS_COLOURS if scheme == "light" else CSS_COLOURS_DARK
+    page = _rgb(ground)
+    raised = _over(_rgb(palette["bright_black"]), page, _RAISED_ALPHA)
+    ink = _rgb(palette["white"])
+    hue, lightness, saturation = colorsys.rgb_to_hls(*_rgb(colour))
+    step = -_LIGHTNESS_STEP if scheme == "light" else _LIGHTNESS_STEP
+    while 0.0 <= lightness <= 1.0:
+        red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
+        candidate = (red, green, blue)
+        if (
+            _contrast(candidate, page) >= _TAG_EDGE_CONTRAST
+            and _contrast(candidate, raised) >= _TAG_EDGE_CONTRAST
+            and _contrast(ink, _over(candidate, page, _TAG_TINT)) >= _TAG_INK_CONTRAST
+        ):
+            return _hex(candidate)
+        lightness += step
+    # Black on the light page and white on the dark one always pass; the
+    # loop reaches them at its last step, so this is rounding's way out.
+    return "#000000" if scheme == "light" else "#ffffff"
+
+
+def _rgb(colour: str) -> Rgb:
+    digits = colour.lstrip("#")
+    red, green, blue = (int(digits[at : at + 2], 16) / 255 for at in (0, 2, 4))
+    return red, green, blue
+
+
+def _hex(rgb: Rgb) -> str:
+    return "#" + "".join(
+        f"{round(min(max(channel, 0.0), 1.0) * 255):02x}" for channel in rgb
+    )
+
+
+def _over(fore: Rgb, back: Rgb, alpha: float) -> Rgb:
+    red, green, blue = (
+        alpha * one + (1 - alpha) * other for one, other in zip(fore, back, strict=True)
+    )
+    return red, green, blue
+
+
+def _luminance(rgb: Rgb) -> float:
+    def linear(channel: float) -> float:
+        return (
+            channel / 12.92
+            if channel <= 0.04045
+            else ((channel + 0.055) / 1.055) ** 2.4
+        )
+
+    red, green, blue = (linear(channel) for channel in rgb)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _contrast(one: Rgb, other: Rgb) -> float:
+    light, dark = sorted((_luminance(one), _luminance(other)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def custom_tag_css() -> str:
+    """A typed tag colour carries both themes' values on its element, as
+    `--tag-on-light` and `--tag-on-dark`; these rules choose one by the
+    same guards as the theme blocks (#629). Spelt from `html`, the same
+    element as `:root`, so a reader of the sheet looking for the theme
+    blocks by `:root[data-theme=...]` finds only them."""
+    dark = "--tag: var(--tag-on-dark);"
+    return (
+        "[data-tag-custom] { --tag: var(--tag-on-light); }\n"
+        "@media (prefers-color-scheme: dark) {\n"
+        f'html:not([data-theme="light"]) [data-tag-custom] {{ {dark} }}\n'
+        "}\n"
+        f'html[data-theme="dark"] [data-tag-custom] {{ {dark} }}'
+    )
+
+
 _BRAND: Final = Path(__file__).parent / "static" / "brand"
 _BRAND_MARKS: Final[dict[str, str]] = {
     scheme: quote((_BRAND / f"mark-{scheme}.svg").read_text(encoding="utf-8"), safe="")
@@ -420,7 +516,10 @@ def stylesheet() -> str:
         # attribute matching either of these, so the default is the
         # behaviour that existed before there was a choice.
         f':root[data-theme="dark"] {{\n{dark}\n}}\n\n'
-        f"{scale_css()}\n\n{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}"
+        f"{scale_css()}\n\n{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}\n\n"
+        # After the layout, whose `[data-tag-colour]` rules a typed colour
+        # must not lose to.
+        f"{custom_tag_css()}"
     )
 
 

@@ -468,6 +468,13 @@ class TagNameRefused(KennisError):
     )
 
 
+class TagColourRefused(KennisError):
+    """A colour that is neither one of the eight tag colours nor a hex
+    colour (#627, #629)."""
+
+    default_message = "a tag colour is one of eight names or a hex colour"
+
+
 class TagsUnreadable(KennisError):
     """A tags file that is not one kennis can read, and is therefore never
     rewritten (#625)."""

@@ -19,6 +19,7 @@ from kennis.engine.tags import (
     colour_of,
     read_store,
     read_tags,
+    tag_colour,
     with_tags,
     written,
 )
@@ -173,3 +174,40 @@ def test_a_colour_outside_the_palette_is_refused_naming_the_palette(corpus: Path
 
 def test_a_tag_with_no_passage_and_no_colour_is_refused(corpus: Path):
     refused("tag", "calibration")
+
+
+# ---------------------------------------------------------------------------
+# A colour of one's own (#629)
+
+
+@pytest.mark.parametrize(
+    ("typed", "kept"),
+    [("#1F5FD1", "#1f5fd1"), ("#abc", "#aabbcc"), (" Teal ", "teal")],
+)
+def test_a_hex_colour_is_kept_in_lowercase_and_widened(typed: str, kept: str):
+    assert tag_colour(typed) == kept
+
+
+@pytest.mark.parametrize("typed", ["#12345", "#gggggg", "1f5fd1", "mauve", ""])
+def test_what_is_neither_a_name_nor_a_hex_is_refused(typed: str):
+    with pytest.raises(KennisError) as refusal:
+        tag_colour(typed)
+    assert "or a hex colour such as #1f5fd1" in str(refusal.value)
+
+
+def test_a_hex_colour_survives_the_file(tmp_path: Path):
+    """`#` begins a YAML comment, so the value must be written quoted."""
+    held = with_tags({}, ("a",), Anchor(PAPER_ID))
+    path = tmp_path / TAGS_FILENAME
+
+    path.write_text(written(held, colours={"a": "#1f5fd1"}), encoding="utf-8")
+
+    assert read_store(path).colours == {"a": "#1f5fd1"}
+
+
+def test_kennis_tag_takes_a_hex_colour(corpus: Path):
+    run("tag", "calibration", f"id={PAPER_ID}")
+
+    run("tag", "calibration", "--colour", "#FFE600")
+
+    assert read_store(corpus / TAGS_FILENAME).colours == {"calibration": "#ffe600"}

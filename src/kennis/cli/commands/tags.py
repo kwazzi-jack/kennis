@@ -31,8 +31,9 @@ if TYPE_CHECKING:
     "--colour",
     metavar="COLOUR",
     help="Draw these tags in COLOUR in the window: red, orange, yellow, green, "
-    "teal, blue, purple or pink; auto goes back to the colour derived from "
-    "the name. With no PASSAGE, only the colour is set.",
+    "teal, blue, purple, pink, or a hex colour such as '#1f5fd1'; auto goes "
+    "back to the colour derived from the name. With no PASSAGE, only the "
+    "colour is set.",
 )
 def tag_command(names: str, passages: tuple[str, ...], colour: str | None) -> None:
     """Tag passages or documents with each of `NAMES`.

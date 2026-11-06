@@ -7,7 +7,7 @@
 {% block title %}kennis - {% if tag %}{{ tag }}{% else %}{{ tags_heading }}{% endif %}{% endblock %}
 {% block main %}
 {% if tag %}
-<div class="tag-head" data-tag-colour="{{ colour }}">
+<div class="tag-head" {{ tag_paint(colour) }}>
   <h1>{{ icon("tag") }}<span>{{ tag }}</span></h1>
   <a class="button" href="{{ search_href }}">{{ icon("search") }}<span>{{ search_within_tag }}</span></a>
 </div>
@@ -19,11 +19,22 @@
   <fieldset>
     <legend>{{ colour_label }}</legend>
     {% for value, label in colour_choices %}
-    <label class="colour-swatch" data-tag-colour="{{ derived_colour if value == "auto" else value }}">
+    <label class="colour-swatch" {{ tag_paint(derived_colour if value == "auto" else value) }}>
       <input type="radio" name="colour" value="{{ value }}"{% if value == chosen_colour %} checked{% endif %}>
       <span class="dot"></span><span>{{ label }}</span>
     </label>
     {% endfor %}
+    {# Any colour (#629): the browser's own picker, which always sends
+       #rrggbb; the window moves its lightness per theme until it is seen. #}
+    <label class="colour-swatch own-colour"{% if chosen_hex %} {{ tag_paint(chosen_hex) }}{% endif %}>
+      <input type="radio" name="colour" value="own"{% if chosen_hex %} checked{% endif %}>
+      <input type="color" name="hex" value="{{ chosen_hex or derived_hex }}" aria-label="{{ colour_own }}">
+      {# What the picker was drawn holding: a picker moved since is the
+         choice, whether or not its radio was pressed, since moving it does
+         not press the radio. #}
+      <input type="hidden" name="drawn-hex" value="{{ chosen_hex or derived_hex }}">
+      <span>{{ colour_own }}</span>
+    </label>
   </fieldset>
   <button type="submit" class="ghost">{{ colour_set }}</button>
 </form>
@@ -49,7 +60,7 @@
 {% if tags %}
 <ul class="tags-list">
   {% for entry in tags %}
-  <li><a class="tag-entry" href="{{ entry.href }}" data-tag-colour="{{ entry.colour }}"><span class="dot"></span><span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+  <li><a class="tag-entry" href="{{ entry.href }}" {{ tag_paint(entry.colour) }}><span class="dot"></span><span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
   {% endfor %}
 </ul>
 {% else %}
