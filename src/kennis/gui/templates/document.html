@@ -59,6 +59,9 @@
       <dt>{{ also_held }}</dt><dd class="other-versions">{% for version, href in document.other_versions %}<a href="{{ href }}">{{ version }}</a>{% endfor %}</dd>
       {% endif %}
     </dl>
+    {# The full reference by the person's citation style, copied as the
+       citekey is: drawn hidden, shown where the clipboard can be reached. #}
+    {% if reference %}<p class="copy-reference-row"><button type="button" class="ghost copy copy-reference" data-copy="{{ reference }}" data-copied="{{ copied_label }}" hidden>{{ copy_reference }}</button></p>{% endif %}
   </details>
   {% if question %}
   <details class="matches" open>

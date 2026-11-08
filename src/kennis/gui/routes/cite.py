@@ -1,61 +1,40 @@
-"""A passage's citation in the window (#627): what the hit card's Copy
-citation entry fetches, and a page for a reader without a script.
+"""A passage, with its citation, for the hit card's Copy passage with
+citation (#627, Brian 2026-11-06).
 
 The citation is `kennis cite`'s, in the style `literature.citation_style`
-names, through `citing.cite`, so the window cannot word it differently
-from the command line or an agent. What is copied is the citation as it
-stands in the text; the page shows the reference as well.
+names, through `citing.cite`, so the window cannot word it differently from
+the command line or an agent. There is no page: Brian asked for no preview,
+and copying needs a script, so the entry is drawn only where one can copy.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import APIRouter
+from fastapi.responses import PlainTextResponse
 
-from kennis.citing import Citation, cite, request_for
+from kennis.citing import cite, request_for
 from kennis.context import existing_corpus
 from kennis.engine.errors import KennisError
-from kennis.gui import words
-from kennis.gui.responses import TEMPLATES, problem_page
 from kennis.links import target_of
+from kennis.render.citations import passage_with_citation
 
 router = APIRouter()
 
 
-@router.get("/cite")
-def serve_citation(request: Request, link: str = "") -> HTMLResponse:
-    """The passage `link` names, cited, to select and copy by hand."""
-    try:
-        citation = _cited(link)
-    except KennisError as error:
-        return problem_page(request, error)
-    return TEMPLATES.TemplateResponse(
-        request,
-        "cite.html",
-        {
-            "citation": citation,
-            "citation_heading": words.CITATION_HEADING,
-            "citation_text": words.CITATION_TEXT,
-            "citation_reference": words.CITATION_REFERENCE,
-        },
-    )
-
-
 @router.get("/cite/text")
 def citation_text(link: str = "") -> PlainTextResponse:
-    """The citation alone, for the card's script to put on the clipboard."""
+    """The passage `link` names in quotation marks, then its citation; a
+    whole document's citation alone."""
     try:
-        return PlainTextResponse(_cited(link).citation)
+        cited = cite(existing_corpus(), [request_for(target_of(link))])
     except KennisError as error:
         return PlainTextResponse(str(error), status_code=404)
-
-
-def _cited(link: str) -> Citation:
-    cited = cite(existing_corpus(), [request_for(target_of(link))])
     if cited.refused:
-        refusal = cited.refused[0]
-        raise KennisError(refusal.message, resolution=refusal.resolution)
-    return cited.citations[0]
+        return PlainTextResponse(cited.refused[0].message, status_code=404)
+    (citation,) = cited.citations
+    if citation.passage is None:
+        return PlainTextResponse(citation.citation)
+    return PlainTextResponse(passage_with_citation(citation.passage, citation.citation))
 
 
 __all__ = ["router"]

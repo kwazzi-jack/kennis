@@ -3008,23 +3008,19 @@ a.button:active { translate: 0 1px; }
   white-space: nowrap;
 }
 .bookmark-items .icon { width: 0.9rem; height: 0.9rem; color: var(--role-muted); }
-/* Wide enough for "Copied", so the list does not shrink when it says so. */
-.copy-citation span { min-width: 6.5rem; }
+/* A button drawn as the entries beside it are. */
+.bookmark-items button.item { font-family: var(--gutter); font-size: 0.85rem; }
+/* Copying needs a script and a clipboard; `cite.js` marks the page. */
+html:not(.can-copy) .copy-citation { display: none; }
 /* The head leaves room for the ribbon beside the title. */
 .hit .heading { padding-right: 2.2rem; }
 
 /* A hit's tags, under its title. */
 .hit-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
-/* A passage's citation, for a reader without a script to select. */
-.citation dt {
-  margin-top: 0.8rem;
-  font-family: var(--gutter);
-  font-size: 0.8125rem;
-  color: var(--role-muted);
-}
-.citation dd { margin: 0.2rem 0 0; }
-.citation-text { margin: 0; font-family: var(--column); user-select: all; }
+/* A document's Copy reference, under its details. */
+.copy-reference-row { margin: 0.4rem 0 0; }
+.copy-reference { padding-inline: 0; }
 
 /* What the results are kept to, above them, with the way back. */
 .kept-tags {

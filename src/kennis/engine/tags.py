@@ -350,16 +350,23 @@ def quote_of(text: str) -> str:
     Leading heading lines are passed over: a section's heading is not its
     passage's own words, and a chunker may draw a boundary between them.
     """
+    collapsed = passage_words(text)
+    if len(collapsed) <= _QUOTE_LENGTH:
+        return collapsed
+    cut = collapsed.rfind(" ", 0, _QUOTE_LENGTH + 1)
+    return collapsed[: cut if cut > 0 else _QUOTE_LENGTH]
+
+
+def passage_words(text: str) -> str:
+    """A chunk's words as kennis quotes them: leading heading lines passed
+    over, since a section's heading is not its passage's own words, and
+    whitespace collapsed to single spaces."""
     lines = text.splitlines()
     while len(lines) > 1 and (
         not lines[0].strip() or lines[0].lstrip().startswith("#")
     ):
         lines = lines[1:]
-    collapsed = _collapsed("\n".join(lines))
-    if len(collapsed) <= _QUOTE_LENGTH:
-        return collapsed
-    cut = collapsed.rfind(" ", 0, _QUOTE_LENGTH + 1)
-    return collapsed[: cut if cut > 0 else _QUOTE_LENGTH]
+    return _collapsed("\n".join(lines))
 
 
 def placed(anchor: Anchor, chunks: Sequence[Chunk]) -> Placement:
@@ -503,6 +510,7 @@ __all__ = [
     "admitting",
     "colour_of",
     "is_hex_colour",
+    "passage_words",
     "placed",
     "quote_of",
     "read_store",

@@ -13,15 +13,20 @@ tap it, and it lists what you can do with that passage:
 - **Open at this passage**, the document with the passage marked;
 - **Tag this passage**, a small dialog where you type one or more tags, with
   the tags you already use offered as you type;
-- **Copy citation**, the citation `kennis cite` writes for the passage, in
-  your citation style, put on the clipboard. Without a script it opens a
-  page showing the citation and its reference, to copy by hand.
+- **Copy passage with citation**, which puts the passage's words on the
+  clipboard in quotation marks, followed by the in-text citation your
+  citation style writes, with its section or page where kennis knows it:
+  "The gains were solved for per antenna ..." (Smirnov and Tasse, 2011,
+  sec. 2.2). The whole passage is copied, so you shorten it where you
+  quote it. The entry needs the browser's clipboard, and is not shown
+  without a script.
 
 A result shows the tags on its passage under its title, and the tags on
 its whole document with a dashed border. A tagged passage's tab is drawn
 in its first tag's colour.
 
-A document's details have **Tag this document**, and list the tags on it,
+A document's details have **Copy reference**, its full entry in your
+citation style, beside the citekey's **Copy**, and **Tag this document**, and list the tags on it,
 whole or on a passage, each with a button that removes it. In the text, a
 tagged passage has its tags at the right of its first line.
 

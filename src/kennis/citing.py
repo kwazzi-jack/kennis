@@ -39,6 +39,7 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import KennisError, SearchUnavailable
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Chunk
+from kennis.engine.tags import passage_words
 from kennis.finding import resolve_document
 from kennis.links import Target, context_link, link_to
 from kennis.publishing import reading
@@ -78,6 +79,9 @@ class Citation:
     # The positions of the other citations that read the same and open
     # somewhere else.
     alike: list[int] = field(default_factory=list)
+    # The passage's words as kennis quotes them, for a client that copies
+    # them with the citation; None when the whole document is cited.
+    passage: str | None = None
 
     @property
     def markdown(self) -> str:
@@ -115,6 +119,7 @@ class _Found:
     passage: ToCite | None = None
     written: Formatted | None = None
     locator: Locator | None = None
+    words: str | None = None
 
 
 @reading
@@ -157,6 +162,7 @@ def cite(context: Context, requests: Sequence[CiteRequest]) -> Cited:
                 reference=text.reference,
                 locator=each.locator,
                 link=each.link,
+                passage=each.words,
             )
         )
     return Cited(citations=_marked_alike(citations), refused=refused)
@@ -172,6 +178,7 @@ def _found(
         return _found_in_bundle(position, request, request.bundle)
     where, document = resolve_document(context, request.handle, None)
     locator: Locator | None = None
+    words: str | None = None
     if request.chunk is not None:
         if where.name not in indexes:
             indexes[where.name] = load_index(
@@ -179,6 +186,7 @@ def _found(
             )
         chunk = _chunk_of(indexes[where.name], document.id, request.chunk)
         locator = locator_of(document.body, chunk.char_start, chunk.char_end)
+        words = passage_words(chunk.text)
     return _Found(
         position=position,
         collection=where.name,
@@ -187,6 +195,7 @@ def _found(
         link=link_to(document.id, request.chunk),
         passage=ToCite(frontmatter=document.frontmatter, locator=locator),
         locator=locator,
+        words=words,
     )
 
 
@@ -272,6 +281,7 @@ def _located(
         frontmatter, body = {}, text
     title = str(frontmatter.get("title") or file.stem)
     locator: Locator | None = None
+    words: str | None = None
     if request.chunk is not None:
         chunk = next(
             (
@@ -288,6 +298,7 @@ def _located(
                 resolution="kennis context index",
             )
         locator = locator_of(body, chunk.char_start, chunk.char_end)
+        words = passage_words(chunk.text)
     return _Found(
         position=position,
         collection=collection,
@@ -296,6 +307,7 @@ def _located(
         link=link,
         written=located_note(title, locator, where),
         locator=locator,
+        words=words,
     )
 
 

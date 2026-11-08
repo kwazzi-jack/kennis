@@ -109,8 +109,9 @@ after appearing around what was already shown, and the hit's title opens
 the document at that passage.
 
 The bookmark tab on a hit's top edge lists what can be done with the
-passage: open the document at it, tag it, or copy its citation. Point at
-the tab, move to it with Tab, or tap it.
+passage: open the document at it, tag it, or copy its words with their
+citation in your citation style. Point at the tab, move to it with Tab, or
+tap it. A document's details copy its full reference.
 
 Opening a hit renders the document as HTML: headings, tables, code blocks,
 and mathematics typeset with KaTeX.

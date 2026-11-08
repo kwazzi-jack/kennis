@@ -55,6 +55,7 @@ def _document_context(
     chunks: Callable[[], list[Chunk]],
     tags: Sequence[ShownDocumentTag],
     back: str,
+    reference: str | None = None,
 ) -> dict[str, object]:
     """What a document page needs, from either store.
 
@@ -100,6 +101,10 @@ def _document_context(
         "document_tags": tags,
         "document_link": document_link(document.collection, document.document_id),
         "tags_back": back,
+        # The document's full reference, by the person's citation style,
+        # for the inspector's Copy reference; None for a project's file,
+        # which is cited by its path.
+        "reference": reference,
     }
 
 
@@ -238,8 +243,21 @@ def serve_document(
             ),
             tags=tags,
             back=_this_page(request),
+            reference=_reference_of(context, document.document_id),
         ),
     )
+
+
+def _reference_of(context: Context, document_id: str) -> str | None:
+    """The document's reference as the citation style writes it, or None
+    when it cannot be written: the page is still worth showing."""
+    from kennis.citing import CiteRequest, cite
+
+    try:
+        cited = cite(context, [CiteRequest(document_id)])
+    except KennisError:
+        return None
+    return cited.citations[0].reference if cited.citations else None
 
 
 def _in_step(freshness: Freshness | None) -> bool:

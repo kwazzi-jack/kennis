@@ -1896,11 +1896,9 @@ SHOW_EVERYTHING = "Show everything"
 TAG_ON_DOCUMENT = "On the whole document"
 # The bookmark tab on a hit card, and what it holds (#627).
 PASSAGE_ACTIONS = "Actions on this passage"
-COPY_CITATION = "Copy citation"
+COPY_PASSAGE = "Copy passage with citation"
+COPY_REFERENCE = "Copy reference"
 COPIED_CITATION = "Copied"
-CITATION_HEADING = "Citation"
-CITATION_TEXT = "In the text"
-CITATION_REFERENCE = "In the references"
 # A tag's colour, on its page.
 TAG_COLOUR_LABEL = "Colour"
 TAG_COLOUR_AUTOMATIC = "From its name"
@@ -1984,9 +1982,6 @@ __all__ = [
     "CHOOSE_A_COLLECTION",
     "CHOOSE_FOLDER",
     "CHOOSE_THE_FILE",
-    "CITATION_HEADING",
-    "CITATION_REFERENCE",
-    "CITATION_TEXT",
     "CLEAR_HISTORY_ACTION",
     "CLEAR_HISTORY_ASKED",
     "CLOSE",
@@ -1997,8 +1992,9 @@ __all__ = [
     "CONVERTER_NAMES",
     "COPIED_CITATION",
     "COPIED_LABEL",
-    "COPY_CITATION",
     "COPY_LABEL",
+    "COPY_PASSAGE",
+    "COPY_REFERENCE",
     "CORPUS_AT_LABEL",
     "CORPUS_CHANGED",
     "CORPUS_CHANGED_HEADING",

@@ -207,19 +207,19 @@ def test_a_project_s_card_follows_its_passage_after_an_edit(
 # The bookmark tab
 
 
-def test_the_tab_holds_open_tag_and_copy_citation_in_that_order(corpus: Path):
+def test_the_tab_holds_open_tag_and_copy_passage_in_that_order(corpus: Path):
     solving = chunk_holding(corpus, SOLVING)
     page = page_of(opened(), "/?q=gains+solved&scope=literature")
 
     card = card_for(page, link_to(PAPER_ID, solving))
     tab = card.select_one(".bookmark .bookmark-tab")
-    entries = card.select(".bookmark-items a.item")
+    entries = card.select(".bookmark-items .item")
 
     assert tab is not None and tab["aria-label"] == words.PASSAGE_ACTIONS
     assert [entry.get_text(strip=True) for entry in entries] == [
         words.OPEN_AT_PASSAGE,
         words.TAG_PASSAGE,
-        words.COPY_CITATION,
+        words.COPY_PASSAGE,
     ]
     assert all(entry.find("svg") is not None for entry in entries)
     assert card.select_one(".hit-head .tag-hit") is None
@@ -237,31 +237,61 @@ def test_a_tagged_passage_s_tab_wears_its_first_tag_s_colour(corpus: Path):
     assert tab is not None and tab.has_attr("data-tagged")
 
 
-def test_copy_citation_fetches_what_kennis_cite_writes(corpus: Path):
+OPENING = (
+    "The gains were solved for per antenna and per interval, with a prior that "
+    "keeps neighbouring"
+)
+
+
+def test_copy_passage_is_the_words_in_quotes_then_the_style_s_citation(corpus: Path):
+    """The whole chunk, its heading passed over, in typographic quotation
+    marks, then the in-text citation `kennis cite` writes with its locator
+    (Brian, 2026-11-06)."""
     solving = chunk_holding(corpus, SOLVING)
     client = opened()
     card = card_for(
         page_of(client, "/?q=gains+solved&scope=literature"), link_to(PAPER_ID, solving)
     )
-    entry = card.select_one("a.copy-citation")
+    entry = card.select_one("button.copy-citation")
     assert entry is not None
 
     text = client.get(str(entry["data-text"]))
-    page = page_of(client, str(entry["href"]))
 
     cited = run("cite", f"id={PAPER_ID}", f"chunk={solving}")
     assert text.status_code == 200
     assert text.headers["content-type"].startswith("text/plain")
-    assert text.text and text.text in cited
-    assert text.text in page.get_text()
+    citation = "(Smirnov and Tasse, 2011, sec. 2.2)"
+    assert citation in cited
+    assert text.text == f"\u201c{OPENING}\u201d {citation}"
     assert entry["data-copied"] == words.COPIED_CITATION
+
+
+def test_the_entry_shows_no_preview_and_opens_no_page(corpus: Path):
+    """Brian: no preview on hover or on click, and no page of its own."""
+    solving = chunk_holding(corpus, SOLVING)
+    client = opened()
+    card = card_for(
+        page_of(client, "/?q=gains+solved&scope=literature"), link_to(PAPER_ID, solving)
+    )
+    entry = card.select_one(".copy-citation")
+    assert entry is not None
+
+    assert entry.name == "button" and entry["type"] == "button"
+    assert not entry.has_attr("title") and not entry.has_attr("href")
+    assert OPENING not in str(card.select_one(".bookmark"))
+    assert client.get(f"/cite?link={link_to(PAPER_ID, solving)}").status_code == 404
+
+
+def test_without_a_clipboard_the_entry_is_not_drawn():
+    code = re.sub(r"/\*.*?\*/", "", stylesheet(), flags=re.S)
+
+    assert "html:not(.can-copy) .copy-citation { display: none; }" in code
 
 
 def test_a_citation_of_nothing_held_is_refused(corpus: Path):
     client = opened()
 
     assert client.get(f"/cite/text?link={link_to('nothing0001', 0)}").status_code == 404
-    assert client.get(f"/cite?link={link_to('nothing0001', 0)}").status_code == 404
 
 
 def test_the_copy_script_reads_the_entry_and_carries_no_words():
@@ -271,7 +301,8 @@ def test_the_copy_script_reads_the_entry_and_carries_no_words():
         if not line.lstrip().startswith("//")
     )
 
-    assert 'closest("a.copy-citation")' in code
+    assert 'closest("button.copy-citation")' in code
+    assert 'classList.add("can-copy")' in code
     assert "dataset.text" in code and "dataset.copied" in code
     assert "navigator.clipboard.writeText" in code
     assert words.COPIED_CITATION not in code
@@ -281,6 +312,37 @@ def test_every_page_loads_the_copy_script(corpus: Path):
     page = page_of(opened(), "/")
 
     assert page.select_one('script[src="/static/cite.js"]') is not None
+
+
+def test_a_document_page_copies_its_reference(corpus: Path):
+    from kennis.citing import CiteRequest, cite
+    from kennis.context import existing_corpus
+
+    page = page_of(opened(), f"/document/literature/{PAPER_ID}")
+
+    (reference,) = cite(existing_corpus(), [CiteRequest(PAPER_ID)]).citations
+    button = page.select_one(".inspector button.copy-reference")
+    assert button is not None
+    assert button["data-copy"] == reference.reference
+    assert button.has_attr("hidden")
+    assert button.get_text(strip=True) == words.COPY_REFERENCE
+
+
+def test_a_project_file_has_no_reference_to_copy(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = tmp_path / "pipelines"
+    (root / ".git").mkdir(parents=True)
+    init_bundle(root)
+    (root / ".context" / "ours.md").write_text(
+        "---\ntitle: Ours\n---\nWe solve the gains per scan.\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(root)
+    run("context", "index")
+
+    page = page_of(opened(), "/bundle/ours.md?project=pipelines")
+
+    assert page.select_one("button.copy-reference") is None
 
 
 # ---------------------------------------------------------------------------

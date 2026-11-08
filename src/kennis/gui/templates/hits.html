@@ -81,7 +81,9 @@
       <div class="menu-items bookmark-items">
         <a class="item" href="{{ hit.href }}">{{ icon("arrow-up-right") }}<span>{{ open_at_passage }}</span></a>
         <a class="item" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("tag") }}<span>{{ tag_passage }}</span></a>
-        <a class="item copy-citation" href="/cite?link={{ cite_this }}" data-text="/cite/text?link={{ cite_this }}" data-copied="{{ copied_citation }}">{{ icon("quote") }}<span>{{ copy_citation }}</span></a>
+        {# No preview and no page (Brian): a click copies, the label says
+           so; drawn only where the clipboard can be reached. #}
+        <button type="button" class="item copy-citation" data-text="/cite/text?link={{ cite_this }}" data-copied="{{ copied_citation }}">{{ icon("quote") }}<span>{{ copy_passage }}</span></button>
       </div>
     </div>
     {# The card's head (Brian, 2026-10-12): the document and the section,

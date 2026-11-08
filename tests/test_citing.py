@@ -388,3 +388,51 @@ def test_the_tool_answers_the_others_when_one_fails(corpus: Path):
 
 def test_the_tool_refuses_an_empty_batch(corpus: Path):
     assert cite_tool([]) == "no requests"
+
+
+# ---------------------------------------------------------------------------
+# The passage a citation quotes (#629's follow-up, sketch
+# 2026-11-06-copy-passage-with-citation)
+
+
+def test_a_citation_carries_its_passage_s_words_and_a_document_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from kennis.citing import cite
+    from test_cli_tags import PAPER_ID, SOLVING, chunk_holding, indexed_paper
+
+    root = indexed_paper(tmp_path, monkeypatch)
+    solving = chunk_holding(root, SOLVING)
+
+    passage, whole = cite(
+        existing_corpus(), [CiteRequest(PAPER_ID, solving), CiteRequest(PAPER_ID)]
+    ).citations
+
+    assert passage.passage is not None
+    assert passage.passage.startswith(SOLVING)
+    assert "#" not in passage.passage and "\n" not in passage.passage
+    assert whole.passage is None
+
+
+def test_a_project_passage_carries_its_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from kennis.citing import cite
+    from kennis.engine.context.bundle import init_bundle
+    from test_cli_tags import indexed_paper, run
+
+    indexed_paper(tmp_path, monkeypatch)
+    project = tmp_path / "pipelines"
+    (project / ".git").mkdir(parents=True)
+    init_bundle(project)
+    (project / ".context" / "ours.md").write_text(
+        "---\ntitle: Ours\n---\nWe solve the gains\nper scan.\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(project)
+    run("context", "index")
+
+    (citation,) = cite(
+        existing_corpus(), [CiteRequest("ours.md", 0, bundle=project / ".context")]
+    ).citations
+
+    assert citation.passage == "We solve the gains per scan."
