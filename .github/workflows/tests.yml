@@ -156,8 +156,14 @@ jobs:
       - name: ascii only
         run: sh scripts/check_ascii.sh src tests docs scripts README.md
 
+      # In parallel, one worker per core (pytest-xdist): every test has its
+      # own home, state, configuration, corpus and working directory under
+      # its own tmp_path (the autouse fixtures in conftest.py), so workers
+      # share nothing. 217 s serial, 67 s on four workers, measured on Linux
+      # 2026-11-08. The service run below stays serial: it starts real
+      # processes and time how they start, stop and wait for each other.
       - name: tests
-        run: uv run --no-sync --python ${{ matrix.python }} pytest
+        run: uv run --no-sync --python ${{ matrix.python }} pytest -n auto
 
       # The service's lifecycle in real processes (14f): the launcher that
       # leaves no client as the service's parent, the lock and the record,
