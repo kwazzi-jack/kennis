@@ -34,6 +34,10 @@ def printed_on(
         theme=display._THEME,
         highlight=False,
         force_terminal=terminal,
+        # A terminal that can show a link: left to detection, rich takes a
+        # Windows runner, which has no console, for a legacy one and drops
+        # every OSC 8 link, as it should on a console that cannot draw one.
+        legacy_windows=False,
         color_system="standard" if terminal else None,
         width=200,
     )

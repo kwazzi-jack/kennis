@@ -21,6 +21,7 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
+from kennis.engine.portable import portability_problem
 from kennis.links import (
     ContextTarget,
     LinkTarget,
@@ -82,7 +83,9 @@ def test_anything_else_is_refused(text: str) -> None:
 
 # --- a project beside a corpus ---------------------------------------------
 
-NOTE_PATH = "discussions/A burst (**).md"
+# Characters a link must escape (a space, `#`, `%`, `&`, parentheses), in a
+# name every platform can hold: `*` was here, and Windows refuses it.
+NOTE_PATH = "discussions/A burst (#1), 50% & more.md"
 NOTE = """\
 ---
 title: 'A burst: is it coherent?'
@@ -120,6 +123,10 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     indexed = run.invoke(main, ["context", "index"])
     assert indexed.exit_code == 0, indexed.output
     return root
+
+
+def test_the_note_s_name_is_one_every_platform_can_hold():
+    assert portability_problem(NOTE_PATH) is None
 
 
 _HANDLE = re.compile(r"path=(?P<path>\S.*?) chunk=(?P<chunk>[0-9]+)$")
