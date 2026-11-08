@@ -72,6 +72,39 @@ the next version, so a malformed title is a version decision lost.
 - Write the test before the change, and check that it fails without the
   change.
 
+## Tests
+
+The default suite runs in parallel, one worker per core:
+
+```
+uv run pytest -n auto
+```
+
+CI runs it that way on every platform. Plain `uv run pytest` runs the
+same tests one at a time, which is easier to read when one fails. The
+`service` and `browser` runs stay serial, because they start real
+processes.
+
+Parallel workers are safe only because no test shares anything with
+another. Fixtures in `tests/conftest.py` that apply to every test already
+point the home directory, kennis's state and configuration directories,
+the corpus location and the working directory into the test's own
+`tmp_path`, and refuse network access. A new test keeps that true:
+
+- Write files only under `tmp_path`, never at a fixed path.
+- Set an environment variable or replace a module's attribute only through
+  `monkeypatch`, which undoes it when the test ends; never assign
+  `os.environ` directly or leave a module-level value changed.
+- Bind a server to port 0 and read the port the kernel chose; never use a
+  fixed port.
+- A test that needs the network is marked `network`, and one that starts a
+  real kennis service process is marked `service`.
+- Wait for an event, not for a time: a loaded machine wakes late, and
+  Windows' clock ticks only every 15.6 ms.
+
+A test that passes in a serial run and fails in a parallel one is sharing
+something with another test.
+
 ## Releases
 
 Releases are cut from `main` by the maintainer, batched rather than one per
