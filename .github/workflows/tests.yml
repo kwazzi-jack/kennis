@@ -130,7 +130,7 @@ jobs:
           --no-install-package nvidia-cudnn-cu13
           --no-install-package nvidia-cufft
           --no-install-package nvidia-cufile
-          --no-install-package nvidia-curand
+          --no-install-package nvidia-cuda-cccl
           --no-install-package nvidia-cusolver
           --no-install-package nvidia-cusparse
           --no-install-package nvidia-cusparselt-cu13
@@ -221,7 +221,7 @@ jobs:
           --no-install-package nvidia-cudnn-cu13
           --no-install-package nvidia-cufft
           --no-install-package nvidia-cufile
-          --no-install-package nvidia-curand
+          --no-install-package nvidia-cuda-cccl
           --no-install-package nvidia-cusolver
           --no-install-package nvidia-cusparse
           --no-install-package nvidia-cusparselt-cu13

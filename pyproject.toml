@@ -99,7 +99,7 @@ dependencies = [
     # numpy 2 only: kennis stores embeddings as arrays and reads them back, and
     # the 1.x/2.x promotion rules differ in ways a stored dtype would notice.
     "numpy>=2.0,<3",
-    "fastembed>=0.5,<0.9",
+    "fastembed>=0.5,<0.10",
     # The two hosted embedding backends the settings offer beside fastembed.
     "ollama>=0.4,<0.7",
     "openai>=1.60,<3",
