@@ -125,6 +125,10 @@ dependencies = [
     # Citations formatted by a CSL style, so a person can choose one by
     # its .csl file (#571); pure Python, beside lxml, which MinerU has.
     "citeproc-py>=0.12.1,<0.13",
+    # Turns on a Windows console's escape-sequence processing before rich
+    # reads it, which rich never does, so a console that can draw a link
+    # is not taken for a legacy one (#633). click brings it there anyway.
+    "colorama>=0.4.6,<0.5 ; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -174,6 +178,7 @@ dev = [
     # on it, so CI - which installs no extras - could not run them.
     "reportlab>=5.0.1",
     "ruff>=0.6",
+    "types-colorama>=0.4.15.20260508",
     "types-pygments>=2.21.0.20260819",
     "types-pyyaml>=6.0.12.20260906",
 ]

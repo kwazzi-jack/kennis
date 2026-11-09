@@ -1593,6 +1593,7 @@ dependencies = [
     { name = "bm25s" },
     { name = "citeproc-py" },
     { name = "click" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "fastapi" },
     { name = "fastembed" },
     { name = "filelock" },
@@ -1640,6 +1641,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "reportlab" },
     { name = "ruff" },
+    { name = "types-colorama" },
     { name = "types-pygments" },
     { name = "types-pyyaml" },
 ]
@@ -1656,6 +1658,7 @@ requires-dist = [
     { name = "bm25s", specifier = ">=0.2,<0.4" },
     { name = "citeproc-py", specifier = ">=0.12.1,<0.13" },
     { name = "click", specifier = ">=8.1,<9" },
+    { name = "colorama", marker = "sys_platform == 'win32'", specifier = ">=0.4.6,<0.5" },
     { name = "fastapi", specifier = ">=0.115,<0.144" },
     { name = "fastembed", specifier = ">=0.5,<0.9" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4.0.10,<5" },
@@ -1698,6 +1701,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "reportlab", specifier = ">=5.0.1" },
     { name = "ruff", specifier = ">=0.6" },
+    { name = "types-colorama", specifier = ">=0.4.15.20260508" },
     { name = "types-pygments", specifier = ">=2.21.0.20260819" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260906" },
 ]
@@ -4276,6 +4280,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/a3/1585216310e344e8102c22482f6060c7a6ea0322b63e026372e6dcefcfd6/truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301", size = 26169, upload-time = "2025-08-12T18:49:02.73Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/19/97/56608b2249fe206a67cd573bc93cd9896e1efb9e98bce9c163bcdc704b88/truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981", size = 18660, upload-time = "2025-08-12T18:49:01.46Z" },
+]
+
+[[package]]
+name = "types-colorama"
+version = "0.4.15.20260508"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/d5/4870d88c6c87adf786ef33d674cbf82b3a2d5fcbe6deec29282cff80e8b3/types_colorama-0.4.15.20260508.tar.gz", hash = "sha256:3a8916039e57452bd21f57e674e1f221ca9e4f319893c5e3bbd37b845c27d8e6", size = 10638, upload-time = "2026-05-08T04:47:14.593Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/56/33/a3449e3e93c43861b92d0a93ed4ea5505756463e507625812cfb29c91c7a/types_colorama-0.4.15.20260508-py3-none-any.whl", hash = "sha256:b0c39908a3e5171ef1f8bf3d59fae082e9eaff3a19ca49b6d640b83f78cff61c", size = 10755, upload-time = "2026-05-08T04:47:13.761Z" },
 ]
 
 [[package]]
