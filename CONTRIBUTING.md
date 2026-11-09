@@ -74,10 +74,10 @@ the next version, so a malformed title is a version decision lost.
 
 ## Tests
 
-The default suite runs in parallel, one worker per core:
+The default suite runs in parallel, one worker per logical CPU:
 
 ```
-uv run pytest -n auto
+uv run pytest -n logical
 ```
 
 CI runs it that way on every platform. Plain `uv run pytest` runs the
@@ -100,10 +100,18 @@ the corpus location and the working directory into the test's own
 - A test that needs the network is marked `network`, and one that starts a
   real kennis service process is marked `service`.
 - Wait for an event, not for a time: a loaded machine wakes late, and
-  Windows' clock ticks only every 15.6 ms.
+  Windows' clock ticks only every 15.6 ms. Before reading what a job did,
+  wait for the job to finish.
+- To bound how long something took, read the clock before the action that
+  starts it, never after: on a loaded machine the gap between the two is
+  subtracted from the measured time.
+- Find a line of output by something only that line can contain. A short
+  word such as `add` can also turn up inside a commit hash, which is
+  hexadecimal.
 
-A test that passes in a serial run and fails in a parallel one is sharing
-something with another test.
+A test that passes in a serial run and fails in a parallel one is either
+sharing something with another test, or depending on timing that the
+extra load has changed. So far it has always been the second.
 
 ## Releases
 
