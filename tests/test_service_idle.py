@@ -75,9 +75,12 @@ def test_activity_counts_the_quiet_period_from_now():
     timer.start()
     for _ in range(5):
         threading.Event().wait(TOUCHED_EVERY)
+        # Read before the touch, where the quiet period begins: read after
+        # it, the gap between the two came off the measured period on a
+        # loaded runner, 1.99915 s for 2 s (#631).
+        last = time.monotonic()
         timer.touch()
         assert not gone.is_set(), "it left between touches"
-    last = time.monotonic()
 
     assert gone.wait(WAIT)
     assert time.monotonic() - last >= PATIENT - TICK
