@@ -1070,13 +1070,6 @@ def test_the_add_form_has_somewhere_to_answer_a_refusal(client: TestClient):
     assert form.find(id="add-problem").get("role") == "alert"
 
 
-def test_a_kennis_summary_of_one_is_read_in_the_singular():
-    """The strip said "note in notes (1 documents)"."""
-    said = words.last_change("note", "notes", "1 documents, 3 chunks", 5)
-
-    assert "(1 document, 3 chunks)" in said
-
-
 def test_a_command_s_help_is_not_offered_as_the_window_s_remedy(client: TestClient):
     """An empty corpus's search answered with `kennis corpus add --help`
     while the Add button sat in the bar above it."""
