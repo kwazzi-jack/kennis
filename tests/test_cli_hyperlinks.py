@@ -10,8 +10,10 @@ terminal - a pipe, a file, the baselines - only the text is written.
 
 from __future__ import annotations
 
+import ast
 import io
 import re
+from pathlib import Path
 
 import pytest
 from rich.console import Console
@@ -80,3 +82,49 @@ def test_off_a_terminal_only_the_link_s_text_is_written(
 
     assert "\x1b" not in shown
     assert LINK in shown
+
+
+def _builds_a_console(statement: ast.stmt) -> bool:
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"Console", "_BesideTheBar"}
+        for node in ast.walk(statement)
+    )
+
+
+def _turns_on_escapes(statement: ast.stmt) -> bool:
+    return (
+        isinstance(statement, ast.If)
+        and ast.unparse(statement.test) == "sys.platform == 'win32'"
+        and any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "just_fix_windows_console"
+            for node in ast.walk(statement)
+        )
+    )
+
+
+def test_a_windows_console_processes_escapes_before_any_console_is_built():
+    """rich reads a Windows console's escape-sequence mode once, when a
+    `Console` is built, and never turns it on; read as off, the console is
+    taken for a legacy one and every hyperlink is dropped. So the mode is
+    turned on at module level before the first console exists. No test can
+    show a Windows console here (the runner has none), so this is ordering.
+    """
+    tree = ast.parse(Path(display.__file__).read_text(encoding="utf-8"))
+    statements = list(tree.body)
+    first_console = next(
+        index
+        for index, statement in enumerate(statements)
+        if _builds_a_console(statement)
+    )
+    turned_on = [
+        index
+        for index, statement in enumerate(statements)
+        if _turns_on_escapes(statement)
+    ]
+
+    assert turned_on, "display.py never turns on a Windows console's escapes"
+    assert turned_on[0] < first_console

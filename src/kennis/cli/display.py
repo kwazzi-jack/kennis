@@ -55,6 +55,7 @@ rather than an unknown style tag rich would silently swallow.
 from __future__ import annotations
 
 import contextlib
+import sys
 import textwrap
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -85,6 +86,17 @@ if TYPE_CHECKING:
 
 if TYPE_CHECKING:
     from kennis.render.markdown import Block
+
+# rich decides how to draw on Windows once, when a console is built, by
+# reading whether the console processes escape sequences, and never turns
+# that on; read as off, the console is taken for a legacy one and every
+# `kennis://` hyperlink is dropped. So it is turned on before the consoles
+# below exist (#633). On Windows 10 and later this sets a flag on stdout's and
+# stderr's handles and replaces neither stream; elsewhere it does nothing.
+if sys.platform == "win32":
+    import colorama
+
+    colorama.just_fix_windows_console()
 
 _THEME = rich_theme()
 
