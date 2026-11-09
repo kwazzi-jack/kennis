@@ -167,7 +167,11 @@ def search_command(
     """
     from kennis.engine.context.bundle import find_bundle
     from kennis.engine.context.projects import present_bundles
-    from kennis.render.words import describe_lexical_fallback
+    from kennis.render.words import (
+        describe_lexical_fallback,
+        describe_other_model,
+        describe_unembedded,
+    )
     from kennis.scopes import SCOPE_NAMES
 
     if group is not None and project is not None:
@@ -198,6 +202,23 @@ def search_command(
     )
     for name in found.degraded:
         display.note(describe_lexical_fallback(name))
+    # Searched with another model, or not by meaning at all, each with its
+    # way out (issue #16).
+    for other in found.other_models:
+        display.note(
+            describe_other_model(
+                other.name,
+                built_backend=other.built_backend,
+                built_model=other.built_model,
+                configured_backend=other.configured_backend,
+                configured_model=other.configured_model,
+            )
+        )
+        display.next_step(other.resolution)
+    for unembedded in found.unembedded:
+        display.warning(describe_unembedded(unembedded.name, unembedded.reason))
+        if unembedded.resolution is not None:
+            display.next_step(unembedded.resolution)
 
     _report(
         found,

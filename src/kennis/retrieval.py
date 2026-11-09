@@ -14,6 +14,7 @@ operation from "search this one and fail if it has no index".
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -48,6 +49,8 @@ if TYPE_CHECKING:
 # less useful than giving them the most that is sensible.
 MAX_TOP_K = 20
 
+_LOG: Final = logging.getLogger("kennis.retrieval")
+
 
 def context_for(collection: str) -> Context:
     """The context a search of `collection` runs in.
@@ -76,7 +79,7 @@ def search_scope(
     "no hits" for an index that was never built has been told
     something false.
     """
-    from kennis.engine.rag.embedding import resolve_host
+    from kennis.engine.rag.embedding import address_for
     from kennis.engine.rag.search import search
 
     context = context_for(collection)
@@ -101,6 +104,10 @@ def search_scope(
         if collection == "docs"
         else VersionChoice(left_out=(), breadth=1)
     )
+    host = address_for(
+        index.binding.model.kind if index.binding.model else "",
+        context.settings.embedding,
+    )
     results = search(
         index,
         question,
@@ -109,18 +116,12 @@ def search_scope(
         # does, unless it names others (#489).
         filters=_with_versions(None, choice.left_out),
         mode=running,
-        host=resolve_host(
-            index.binding.model.kind if index.binding.model else "",
-            context.settings.embedding.base_url or None,
-        ),
+        host=host,
     )
     hits = with_unrelated_reference(
         [Hit(collection=collection, result=result, model=model) for result in results],
         index,
-        host=resolve_host(
-            index.binding.model.kind if index.binding.model else "",
-            context.settings.embedding.base_url or None,
-        ),
+        host=host,
     )
     return merged_across_versions(hits)[:wanted] if collection == "docs" else hits
 
@@ -232,6 +233,38 @@ class Skipped:
 
 
 @dataclass(frozen=True, slots=True)
+class OtherModel:
+    """A scope whose index was built with a model other than the one the
+    configuration names, searched with its own (issue #16).
+
+    Said because its meaning is that model's, which is not what the reader
+    configured, and with the command that builds it again with theirs.
+    Fields only, as `Skipped` is (#81).
+    """
+
+    name: str
+    built_backend: str
+    built_model: str
+    configured_backend: str
+    configured_model: str
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
+class Unembedded:
+    """A scope whose model could not embed the question, so it was matched
+    by keywords only and the other scopes were searched as usual (issue #16).
+
+    `reason` is the refusal's own message, which is text a `KennisError`
+    carries rather than a sentence composed here (#81).
+    """
+
+    name: str
+    reason: str
+    resolution: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Sweep:
     """What searching several scopes at once came to.
 
@@ -247,12 +280,18 @@ class Sweep:
     asked of them. Carried rather than printed, because `retrieval`
     may not import a front end - which is the whole reason the sweep
     could not simply be moved as it stood.
+
+    `other_models` and `unembedded` name the scopes searched with a model
+    other than the configured one, and those whose model could not be used
+    at all (issue #16).
     """
 
     groups: dict[str, list[Hit]]
     searched: tuple[str, ...]
     skipped: tuple[Skipped, ...]
     degraded: tuple[str, ...]
+    other_models: tuple[OtherModel, ...] = ()
+    unembedded: tuple[Unembedded, ...] = ()
 
 
 def sweep(
@@ -309,7 +348,7 @@ def sweep(
         else VersionChoice(left_out=(), breadth=1)
     )
 
-    found = _Gathered(groups, searched, skipped, degraded)
+    found = _Gathered(groups, searched, skipped, degraded, [], [])
     for name in [scope for scope in SCOPE_NAMES if scope in scopes]:
         if name == CONTEXT_COLLECTION:
             _sweep_context(
@@ -335,7 +374,7 @@ def sweep(
             continue
         found.add(
             name,
-            *_hits_in(
+            _hits_in(
                 context,
                 index,
                 name,
@@ -344,6 +383,7 @@ def sweep(
                 filters=filters,
                 mode=mode,
                 choice=choice,
+                rebuild=f"kennis corpus index --collection {name}",
             ),
         )
 
@@ -354,7 +394,20 @@ def sweep(
         searched=tuple(searched),
         skipped=tuple(skipped),
         degraded=tuple(degraded),
+        other_models=tuple(found.other_models),
+        unembedded=tuple(found.unembedded),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _Searched:
+    """One group's search: its hits, whether it ran lexically although more
+    was asked of it, and what it says about the model it used."""
+
+    hits: list[Hit]
+    fell_back: bool
+    other_model: OtherModel | None
+    unembedded: Unembedded | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,13 +418,19 @@ class _Gathered:
     searched: list[str]
     skipped: list[Skipped]
     degraded: list[str]
+    other_models: list[OtherModel]
+    unembedded: list[Unembedded]
 
-    def add(self, name: str, found: list[Hit], fell_back: bool) -> None:
+    def add(self, name: str, found: _Searched) -> None:
         self.searched.append(name)
-        if fell_back:
+        if found.fell_back:
             self.degraded.append(name)
-        if found:
-            self.groups[name] = found
+        if found.other_model is not None:
+            self.other_models.append(found.other_model)
+        if found.unembedded is not None:
+            self.unembedded.append(found.unembedded)
+        if found.hits:
+            self.groups[name] = found.hits
 
 
 def _sweep_context(
@@ -427,7 +486,7 @@ def _sweep_context(
             if unsearched is not None:
                 into.skipped.append(unsearched)
             continue
-        hits, fell_back = _hits_in(
+        searched = _hits_in(
             context,
             index,
             group,
@@ -436,6 +495,11 @@ def _sweep_context(
             filters=filters,
             mode=mode,
             choice=_NO_VERSIONS,
+            rebuild=(
+                "kennis context index"
+                if mine
+                else f"kennis context index --project {names[bundle]}"
+            ),
         )
         # Where the file is, as the reader is told: this project's from
         # its own root, another project's whole. The name is asked after
@@ -445,8 +509,12 @@ def _sweep_context(
         project = project_names([bundle])[bundle] if mine else names[bundle]
         into.add(
             group,
-            [replace(hit, place=place, project=project) for hit in hits],
-            fell_back,
+            replace(
+                searched,
+                hits=[
+                    replace(hit, place=place, project=project) for hit in searched.hits
+                ],
+            ),
         )
 
 
@@ -460,10 +528,23 @@ def _hits_in(
     filters: list[Filter] | None,
     mode: str | None,
     choice: VersionChoice,
-) -> tuple[list[Hit], bool]:
-    """One group's hits, and whether it ran lexically although more was
-    asked of it."""
-    from kennis.engine.rag.embedding import resolve_host
+    rebuild: str,
+) -> _Searched:
+    """One group's hits, whether it ran lexically although more was asked
+    of it, and what it says about its model.
+
+    `rebuild` is the command that builds this group's index again, named
+    when the index's model is not the configured one.
+
+    **An index is searched with the model it was built with**, reached at
+    that backend's address (`address_for`), because a question embedded by
+    any other model is compared with vectors it did not make. When that
+    model cannot embed the question at all - unreachable, or refused - the
+    group is matched by keywords and says why, and the others are searched
+    as usual: one scope's model was failing the whole sweep (issue #16).
+    """
+    from kennis.engine.errors import EmbeddingUnavailable
+    from kennis.engine.rag.embedding import address_for
     from kennis.engine.rag.search import search
 
     # Per group, not once for the sweep. A bundle's method is its own
@@ -483,40 +564,80 @@ def _hits_in(
     # passage that ranked fourth - the one a reader comparing versions
     # wants - went unshown.
     breadth = choice.breadth if name == "docs" else 1
-    found = [
-        Hit(collection=name, result=result, model=model)
-        for result in search(
+    # The address, from the configuration in force now. It is not in the
+    # stored binding, because it is not part of what the vectors are.
+    # Concern #210.
+    host = address_for(
+        index.binding.model.kind if index.binding.model else "",
+        context.settings.embedding,
+    )
+    # The docs scope alone: a notes group may be called `pydantic/2.12` as
+    # well.
+    narrowed = _with_versions(filters, choice.left_out) if name == "docs" else filters
+    unembedded: Unembedded | None = None
+    try:
+        results = search(
             index,
             question,
             top_k=wanted * breadth,
-            # The docs scope alone: a notes group may be called
-            # `pydantic/2.12` as well.
-            filters=_with_versions(filters, choice.left_out)
-            if name == "docs"
-            else filters,
+            filters=narrowed,
             mode=running,
-            # The address, from the configuration in force now. It is not
-            # in the stored binding, because it is not part of what the
-            # vectors are. Concern #210.
-            host=resolve_host(
-                index.binding.model.kind if index.binding.model else "",
-                context.settings.embedding.base_url or None,
-            ),
+            host=host,
         )
-    ]
-    found = with_unrelated_reference(
-        found,
-        index,
-        host=resolve_host(
+    except (EmbeddingUnavailable, SettingsError) as refused:
+        # Only a mode that embeds the question can get here, so keywords
+        # alone are a search this index can still run.
+        if running == "bm25":
+            raise
+        _LOG.warning(
+            "the %s model could not embed the question, so %s was matched by "
+            "keywords only: %s",
             index.binding.model.kind if index.binding.model else "",
-            context.settings.embedding.base_url or None,
-        ),
-    )
+            name,
+            refused,
+        )
+        unembedded = Unembedded(name, str(refused), refused.resolution)
+        results = search(
+            index, question, top_k=wanted * breadth, filters=narrowed, mode="bm25"
+        )
+    found = [Hit(collection=name, result=result, model=model) for result in results]
+    if unembedded is None:
+        found = with_unrelated_reference(found, index, host=host)
     if name == "docs":
         found = merged_across_versions(found)[:wanted]
     # `top_k` per group, not across them: each group is a complete answer
     # from its source rather than a truncated share of a blend.
-    return found, running != asked and asked != "bm25"
+    return _Searched(
+        hits=found,
+        fell_back=running != asked and asked != "bm25",
+        other_model=_other_model(index, name, context, rebuild),
+        unembedded=unembedded,
+    )
+
+
+def _other_model(
+    index: LoadedIndex, name: str, context: Context, rebuild: str
+) -> OtherModel | None:
+    """The index's model when it is not the configured one, or None.
+
+    Nothing to say for an index with no model (that is `degraded`'s case)
+    or a configuration that names none: building again with no model would
+    remove the index's meaning, which nobody asked for.
+    """
+    built = index.binding.model
+    configured = context.settings.embedding
+    if built is None or configured.backend == "none":
+        return None
+    if (built.kind, built.model) == (configured.backend, configured.model):
+        return None
+    return OtherModel(
+        name=name,
+        built_backend=built.kind,
+        built_model=built.model,
+        configured_backend=configured.backend,
+        configured_model=configured.model,
+        resolution=rebuild,
+    )
 
 
 def with_unrelated_reference(
@@ -754,8 +875,10 @@ def nothing_to_search(
 
 __all__ = [
     "MAX_TOP_K",
+    "OtherModel",
     "Skipped",
     "Sweep",
+    "Unembedded",
     "as_mode",
     "chunk_range",
     "context_for",

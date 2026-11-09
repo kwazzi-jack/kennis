@@ -373,6 +373,33 @@ def describe_lexical_fallback(collection: str) -> str:
     )
 
 
+def describe_other_model(
+    collection: str,
+    *,
+    built_backend: str,
+    built_model: str,
+    configured_backend: str,
+    configured_model: str,
+) -> str:
+    """A scope searched with the model its index was built with, which is
+    not the configured one (issue #16). The rebuild command is the
+    caller's to print, as a skip's is."""
+    return (
+        f"the {group_name(collection)} index was built with {built_backend} "
+        f"{built_model}, not the configured {configured_backend} "
+        f"{configured_model}, so its meaning is that model's"
+    )
+
+
+def describe_unembedded(collection: str, reason: str) -> str:
+    """A scope whose model could not embed the question, matched by
+    keywords instead (issue #16); `reason` is the refusal's own message."""
+    return (
+        f"the {group_name(collection)} index's model could not be used, so "
+        f"this matched keywords only: {reason}"
+    )
+
+
 def describe_busy_indexes(collections: Sequence[str]) -> str:
     """Which indexes another process was already rebuilding.
 

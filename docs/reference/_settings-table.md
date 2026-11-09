@@ -79,7 +79,7 @@ What is written to the log file.
 
 | key | type | default | what it does |
 |---|---|---|---|
-| `level` | `debug` / `info` / `warning` / `error` | `info` | Detail written to the log file. |
+| `level` | `debug` / `info` / `warning` / `error` | `debug` | Detail written to the log file. |
 | `max_bytes` | `int` | `1048576` | Size at which the log rotates. |
 | `backup_count` | `int` | `3` | Rotated log files kept. |
 

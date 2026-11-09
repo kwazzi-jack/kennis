@@ -212,8 +212,12 @@ def _run(job: Job, work: Callable[[EventSink], object]) -> None:
     except KennisError as error:
         # Every domain failure becomes the job's answer. A thread that
         # raised would lose it: nothing is waiting on this thread to
-        # collect an exception from.
+        # collect an exception from. Logged with its traceback, which the
+        # answer does not carry (issue #16).
         job.error = error
+        logging.getLogger("kennis.service").warning(
+            "the %s job was refused: %s", job.kind, error, exc_info=True
+        )
     except Exception as crash:
         # Anything else too, for the same reason. The traceback goes to the
         # log, where a defect report can find it.
