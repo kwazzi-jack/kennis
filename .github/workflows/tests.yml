@@ -156,14 +156,17 @@ jobs:
       - name: ascii only
         run: sh scripts/check_ascii.sh src tests docs scripts README.md
 
-      # In parallel, one worker per core (pytest-xdist): every test has its
-      # own home, state, configuration, corpus and working directory under
-      # its own tmp_path (the autouse fixtures in conftest.py), so workers
-      # share nothing. 217 s serial, 67 s on four workers, measured on Linux
-      # 2026-11-08. The service run below stays serial: it starts real
-      # processes and time how they start, stop and wait for each other.
+      # In parallel, one worker per logical CPU (pytest-xdist): every test has
+      # its own home, state, configuration, corpus and working directory
+      # under its own tmp_path (the autouse fixtures in conftest.py), so
+      # workers share nothing. `logical`, not `auto`: with psutil installed
+      # `auto` counts physical cores, 2 on these runners (3 on macOS), and
+      # much of a test's time is spent waiting on git and the disk. Windows'
+      # step took 37.2 min serial and 23.6 min on 2 workers (2026-11-09). The
+      # service run below stays serial: it starts real processes and times
+      # how they start, stop and wait for each other.
       - name: tests
-        run: uv run --no-sync --python ${{ matrix.python }} pytest -n auto
+        run: uv run --no-sync --python ${{ matrix.python }} pytest -n logical
 
       # The service's lifecycle in real processes (14f): the launcher that
       # leaves no client as the service's parent, the lock and the record,
