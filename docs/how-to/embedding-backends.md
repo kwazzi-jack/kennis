@@ -22,6 +22,19 @@ what a query would produce, so **reindex**:
 kennis corpus index
 ```
 
+A project's own index is separate from the corpus, so in each project whose
+context is searched by meaning, run this too:
+
+```
+kennis context index
+```
+
+Until an index is rebuilt, kennis searches it with the model it was built
+with, and says so above the results, naming the command that rebuilds it. If
+that model cannot be reached (for example, an ollama model on a machine
+where ollama is not running), that index is searched by keywords only. The
+search says why, and the other indexes are searched as usual.
+
 ## fastembed
 
 The default, and the one to keep unless you have a reason. It runs in-process

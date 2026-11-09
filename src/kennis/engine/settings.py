@@ -283,8 +283,10 @@ class TerminalSettings(BaseModel):
 class LoggingSettings(BaseModel):
     """What is written to the log file."""
 
+    # Everything by default, so a reported failure has its detail without a
+    # setting changed first (Brian, 2026-11-09, issue #16).
     level: Literal["debug", "info", "warning", "error"] = Field(
-        default="info", description="Detail written to the log file."
+        default="debug", description="Detail written to the log file."
     )
     max_bytes: int = Field(
         default=1_048_576, ge=1024, description="Size at which the log rotates."

@@ -81,6 +81,10 @@ class KennisGroup(click.Group):
             display.next_step(f"kennis service watch {detached.job}")
             raise SystemExit(130) from detached
         except KennisError as error:
+            # What the person was shown, so the log the hint below names holds
+            # it too; the service logs the same refusal where it was raised,
+            # with its traceback (issue #16).
+            logging.getLogger("kennis.cli").warning("refused: %s", error)
             display.failure(str(error))
             for note in getattr(error, "__notes__", []):
                 display.remedy(note)

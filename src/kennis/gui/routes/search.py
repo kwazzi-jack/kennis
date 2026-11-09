@@ -26,6 +26,7 @@ from kennis.gui import history, words
 from kennis.gui.pages import (
     shown_groups_of,
     shown_key,
+    shown_model_notices,
     shown_orders,
     shown_recents,
     shown_skips,
@@ -195,6 +196,7 @@ def _hits_context(
                 versions=chosen,
             )
         context["skips"] = shown_skips(found)
+        context["model_notices"] = shown_model_notices(found)
         # The command line has printed this since milestone 1 and the
         # page never did. A control offering "Meaning only" that
         # quietly returns lexical results is a control that lies, so

@@ -49,6 +49,8 @@ if TYPE_CHECKING:
     # nothing until that backend is selected.
     from fastembed import TextEmbedding
 
+    from kennis.engine.settings import EmbeddingSettings
+
 type Kind = Literal["fastembed", "ollama", "openai"]
 
 # `(done, total)`, called with zero up front and after each batch.
@@ -228,9 +230,28 @@ def resolve_host(kind: str, host: str | None) -> str | None:
     silently reusing the daemon's address as a hosted `base_url` would send a
     query somewhere the user never named.
     """
+    # fastembed has no server whatever it is handed: an address given to it
+    # is refused by `validate_binding`, and one search attached the ollama
+    # address to a fastembed index that way (issue #16).
+    if kind == "fastembed":
+        return None
     if host is not None:
         return host
     return _OLLAMA_DEFAULT_HOST if kind == "ollama" else None
+
+
+def address_for(kind: str, embedding: EmbeddingSettings) -> str | None:
+    """The address to reach an index's backend `kind` at, from `embedding`.
+
+    The configured `base_url` is the configured backend's, so an index built
+    with another backend gets that backend's own default instead: ollama's
+    usual address, and none for openai's hosted API or for fastembed. An
+    index is searched with the model it was built with, whatever the
+    configuration now names (issue #16).
+    """
+    if kind == embedding.backend:
+        return resolve_host(kind, embedding.base_url or None)
+    return resolve_host(kind, None)
 
 
 def validate_binding(binding: ModelBinding) -> None:

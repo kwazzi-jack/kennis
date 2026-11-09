@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import os
 import typing
 from collections.abc import Iterator
@@ -186,6 +187,15 @@ async def _answered(operation: Operation, arguments: dict[str, object]) -> JSONR
     try:
         result = await run_in_threadpool(operation.function, **arguments)
     except KennisError as refused:
+        # Here, where the traceback still is: the client only prints the
+        # message, and a refusal that reached no log could not be followed
+        # up from the hint that names it (issue #16).
+        logging.getLogger("kennis.service").warning(
+            "the %s call was refused: %s",
+            operation.function.__name__,
+            refused,
+            exc_info=True,
+        )
         return _refused(refused, 422)
     return JSONResponse({"result": dump(result)})
 

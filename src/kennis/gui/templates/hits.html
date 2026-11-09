@@ -23,6 +23,11 @@
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
 {% endfor %}
+{# A scope searched with another model, or by keywords because its model
+   could not be used, each with its way out (issue #16). #}
+{% for notice in model_notices %}
+<p class="skipped role-muted">{{ notice.sentence }}{% if notice.resolution %}<span class="role-command">{{ notice.resolution }}</span>{% endif %}</p>
+{% endfor %}
 {# The scale, once, ahead of every group (#408). A `<details>`, so it
    opens without a script. The ramp is the five strength colours, one
    cell each, and the same cells the bars below are drawn from. #}

@@ -197,16 +197,18 @@ def test_the_configured_level_is_the_logs(
     assert " INFO " not in written(isolated)
 
 
-def test_the_default_level_writes_information_and_not_detail(
+def test_the_default_level_writes_detail(
     isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """Everything by default, so a reported failure has its detail without
+    a setting changed first (Brian, 2026-11-09, issue #16)."""
     configured(tmp_path, monkeypatch, "")
 
     run_a_command()
 
     # The level itself: the command writes no detail of its own, so the
     # file's contents alone would pass at any level.
-    assert logging.getLogger("kennis").getEffectiveLevel() == logging.INFO
+    assert logging.getLogger("kennis").getEffectiveLevel() == logging.DEBUG
     assert " INFO " in written(isolated)
 
 

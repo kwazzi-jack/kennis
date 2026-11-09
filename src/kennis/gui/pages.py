@@ -133,6 +133,8 @@ from kennis.render.words import (
     ScoreStyle,
     count_of,
     describe_busy_indexes,
+    describe_other_model,
+    describe_unembedded,
     group_name,
 )
 from kennis.retrieval import Sweep
@@ -450,6 +452,39 @@ def shown_skips(found: Sweep) -> list[ShownSkip]:
     return [
         ShownSkip(names=entry.name, resolution=entry.resolution)
         for entry in found.skipped
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class ShownModelNotice:
+    """A scope searched with a model other than the configured one, or not
+    by meaning at all, and the command that changes it (issue #16)."""
+
+    sentence: str
+    resolution: str | None
+
+
+def shown_model_notices(found: Sweep) -> list[ShownModelNotice]:
+    """What the sweep says about the models it used, one row each, in the
+    command line's words."""
+    return [
+        ShownModelNotice(
+            sentence=describe_other_model(
+                other.name,
+                built_backend=other.built_backend,
+                built_model=other.built_model,
+                configured_backend=other.configured_backend,
+                configured_model=other.configured_model,
+            ),
+            resolution=other.resolution,
+        )
+        for other in found.other_models
+    ] + [
+        ShownModelNotice(
+            sentence=describe_unembedded(unembedded.name, unembedded.reason),
+            resolution=unembedded.resolution,
+        )
+        for unembedded in found.unembedded
     ]
 
 
@@ -1005,6 +1040,7 @@ __all__ = [
     "ShownMark",
     "ShownMatch",
     "ShownMeasure",
+    "ShownModelNotice",
     "ShownOrder",
     "ShownOutcome",
     "ShownPaletteEntry",
@@ -1029,6 +1065,7 @@ __all__ = [
     "shown_key",
     "shown_matches",
     "shown_measures",
+    "shown_model_notices",
     "shown_orders",
     "shown_pack",
     "shown_rows",
