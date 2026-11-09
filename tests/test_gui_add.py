@@ -831,6 +831,10 @@ def test_a_local_page_into_docs_with_a_project_starts(
         },
         headers=HTMX,
     )
+    # The add runs as a job on its own thread, which records it after the
+    # answer has returned: read before it finishes, the list was empty on a
+    # loaded runner (#631).
+    finished(client.app)
 
     assert len(adds) == 1
 
