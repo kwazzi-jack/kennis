@@ -113,6 +113,7 @@ kennis search "query" --collection literature   # one scope
 kennis search "query" --group 'physics/*'       # one group, shell-style
 kennis search "query" --project stimela         # docs only: by project
 kennis search "query" --version 2.12            # docs only: another version
+kennis search "query" --tag calibration        # only what is tagged calibration
 kennis search "query" -k 20                     # more hits
 ```
 
@@ -123,6 +124,10 @@ project's, or `all`. It can be given more than once. See
 
 Quote a group pattern. Your shell expands an unquoted `*` before kennis sees
 it.
+
+`--tag` keeps only the documents and passages carrying that tag, without
+changing their order; given more than once, only those carrying every tag.
+See [Tag passages and documents](tag-passages.md).
 
 ### Change what is shown
 

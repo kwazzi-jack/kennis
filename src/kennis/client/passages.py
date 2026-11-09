@@ -67,15 +67,9 @@ def from_path(
 
 def from_link(target: Target) -> CiteRequest:
     """What a link names, as a request; a project by this machine's list."""
-    from kennis.citing import CiteRequest
-    from kennis.engine.context.projects import project_named
-    from kennis.links import ContextTarget, LinkTarget
+    from kennis.citing import request_for
 
-    match target:
-        case LinkTarget(document_id=document_id, chunk=chunk):
-            return CiteRequest(document_id, chunk)
-        case ContextTarget(project=project, path=path, chunk=chunk):
-            return CiteRequest(path, chunk, bundle=project_named(project).bundle)
+    return request_for(target)
 
 
 __all__ = ["PassageUnnamed", "from_link", "from_path"]

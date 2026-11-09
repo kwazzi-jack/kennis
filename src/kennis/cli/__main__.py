@@ -35,6 +35,9 @@ from kennis.cli.commands import (
     search_command,
     serve_command,
     service_group,
+    tag_command,
+    tags_command,
+    untag_command,
 )
 from kennis.cli.group import KennisGroup
 from kennis.logs import start_logging
@@ -121,6 +124,9 @@ main.add_command(pack_group)
 main.add_command(search_command)
 main.add_command(read_command)
 main.add_command(cite_command)
+main.add_command(tag_command)
+main.add_command(untag_command)
+main.add_command(tags_command)
 main.add_command(remember_command)
 main.add_command(gui_command)
 main.add_command(open_command)

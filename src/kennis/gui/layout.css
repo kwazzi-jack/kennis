@@ -1403,6 +1403,8 @@ main.document {
    card in every markdown preview (Brian, 2026-10-13). Nothing clips,
    because the chevron hangs off the card's bottom edge. */
 .hit {
+  /* The bookmark tab (#627) hangs from the frame. */
+  position: relative;
   background: var(--raised);
   border: 1px solid var(--rule);
   border-color: color-mix(in srgb, var(--collection) 45%, var(--rule));
@@ -1475,8 +1477,6 @@ main.document {
   text-decoration: none;
 }
 .hit .title:hover, .hit .title:focus-visible { text-decoration: underline; }
-.open { color: var(--role-muted); }
-.open:hover, .open:focus-visible { color: var(--brand); }
 
 /* One passage, drawn once and windowed (#454). Closed, the part from
    the reader's words, cut at about six lines and faded where it is cut,
@@ -2955,3 +2955,272 @@ a.button:active { translate: 0 1px; }
   pointer-events: none;
 }
 .add-tab .entry-row.wand input { padding-left: 2.2rem; }
+
+/* ---- tags (#625) ---- */
+/* The bookmark tab on a hit card's top edge (#627): a ribbon hanging from
+   the frame, quiet until the card is pointed at, holding what can be done
+   with the passage. The list shows on hover and while anything in it has
+   focus, so a keyboard, a tap and a pointer all reach it without a script;
+   it hangs from the tab's own foot, so the pointer crosses no gap. */
+.bookmark {
+  position: absolute;
+  top: -1px;
+  right: 0.9rem;
+  z-index: 4;
+}
+.bookmark-tab {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 1.6rem;
+  height: 2rem;
+  padding: 0.3rem 0 0;
+  border: 0;
+  background: color-mix(in srgb, var(--collection) 22%, var(--ground));
+  color: var(--collection);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, height 0.12s ease;
+}
+.bookmark-tab .icon { width: 0.85rem; height: 0.85rem; }
+/* A tagged passage's ribbon wears its first tag's colour, in full. */
+.bookmark-tab[data-tagged] {
+  background: var(--tag);
+  color: var(--ground);
+  opacity: 1;
+}
+.hit:hover .bookmark-tab,
+.bookmark:hover .bookmark-tab,
+.bookmark:focus-within .bookmark-tab { opacity: 1; height: 2.25rem; }
+.bookmark-tab:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.bookmark-items {
+  display: none;
+  top: 2.25rem;
+}
+.bookmark:hover > .bookmark-items,
+.bookmark:focus-within > .bookmark-items { display: flex; }
+.bookmark-items .item {
+  font-family: var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+.bookmark-items .icon { width: 0.9rem; height: 0.9rem; color: var(--role-muted); }
+/* A button drawn as the entries beside it are. */
+.bookmark-items button.item { font-family: var(--gutter); font-size: 0.85rem; }
+/* Copying needs a script and a clipboard; `cite.js` marks the page. */
+html:not(.can-copy) .copy-citation { display: none; }
+/* The head leaves room for the ribbon beside the title. */
+.hit .heading { padding-right: 2.2rem; }
+
+/* A hit's tags, under its title. */
+.hit-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+/* A document's Copy reference, under its details. */
+.copy-reference-row { margin: 0.4rem 0 0; }
+.copy-reference { padding-inline: 0; }
+
+/* What the results are kept to, above them, with the way back. */
+.kept-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+  color: var(--role-muted);
+}
+.kept-tags .button { margin-left: auto; }
+
+/* A tag's colour (#627): the attribute on the chip, or on any ancestor,
+   chooses one of eight measured values for this theme. */
+[data-tag-colour="red"] { --tag: var(--tag-red); }
+[data-tag-colour="orange"] { --tag: var(--tag-orange); }
+[data-tag-colour="yellow"] { --tag: var(--tag-yellow); }
+[data-tag-colour="green"] { --tag: var(--tag-green); }
+[data-tag-colour="teal"] { --tag: var(--tag-teal); }
+[data-tag-colour="blue"] { --tag: var(--tag-blue); }
+[data-tag-colour="purple"] { --tag: var(--tag-purple); }
+[data-tag-colour="pink"] { --tag: var(--tag-pink); }
+
+/* A tag's name as a small label that is also its page's link: a border
+   and a dot in its colour, a tint behind ink, so the name is read and the
+   colour only groups. */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--tag, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tag, transparent) 12%, transparent);
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+.tag-chip::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--tag, var(--rule));
+}
+.tag-chip:hover, .tag-chip:focus-visible {
+  background: color-mix(in srgb, var(--tag, var(--role-muted)) 24%, transparent);
+}
+/* A tag on the whole document is shown on its passages too, marked so. */
+.tag-chip[data-whole] { border-style: dashed; }
+
+/* Every tag, a row each: the whole line is the link, as in the tree. */
+.tags-list { list-style: none; margin: 0; padding: 0; }
+.tag-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 3px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.tag-entry:hover { background: var(--raised); }
+/* The pane's tags wear their colour on their icon. */
+.tag-node .icon { color: var(--tag); }
+
+/* A tag's colour on its page: a swatch each, the chosen one ringed. */
+.tag-colour { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem; margin-bottom: 1.25rem; }
+.tag-colour fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tag-colour legend {
+  margin-bottom: 0.35rem;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  color: var(--role-muted);
+}
+.colour-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--gutter);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.colour-swatch input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.colour-swatch .dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  background: var(--tag);
+  box-shadow: 0 0 0 2px var(--ground), 0 0 0 3px transparent;
+}
+.colour-swatch:has(input:checked) .dot { box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--ink); }
+.colour-swatch:has(input:focus-visible) .dot { outline: 2px solid var(--brand); outline-offset: 4px; }
+/* Your own colour: the picker is the swatch, ringed when chosen. */
+.own-colour input[type="color"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.own-colour:has(input[type="radio"]:checked) input[type="color"] {
+  box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--ink);
+}
+.tag-head h1 .icon { color: var(--tag); }
+.tag-entry .dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--tag);
+  flex: none;
+}
+.tag-entry .count { margin-left: auto; color: var(--role-muted); font-family: var(--gutter); }
+
+/* One tag's page: its name, and searching within it. */
+.tag-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.tag-head h1 { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.tag-head .button { gap: 0.4rem; }
+
+/* A tag's targets: passages with their words and link, ready to cite. */
+.tagged-list { list-style: none; margin: 0; padding: 0; }
+.tagged {
+  position: relative;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.tagged[data-state="detached"], .tagged[data-state="missing"] { opacity: 0.85; }
+.tagged-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.35rem;
+  font-family: var(--gutter);
+  font-weight: 600;
+}
+.tagged-head .icon { color: var(--role-muted); }
+/* A `<blockquote>`, so the quotation's own rule draws it; this only sets
+   its place and face. */
+.tag-quote { margin: 0 0 0.35rem; font-family: var(--column); color: var(--ink); }
+.tag-link {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--role-muted);
+  overflow-wrap: anywhere;
+}
+.tag-trouble { display: flex; align-items: center; gap: 0.4rem; margin: 0.35rem 0 0; }
+
+/* Remove: a plain form, so it works without a script. */
+.untag { display: inline; margin: 0; }
+.tagged .untag { position: absolute; top: 0.6rem; right: 0; }
+
+/* The inspector's section: each tag, what it is on, and Remove. */
+.tags .tag-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.9rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.tag-chip-row { display: flex; align-items: center; gap: 0.5rem; }
+.tag-chip-row .untag { margin-left: auto; }
+.tag-document { gap: 0.4rem; }
+.tag-document .icon { width: 0.9rem; height: 0.9rem; }
+/* A passage's tag is named by its opening words, cut short. */
+.tag-chip-row .tag-passage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--role-muted);
+}
+
+/* A document's tagged passage (#627): its tags at the right of the
+   passage's first line - its heading, or its first paragraph - so they
+   are read as that passage's and not the one above. */
+.chunk-tags {
+  float: right;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  max-width: 40%;
+  margin: 0.35rem 0 0.35rem 0.75rem;
+}

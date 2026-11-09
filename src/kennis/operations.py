@@ -513,6 +513,31 @@ def restore_a_document(
     return restored
 
 
+def place_corpus_tags(context: Context, text: str, *, counts: dict[str, int]) -> None:
+    """Write the corpus's `tags.yml` and commit it as `tag(corpus)` (#625).
+
+    Held exclusively, with hand edits recorded first so they do not enter
+    history under the tag's name. No mirror: what a mirror keeps out of
+    sight is a slow preparation, and this is one file replaced by rename,
+    which is already whole or absent. Journalled, so a failure before the
+    commit puts the file back. Empty text removes the file.
+    """
+    from kennis.engine.atomic import remove_file, replace_file
+    from kennis.engine.tags import TAGS_FILENAME
+
+    store = context.corpus_root / TAGS_FILENAME
+    with exclusively(context.corpus_root):
+        record_what_was_not_recorded(context)
+        with journalled(context.corpus_root, "tag", [TAGS_FILENAME]):
+            if text:
+                replace_file(store, text)
+            else:
+                remove_file(store, missing_ok=True)
+            Repository(context.corpus_root).commit(
+                "tag", scope="corpus", summary=commit_summary(counts)
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class ReturnedCorpus:
     """What returning the corpus to a point did."""
@@ -668,17 +693,49 @@ def _commit_the_index(
     collection: str | None,
     built: Sequence[BuiltIndex],
 ) -> None:
+    from kennis.engine.tags import TAGS_FILENAME
+    from kennis.tagging import WRITING_TAGS
+
     documents = sum(index.documents for index in built)
     chunks = sum(index.chunks for index in built)
-    with exclusively(context.corpus_root):
-        # One commit for one user action, with what it actually built in
-        # the subject rather than a tally of outcomes, which an index has
-        # none of. It waits for a publish under way rather than giving up.
+    # The tag lock before the corpus, the order a tag change takes them in.
+    # One commit for one user action, with what it actually built in the
+    # subject rather than a tally of outcomes, which an index has none of.
+    # It waits for a publish under way rather than giving up. The tags'
+    # hints are rewritten for what was built and go into the same commit
+    # (#626).
+    with (
+        WRITING_TAGS,
+        exclusively(context.corpus_root),
+        journalled(context.corpus_root, "index", [TAGS_FILENAME]),
+    ):
+        _rehint_corpus_tags(context, [index.collection for index in built])
         repository.commit(
             "index",
             scope=collection or "corpus",
             summary=commit_summary({"documents": documents, "chunks": chunks}),
         )
+
+
+def _rehint_corpus_tags(context: Context, collections: Sequence[str]) -> None:
+    """Set each tagged passage's hint in `tags.yml` to where the indexes
+    just built place it, writing the file only when one moved (#626)."""
+    from kennis.engine.atomic import replace_file
+    from kennis.engine.rag.index import load_chunks
+    from kennis.engine.tags import TAGS_FILENAME, read_store, rehinted, written
+
+    store = context.corpus_root / TAGS_FILENAME
+    held = read_store(store)
+    if not held.tags:
+        return
+    chunks = [
+        chunk
+        for name in collections
+        for chunk in load_chunks(index_root(context.corpus_root), name)
+    ]
+    moved = rehinted(held.tags, chunks)
+    if moved != held.tags:
+        replace_file(store, written(moved, colours=held.colours))
 
 
 def _kept_when_cancelled(built: Sequence[BuiltIndex]) -> str:
@@ -922,6 +979,7 @@ __all__ = [
     "install_a_pack",
     "make_docs_version_current",
     "move_a_document",
+    "place_corpus_tags",
     "record_what_was_not_recorded",
     "remove_a_document",
     "remove_docs_version",

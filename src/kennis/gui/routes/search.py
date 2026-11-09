@@ -33,6 +33,7 @@ from kennis.gui.pages import (
     versions_query,
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, action_page, from_htmx
+from kennis.gui.tagged import chips_finder, tag_colours
 from kennis.retrieval import sweep
 from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
@@ -72,6 +73,7 @@ def _hits_context(
     record: bool = True,
     versions: Sequence[str] = (),
     project: str = "",
+    tags: Sequence[str] = (),
 ) -> dict[str, object]:
     """What a search page and its partial both need.
 
@@ -100,6 +102,11 @@ def _hits_context(
         # by; `chosen` below is what the search and its links carry.
         "versions": tuple(versions),
         "project": project,
+        # The tags the results are kept to (#625), as the address names
+        # them: the box carries them on, and "Show everything" drops them.
+        "kept_tags": tuple(tags),
+        "show_everything_href": f"/?q={quote(question)}&scope={quote(scope)}"
+        + (f"&project={quote(project)}" if project else ""),
         # Only this page's form searches as you type: live search swaps
         # into `#hits`, which no other page has.
         "searching_here": True,
@@ -160,8 +167,12 @@ def _hits_context(
             versions=chosen,
             bundle=None,
             others=others,
+            tags=tags,
         )
-        context["groups"] = shown_groups_of(found, question, order)
+        context["groups"] = shown_groups_of(
+            found, question, order, chips_finder(existing_corpus(), others)
+        )
+        context["kept_tag_colours"] = tag_colours(existing_corpus())
         found_count = sum(len(hits) for hits in found.groups.values())
         # Any scope that filled its quota had more to give, so the
         # total is a floor. `default_top_k` is 3 per scope, which is
@@ -172,7 +183,7 @@ def _hits_context(
             context["more"] = {
                 name: (
                     f"/?q={quote(question)}&{scope_query(name)}{asked_mode}"
-                    f"{versions_query(chosen)}"
+                    f"{versions_query(chosen)}{tags_query(tags)}"
                     f"&k={min(wanted + MORE_STEP, MOST)}"
                 )
                 for name, hits in found.groups.items()
@@ -223,11 +234,18 @@ def _hits_context(
                 capped=capped,
                 versions=chosen,
                 project=project,
+                tags=tuple(tags),
             )
     except KennisError as error:
         context["problem"] = str(error)
         context["resolution"] = error.resolution
     return context
+
+
+def tags_query(tags: Sequence[str]) -> str:
+    """`&tag=...` for each tag a search is kept to, so a link that runs it
+    again keeps it (#625)."""
+    return "".join(f"&tag={quote(tag)}" for tag in tags)
 
 
 def scope_query(group: str) -> str:
@@ -272,6 +290,7 @@ def serve_search(
     k: int = 0,
     version: Annotated[list[str] | None, Query()] = None,
     project: str = "",
+    tag: Annotated[list[str] | None, Query()] = None,
 ) -> HTMLResponse:
     context = _hits_context(
         q,
@@ -282,6 +301,7 @@ def serve_search(
         record=not _prefetched(request),
         versions=version or (),
         project=project,
+        tags=tag or (),
     )
     # Only with no query. With one, the results have that space -
     # a page showing both would put what was looked for before
@@ -333,6 +353,7 @@ def serve_hits(
     k: int = 0,
     version: Annotated[list[str] | None, Query()] = None,
     project: str = "",
+    tag: Annotated[list[str] | None, Query()] = None,
 ) -> HTMLResponse:
     # The partial htmx swaps in. The same context as the page, so
     # a first load and a keystroke cannot disagree about what a
@@ -346,6 +367,7 @@ def serve_hits(
         record=not _prefetched(request),
         versions=version or (),
         project=project,
+        tags=tag or (),
     )
     answer = TEMPLATES.TemplateResponse(request, "hits.html", context)
     # **The address the reader should end up at, not the one that
@@ -364,5 +386,6 @@ def serve_hits(
     narrowed = f"&project={quote(project)}" if project else ""
     answer.headers["HX-Push-Url"] = (
         f"/?q={quote(q)}&scope={quote(scope)}{narrowed}{chosen}{pushed}"
+        f"{tags_query(tag or ())}"
     )
     return answer

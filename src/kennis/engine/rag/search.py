@@ -78,6 +78,7 @@ def search(
     embedder: Embedder | None = None,
     host: str | None = None,
     events: EventSink | None = None,
+    within: ChunkPredicate | None = None,
 ) -> list[SearchResult]:
     """The best `top_k` chunks for `question`, best first.
 
@@ -97,6 +98,9 @@ def search(
     selective enough that its matches rank below the candidate window returns
     fewer results than exist, or none. Nothing false is returned; the answer
     is incomplete rather than wrong.
+
+    `within` is a restriction that must not be incomplete - a tag's chunks
+    (#625) - so with it every chunk is a candidate.
     """
     if mode in ("hybrid", "dense") and index.matrix is None:
         raise SearchUnavailable(
@@ -107,6 +111,13 @@ def search(
 
     predicate = combine_filters(filters)
     candidates = max(top_k, _CANDIDATES)
+    if within is not None:
+        # A restriction as selective as a tag (#625) would find its chunks
+        # below the window and return nothing, so every chunk is a
+        # candidate: both legs score every chunk already, and the cost is
+        # the sort.
+        candidates = max(candidates, len(index.chunks))
+        predicate = within if predicate is None else _both(predicate, within)
 
     dense_ranks, cosines = (
         _dense_leg(index, question, candidates, predicate, embedder, host, events)
@@ -304,6 +315,10 @@ def _bm25_leg(
         if predicate is None or predicate(index.chunks[position])
     ]
     return [position for position, _ in hits], dict(hits)
+
+
+def _both(first: ChunkPredicate, second: ChunkPredicate) -> ChunkPredicate:
+    return lambda chunk: first(chunk) and second(chunk)
 
 
 def _kept(

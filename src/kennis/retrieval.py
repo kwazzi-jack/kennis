@@ -36,13 +36,14 @@ from kennis.engine.errors import (
     NothingToIndex,
     SettingsError,
 )
-from kennis.engine.rag.models import Chunk, Filter
+from kennis.engine.rag.models import Chunk, ChunkPredicate, Filter
 from kennis.engine.rag.modes import Mode
 from kennis.render.hits import Hit
 from kennis.scopes import SCOPE_NAMES
 
 if TYPE_CHECKING:
     from kennis.engine.rag.index import LoadedIndex
+    from kennis.engine.tags import Tags
 
 # The most a caller may ask for. A ceiling rather than a validation
 # error: a caller asking for 500 wants "lots", and refusing them is
@@ -69,6 +70,7 @@ def search_scope(
     *,
     bundle: Path | None,
     others: Sequence[Path] = (),
+    tags: Sequence[str] = (),
 ) -> list[Hit]:
     """The best hits for `question` in exactly one scope.
 
@@ -93,9 +95,12 @@ def search_scope(
             top_k=max(1, min(top_k, MAX_TOP_K)),
             bundle=bundle,
             others=others,
+            tags=tags,
         )
         return [hit for hits in found.groups.values() for hit in hits]
     index = index_for(context, collection, bundle=bundle)
+    # Kept to the corpus's tags, as a sweep keeps each group (#625).
+    within = _tags_asked(context, tags, ()).within(context.corpus_root, index)
     model = index.binding.model.model if index.binding.model else None
     running = mode_for(context, index, collection)
     wanted = max(1, min(top_k, MAX_TOP_K))
@@ -117,6 +122,7 @@ def search_scope(
         filters=_with_versions(None, choice.left_out),
         mode=running,
         host=host,
+        within=within,
     )
     hits = with_unrelated_reference(
         [Hit(collection=collection, result=result, model=model) for result in results],
@@ -305,6 +311,7 @@ def sweep(
     versions: Sequence[str] = (),
     bundle: Path | None,
     others: Sequence[Path] = (),
+    tags: Sequence[str] = (),
 ) -> Sweep:
     """Search every scope in `scopes` that can be searched.
 
@@ -329,6 +336,11 @@ def sweep(
     `bundle` is the project's bundle as the client found it, or None
     outside a project (#508). `others` are the other projects' bundles a
     search across projects reads too, each its own group (14g).
+
+    `tags` keeps only the chunks every one of them names, in each store's
+    own tags: the corpus's for its collections, each project's for its
+    context (#625). A tag no store holds is refused rather than answered
+    with nothing, which would read as "no passage matched".
     """
     wants_corpus = any(scope != CONTEXT_COLLECTION for scope in scopes)
     # Required only when a corpus scope was *named*. Under a sweep a
@@ -348,6 +360,7 @@ def sweep(
         else VersionChoice(left_out=(), breadth=1)
     )
 
+    tagged = _tags_asked(context, tags, [bundle, *others])
     found = _Gathered(groups, searched, skipped, degraded, [], [])
     for name in [scope for scope in SCOPE_NAMES if scope in scopes]:
         if name == CONTEXT_COLLECTION:
@@ -362,6 +375,7 @@ def sweep(
                 wanted=wanted,
                 filters=filters,
                 mode=mode,
+                tagged=tagged,
             )
             continue
         index = _load(context, name, bundle=bundle, named=named)
@@ -384,6 +398,7 @@ def sweep(
                 mode=mode,
                 choice=choice,
                 rebuild=f"kennis corpus index --collection {name}",
+                within=tagged.within(context.corpus_root, index),
             ),
         )
 
@@ -445,6 +460,7 @@ def _sweep_context(
     wanted: int,
     filters: list[Filter] | None,
     mode: str | None,
+    tagged: _Tagged,
 ) -> None:
     """The context scope: the project the search was run from, as
     `context`, and each other project asked for, as `context:<name>`.
@@ -500,6 +516,7 @@ def _sweep_context(
                 if mine
                 else f"kennis context index --project {names[bundle]}"
             ),
+            within=tagged.within(bundle, index),
         )
         # Where the file is, as the reader is told: this project's from
         # its own root, another project's whole. The name is asked after
@@ -518,6 +535,42 @@ def _sweep_context(
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _Tagged:
+    """The tags a sweep keeps, and each store's tags, read once."""
+
+    names: tuple[str, ...]
+    stores: dict[Path, Tags]
+
+    def within(self, root: Path, index: LoadedIndex) -> ChunkPredicate | None:
+        """What a group's search is kept to: None when no tag was asked."""
+        from kennis.engine.tags import TAGS_FILENAME, admitting
+
+        if not self.names:
+            return None
+        return admitting(
+            self.stores.get(root / TAGS_FILENAME, {}), self.names, index.chunks
+        )
+
+
+def _tags_asked(
+    context: Context, tags: Sequence[str], bundles: Sequence[Path | None]
+) -> _Tagged:
+    from kennis.engine.errors import KennisError
+    from kennis.engine.tags import TAGS_FILENAME, read_tags, tag_name
+
+    names = tuple(dict.fromkeys(tag_name(tag) for tag in tags))
+    if not names:
+        return _Tagged((), {})
+    roots = [context.corpus_root, *(bundle for bundle in bundles if bundle is not None)]
+    stores = {root / TAGS_FILENAME: read_tags(root / TAGS_FILENAME) for root in roots}
+    held = {name for store in stores.values() for name in store}
+    for name in names:
+        if name not in held:
+            raise KennisError(f"nothing is tagged {name}", resolution="kennis tags")
+    return _Tagged(names, stores)
+
+
 def _hits_in(
     context: Context,
     index: LoadedIndex,
@@ -529,6 +582,7 @@ def _hits_in(
     mode: str | None,
     choice: VersionChoice,
     rebuild: str,
+    within: ChunkPredicate | None = None,
 ) -> _Searched:
     """One group's hits, whether it ran lexically although more was asked
     of it, and what it says about its model.
@@ -583,6 +637,7 @@ def _hits_in(
             filters=narrowed,
             mode=running,
             host=host,
+            within=within,
         )
     except (EmbeddingUnavailable, SettingsError) as refused:
         # Only a mode that embeds the question can get here, so keywords
@@ -598,7 +653,12 @@ def _hits_in(
         )
         unembedded = Unembedded(name, str(refused), refused.resolution)
         results = search(
-            index, question, top_k=wanted * breadth, filters=narrowed, mode="bm25"
+            index,
+            question,
+            top_k=wanted * breadth,
+            filters=narrowed,
+            mode="bm25",
+            within=within,
         )
     found = [Hit(collection=name, result=result, model=model) for result in results]
     if unembedded is None:

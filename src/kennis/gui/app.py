@@ -45,6 +45,7 @@ from kennis.gui.presence import Presence
 from kennis.gui.responses import TEMPLATES, from_htmx, refused
 from kennis.gui.routes import (
     add,
+    cite,
     corpus,
     documents,
     jobs,
@@ -54,6 +55,7 @@ from kennis.gui.routes import (
     settings,
     shell,
     supply,
+    tags,
 )
 from kennis.gui.theme import stylesheet
 from kennis.service.jobs import Jobs
@@ -365,6 +367,8 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         projects,
         settings,
         supply,
+        tags,
+        cite,
     ):
         app.include_router(routes.router)
 

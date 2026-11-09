@@ -1,0 +1,16 @@
+{# Tagging one passage or document (#625). Not `data-closes-dialog`: the
+   answer comes back into `#tag-outcome`, beside the field, so the reader
+   sees what was tagged and can add another tag or close. The suggestions
+   are the tags in use, so a tag is reused rather than respelt. #}
+<p>{{ tagging }}</p>
+<form class="tag" action="/tags/add" method="post" hx-disabled-elt="find button[type=submit]" hx-post="/tags/add" hx-target="#tag-outcome" hx-swap="innerHTML">
+  <input type="hidden" name="link" value="{{ link }}">
+  <label class="labelled"><span class="name">{{ tag_names_label }}</span><input type="text" name="names" list="tags-in-use" placeholder="{{ tag_names_hint }}" aria-describedby="tag-names-help" autofocus required></label>
+  <p class="role-muted" id="tag-names-help">{{ tag_names_help }}</p>
+  <datalist id="tags-in-use">{% for name in suggestions %}<option value="{{ name }}">{% endfor %}</datalist>
+  <div id="tag-outcome" role="status">{% include "outcome.html" %}</div>
+  <div class="form-foot">
+    <a class="button" href="/" data-close>{{ close_label }}</a>
+    <button type="submit" class="primary">{{ icon("tag") }}{{ tag_action }}</button>
+  </div>
+</form>

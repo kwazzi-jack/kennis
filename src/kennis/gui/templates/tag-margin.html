@@ -1,0 +1,3 @@
+{# The tags on one passage of a document, set before its first block
+   (#627). Rendered alone, into the body, so it carries what it needs. #}
+<aside class="chunk-tags" data-chunk="{{ chunk }}">{% for chip in chips %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}>{{ chip.name }}</a>{% endfor %}</aside>

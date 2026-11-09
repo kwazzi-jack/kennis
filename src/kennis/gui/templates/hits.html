@@ -7,6 +7,10 @@
    has to be styled - a test says so. #}
 <span id="answered" data-query="{{ question }}" data-scope="{{ scope }}"
       data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
+{# What the results are kept to, and the way back to everything (#625). #}
+{% if kept_tags %}
+<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" {{ tag_paint((kept_tag_colours | default({})).get(name, "")) }}>{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
+{% endif %}
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
 {% if resolution is for_the_window %}<p class="role-command">{{ resolution }}</p>{% endif %}</div>
@@ -65,14 +69,31 @@
 <h2 class="group-head" data-collection="{{ group.collection }}">{{ icon(group.icon) }}<span class="name">{{ group.name }}</span><span class="count">{{ group.count }}</span></h2>
 <ol class="results">
 {% for hit in group.hits %}
-  <li class="hit" data-collection="{{ group.collection }}">
+  <li class="hit" data-collection="{{ group.collection }}"{% if hit.tags %} {{ tag_paint(hit.tags[0].colour) }}{% endif %}>
+    {# The bookmark tab on the card's edge (#627): what can be done with
+       this passage. Shown on hover and while anything in it has focus, so
+       a pointer, a keyboard and a tap all reach it, with no script. A
+       tagged passage's tab wears its first tag's colour. #}
+    {% set tag_this = "/tags/add?link=" ~ (hit.link | urlencode) %}
+    {% set cite_this = (hit.link | urlencode) %}
+    <div class="bookmark">
+      <button type="button" class="bookmark-tab" aria-label="{{ passage_actions }}" title="{{ passage_actions }}"{% if hit.tags %} data-tagged{% endif %}>{{ icon("bookmark") }}</button>
+      <div class="menu-items bookmark-items">
+        <a class="item" href="{{ hit.href }}">{{ icon("arrow-up-right") }}<span>{{ open_at_passage }}</span></a>
+        <a class="item" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("tag") }}<span>{{ tag_passage }}</span></a>
+        {# No preview and no page (Brian): a click copies, the label says
+           so; drawn only where the clipboard can be reached. #}
+        <button type="button" class="item copy-citation" data-text="/cite/text?link={{ cite_this }}" data-copied="{{ copied_citation }}">{{ icon("quote") }}<span>{{ copy_passage }}</span></button>
+      </div>
+    </div>
     {# The card's head (Brian, 2026-10-12): the document and the section,
        then how well it matched and its handle, in a band over the
        passage it quotes. Title first, so a card says what it is before
        how well it matched (the visual review, F4). #}
     <div class="hit-head">
-      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a>
-        <a class="open" href="{{ hit.href }}" aria-label="{{ open_at_passage }}" title="{{ open_at_passage }}">{{ icon("arrow-up-right") }}</a></p>
+      <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a></p>
+      {# The tags on this passage, and on its whole document (#627). #}
+      {% if hit.tags %}<p class="hit-tags">{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
       {# Which section the passage is from; the title is the document's
          alone. Marked, so `safe`. #}
       {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}

@@ -456,3 +456,27 @@ class CitationStyleUnreadable(KennisError):
         "the citation style named by literature.citation_style is unreadable"
     )
     default_resolution = 'kennis config set literature.citation_style ""'
+
+
+class TagNameRefused(KennisError):
+    """A tag name kennis will not keep: empty, or holding whitespace, a
+    comma or a control character, which separate tags as they are typed
+    (#625)."""
+
+    default_message = (
+        "a tag is one word without spaces or commas; join words with a hyphen"
+    )
+
+
+class TagColourRefused(KennisError):
+    """A colour that is neither one of the eight tag colours nor a hex
+    colour (#627, #629)."""
+
+    default_message = "a tag colour is one of eight names or a hex colour"
+
+
+class TagsUnreadable(KennisError):
+    """A tags file that is not one kennis can read, and is therefore never
+    rewritten (#625)."""
+
+    default_message = "the tags file cannot be read"

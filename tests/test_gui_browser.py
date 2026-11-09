@@ -204,9 +204,9 @@ def test_the_first_tab_stop_skips_to_the_content(page: playwright.Page) -> None:
 
 def test_a_document_is_typeset(page: playwright.Page) -> None:
     page.fill("input[name=q]", "antenna")
-    page.wait_for_selector("#hits .hit a.open", timeout=_WAIT_MS)
+    page.wait_for_selector("#hits .hit a.title", timeout=_WAIT_MS)
 
-    page.click("#hits .hit a.open")
+    page.click("#hits .hit a.title")
 
     page.wait_for_selector(".katex", timeout=_WAIT_MS)
 
@@ -215,8 +215,8 @@ def test_a_document_s_table_has_its_cells_kept_apart(page: playwright.Page) -> N
     """Left to the browser a table had no padding and no rules, and its
     cells ran together: "J1000+30 4"."""
     page.fill("input[name=q]", "antenna")
-    page.wait_for_selector("#hits .hit a.open", timeout=_WAIT_MS)
-    page.click("#hits .hit a.open")
+    page.wait_for_selector("#hits .hit a.title", timeout=_WAIT_MS)
+    page.click("#hits .hit a.title")
     page.wait_for_selector("article td", timeout=_WAIT_MS)
 
     cell = page.evaluate(

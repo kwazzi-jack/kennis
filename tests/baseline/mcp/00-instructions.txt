@@ -43,11 +43,19 @@ compose a citation or a `kennis://` link yourself.
 
 ## Writing
 
-`remember` is the only tool here that changes anything. What it writes
-is durable: it goes into the user's corpus or into this project's
-`.context/` bundle, is committed, and comes back in searches long after
-this conversation. Use it for what the user has decided, corrected or
+`remember` and `tag` are the only tools here that change anything. What
+they write is durable: it goes into the user's corpus or into this
+project's `.context/` bundle, is kept, and comes back long after this
+conversation. Use `remember` for what the user has decided, corrected or
 asked to be kept - not for working state, and not without their say-so.
+
+## Tags
+
+A tag is a name the user put on a document or a passage, such as
+`calibration` or `to-cite`; `list_corpus` names the tags in use. Give a
+`search_*` tool `tags` to search only what carries them. Tag with `tag`
+when the user asks you to tag, bookmark or gather passages, naming each as
+its hit gives it, as for `cite`.
 
 ## Handles
 

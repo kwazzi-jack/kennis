@@ -59,6 +59,9 @@
       <dt>{{ also_held }}</dt><dd class="other-versions">{% for version, href in document.other_versions %}<a href="{{ href }}">{{ version }}</a>{% endfor %}</dd>
       {% endif %}
     </dl>
+    {# The full reference by the person's citation style, copied as the
+       citekey is: drawn hidden, shown where the clipboard can be reached. #}
+    {% if reference %}<p class="copy-reference-row"><button type="button" class="ghost copy copy-reference" data-copy="{{ reference }}" data-copied="{{ copied_label }}" hidden>{{ copy_reference }}</button></p>{% endif %}
   </details>
   {% if question %}
   <details class="matches" open>
@@ -72,6 +75,26 @@
     {% endif %}
   </details>
   {% endif %}
+  {# The document's tags, whole or by passage, each with Remove, and the
+     dialog that tags it whole (#625). #}
+  <details class="tags" open>
+    <summary>{{ icon("chevron-right") }}{{ tags_heading }}</summary>
+    {% if document_tags %}
+    <ul class="tag-chips">
+      {% for tagged in document_tags %}
+      <li class="tag-chip-row"><a class="tag-chip" href="{{ tagged.href }}" {{ tag_paint(tagged.colour) }}>{{ tagged.name }}</a>{% if tagged.chunk is not none %}<a class="tag-passage" href="?chunk={{ tagged.chunk }}#chunk-{{ tagged.chunk }}" title="{{ tagged.quote or tagged_passage_label }}">{{ tagged.quote or tagged_passage_label }}</a>{% endif %}
+        <form class="untag" action="/tags/remove" method="post">
+          <input type="hidden" name="tag" value="{{ tagged.name }}">
+          <input type="hidden" name="link" value="{{ tagged.link }}">
+          <input type="hidden" name="back" value="{{ tags_back }}">
+          <button type="submit" class="ghost" aria-label="{{ tagged.remove_label }}" title="{{ tagged.remove_label }}">{{ icon("x") }}</button>
+        </form></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% set tag_this = "/tags/add?link=" ~ (document_link | urlencode) %}
+    <p><a class="button tag-document" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("tag") }}<span>{{ tag_document }}</span></a></p>
+  </details>
   <details class="outline"{% if not question %} open{% endif %}>
     <summary>{{ icon("chevron-right") }}{{ outline_heading }}</summary>
     {% if document.outline %}

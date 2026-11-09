@@ -273,4 +273,19 @@ def _name(name: str) -> dict[str, str]:
     return {"family": last, "given": " ".join(givens)}
 
 
-__all__ = ["Formatted", "ToCite", "csl_item", "formatted", "located_note", "style_path"]
+def passage_with_citation(passage: str, citation: str) -> str:
+    """A passage in typographic quotation marks, then its citation: what a
+    hit card copies (Brian, 2026-11-06). The marks are escapes because the
+    source is ASCII; the clipboard is not a file."""
+    return f"\u201c{passage}\u201d {citation}"
+
+
+__all__ = [
+    "Formatted",
+    "ToCite",
+    "csl_item",
+    "formatted",
+    "located_note",
+    "passage_with_citation",
+    "style_path",
+]

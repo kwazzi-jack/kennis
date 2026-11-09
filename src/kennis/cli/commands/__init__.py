@@ -14,6 +14,7 @@ from kennis.cli.commands.remember import remember_command
 from kennis.cli.commands.search import read_command, search_command
 from kennis.cli.commands.serve import serve_command
 from kennis.cli.commands.service import service_group
+from kennis.cli.commands.tags import tag_command, tags_command, untag_command
 
 __all__ = [
     "backup_group",
@@ -30,4 +31,7 @@ __all__ = [
     "search_command",
     "serve_command",
     "service_group",
+    "tag_command",
+    "tags_command",
+    "untag_command",
 ]

@@ -20,6 +20,7 @@ from fastapi.responses import (
     HTMLResponse,
 )
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kennis.context import Context, existing_corpus
@@ -109,6 +110,25 @@ def _pane_state(request: Request) -> str:
 def _inspector_state(request: Request) -> str:
     """The document inspector's, by the pane's rule."""
     return _CLOSED if request.cookies.get(_INSPECTOR_COOKIE) == _CLOSED else _OPEN
+
+
+def tag_paint(colour: str) -> Markup:
+    """The attributes that draw an element in a tag's colour (#627, #629):
+    a name of the eight chooses a measured value by the layout's rule; a
+    typed hex carries its value for each theme, moved until it is seen."""
+    from kennis.engine.tags import is_hex_colour
+    from kennis.gui.theme import tag_colour_on
+
+    if not colour:
+        return Markup("")
+    if not is_hex_colour(colour):
+        return Markup('data-tag-colour="{}"').format(colour)
+    return Markup(
+        'data-tag-custom style="--tag-on-light: {}; --tag-on-dark: {};"'
+    ).format(tag_colour_on(colour, "light"), tag_colour_on(colour, "dark"))
+
+
+TEMPLATES.env.globals["tag_paint"] = tag_paint
 
 
 # Every preference of this window, rendered onto `<html>` from its
@@ -241,6 +261,25 @@ TEMPLATES.env.globals.update(
             (f"pane-branch-{name}", f"/tree/{name}") for name in COLLECTION_NAMES
         ),
         "palette_pointed": words.PALETTE_POINTED,
+        # Tags (#625): the pane, the hit card, the inspector, the tags' pages.
+        "tags_heading": words.TAGS_HEADING,
+        "tag_passage": words.TAG_PASSAGE,
+        "tag_document": words.TAG_DOCUMENT,
+        "tag_action": words.TAG_ACTION,
+        "tag_names_label": words.TAG_NAMES_LABEL,
+        "tag_names_hint": words.TAG_NAMES_HINT,
+        "tag_names_help": words.TAG_NAMES_HELP,
+        "tagged_passage_label": words.TAGGED_PASSAGE,
+        "search_within_tag": words.SEARCH_WITHIN_TAG,
+        "no_tags": words.NO_TAGS,
+        "remove_tag": words.REMOVE_TAG,
+        "kept_to_tags": words.KEPT_TO_TAGS,
+        "show_everything": words.SHOW_EVERYTHING,
+        "tag_on_document": words.TAG_ON_DOCUMENT,
+        "passage_actions": words.PASSAGE_ACTIONS,
+        "copy_passage": words.COPY_PASSAGE,
+        "copy_reference": words.COPY_REFERENCE,
+        "copied_citation": words.COPIED_CITATION,
         "close_label": words.CLOSE,
         "collection_icons": words.COLLECTION_ICONS,
         "corpus_heading": words.CORPUS_HEADING,

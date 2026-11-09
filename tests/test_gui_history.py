@@ -291,8 +291,8 @@ def test_the_history_records_no_results(corpus: Path, client: TestClient):
 
     written = json.loads(history.history_path().read_text(encoding="utf-8"))
 
-    # `versions` and `project` are what was asked, like `scope`, not what
-    # was found.
+    # `versions`, `project` and `tags` are what was asked, like `scope`,
+    # not what was found.
     assert set(written[0]) == {
         "query",
         "scope",
@@ -302,6 +302,7 @@ def test_the_history_records_no_results(corpus: Path, client: TestClient):
         "at",
         "versions",
         "project",
+        "tags",
     }
 
 

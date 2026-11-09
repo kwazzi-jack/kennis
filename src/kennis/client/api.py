@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     )
     from kennis.render.hits import Hit
     from kennis.retrieval import Sweep
+    from kennis.tagging import TagColoured, Tagged, TagListing
 
 type Waiting = Callable[[Notice], None]
 
@@ -194,6 +195,7 @@ def sweep(
     versions: Sequence[str],
     bundle: Path | None,
     others: Sequence[Path] = (),
+    tags: Sequence[str] = (),
 ) -> Sweep:
     from kennis.retrieval import Sweep
 
@@ -210,6 +212,7 @@ def sweep(
             "versions": list(versions),
             "bundle": bundle,
             "others": list(others),
+            "tags": list(tags),
         },
         Sweep,
     )
@@ -224,6 +227,7 @@ def search_scope(
     versions: Sequence[str],
     bundle: Path | None,
     others: Sequence[Path] = (),
+    tags: Sequence[str] = (),
 ) -> list[Hit]:
     from kennis.render.hits import Hit
 
@@ -239,6 +243,7 @@ def search_scope(
                 "versions": list(versions),
                 "bundle": bundle,
                 "others": list(others),
+                "tags": list(tags),
             },
             list[Hit],
         ),
@@ -249,6 +254,66 @@ def cite(corpus_root: Path, requests: Sequence[CiteRequest]) -> Cited:
     from kennis.citing import Cited
 
     return _read(corpus_root, "cite", {"requests": list(requests)}, Cited)
+
+
+def tag(
+    corpus_root: Path, requests: Sequence[CiteRequest], names: Sequence[str]
+) -> Written[Tagged]:
+    """Tag each passage or document with each name (#625)."""
+    from kennis.tagging import Tagged
+
+    return _write(
+        corpus_root,
+        "tag",
+        {"requests": list(requests), "names": list(names)},
+        Tagged,
+        events=None,
+        on_waiting=None,
+    )
+
+
+def untag(
+    corpus_root: Path, requests: Sequence[CiteRequest], names: Sequence[str]
+) -> Written[Tagged]:
+    """Take each name from each passage or document (#625)."""
+    from kennis.tagging import Tagged
+
+    return _write(
+        corpus_root,
+        "untag",
+        {"requests": list(requests), "names": list(names)},
+        Tagged,
+        events=None,
+        on_waiting=None,
+    )
+
+
+def colour_tags(
+    corpus_root: Path,
+    names: Sequence[str],
+    colour: str | None,
+    bundles: Sequence[Path],
+) -> Written[TagColoured]:
+    """Choose a colour for each tag, or with None the one derived from its
+    name, in every store of the corpus and `bundles` holding it (#627)."""
+    from kennis.tagging import TagColoured
+
+    return _write(
+        corpus_root,
+        "colour_tags",
+        {"names": list(names), "colour": colour, "bundles": list(bundles)},
+        TagColoured,
+        events=None,
+        on_waiting=None,
+    )
+
+
+def tags(corpus_root: Path, bundle: Path | None) -> list[TagListing]:
+    """Every tag, the project's beside the corpus's when `bundle` is given."""
+    from kennis.tagging import TagListing
+
+    listed = _read_as(corpus_root, "tags", {"bundle": bundle}, list[TagListing])
+    return cast(list[TagListing], listed)
 
 
 def found(corpus_root: Path, handle: str, collection: str | None) -> Found:

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{# Every tag, or one tag's page (#625). A tag's passages come first, each
+   with its opening words and its link, ready to cite; then its documents;
+   then what needs attention - a passage whose words are gone, a document no
+   longer held - each with Remove. Every Remove is a plain form, so the page
+   works without a script. #}
+{% block title %}kennis - {% if tag %}{{ tag }}{% else %}{{ tags_heading }}{% endif %}{% endblock %}
+{% block main %}
+{% if tag %}
+<div class="tag-head" {{ tag_paint(colour) }}>
+  <h1>{{ icon("tag") }}<span>{{ tag }}</span></h1>
+  <a class="button" href="{{ search_href }}">{{ icon("search") }}<span>{{ search_within_tag }}</span></a>
+</div>
+{# The tag's colour (#627): a swatch each, "from its name" showing the one
+   derived. A plain form; with a script it is sent on each change and the
+   page drawn again, since every chip of the tag changes colour. #}
+<form class="tag-colour" action="/tags/colour" method="post" hx-post="/tags/colour" hx-trigger="change">
+  <input type="hidden" name="tag" value="{{ tag }}">
+  <fieldset>
+    <legend>{{ colour_label }}</legend>
+    {% for value, label in colour_choices %}
+    <label class="colour-swatch" {{ tag_paint(derived_colour if value == "auto" else value) }}>
+      <input type="radio" name="colour" value="{{ value }}"{% if value == chosen_colour %} checked{% endif %}>
+      <span class="dot"></span><span>{{ label }}</span>
+    </label>
+    {% endfor %}
+    {# Any colour (#629): the browser's own picker, which always sends
+       #rrggbb; the window moves its lightness per theme until it is seen. #}
+    <label class="colour-swatch own-colour"{% if chosen_hex %} {{ tag_paint(chosen_hex) }}{% endif %}>
+      <input type="radio" name="colour" value="own"{% if chosen_hex %} checked{% endif %}>
+      <input type="color" name="hex" value="{{ chosen_hex or derived_hex }}" aria-label="{{ colour_own }}">
+      {# What the picker was drawn holding: a picker moved since is the
+         choice, whether or not its radio was pressed, since moving it does
+         not press the radio. #}
+      <input type="hidden" name="drawn-hex" value="{{ chosen_hex or derived_hex }}">
+      <span>{{ colour_own }}</span>
+    </label>
+  </fieldset>
+  <button type="submit" class="ghost">{{ colour_set }}</button>
+</form>
+<ol class="tagged-list">
+  {% for item in tagged %}
+  <li class="tagged" data-kind="{{ item.kind }}" data-state="{{ item.state }}">
+    <p class="tagged-head">{{ icon("file-text") if item.kind == "document" else icon("hash") }}
+      {% if item.href %}<a class="title" href="{{ item.href }}">{{ item.title }}</a>{% else %}<span class="title">{{ item.title }}</span>{% endif %}</p>
+    {% if item.quote %}<blockquote class="tag-quote">{{ item.quote }}</blockquote>{% endif %}
+    <p class="tag-link role-command">{{ item.link }}</p>
+    {% if item.trouble %}<p class="tag-trouble role-warning">{{ icon("triangle-alert") }}<span>{{ item.trouble }}</span></p>{% endif %}
+    <form class="untag" action="/tags/remove" method="post">
+      <input type="hidden" name="tag" value="{{ tag }}">
+      <input type="hidden" name="link" value="{{ item.link }}">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button type="submit" class="ghost" aria-label="{{ item.remove_label }}">{{ icon("x") }}<span>{{ remove_tag }}</span></button>
+    </form>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<h1>{{ tags_heading }}</h1>
+{% if tags %}
+<ul class="tags-list">
+  {% for entry in tags %}
+  <li><a class="tag-entry" href="{{ entry.href }}" {{ tag_paint(entry.colour) }}><span class="dot"></span><span class="name">{{ entry.name }}</span><span class="count">{{ entry.count }}</span></a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="role-muted">{{ no_tags }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

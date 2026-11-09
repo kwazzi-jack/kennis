@@ -37,7 +37,7 @@ from kennis.render.hits import best_lexical, rendered_hit, score_style_for
 _NOTHING = "no matching passages"
 
 
-def search_notes(question: str, top_k: int = 5) -> str:
+def search_notes(question: str, top_k: int = 5, tags: list[str] | None = None) -> str:
     """Search notes - the user's own material, machine-global.
 
     Reach for this when a question is about *this user*: their
@@ -46,12 +46,14 @@ def search_notes(question: str, top_k: int = 5) -> str:
 
     Returns ranked hits, each with a relevance band, a `document_id` and
     `chunk` to pass to `read_notes`, and a snippet. Search locates; read
-    expands.
+    expands. `tags` keeps only what carries every one of them.
     """
-    return _searched("notes", question, top_k)
+    return _searched("notes", question, top_k, tags=tags)
 
 
-def search_literature(question: str, top_k: int = 5) -> str:
+def search_literature(
+    question: str, top_k: int = 5, tags: list[str] | None = None
+) -> str:
     """Search the literature collection - papers, with their metadata.
 
     Reach for this to ground an explanation of *why* a method works, or
@@ -60,11 +62,17 @@ def search_literature(question: str, top_k: int = 5) -> str:
 
     Returns ranked hits with a `document_id` and `chunk` for
     `read_literature`, which expands a hit that is on-topic but cut off.
+    `tags` keeps only what carries every one of them.
     """
-    return _searched("literature", question, top_k)
+    return _searched("literature", question, top_k, tags=tags)
 
 
-def search_docs(question: str, top_k: int = 5, version: list[str] | None = None) -> str:
+def search_docs(
+    question: str,
+    top_k: int = 5,
+    version: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> str:
     """Search the docs collection - documentation sites, one folder per
     project and version.
 
@@ -79,12 +87,16 @@ def search_docs(question: str, top_k: int = 5, version: list[str] | None = None)
     naming each.
 
     Returns ranked hits with a `document_id` and `chunk` for `read_docs`.
+    `tags` keeps only what carries every one of them.
     """
-    return _searched("docs", question, top_k, versions=tuple(version or ()))
+    return _searched("docs", question, top_k, versions=tuple(version or ()), tags=tags)
 
 
 def search_context(
-    question: str, top_k: int = 5, projects: str | list[str] = ""
+    question: str,
+    top_k: int = 5,
+    projects: str | list[str] = "",
+    tags: list[str] | None = None,
 ) -> str:
     """Search this project's `.context/` bundle - its own conventions.
 
@@ -100,8 +112,10 @@ def search_context(
     `projects` widens the search: `"all"` for every project on this
     machine, or a list of project names. Each other project's hits name
     its folder in full. Outside any project every project is searched.
+    `tags` keeps only what carries every one of them, in each project's
+    own tags.
     """
-    return _searched(CONTEXT_COLLECTION, question, top_k, projects=projects)
+    return _searched(CONTEXT_COLLECTION, question, top_k, projects=projects, tags=tags)
 
 
 def _searched(
@@ -111,6 +125,7 @@ def _searched(
     *,
     versions: tuple[str, ...] = (),
     projects: str | list[str] = "",
+    tags: list[str] | None = None,
 ) -> str:
     """One scope, searched and rendered.
 
@@ -137,6 +152,7 @@ def _searched(
         versions=versions,
         bundle=bundle,
         others=others,
+        tags=tuple(tags or ()),
     )
     if not hits:
         return _NOTHING

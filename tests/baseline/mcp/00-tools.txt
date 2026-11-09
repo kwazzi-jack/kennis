@@ -41,12 +41,26 @@
     }
   },
   {
-    "description": "Search notes - the user's own material, machine-global.\n\nReach for this when a question is about *this user*: their\nconventions, their decisions, something they asked kennis to\nremember. Not upstream documentation and not published papers.\n\nReturns ranked hits, each with a relevance band, a `document_id` and\n`chunk` to pass to `read_notes`, and a snippet. Search locates; read\nexpands.",
+    "description": "Search notes - the user's own material, machine-global.\n\nReach for this when a question is about *this user*: their\nconventions, their decisions, something they asked kennis to\nremember. Not upstream documentation and not published papers.\n\nReturns ranked hits, each with a relevance band, a `document_id` and\n`chunk` to pass to `read_notes`, and a snippet. Search locates; read\nexpands. `tags` keeps only what carries every one of them.",
     "input": {
       "additionalProperties": false,
       "properties": {
         "question": {
           "type": "string"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "top_k": {
           "default": 5,
@@ -73,12 +87,26 @@
     }
   },
   {
-    "description": "Search the literature collection - papers, with their metadata.\n\nReach for this to ground an explanation of *why* a method works, or\nto justify a choice, rather than answering from general knowledge.\nCite what comes back.\n\nReturns ranked hits with a `document_id` and `chunk` for\n`read_literature`, which expands a hit that is on-topic but cut off.",
+    "description": "Search the literature collection - papers, with their metadata.\n\nReach for this to ground an explanation of *why* a method works, or\nto justify a choice, rather than answering from general knowledge.\nCite what comes back.\n\nReturns ranked hits with a `document_id` and `chunk` for\n`read_literature`, which expands a hit that is on-topic but cut off.\n`tags` keeps only what carries every one of them.",
     "input": {
       "additionalProperties": false,
       "properties": {
         "question": {
           "type": "string"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "top_k": {
           "default": 5,
@@ -105,12 +133,26 @@
     }
   },
   {
-    "description": "Search the docs collection - documentation sites, one folder per\nproject and version.\n\nReach for this for upstream usage, configuration and syntax. Call\n`list_corpus` first if you need to know which projects and versions\nare held.\n\nEach project's current version is searched unless `version` names\nothers: `\"2.12\"` for every project holding 2.12, `\"pydantic=2.12\"`\nfor one project's, `\"all\"` for every version held. Each hit names\nits version; a passage equal in several versions is shown once,\nnaming each.\n\nReturns ranked hits with a `document_id` and `chunk` for `read_docs`.",
+    "description": "Search the docs collection - documentation sites, one folder per\nproject and version.\n\nReach for this for upstream usage, configuration and syntax. Call\n`list_corpus` first if you need to know which projects and versions\nare held.\n\nEach project's current version is searched unless `version` names\nothers: `\"2.12\"` for every project holding 2.12, `\"pydantic=2.12\"`\nfor one project's, `\"all\"` for every version held. Each hit names\nits version; a passage equal in several versions is shown once,\nnaming each.\n\nReturns ranked hits with a `document_id` and `chunk` for `read_docs`.\n`tags` keeps only what carries every one of them.",
     "input": {
       "additionalProperties": false,
       "properties": {
         "question": {
           "type": "string"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "top_k": {
           "default": 5,
@@ -151,7 +193,7 @@
     }
   },
   {
-    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses is among them, as files its sync copied in.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.",
+    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses is among them, as files its sync copied in.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.\n`tags` keeps only what carries every one of them, in each project's\nown tags.",
     "input": {
       "additionalProperties": false,
       "properties": {
@@ -171,6 +213,20 @@
         },
         "question": {
           "type": "string"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "top_k": {
           "default": 5,
@@ -481,6 +537,84 @@
       "type": "object"
     },
     "name": "remember",
+    "output": {
+      "properties": {
+        "result": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "type": "object",
+      "x-fastmcp-wrap-result": true
+    }
+  },
+  {
+    "description": "Tag passages or documents, or with `remove=True` take tags off them.\n\nUse it when the person asks to tag, bookmark or gather passages - for\nwriting, or to search within later - never on your own initiative: a tag\nis kept in their corpus or their project, committed, and seen again.\n\nName each passage as a search hit gives it: its `document_id`, or a\ncontext hit's `path`, with its `chunk`; leave out `chunk` to tag the\nwhole document. A tag is one word, folded to lowercase; join words with\na hyphen. If any passage cannot be found, nothing is tagged and each\nproblem is said at its position.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "default": false,
+          "type": "boolean"
+        },
+        "requests": {
+          "items": {
+            "description": "One passage to cite, named by exactly one of two handles.\n\n`document_id` for a hit from notes, literature or docs (or from\n`list_corpus`); `path` for a project's context hit, as its `path=`\ngives it. `chunk` is the hit's `chunk`; omitted, the document is cited whole.",
+            "properties": {
+              "chunk": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "document_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests",
+        "tags"
+      ],
+      "type": "object"
+    },
+    "name": "tag",
     "output": {
       "properties": {
         "result": {

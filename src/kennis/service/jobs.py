@@ -58,6 +58,9 @@ CORPUS_LANE: Final = "corpus"
 INDEX_LANE: Final = "index"
 # The list of known projects, under the state directory (14e).
 PROJECTS_LANE: Final = "projects"
+# Tags (#625): one small file a store, so a tag never waits behind an add
+# of forty papers; the corpus's commit still waits for a publish.
+TAGS_LANE: Final = "tags"
 
 
 def context_lane(bundle: str) -> str:
@@ -386,6 +389,7 @@ __all__ = [
     "CORPUS_LANE",
     "INDEX_LANE",
     "PROJECTS_LANE",
+    "TAGS_LANE",
     "Job",
     "JobEvent",
     "Jobs",
