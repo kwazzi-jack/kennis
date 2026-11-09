@@ -36,7 +36,7 @@ This exists because of a rule that is easy to state and easy to violate:
 A sentence built in the engine is the one a front end would otherwise reach
 for, and once it exists the command line can no longer restyle it, rewrap it,
 or combine it with anything else. So `SearchResult` carries a score, a rank
-and a chunk index; the phrase "relevance: high" is composed in `render`.
+and a chunk index; the phrase "meaning: high" is composed in `render`.
 
 Three things are exempt, because each is quoted rather than composed: a
 resolution that is a command string, an error's message, and text kennis is

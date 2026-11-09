@@ -3,22 +3,29 @@
 ## Search
 
 ```
-kennis search "reciprocal rank fusion"
+kennis search "why do we combine rankings instead of scores"
 ```
 
 A hit looks like this:
 
 ```
-Found 2 in docs
+Found 3 in notes
 
-Docs relevance by cosine similarity
-  [1] Recipe variable assignments - Step assignments
-      relevance: high  id=yusk5agyfk chunk=3
-      kennis://open/yusk5agyfk/3
-      ## Step assignments Any step definition can contain an `assign`
-      section of its own. Use this if you need to change the value of
-      recipe variable just for that one step. ...
+Notes keywords as a fraction of the best match here, meaning as an absolute cosine
+  [1] Why fusion uses ranks
+      keywords: very high  meaning: high  id=t1pukd6jxw chunk=0
+      kennis://open/t1pukd6jxw/0
+      # Why fusion uses ranks Reciprocal rank fusion scores a chunk by
+      1/(60+rank) summed over the legs that ranked it, so agreement
+      between two methods that fail differently is what wins.
+  ...
 ```
+
+Each hit has up to two measures, one per method that found it. `keywords`
+is BM25, the words you typed, as a fraction of the best keyword match in
+this collection; `meaning` is the cosine between the embeddings of the query
+and the passage. A hit found by only one method shows only that one. See
+[How meaning is graded](#how-meaning-is-graded) below.
 
 `id=` and `chunk=` are the coordinates you pass to `read`. The line under
 them is the passage's `kennis://` link: `kennis open` with it shows the
@@ -62,14 +69,15 @@ tools. See [Project knowledge](../how-to/project-context.md).
 ## Results are grouped by collection
 
 Each scope gets its own group, its own ranking, and its own line saying
-what its relevance levels are a band of.
+what scale each of its measures is on.
 
-That line matters. A collection indexed with an embedding backend is banded
-on an **absolute cosine**; one without a dense leg is banded **relative to
-its own best hit**, whose top result is therefore `very high` by
-construction. Those are different claims, and printing them in one ranked
-column would state a comparison kennis cannot make - see
-[How retrieval works](../explanation/retrieval.md).
+That line matters. `keywords` is always **relative to the collection's own
+best match**, so its top hit is `very high` by construction; `meaning` is an
+**absolute cosine** for a model kennis has measured, and is graded against
+unrelated questions for any other. A project bundle is searched by keywords
+alone unless `retrieval.context_method` says otherwise. Hits from different collections are therefore on different scales, and
+printing them in one ranked column would state a comparison kennis cannot
+make - see [How retrieval works](../explanation/retrieval.md).
 
 Two consequences:
 
