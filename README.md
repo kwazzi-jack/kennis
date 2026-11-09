@@ -7,68 +7,152 @@ relative image is broken. PyPI drops <picture> and keeps the <img>. -->
 
 # kennis
 
-A local knowledge and memory management system for people and AI agents.
+A local knowledge and memory system for people and AI agents.
 
-kennis holds a corpus of documents, a per-workspace context bundle, and a
-retrieval stack over both that combines BM25 with dense embeddings. It is
-domain-agnostic: it knows nothing about any particular subject, and domain
-content is supplied from outside as data rather than code.
+You put papers, documentation sites and your own notes into one corpus on
+your machine, and kennis searches it by the words you type and by what you
+mean, then shows you the passage it found. The same corpus is open to you at
+the terminal, in a window in your browser, and to an AI agent over MCP.
 
-## Documentation
+<img alt="The kennis window: a search for 'why do we combine rankings instead of scores', with two tagged notes as the best matches, each showing a keyword and a meaning measure" src="https://raw.githubusercontent.com/kwazzi-jack/kennis/main/docs/assets/screenshots/search.png">
 
-Full documentation - a tutorial, how-to guides, the reasoning behind each
-mechanism, and a command reference generated from the code - is built with
-MkDocs:
-
-```
-uv run --group docs mkdocs serve      # http://127.0.0.1:8000
-uv run --group docs mkdocs build      # into site/
-```
+**Documentation: <https://kwazzi-jack.github.io/kennis/>**
 
 ## Status
 
-**kennis is experimental.** It is pre-release software written by one
-person for their own research, and its commands, settings and on-disk format
-change between releases without notice or migration. Expect bugs.
+**kennis is experimental.** It is pre-release software written by one person
+for their own research. Its commands, settings and on-disk format change
+between releases without notice or migration, so a corpus built now is one
+you should be prepared to rebuild. Expect bugs.
 
 **Linux is the platform kennis is developed and used on.** macOS runs the
 test suite in CI. **Windows is not yet working properly**: CI runs the tests
 there, but kennis is not used on Windows, and Windows users should expect
-far more bugs than on Linux. Running kennis under WSL has not been
-tried at all.
-
-Pre-release, published on PyPI as `kennis`. Built and tested:
-
-- **the corpus**, machine-global, with git-backed history, BM25 and dense
-  retrieval over it, and the command line;
-- **the context bundle**, one per project, committed with it, with its own
-  lexical index and searched alongside the corpus;
-- **packs**, the format a provider supplies domain content in, and the two
-  sync commands that converge each scope with what is installed;
-- **the MCP server**, `kennis serve`, ten tools over stdio, with its
-  description of this machine generated from the installed packs;
-- **the graphical interface**, `kennis gui`, a tab in your own browser,
-  served on loopback by kennis's service with a per-run token.
-
-Cross-machine synchronisation and any packaged application come after that.
-
-**The on-disk format may still change without a migration.** Every
-frontmatter model refuses an unknown key rather than ignoring it, so a corpus
-written by a later version is not readable by an earlier one, and there is no
-version recorded on a document to say so. That is a deliberate choice about
-failing loudly, and it is why a corpus built now is a corpus you should be
-prepared to rebuild.
+far more bugs than on Linux. Running kennis under WSL has not been tried.
 
 ## Install
 
+You need Python 3.12 to 3.14, [uv](https://docs.astral.sh/uv/) and `git`.
+
 ```
-uv tool install kennis                # or "kennis[mcp]" for the MCP server
+uv tool install kennis                # the command line, the window and PDF conversion
+uv tool install "kennis[mcp]"         # and the MCP server for agents
 ```
 
-PDF conversion is part of the install and is its large part - MinerU brings
-PyTorch, and on Linux the CUDA libraries, several gigabytes. The
+PDF conversion is the large part of the install: MinerU brings PyTorch, and
+on Linux the CUDA libraries, several gigabytes. The
 [install guide](https://kwazzi-jack.github.io/kennis/getting-started/install/)
-says how to take PyTorch's CPU build instead.
+says how to take PyTorch's CPU build instead, which is a few hundred
+megabytes.
+
+## A first corpus
+
+Create the corpus, which is a folder of markdown files and a git repository
+at `~/.local/share/kennis`:
+
+```
+kennis config init --defaults
+kennis corpus init
+```
+
+Put something in. `remember` writes a note; `corpus add` brings in a file
+(`-n` notes), a paper by arXiv identifier or DOI (`-l` literature) or a
+documentation site (`-d` docs):
+
+```
+kennis remember "Reciprocal rank fusion scores a chunk by 1/(60+rank) summed over the legs that ranked it, so agreement between two methods that fail differently is what wins." --title "Why fusion uses ranks"
+kennis corpus add -n reading-list.md --title "Reading list"
+kennis corpus add -l arxiv:1101.1764
+kennis corpus add -d https://docs.astropy.org/en/stable/ --max-pages 20
+```
+
+Index it, then search. The first index downloads a 65 MB embedding model,
+once:
+
+```
+kennis corpus index
+kennis search "why do we combine rankings instead of scores"
+```
+
+```
+Found 3 in notes
+
+Notes keywords as a fraction of the best match here, meaning as an absolute cosine
+  [1] Why fusion uses ranks
+      keywords: very high  meaning: high  id=t1pukd6jxw chunk=0
+      kennis://open/t1pukd6jxw/0
+      # Why fusion uses ranks Reciprocal rank fusion scores a chunk by
+      1/(60+rank) summed over the legs that ranked it, so agreement
+      between two methods that fail differently is what wins.
+  [2] Reading list - Combining the two
+      keywords: high  meaning: high  id=b4m9up9nyj chunk=3
+      kennis://open/b4m9up9nyj/3
+      ## Combining the two Hybrid search runs both and fuses the rankings,
+      so a passage both methods place highly rises to the top.
+  ...
+```
+
+Each hit gives two measures. `keywords` is BM25, the words you typed, as a
+fraction of the best match in that collection; `meaning` is the cosine
+similarity of the embeddings, on a scale measured for this model, so it
+means the same thing for every query. The line above the group names both
+scales. `id` and `chunk` are what `kennis read` takes, and the
+`kennis://` link opens the passage in the window.
+
+```
+kennis read t1pukd6jxw                # the whole document, as markdown
+kennis read b4m9up9nyj --chunks 3     # just the passage that matched
+kennis tag retrieval kennis://open/t1pukd6jxw/0
+kennis search "how are results combined" --tag retrieval
+```
+
+The [tutorial](https://kwazzi-jack.github.io/kennis/getting-started/tutorial/)
+runs these steps with their full output.
+
+## The window
+
+```
+kennis gui
+```
+
+opens kennis in your own browser: the same search, each passage drawn in
+place, the corpus as a tree, tags, and adding and indexing with their
+progress shown. It is served on `127.0.0.1` by kennis's own service, and
+every request carries a token minted when the service starts. The picture at
+the top of this page is the window. See
+[The graphical interface](https://kwazzi-jack.github.io/kennis/how-to/the-interface/).
+
+## An agent
+
+With the `mcp` extra installed, an agent that speaks MCP starts
+`kennis serve` itself. For Claude Code, in `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "kennis": { "command": "kennis", "args": ["serve"] }
+  }
+}
+```
+
+The agent can then search and read the corpus, cite a passage with a link
+that opens it in your window, and write a note with `remember` - the one
+tool that changes anything. See
+[Serve an agent](https://kwazzi-jack.github.io/kennis/how-to/serve-an-agent/).
+
+## Learn more
+
+- [Add documents](https://kwazzi-jack.github.io/kennis/how-to/add-documents/)
+  and [a documentation site](https://kwazzi-jack.github.io/kennis/how-to/add-a-documentation-site/)
+- [Search and read](https://kwazzi-jack.github.io/kennis/how-to/search-and-read/)
+- [Project knowledge](https://kwazzi-jack.github.io/kennis/how-to/project-context/):
+  a `.context/` folder committed with a project and searched beside the corpus
+- [Author a pack](https://kwazzi-jack.github.io/kennis/how-to/author-a-pack/):
+  a file that declares papers, sites and notes for kennis to fetch
+- [How retrieval works](https://kwazzi-jack.github.io/kennis/explanation/retrieval/):
+  what the two measures mean and how hits are ranked
+- [Commands](https://kwazzi-jack.github.io/kennis/reference/cli/), generated
+  from the code
 
 ## Your data
 
@@ -79,206 +163,17 @@ connected through `kennis serve` passes what it reads to whatever its model
 runs on. The full list, with every host, is
 [Your data: where it is kept and where it goes](https://kwazzi-jack.github.io/kennis/privacy/).
 
-## From source
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/kwazzi-jack/kennis/blob/main/CONTRIBUTING.md).
+To run kennis from a checkout:
 
 ```
-git clone git@github.com:kwazzi-jack/kennis.git
+git clone https://github.com/kwazzi-jack/kennis.git
 cd kennis
-uv sync                       # add --extra mcp for the MCP server
+uv sync --extra mcp
 uv run kennis --help
 ```
-
-To get a `kennis` on your PATH instead of prefixing every command with
-`uv run`, install it as a tool. PDF conversion is part of the install and is
-its large part - MinerU brings PyTorch:
-
-```
-uv tool install .                     # or
-uv tool install "kennis[mcp] @ ."     # with the MCP server
-```
-
-`uv tool install` links only the requested package's executables, so `mineru`
-itself does not land on your PATH - kennis finds it in the environment it was
-installed into.
-
-## Usage
-
-### Set up
-
-```
-kennis config init            # guided: embedding, conversion, retrieval, paths
-kennis config show            # valid TOML, safe to redirect to a file
-kennis config get embedding.backend
-kennis config set embedding.backend none
-```
-
-Nothing here is required. With no configuration kennis uses its defaults and
-`KENNIS_EMBEDDING_BACKEND=none` gives a lexical-only index, which needs no
-model download and is the quickest way to try it.
-
-### Put something in
-
-```
-kennis corpus init                             # the corpus, and the git repository it is
-kennis corpus add -n notes.md --group radio    # a file, or a directory, into notes
-kennis corpus add -l arXiv:2101.11270          # a paper, by identifier or DOI
-kennis corpus add -d https://docs.astropy.org/en/stable/ --max-pages 20
-```
-
-Three collections, each with a shorthand: `-n` notes, `-l` literature, `-d`
-docs. They differ in what kennis does *besides* storing the markdown -
-literature resolves bibliographic identity and derives a citekey, docs
-records which project and page a document is.
-
-Adding a site is polite by default: it waits between requests, honours
-`robots.txt`, and stops at `--max-pages`. Twenty pages takes about a minute.
-
-### Search it
-
-```
-kennis corpus index                            # build the index; after any batch of adds
-kennis search "complex gains"
-kennis search "gains" --collection notes --group radio -k 5
-kennis search "fits files" --mode bm25 --snippet full
-kennis search "complex gains" --scores raw     # the per-leg numbers instead of a level
-kennis search "gains" --collection context     # this project's bundle only
-kennis search "gains" --collection notes,context
-```
-
-`--collection` takes a comma-separated list over four scopes - `literature`,
-`docs`, `notes` and `context` - and defaults to `all`. A scope you name is a
-promise and a scope you did not is not: asking for `context` outside a
-project is an error, while a sweep outside one simply does not mention it.
-
-A hit looks like this:
-
-```
-Found 2 in literature, 1 in notes
-
-Literature relevance by cosine similarity
-  [1] Calibration of radio interferometers - Gain solutions
-      relevance: very high  id=gpfa1o3yad chunk=3
-      Complex gains are solved per antenna and per interval ...
-
-Notes relevance relative to the best lexical match
-  [1] Calibration conventions
-      relevance: very high  id=f4inoeh3gd chunk=0
-      We solve gains on a 30 second interval ...
-```
-
-**Results are grouped by collection, and that is not only cosmetic.** Each
-group carries the scale its own levels are on. A collection indexed without
-an embedding backend is banded relative to its own best hit, where one with
-a dense leg is banded on an absolute cosine - and those two `very high`
-above mean different things. Ordering them into one column would state a
-comparison kennis cannot make. `-k` applies per group.
-
-`id` and `chunk` are what `read` takes. `--mode` is `hybrid` by default and
-falls back to `bm25` against a lexical-only index rather than failing.
-
-The first index on a new machine downloads the embedding model, which kennis
-says it is doing and keeps in `~/.cache/kennis/models`, so it is paid once.
-With `embedding.backend = ollama`, a model the daemon does not hold is pulled
-the same way.
-
-**Relevance is measured, not invented.** With a dense leg and an embedding
-model kennis has calibrated, the level is the hit's cosine similarity against
-cuts measured on a real corpus, so it means the same thing for every query.
-Against a lexical-only index it is relative to the best hit of that query,
-and the summary line says which of the two you are reading. `--scores raw`
-gives the numbers themselves.
-
-Reading a document:
-
-```
-kennis read 3vgtsow3cl                         # the whole document, as markdown
-kennis read "Recipe for-loops.md"              # by filename, title, or citekey
-kennis read 3vgtsow3cl --chunks 2:5            # just those chunks
-kennis read 3vgtsow3cl > paper.md              # the report goes to stderr, so this works
-```
-
-`--chunks` is a python slice over the document's own chunks: `3` is one,
-`0:3` is the first three, `2:` runs to the end, `-1` is the last. There is no
-step, because a passage that is not contiguous is not a passage. Without it
-the document is read from the corpus, so a document that has never been
-indexed is still readable; with it the passage is stitched out of the index.
-
-Either way stdout is the text and stderr is the provenance, so both forms
-pipe and redirect cleanly. Redirected, the text is the document byte for
-byte: colour is dropped when stdout is not a terminal, and no line is padded
-or re-wrapped.
-
-**Code blocks are highlighted where the language is known.** A fence that
-names one (` ```yaml `) is lexed as that. A fence that names nothing is
-*parsed* rather than guessed at - if the text is a YAML or JSON document it
-is highlighted as one, and otherwise it is coloured as a single block and
-left alone. Guessing was tried and measured: over 262 unlabelled fences it
-answered MySQL, GDScript, scdoc and Tera Term macro for content that was
-plainly YAML, so it is not used.
-
-### Write something down
-
-```
-kennis remember "QuartiCal needs --input-ms-time-chunk tuned for long tracks"
-kennis remember --from jottings.md --title "Jottings"
-echo "The array has 64 dishes." | kennis remember
-```
-
-`remember` writes a note and indexes it in the same command, so what you have
-just told kennis is searchable straight away - provided the notes collection
-has already been indexed once. It says which of the two happened.
-
-### Knowledge that belongs to one project
-
-```
-kennis context init                                  # a .context/ bundle at the workspace root
-kennis remember --context "Calibration runs in four-minute chunks"
-kennis remember --context --group decisions --title "Solver" "We use quartical"
-kennis context index                                 # BM25 only, offline, milliseconds
-kennis context status                                # what it holds, and whether the index is in step
-```
-
-The corpus is machine-global; a bundle belongs to one project and is
-committed with it, so the knowledge travels with a clone. **The index does
-not travel** - it is derived, rebuilt in milliseconds, and specific to
-whoever built it, so `context init` gitignores it and a clone runs
-`kennis context index` once.
-
-kennis never commits to your repository. Committing `.context/` is yours to
-do.
-
-### See what is there
-
-```
-kennis corpus status                           # per collection: how many, and how stale
-kennis corpus list --collection notes
-kennis corpus tree
-kennis corpus history --limit 10
-kennis corpus restore <document-id> --commit <hash>
-```
-
-Every command that changes the corpus records a commit, so `history` is the
-record of what kennis did and `restore` puts a document back as it was.
-
-### Where things live
-
-| what | where | override |
-|---|---|---|
-| the corpus | `~/.local/share/kennis` | `KENNIS_CORPUS_ROOT` |
-| a project's context bundle | `.context/` at the workspace root | `KENNIS_CONTEXT_DIR` |
-| configuration | `~/.config/kennis` | `KENNIS_CONFIG_DIR` |
-| the log | `~/.local/state/kennis/log` | `KENNIS_LOG_DIR` |
-| downloaded embedding models | `~/.cache/kennis/models` | - |
-
-Every setting can also be given as an environment variable:
-`KENNIS_EMBEDDING_BACKEND`, `KENNIS_CONVERSION_BACKEND`, and so on. The log is
-always on, and an error tells you where it is.
-
-## Requirements
-
-- Python 3.12 or newer
-- `uv`
-- `git`
 
 ## Licence
 
