@@ -570,7 +570,9 @@ def test_history_lists_what_the_commands_did_newest_first(
 
     result = run.invoke(main, ["corpus", "history"])
     assert result.exit_code == 0, result.output
-    assert result.output.index("remove") < result.output.index("add")
+    # By the subjects: "add" alone is found inside a commit's hash, which is
+    # hexadecimal, as "e2add4ca" was on one Windows run (#631).
+    assert result.output.index("  remove(") < result.output.index("  add(")
 
 
 def test_restore_brings_back_a_removed_document(
