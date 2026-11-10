@@ -12,8 +12,14 @@ from pathlib import Path
 import pytest
 
 from kennis.engine.errors import DocumentNotFound
+from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
-from kennis.engine.history.history import read_history, restore_document
+from kennis.engine.history.history import (
+    commit_summary,
+    outcome_summary,
+    read_history,
+    restore_document,
+)
 from kennis.engine.history.repository import Repository, initialise_corpus
 
 
@@ -234,3 +240,33 @@ def test_the_index_notices_a_restore(corpus: Path):
     )
     assert report.state == "stale"
     assert report.changed == 1
+
+
+# ---------------------------------------------------------------------------
+# A count of one is singular (#637)
+# ---------------------------------------------------------------------------
+
+
+def test_a_count_of_one_names_its_noun_in_the_singular():
+    """`remember` committed as `remember(notes): 1 documents`."""
+    assert commit_summary({"documents": 1}) == "1 document"
+    assert commit_summary({"documents": 1, "chunks": 1}) == "1 document, 1 chunk"
+
+
+def test_other_counts_keep_the_plural():
+    assert commit_summary({"documents": 4, "chunks": 7}) == "4 documents, 7 chunks"
+    assert commit_summary({"documents": 1, "chunks": 3}) == "1 document, 3 chunks"
+
+
+def test_a_participle_is_the_same_for_one_and_for_many():
+    assert commit_summary({"added": 1, "tagged": 1}) == "1 added, 1 tagged"
+    assert outcome_summary({Outcome.ADDED: 1, Outcome.CHANGED: 2}) == (
+        "1 added, 2 changed"
+    )
+
+
+def test_no_outcome_is_a_word_ending_in_s():
+    """The rule drops a final `s` for a count of one, which is right only
+    because every key is a plural noun or a participle. An outcome that
+    ended in `s` would be cut short."""
+    assert not [outcome.value for outcome in Outcome if outcome.value.endswith("s")]
