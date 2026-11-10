@@ -365,7 +365,7 @@ def delete_command_for_context(name: str, yes: bool) -> None:
 
 @context_group.command(name="status", cls=KennisCommand)
 def status_command_for_context() -> None:
-    """What this project's context holds, and whether its index is in step.
+    """What this project's context holds, and whether its index is up to date.
 
     The same question `corpus status` answers, one scope down - and the
     freshness half is answered differently, because there is no commit to
