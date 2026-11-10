@@ -27,7 +27,7 @@ you are allowed to do that. The next change kennis makes records your
 edits first, as their own commit named `record(corpus)`, so the history
 never puts them under the name of an add or a note.
 
-It also reports whether each collection's index is in step with its
+It also reports whether each collection's index is up to date with its
 documents. If it is not, reindex:
 
 ```

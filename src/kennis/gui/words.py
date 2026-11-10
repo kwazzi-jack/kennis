@@ -989,17 +989,7 @@ def change_line(operation: str | None, scope: str | None, summary: str) -> str:
     # restates the verb: "created corpus (create the corpus)" (#476).
     if not re.search(r"\d", summary):
         return f"{kind} {scope}"
-    return f"{kind} {scope} ({_one_is_one(summary)})"
-
-
-def _one_is_one(summary: str) -> str:
-    """A kennis summary read for a person: "1 documents" as "1 document".
-
-    The summary is a storage format the history parses back (`commit_
-    summary` writes every count with its plural), so it is read in the
-    singular here rather than written differently there.
-    """
-    return re.sub(r"\b1 (\w+?)s\b", r"1 \1", summary)
+    return f"{kind} {scope} ({summary})"
 
 
 CORPUS_OVERVIEW = "Overview"

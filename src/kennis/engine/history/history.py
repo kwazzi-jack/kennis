@@ -109,8 +109,17 @@ def commit_summary(counts: Mapping[str, int]) -> str:
     in. An empty tally yields "nothing", which `Repository.commit` will in
     practice never write: a run that did nothing leaves a clean tree and
     records no commit at all.
+
+    A key is a plural noun (`documents`, `chunks`) or a participle
+    (`added`, `tagged`), and only the nouns end in `s`, so a count of one
+    drops that `s`: `1 document`, `1 added` (#637). `_SUBJECT` keeps the
+    summary as text and nothing reads the counts back.
     """
-    parts = [f"{count} {name}" for name, count in counts.items() if count]
+    parts = [
+        f"{count} {name[:-1] if count == 1 and name.endswith('s') else name}"
+        for name, count in counts.items()
+        if count
+    ]
     return ", ".join(parts) if parts else "nothing"
 
 

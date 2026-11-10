@@ -76,7 +76,7 @@ and it is what kennis uses to tell a renamed citekey from a different paper.
 
 Everything else is optional, as it is for `kennis corpus add 1101.1764`.
 An entry without a `citekey` is described by `kennis pack update` (see
-[Record the digests](#record-the-digests)): the citekey, title, authors and
+[Record the digests](#describe-the-papers-and-record-the-digests)): the citekey, title, authors and
 year `corpus add` would derive are recorded in the pack, so the paper has
 the same citekey on every machine that installs it. Give `citekey:` when
 your own prose already cites the paper by one.

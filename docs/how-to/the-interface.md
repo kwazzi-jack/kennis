@@ -83,10 +83,12 @@ route that does not exist.
 
 ## Searching and reading
 
-The four scopes - `notes`, `literature`, `docs` and this project's
-`.context/` bundle - are the same four `kennis search` offers, and a hit's
+The four scopes - `notes`, `literature`, `docs` and the projects'
+`.context/` bundles - are the same four `kennis search` offers, and a hit's
 words come from the same code, so the window and a terminal never disagree
-about a title, a level or a handle.
+about a title, a level or a handle. The window belongs to no project: it
+searches every project kennis knows of, and a project filter narrows that to
+one.
 
 Each hit shows its measures above its title: an icon for the measure
 (keywords, or meaning), a bar of five cells and the level in words. The
@@ -141,9 +143,9 @@ a dialog, or a page if scripts are off:
 | action | what it does |
 |---|---|
 | Add | a paper, a documentation site, a file or folder, or several groups at once |
-| Note | write a note into the corpus or this project's bundle |
+| Note | write a note into the corpus, or into one project's `.context/` bundle |
 | Index | build the search index for one collection or all three |
-| Sync | converge the corpus, or this project's bundle, with every installed pack |
+| Sync | converge the corpus with every installed pack; a project's context is synced from its menu in the pane, **Sync this project's context** |
 | Pack | install a pack from the path to its `.ken.yml` |
 
 **Add has a tab for each kind of thing.** Paper has two ways in, as Zotero
