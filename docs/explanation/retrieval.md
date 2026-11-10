@@ -85,18 +85,19 @@ never does this.
 ### The cosine band is absolute, and measured
 
 A cosine similarity has a meaning independent of the query, but only for the
-model that produced it. For `BAAI/bge-small-en-v1.5`, the default, the cuts
-are:
+model that produced it, and models differ widely: an unrelated question
+reaches about 0.6 with `BAAI/bge-small-en-v1.5` and about 0.2 with
+`text-embedding-3-large`. kennis has measured those two, and their cuts are:
 
-| level | cosine |
-|---|---|
-| very high | 0.80 and above |
-| high | 0.72 to 0.80 |
-| medium | 0.64 to 0.72 |
-| low | 0.56 to 0.64 |
-| very low | below 0.56 |
+| level | `BAAI/bge-small-en-v1.5` (the default) | `text-embedding-3-large` |
+|---|---|---|
+| very high | 0.80 and above | 0.65 and above |
+| high | 0.72 to 0.80 | 0.55 to 0.65 |
+| medium | 0.64 to 0.72 | 0.45 to 0.55 |
+| low | 0.56 to 0.64 | 0.30 to 0.45 |
+| very low | below 0.56 | below 0.30 |
 
-These were measured rather than chosen: nine queries against a real corpus of
+The default model's were measured rather than chosen: nine queries against a real corpus of
 243 chunks, five of them genuine questions and four deliberate nonsense. The
 genuine queries' best hits fell between 0.765 and 0.816; the nonsense
 queries' best hits fell between 0.567 and 0.607. Nothing landed in between,
@@ -115,12 +116,24 @@ the line above each group reads `keywords as a fraction of the best match
 here`, because the top hit is `very high` by construction. Where the meaning
 leg also ran, both bands are shown, each labelled, and each on its own scale.
 
-### An unmeasured model gets no band at all
+### An unmeasured model gets two levels, against unrelated questions
 
-If you configure a dense model kennis has not calibrated, it prints no
-relevance level. Inventing cuts for an unknown scale is precisely the failure
-the other two cases are built to avoid. The hits are still ranked and still
-correct; only the claim about their quality is withheld.
+kennis has measured two models: `BAAI/bge-small-en-v1.5` and OpenAI's
+`text-embedding-3-large`. For any other, inventing five cuts for an unknown
+scale is precisely the failure the other two cases are built to avoid, so
+kennis grades against a reference it can measure on the spot instead.
+Twenty fixed questions on everyday subjects are embedded with the index's
+model, each one's best cosine in the collection is taken, and the second
+highest of those twenty is the reference. A hit above it reads
+`meaning: above unrelated`, and one at or below it `meaning: unrelated`; the
+line above the group says the meaning is graded "against unrelated
+questions".
+
+The second highest rather than the highest because kennis knows nothing
+about the corpus's subject, so one of the twenty may touch it, and an
+unrelated question then has about a one-in-ten chance of passing the
+reference by accident. Two levels are all such a reference can tell apart.
+The hits are ranked as for any model.
 
 Use `--scores raw` to see the underlying numbers in any case:
 

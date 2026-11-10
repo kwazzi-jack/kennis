@@ -44,10 +44,11 @@ On first index it downloads `BAAI/bge-small-en-v1.5`, about 65 MB, into
 `~/.cache/kennis/models`. kennis prints a line saying it is doing so. The
 download is cached, so a reinstall or a reboot does not repeat it.
 
-This is also the only model whose relevance bands kennis has **measured**, so
-it is the only one where `relevance: high` is an absolute claim rather than a
-comparative one. A different model still works; it just gets no relevance
-level. See [How retrieval works](../explanation/retrieval.md).
+It is also one of the two models whose scale kennis has **measured** (the
+other is OpenAI's `text-embedding-3-large`), so `meaning: high` from it is an
+absolute claim. Any other model still works, and its meaning is graded only
+as `above unrelated` or `unrelated`, against what twenty unrelated questions
+reach in the same collection. See [How retrieval works](../explanation/retrieval.md).
 
 ## ollama
 
@@ -101,9 +102,9 @@ compatible server supports.
 Your document text goes to that address instead of OpenAI's. Two things
 kennis cannot know about a model it has no table entry for: how many
 tokens it reads, so `config set` and the settings page say its fit is
-unknown and nothing is cut to fit before sending; and a relevance scale, so
-a search by meaning ranks its hits without a level, as for every model but
-the default fastembed one.
+unknown and nothing is cut to fit before sending; and a measured scale, so
+a search by meaning grades its hits only as `above unrelated` or
+`unrelated`, as for every model but the two kennis has measured.
 
 ## none
 

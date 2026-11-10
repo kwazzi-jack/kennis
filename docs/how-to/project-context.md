@@ -133,7 +133,7 @@ kennis context status
 ```
 
 What the bundle holds, broken down by group when there is more than one,
-and whether the index is in step with it.
+and whether the index is up to date with it.
 
 Freshness is answered differently here than for the corpus. A corpus index
 records the commit it was built from and the question is a `git diff`;
@@ -141,11 +141,11 @@ kennis does not write to your repository, so a bundle index records no
 commit and the comparison is made against the document digests the index
 stored. Same three counts either way:
 
-| line | what it means |
+| it says | what it means |
 |---|---|
-| `in step` | the index matches the bundle |
-| `in step, with N not yet indexed` | you have written since the last build - the index holds less, not something wrong |
-| `stale: N changed, N gone` | the index holds something false |
+| `the context index is up to date` | the index matches the bundle |
+| `the context index is missing N documents; nothing in it is out of date` | you have written since the last build - the index holds less, not something wrong |
+| `the context index is stale: N changed, N gone` | the index holds something false |
 
 `remember --context` does not index, so the middle line is the ordinary
 state of a bundle rather than a brief window.
