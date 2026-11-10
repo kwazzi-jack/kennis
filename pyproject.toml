@@ -1,6 +1,6 @@
 [project]
 name = "kennis"
-version = "0.13.1"
+version = "0.14.0"
 description = "Local knowledge and memory management system for users and AI"
 readme = "README.md"
 authors = [

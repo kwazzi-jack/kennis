@@ -1588,7 +1588,7 @@ wheels = [
 
 [[package]]
 name = "kennis"
-version = "0.13.1"
+version = "0.14.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },

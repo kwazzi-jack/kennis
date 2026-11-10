@@ -5,7 +5,7 @@ cff-version: 1.2.0
 message: "If you use kennis in your work, please cite it as below."
 type: software
 title: kennis
-version: 0.13.1
+version: 0.14.0
 abstract: >-
   kennis is a local knowledge and memory system for people and AI agents. It
   holds papers, documentation sites and notes in a corpus under git, searches

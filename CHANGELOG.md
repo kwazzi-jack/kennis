@@ -1,3 +1,17 @@
+## v0.14.0 (2026-11-10)
+
+### Feat
+
+- **tags**: tag documents and passages, colour them, and copy a passage with its citation (#19)
+- **context**: manage projects from the window and copy a declared pack's context into the project
+
+### Fix
+
+- **context**: say up to date in context status's help, not in step (#37)
+- **history**: write a count of one in the singular in a commit subject (#31)
+- **search**: search each index with its own model and log every refusal
+- **cli**: draw kennis:// links as hyperlinks in a windows console
+
 ## v0.13.1 (2026-11-01)
 
 ### Test
