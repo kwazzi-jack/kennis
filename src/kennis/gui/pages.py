@@ -12,7 +12,6 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
-import os
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -1714,8 +1713,13 @@ class OutcomeGroup:
         they share none, or when there is one name."""
         if len(self.items) < 2:
             return ""
-        shared = os.path.commonprefix([item.name for item in self.items])
-        return shared[: shared.rfind("/") + 1]
+        folders = [item.name.split("/")[:-1] for item in self.items]
+        shared: list[str] = []
+        for segments in zip(*folders, strict=False):
+            if any(segment != segments[0] for segment in segments):
+                break
+            shared.append(segments[0])
+        return "".join(f"{segment}/" for segment in shared)
 
     def short(self, item: ShownItem) -> str:
         """An item's name beneath its group's base."""

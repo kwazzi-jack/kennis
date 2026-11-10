@@ -1099,3 +1099,28 @@ def test_activity_lists_the_corpus_s_changes_whoever_made_them(
 
     assert changes is not None
     assert words.change_line("add", "notes", "1 added") in changes.get_text()
+
+
+def base_of(*names: str) -> str:
+    shown = ShownJob(
+        headline="h",
+        items=tuple(
+            ShownItem(marker="!", name=name, outcome="failed", detail="x")
+            for name in names
+        ),
+    )
+    return shown.groups[0].base
+
+
+def test_a_base_stops_at_the_first_folder_that_differs():
+    """`guide` is shared again after `v1` and `v2` differ, and is not part
+    of the base, because a base is a prefix of every name."""
+    assert base_of("pydantic/v1/guide/models", "pydantic/v2/guide/fields") == (
+        "pydantic/"
+    )
+
+
+def test_a_base_never_takes_a_whole_name():
+    """`docs/pydantic` is a name here and a folder in the other name, so the
+    base is the folder above it and neither name is shortened to nothing."""
+    assert base_of("docs/pydantic", "docs/pydantic/install") == "docs/"
