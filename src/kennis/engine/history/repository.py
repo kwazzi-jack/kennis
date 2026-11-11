@@ -19,7 +19,7 @@ from typing import Final
 
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import CorpusExists, CorpusNotFound, HistoryUnwritable
-from kennis.engine.history.git import git, git_binary
+from kennis.engine.history.git import git, git_binary, git_content
 
 _GITATTRIBUTES: Final = """\
 # Line endings belong to the repository, not to the machine. Git for Windows
@@ -271,16 +271,21 @@ class Repository:
         point of noticing.
 
         **None for a file that is not UTF-8**, an image beside a document or
-        a `.md` saved in another encoding: `git()` decodes strictly, for the
-        sake of the paths git prints (#388), and this is content. So None
-        does not say the path was absent - `holds` says that.
+        a `.md` saved in another encoding. So None does not say the path was
+        absent - `holds` says that. Read as bytes and decoded here
+        (`git_content`): this is a file's content, not text git composed.
         """
         self._require_repository()
+        content = git_content(["show", f"{commit}:{path}"], cwd=self.root)
+        if content is None:
+            return None
         try:
-            result = git(["show", f"{commit}:{path}"], cwd=self.root)
+            text = content.decode("utf-8")
         except UnicodeDecodeError:
             return None
-        return result.stdout if result.ok else None
+        # What reading it as text did before: one line ending, whatever a
+        # hand-made commit stored.
+        return text.replace("\r\n", "\n")
 
     def holds(self, commit: str, path: str) -> bool:
         """Whether `commit` has a file at `path`, read or unreadable.

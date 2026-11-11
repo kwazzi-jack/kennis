@@ -7,6 +7,7 @@ follows leaves the working tree clean and one commit describing itself.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,8 @@ from kennis.engine.errors import (
     GitUnavailable,
     HistoryUnwritable,
 )
-from kennis.engine.history.git import git
+from kennis.engine.history import repository as repository_module
+from kennis.engine.history.git import GitResult, git, git_content
 from kennis.engine.history.repository import (
     Repository,
     initialise_corpus,
@@ -426,3 +428,39 @@ def test_showing_a_file_that_is_not_text_answers_none(corpus: Path) -> None:
     commit = a_committed_image(corpus)
 
     assert Repository(corpus).show(commit, "notes/A Paper/figure.jpg") is None
+
+
+def test_showing_a_file_never_decodes_it_inside_the_git_call(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Where a subprocess's output is decoded depends on the platform: on
+    Windows it is a reader thread, so a `UnicodeDecodeError` there is not
+    one `show` can catch, and the image came back as an unhandled thread
+    exception (PR #38's Windows run). So the content must not go through
+    the text runner at all - which is what this forbids, on every platform."""
+    commit = a_committed_image(corpus)
+    (corpus / "notes" / "a.md").write_bytes(b"A note.\r\nIts second line.\n")
+    second = Repository(corpus).commit("add", scope="notes", summary="1 added")
+    assert second is not None
+    text_runner = repository_module.git
+
+    def no_content_as_text(arguments: Sequence[str], *, cwd: Path) -> GitResult:
+        assert arguments[0] != "show", "a file's content went through the text runner"
+        return text_runner(arguments, cwd=cwd)
+
+    monkeypatch.setattr(repository_module, "git", no_content_as_text)
+
+    assert Repository(corpus).show(commit, "notes/A Paper/figure.jpg") is None
+    assert Repository(corpus).show(second, "notes/a.md") == (
+        "A note.\nIts second line.\n"
+    )
+    assert Repository(corpus).show(second, "notes/never-there.md") is None
+
+
+def test_git_content_is_the_bytes_git_stored(corpus: Path) -> None:
+    commit = a_committed_image(corpus)
+
+    assert (
+        git_content(["show", f"{commit}:notes/A Paper/figure.jpg"], cwd=corpus) == JPEG
+    )
+    assert git_content(["show", f"{commit}:notes/absent.jpg"], cwd=corpus) is None
