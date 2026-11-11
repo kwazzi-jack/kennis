@@ -390,3 +390,39 @@ def test_a_commit_git_refuses_says_why_and_what_shows_the_state(corpus: Path):
     assert "index.lock" in str(raised.value)
     assert raised.value.resolution is not None
     assert raised.value.resolution.startswith("git -C ")
+
+
+# ---------------------------------------------------------------------------
+# A file that is not text
+# ---------------------------------------------------------------------------
+
+# A JPEG's first bytes, which are not valid UTF-8.
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+
+
+def a_committed_image(corpus: Path) -> str:
+    initialise_corpus(corpus)
+    (corpus / "notes" / "A Paper").mkdir(parents=True)
+    (corpus / "notes" / "A Paper" / "figure.jpg").write_bytes(JPEG)
+    commit = Repository(corpus).commit("add", scope="notes", summary="1 added")
+    assert commit is not None
+    return commit
+
+
+def test_a_commit_holds_a_path_whatever_the_file_is(corpus: Path) -> None:
+    """Asked without reading the file, because the answer is wanted for an
+    image as much as for a document - and is what a rollback acts on."""
+    commit = a_committed_image(corpus)
+    repository = Repository(corpus)
+
+    assert repository.holds(commit, "notes/A Paper/figure.jpg")
+    assert not repository.holds(commit, "notes/A Paper/another.jpg")
+    assert not repository.holds(commit, "notes/A Paper")
+
+
+def test_showing_a_file_that_is_not_text_answers_none(corpus: Path) -> None:
+    """`show` is for reading a document. An image has no text to give, and
+    raising `UnicodeDecodeError` out of a git call took down whatever asked."""
+    commit = a_committed_image(corpus)
+
+    assert Repository(corpus).show(commit, "notes/A Paper/figure.jpg") is None

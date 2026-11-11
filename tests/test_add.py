@@ -188,6 +188,124 @@ def test_kept_originals_become_assets_of_the_document(
 
 
 # ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+
+# A JPEG's first bytes: not valid UTF-8, so nothing that reads the stored
+# file as text can pass by accident.
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+FIGURE = "0123456789abcdef.jpg"
+
+
+class FigureConverter(CountingConverter):
+    """A converter whose documents each link one image, except those named
+    in `plain`, which link none - a paper with no figure."""
+
+    def __init__(self, plain: frozenset[str] = frozenset()) -> None:
+        super().__init__()
+        self.plain = plain
+
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+        self.runs.append(tuple(paths))
+        figured = [path for path in paths if path.name not in self.plain]
+        return ConversionBatch(
+            markdown={
+                path: f"# {path.stem}\n\n![]({FIGURE})  \nFigure 1. A caption.\n"
+                if path in figured
+                else f"# {path.stem}\n\nNo figure.\n"
+                for path in paths
+            },
+            images={path: {FIGURE: JPEG} for path in figured},
+        )
+
+
+def test_a_converted_document_keeps_the_images_it_links(
+    notes: Collection, tmp_path: Path
+) -> None:
+    """What #134 found missing: the stored markdown linked five images and
+    the corpus held the `.md` file alone."""
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    add_notes(notes, [str(path)], converter=FigureConverter())
+
+    document = notes.contents().documents[0]
+    assert document.wrapper_dir is not None
+    assert document.md_path == document.wrapper_dir / "content.md"
+    assert (document.wrapper_dir / FIGURE).read_bytes() == JPEG
+    assert f"![]({FIGURE})" in document.body
+
+
+def test_the_images_are_the_only_assets_when_the_original_is_not_kept(
+    notes: Collection, tmp_path: Path
+) -> None:
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    add_notes(notes, [str(path)], converter=FigureConverter())
+
+    document = notes.contents().documents[0]
+    assert document.wrapper_dir is not None
+    assert sorted(child.name for child in document.wrapper_dir.iterdir()) == [
+        FIGURE,
+        "content.md",
+    ]
+    assert document.frontmatter.source.original is None
+
+
+def test_a_converted_document_that_links_no_image_stays_a_single_file(
+    notes: Collection, tmp_path: Path
+) -> None:
+    """Brian, 2026-11-10 (#644): a directory only when there is something
+    to put in it, so a paper without figures is what every document was."""
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    add_notes(
+        notes, [str(path)], converter=FigureConverter(plain=frozenset({"paper.pdf"}))
+    )
+
+    document = notes.contents().documents[0]
+    assert document.wrapper_dir is None
+    assert document.md_path.name == "paper.md"
+
+
+def test_each_document_of_a_batch_is_shaped_by_its_own_images(
+    notes: Collection, tmp_path: Path
+) -> None:
+    figured = a_pdf(tmp_path / "figured.pdf", b"%PDF figured\n")
+    plain = a_pdf(tmp_path / "plain.pdf", b"%PDF plain\n")
+
+    add_notes(
+        notes,
+        [str(figured), str(plain)],
+        converter=FigureConverter(plain=frozenset({"plain.pdf"})),
+    )
+
+    shapes = {
+        document.frontmatter.title: document.wrapper_dir is not None
+        for document in notes.contents().documents
+    }
+    assert shapes == {"figured": True, "plain": False}
+
+
+def test_a_kept_original_sits_beside_the_images(
+    notes: Collection, tmp_path: Path
+) -> None:
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    add_notes(
+        notes,
+        [str(path)],
+        AddOptions(keep_original=True),
+        converter=FigureConverter(),
+    )
+
+    document = notes.contents().documents[0]
+    assert document.wrapper_dir is not None
+    assert (document.wrapper_dir / FIGURE).read_bytes() == JPEG
+    assert (document.wrapper_dir / "paper.pdf").read_bytes() == path.read_bytes()
+    assert document.frontmatter.source.original == "paper.pdf"
+
+
+# ---------------------------------------------------------------------------
 # Duplicates
 # ---------------------------------------------------------------------------
 

@@ -27,7 +27,10 @@ from platforms import NO_POSIX_SHELL
 
 # A fake MinerU. It parses the flags the converter passes, writes one markdown
 # file per staged input in the nested layout the real tool produces, and can
-# be told to fail one document or all of them.
+# be told to fail one document or all of them. With `MINERU_FAKE_IMAGES` set
+# it also writes what the real tool writes for a paper with a figure: an
+# `images/` directory holding one file the markdown links and one it does
+# not, the first bytes of each those of a JPEG, which are not valid UTF-8.
 FAKE_MINERU = r"""#!/bin/sh
 set -e
 while [ $# -gt 0 ]; do
@@ -39,6 +42,7 @@ while [ $# -gt 0 ]; do
         *) shift ;;
     esac
 done
+figure=38a2f261a5eb2daa06e47cb49e72b197349af48cfa480a96e9b2356bffda6610.jpg
 echo "backend=$backend" >> "$MINERU_FAKE_LOG"
 echo "device=${MINERU_DEVICE_MODE-unset} source=${MINERU_MODEL_SOURCE-unset}" \
     >> "$MINERU_FAKE_LOG"
@@ -54,6 +58,15 @@ for staged in "$input_dir"/*; do
     printf '[{"type":"page_aside_text","page_idx":0,' > "$tmp_json"
     printf '"text":"arXiv:1101.1764v2 [astro-ph.IM]"}]' >> "$tmp_json"
     cp "$tmp_json" "$output_dir/$stem/auto/${stem}_content_list.json"
+    if [ -n "${MINERU_FAKE_IMAGES-}" ]; then
+        mkdir -p "$output_dir/$stem/auto/images"
+        printf '\377\330\377\340 figure of %s' "$stem" \
+            > "$output_dir/$stem/auto/images/$figure"
+        printf '\377\330\377\340 a crop nothing links' \
+            > "$output_dir/$stem/auto/images/crop.jpg"
+        printf '\n![](images/%s)  \nFigure 1. A caption.\n' "$figure" \
+            >> "$output_dir/$stem/auto/$stem.md"
+    fi
 done
 exit "${MINERU_FAKE_EXIT-0}"
 """

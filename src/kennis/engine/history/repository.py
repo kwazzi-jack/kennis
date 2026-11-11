@@ -263,15 +263,34 @@ class Repository:
         return changes
 
     def show(self, commit: str, path: str) -> str | None:
-        """The contents of `path` as of `commit`, or None if it was not there.
+        """The text of `path` as of `commit`, or None if it was not there or
+        is not text.
 
         The only way to read a document that has been deleted: the file is
         gone from the working tree, and knowing what was lost is the whole
         point of noticing.
+
+        **None for a file that is not UTF-8**, an image beside a document or
+        a `.md` saved in another encoding: `git()` decodes strictly, for the
+        sake of the paths git prints (#388), and this is content. So None
+        does not say the path was absent - `holds` says that.
         """
         self._require_repository()
-        result = git(["show", f"{commit}:{path}"], cwd=self.root)
+        try:
+            result = git(["show", f"{commit}:{path}"], cwd=self.root)
+        except UnicodeDecodeError:
+            return None
         return result.stdout if result.ok else None
+
+    def holds(self, commit: str, path: str) -> bool:
+        """Whether `commit` has a file at `path`, read or unreadable.
+
+        Asked of git's object store without the content, so it is as true of
+        an image as of a document. A directory is not a file.
+        """
+        self._require_repository()
+        result = git(["cat-file", "-t", f"{commit}:{path}"], cwd=self.root)
+        return result.ok and result.stdout.strip() == "blob"
 
     def restore(self, path: str, *, commit: str = "HEAD") -> bool:
         """Put `path` back as it was at `commit`.

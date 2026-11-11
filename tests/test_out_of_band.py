@@ -233,6 +233,65 @@ def test_a_wrapped_document_is_restored_with_its_assets(corpus: Path):
     assert (directory / "figure.png").read_bytes() == b"png"
 
 
+# A JPEG's first bytes, which are not valid UTF-8: the `b"png"` above is
+# text to anything that reads it, so it cannot show a read that should not
+# have been one.
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+
+
+def a_paper_with_a_figure(corpus: Path) -> Path:
+    directory = corpus / "notes" / "A Paper"
+    directory.mkdir(parents=True)
+    (directory / "content.md").write_text(
+        "---\nid: aaaaaaaaaa\ntitle: A Paper\nowner: user\n---\n\n# A Paper\n",
+        encoding="utf-8",
+    )
+    (directory / "figure.jpg").write_bytes(JPEG)
+    recorded(corpus)
+    return directory
+
+
+def test_an_image_deleted_by_hand_is_reported_and_put_back(corpus: Path) -> None:
+    """Every write looks for hand deletions first. Looking read the deleted
+    file's last committed content as text to find its owner, which an image
+    is not, so one deleted figure stopped every later write."""
+    directory = a_paper_with_a_figure(corpus)
+    (directory / "figure.jpg").unlink()
+
+    (change,) = changes(corpus)
+    restored = restore_deletions(Repository(corpus), [change])
+
+    assert (change.path, change.kind) == ("notes/A Paper/figure.jpg", "deleted")
+    assert (change.owner, change.document_id) == (None, None)
+    assert [item.restored for item in restored] == [True]
+    assert (directory / "figure.jpg").read_bytes() == JPEG
+
+
+def test_an_image_replaced_by_hand_is_reported_and_left(corpus: Path) -> None:
+    directory = a_paper_with_a_figure(corpus)
+    replaced = JPEG + b"\xfe\xfe a different picture"
+    (directory / "figure.jpg").write_bytes(replaced)
+
+    (change,) = changes(corpus)
+
+    assert (change.path, change.kind) == ("notes/A Paper/figure.jpg", "edited")
+    assert (change.owner, change.document_id) == (None, None)
+    assert (directory / "figure.jpg").read_bytes() == replaced
+
+
+def test_a_document_that_is_not_text_is_still_reported(corpus: Path) -> None:
+    """A `.md` file whose bytes are not UTF-8 - saved by an editor in
+    another encoding - is a document kennis cannot read, reported with its
+    owner unknown like one whose YAML will not parse."""
+    path = a_document(corpus, "a.md")
+    recorded(corpus)
+    path.write_bytes(b"---\nid: aaaaaaaaaa\n---\n\ncaf\xe9\n")
+
+    (change,) = changes(corpus)
+
+    assert (change.kind, change.owner, change.document_id) == ("edited", None, None)
+
+
 # ---------------------------------------------------------------------------
 # Created
 # ---------------------------------------------------------------------------

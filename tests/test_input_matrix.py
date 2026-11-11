@@ -134,6 +134,29 @@ def test_a_url_serving_a_pdf_reaches_the_pdf_converter(
     assert held.frontmatter.source.origin == "url:https://example.com/paper.pdf"
 
 
+def test_a_fetched_pdf_keeps_the_images_it_links(
+    notes: Collection, fake_mineru: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PDF from a URL is converted on its own rather than in the batch the
+    local files go through, so it is a second route the images must survive
+    (#134)."""
+    monkeypatch.setenv("MINERU_FAKE_IMAGES", "1")
+
+    add_notes(
+        notes,
+        ["https://example.com/paper.pdf"],
+        client=serving(PDF_BYTES, "application/pdf"),
+    )
+
+    (document,) = notes.contents().documents
+    assert document.wrapper_dir is not None
+    (image,) = [
+        child for child in document.wrapper_dir.iterdir() if child.suffix == ".jpg"
+    ]
+    assert image.read_bytes().startswith(b"\xff\xd8\xff\xe0 figure of ")
+    assert f"![]({image.name})" in document.body
+
+
 def test_a_server_that_will_not_commit_to_a_type_is_sniffed(
     notes: Collection, fake_mineru: Path
 ):

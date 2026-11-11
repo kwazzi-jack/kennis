@@ -9,6 +9,7 @@ name under `.git/kennis-conversions/`, which no commit stages.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Sequence
@@ -121,6 +122,67 @@ def test_a_kept_conversion_costs_nothing_again(tmp_path: Path):
     kept.convert([source])
 
     assert kept.convert([source]).cost_cents is None
+
+
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+
+
+class FigureConverter(CountingConverter):
+    """One whose every document links one image."""
+
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+        self.converted.extend(paths)
+        return ConversionBatch(
+            markdown={
+                path: "# A paper\n\n![](0123456789abcdef.jpg)\n" for path in paths
+            },
+            images={path: {"0123456789abcdef.jpg": JPEG} for path in paths},
+        )
+
+
+def test_a_kept_conversion_gives_its_images_back(tmp_path: Path) -> None:
+    """The markdown without them is a document whose figure links point at
+    nothing, which is #134 again for anyone whose first add failed. The
+    bytes are a JPEG's, not text: what is kept is a JSON document."""
+    inner = FigureConverter()
+    source = a_pdf(tmp_path / "paper.pdf", b"%PDF one\n")
+    KeptConversions(inner, tmp_path / "kept").convert([source])
+
+    batch = KeptConversions(inner, tmp_path / "kept").convert([source])
+
+    assert inner.converted == [source], "the second run was not answered from kept"
+    assert batch.images == {source: {"0123456789abcdef.jpg": JPEG}}
+
+
+def test_a_document_with_no_image_is_kept_with_none(tmp_path: Path) -> None:
+    inner = CountingConverter()
+    source = a_pdf(tmp_path / "paper.pdf", b"%PDF one\n")
+    KeptConversions(inner, tmp_path / "kept").convert([source])
+
+    batch = KeptConversions(inner, tmp_path / "kept").convert([source])
+
+    assert inner.converted == [source]
+    assert batch.images == {}
+
+
+def test_a_conversion_kept_without_its_images_is_converted_again(
+    tmp_path: Path,
+) -> None:
+    """An entry written before images were kept says nothing about them, so
+    it cannot say there were none."""
+    source = a_pdf(tmp_path / "paper.pdf", b"%PDF one\n")
+    folder = tmp_path / "kept"
+    KeptConversions(CountingConverter(), folder).convert([source])
+    (entry,) = folder.iterdir()
+    stored = json.loads(entry.read_text(encoding="utf-8"))
+    del stored["images"]
+    entry.write_text(json.dumps(stored), encoding="utf-8")
+    inner = FigureConverter()
+
+    batch = KeptConversions(inner, folder).convert([source])
+
+    assert inner.converted == [source]
+    assert batch.images == {source: {"0123456789abcdef.jpg": JPEG}}
 
 
 def test_a_conversion_older_than_a_day_is_forgotten(tmp_path: Path):

@@ -11,10 +11,12 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Final
 
 import yaml
 
+from kennis.engine.corpus.layout import WRAPPED_DOCUMENT_FILENAME
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import DocumentNotFound, HistoryUnwritable, InputError
 from kennis.engine.events import Outcome
@@ -190,12 +192,32 @@ def restore_document(
             f"no document with identifier '{document_id}' existed at {commit[:12]}",
             resolution="kennis corpus history",
         )
-    if not repository.restore(path, commit=commit):
-        raise DocumentNotFound(
-            f"'{path}' could not be restored from {commit[:12]}",
-            resolution="kennis corpus history",
-        )
+    for held in document_files_at(repository, commit, path):
+        if not repository.restore(held, commit=commit):
+            raise DocumentNotFound(
+                f"'{held}' could not be restored from {commit[:12]}",
+                resolution="kennis corpus history",
+            )
     return RestoredDocument(document_id=document_id, path=path, commit=commit)
+
+
+def document_files_at(repository: Repository, commit: str, path: str) -> list[str]:
+    """Every file of the document whose markdown was at `path` as of
+    `commit`: that file alone, or for a document with assets everything its
+    directory held.
+
+    A restore that put back `content.md` and nothing else returned a paper
+    whose figure links pointed at nothing, which is what the paper was
+    before its images were kept at all (#134). Read from the commit's tree,
+    because the directory is not on disk to be listed.
+    """
+    if PurePosixPath(path).name != WRAPPED_DOCUMENT_FILENAME:
+        return [path]
+    directory = PurePosixPath(path).parent.as_posix()
+    return git(
+        ["ls-tree", "-r", "--name-only", "-z", commit, "--", f"{directory}/"],
+        cwd=repository.root,
+    ).records()
 
 
 def document_path_at(

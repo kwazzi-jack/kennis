@@ -11,6 +11,7 @@ conversion was not, on the heaviest dependency kennis has (concern #109).
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import stat
@@ -164,6 +165,88 @@ def test_page_one_text_is_carried_out_of_the_temporary_directory(
     batch = MineruConverter().convert([path])
 
     assert "arXiv:1101.1764v2" in batch.front_page[path]
+
+
+# ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+
+
+def figure_of(staged_stem: str) -> bytes:
+    """What the fake MinerU writes as the one figure of the document it
+    staged under `staged_stem`: a JPEG's first bytes, then words."""
+    return b"\xff\xd8\xff\xe0 figure of " + staged_stem.encode()
+
+
+def kept_name(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()[:16] + ".jpg"
+
+
+def test_the_image_a_document_links_is_carried_out_with_it(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The images are in the run's temporary directory and nowhere else:
+    what is not carried out of it is gone when `convert` returns (#134)."""
+    monkeypatch.setenv("MINERU_FAKE_IMAGES", "1")
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    batch = MineruConverter().convert([path])
+
+    figure = figure_of("0000-paper")
+    assert batch.images[path] == {kept_name(figure): figure}
+
+
+def test_the_markdown_links_the_image_by_the_name_it_is_kept_under(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After everything `convert` does to the markdown - the link has to
+    survive normalisation and the ligature repair as it was rewritten."""
+    monkeypatch.setenv("MINERU_FAKE_IMAGES", "1")
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    batch = MineruConverter().convert([path])
+
+    (name,) = batch.images[path]
+    assert f"![]({name})  \nFigure 1. A caption." in batch.markdown[path]
+    assert "images/" not in batch.markdown[path]
+
+
+def test_an_image_the_markdown_does_not_link_is_left_behind(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MINERU_FAKE_IMAGES", "1")
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    batch = MineruConverter().convert([path])
+
+    assert all(b"a crop" not in content for content in batch.images[path].values())
+    assert len(batch.images[path]) == 1
+
+
+def test_each_document_of_a_batch_gets_its_own_images(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MinerU gives the figure the same file name in both documents'
+    directories here, so an image looked up by name alone would hand one
+    document the other's."""
+    monkeypatch.setenv("MINERU_FAKE_IMAGES", "1")
+    first = a_pdf(tmp_path / "first.pdf")
+    second = a_pdf(tmp_path / "second.pdf")
+
+    batch = MineruConverter().convert([first, second])
+
+    assert list(batch.images[first].values()) == [figure_of("0000-first")]
+    assert list(batch.images[second].values()) == [figure_of("0001-second")]
+
+
+def test_a_document_that_links_no_image_has_none(
+    fake_mineru: Path, tmp_path: Path
+) -> None:
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    batch = MineruConverter().convert([path])
+
+    assert not batch.images.get(path)
 
 
 def test_a_converter_failure_fails_only_its_own_document(

@@ -479,6 +479,40 @@ def test_a_local_paper_is_identified_from_its_own_first_page(
     assert only(papers).bib.arxiv_id == "2409.19750"
 
 
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+FIGURE = "0123456789abcdef.jpg"
+
+
+class FigurePaperConverter(FrontPageConverter):
+    """A front-page converter whose every paper links one image."""
+
+    def convert(self, paths: Sequence[Path]) -> ConversionBatch:
+        self.runs.append(tuple(paths))
+        return ConversionBatch(
+            markdown={
+                path: f"# {path.stem}\n\n![]({FIGURE})  \nFigure 1. A caption.\n"
+                for path in paths
+            },
+            front_page={path: self.front_pages.get(path.name, "") for path in paths},
+            images={path: {FIGURE: JPEG} for path in paths},
+        )
+
+
+def test_a_paper_keeps_the_images_it_links(papers: Collection, tmp_path: Path) -> None:
+    """The literature writer is a second one beside the notes writer, and a
+    paper is what has figures (#134)."""
+    path = a_pdf(tmp_path / "paper.pdf")
+    converter = FigurePaperConverter({"paper.pdf": "arXiv:2409.19750"})
+
+    add_literature(papers, [str(path)], converter=converter, arxiv=arxiv_client())
+
+    (document,) = papers.contents().documents
+    assert document.wrapper_dir is not None
+    assert (document.wrapper_dir / FIGURE).read_bytes() == JPEG
+    assert f"![]({FIGURE})" in document.body
+    assert only(papers).id_from == "arxiv:2409.19750"
+
+
 def test_precedence_decides_between_kinds_and_that_is_not_a_guess(
     papers: Collection, tmp_path: Path
 ):

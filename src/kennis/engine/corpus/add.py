@@ -568,16 +568,12 @@ def write_note(
         ),
     )
 
-    assets: dict[str, bytes] | None = None
-    if converted.original_bytes is not None and converted.original_name is not None:
-        assets = {converted.original_name: converted.original_bytes}
-
     target_dir = group_directory(collection.path, group)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
         body=converted.markdown,
-        assets=assets,
+        assets=_assets_of(converted),
     )
     if converted.sha256:
         record.checksums[converted.sha256] = document_id
@@ -673,6 +669,21 @@ class _Unresolved(KennisError):
     default_resolution = "kennis corpus add --help"
 
 
+def _assets_of(converted: Converted) -> dict[str, bytes] | None:
+    """What is written beside a document's markdown: the images it links,
+    and its original when that was kept. None when there is neither, which
+    is what keeps the document a single file.
+
+    The two cannot share a name. An image is sixteen hexadecimal characters
+    and a raster suffix (`images.kept_images`), and only a converter
+    produces one, whose original is a `.pdf`, `.docx`, `.pptx` or `.xlsx`.
+    """
+    assets = dict(converted.images)
+    if converted.original_bytes is not None and converted.original_name is not None:
+        assets[converted.original_name] = converted.original_bytes
+    return assets or None
+
+
 def duplicate_of(record: Uniqueness, converted: Converted) -> str | None:
     if converted.sha256 is None:
         return None
@@ -744,6 +755,7 @@ def _plan_binaries(
                 converter=converter,
                 keep_original=options.keep_original,
                 prepared_markdown=markdown,
+                prepared_images=batch.images.get(path),
             )
             plan.front_page[path] = batch.front_page.get(path, "")
         if batch.cost_cents is not None:
@@ -1380,13 +1392,13 @@ def _converted_for(
             None,
         )
     prepared = plan.converted.get(paper.path)
+    if prepared is not None:
+        # As it was prepared, whole. Built again from its markdown alone,
+        # which is what this did, it lost the images that markdown links.
+        return prepared, None
     try:
         return (
-            convert_local_file(
-                paper.path,
-                keep_original=options.keep_original,
-                prepared_markdown=prepared.markdown if prepared is not None else None,
-            ),
+            convert_local_file(paper.path, keep_original=options.keep_original),
             None,
         )
     except KennisError as error:
@@ -1613,16 +1625,12 @@ def _write_paper(
         ),
     )
 
-    assets: dict[str, bytes] | None = None
-    if converted.original_bytes is not None and converted.original_name is not None:
-        assets = {converted.original_name: converted.original_bytes}
-
     target_dir = group_directory(collection.path, group)
     document = write_document(
         target_dir / filename,
         frontmatter=frontmatter,
         body=converted.markdown,
-        assets=assets,
+        assets=_assets_of(converted),
     )
     if converted.sha256:
         record.checksums[converted.sha256] = document_id

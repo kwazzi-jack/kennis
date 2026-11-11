@@ -23,7 +23,7 @@ import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 from urllib.parse import urlparse
@@ -137,6 +137,11 @@ class Converted:
     # *called* and what it is *about*. A note a person wrote and named wants
     # the first; a converted paper wants the second. Concern #189.
     source_name: str | None = None
+    # The images `markdown` links, by the name it links them under. Only a
+    # converter produces any (`ConversionBatch.images`), so this is empty
+    # for everything read as text. Written beside the document, which is
+    # then a directory; with none, the document stays a single file (#134).
+    images: Mapping[str, bytes] = field(default_factory=dict)
 
 
 def sha256_of(data: bytes) -> str:
@@ -316,13 +321,14 @@ def convert_local_file(
     converter: Converter | None = None,
     keep_original: bool = False,
     prepared_markdown: str | None = None,
+    prepared_images: Mapping[str, bytes] | None = None,
 ) -> Converted:
     """Convert one local file of any supported format into markdown.
 
     `prepared_markdown` is output an earlier batch already produced for this
-    path. Supplying it is what keeps a batched conversion from being repeated
-    a document at a time; it is ignored for the formats the converter never
-    sees.
+    path, and `prepared_images` the images that markdown links. Supplying
+    them is what keeps a batched conversion from being repeated a document
+    at a time; they are ignored for the formats the converter never sees.
     """
     source_format = detect_format(path)
     try:
@@ -331,10 +337,12 @@ def convert_local_file(
         raise SourceUnreadable(f"could not read '{path}': {error}") from error
 
     via: ConversionVia
+    images: Mapping[str, bytes] = {}
     if source_format in BINARY_FORMATS:
-        markdown = prepared_markdown
-        if markdown is None:
-            markdown = _convert_binary(path, converter or default_converter())
+        if prepared_markdown is None:
+            markdown, images = _convert_binary(path, converter or default_converter())
+        else:
+            markdown, images = prepared_markdown, prepared_images or {}
         via = "mineru"
     elif source_format == "html":
         markdown = convert_html(read_text_file(path))
@@ -360,11 +368,15 @@ def convert_local_file(
         original_name=path.name if keep_original else None,
         suggested_title=title_from_markdown(markdown, path.stem),
         source_name=path.stem,
+        images=images,
     )
 
 
-def _convert_binary(path: Path, converter: Converter) -> str:
-    """One binary document through the converter, on its own.
+def _convert_binary(
+    path: Path, converter: Converter
+) -> tuple[str, Mapping[str, bytes]]:
+    """One binary document through the converter, on its own: its markdown
+    and the images that links.
 
     The batched path is `prepared_markdown`; this is the single-document
     fallback, and it pays the converter's whole startup cost for one file.
@@ -374,7 +386,7 @@ def _convert_binary(path: Path, converter: Converter) -> str:
     markdown = batch.markdown.get(path)
     if markdown is None:
         raise ConversionFailed(_nothing_produced(path, batch.failure_reason))
-    return markdown
+    return markdown, batch.images.get(path, {})
 
 
 def _nothing_produced(path: Path, reason: str | None) -> str:
