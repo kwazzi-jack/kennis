@@ -7,8 +7,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import (
+    FileResponse,
     HTMLResponse,
 )
 
@@ -23,6 +24,7 @@ from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.repository import Repository
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
+from kennis.gui.figures import FIGURE_ROUTE, held_figure, media_type_of
 from kennis.gui.pages import (
     ShownDocument,
     document_link,
@@ -186,6 +188,27 @@ def _marked_in_bundle(
         return None, False
     start, end = found
     return MarkedRange(start=start, end=end, anchor=f"chunk-{index}"), False
+
+
+@router.get(FIGURE_ROUTE + "/{path:path}")
+def serve_figure(path: str) -> FileResponse:
+    """One image a document's markdown links, as its file (#642).
+
+    `no-cache` asks the browser to check before reusing its copy, which a
+    `FileResponse` answers from the file's size and time: a kept image is
+    named by its content, but one a person put beside a document is not.
+    """
+    figure = held_figure(existing_corpus().corpus_root, path)
+    if figure is None:
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        figure,
+        media_type=media_type_of(figure),
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-cache",
+        },
+    )
 
 
 @router.get("/document/{collection}/{document_id}")

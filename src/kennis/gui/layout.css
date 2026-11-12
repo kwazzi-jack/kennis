@@ -1619,6 +1619,21 @@ article { max-width: var(--text); }
 article h1 { margin: 0 0 0.5rem; }
 article p { margin: 0 0 1rem; }
 article img { max-width: 100%; height: auto; }
+/* A figure the corpus holds (#642), on its own line whatever follows it:
+   a converter writes the caption straight after the image. */
+img.figure {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem auto 0.5rem;
+  /* Seen only through transparent pixels (#658). */
+  background: var(--figure-ground);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+/* The line break a converter writes between an image and its caption:
+   after a block it would be an empty line. */
+img.figure + br { display: none; }
 
 /* Who wrote it and when, under the title; the rest of what the
    frontmatter says is in the inspector. */

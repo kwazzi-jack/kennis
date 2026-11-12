@@ -333,6 +333,11 @@ def css_variables(
     # The surface of the pane and the strip: the muted grey at a low
     # alpha, so it works on both grounds without a tenth colour.
     lines.append(f"  --raised: {table['bright_black']}14;")
+    # What shows through a figure's transparent pixels: the white page its
+    # author drew it for, on either theme. Dark axes on the dark ground
+    # were close to invisible (#658). An opaque image covers it, so only a
+    # transparent one changes (Brian, 2026-11-12).
+    lines.append(f"  --figure-ground: {FIGURE_GROUND};")
     # Every scale's steps for this theme, and the bars pointed at the
     # default. `scale_css` repoints them at the reader's choice; `var()`
     # resolves when the value is computed, after the theme block in force
@@ -546,6 +551,8 @@ def scale_css() -> str:
             )
     return "\n".join(rules)
 
+
+FIGURE_GROUND: Final = "#FFFFFF"
 
 # Layout only, in its own file so it is edited as CSS. No colour appears
 # there: every visible colour comes through a `--role-`, `--ground`,

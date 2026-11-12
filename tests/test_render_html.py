@@ -19,11 +19,14 @@ Measured on the three papers actually held, not assumed:
 
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
+
 from kennis.engine.rag.chunking import ChunkParameters, chunk_document
 from kennis.engine.rag.models import Document as RagDocument
 from kennis.render.html import (
     IMAGE_BLOCKED,
     IMAGE_MISSING,
+    FigureAddress,
     MarkedRange,
     headings_of,
     passage_html,
@@ -668,3 +671,121 @@ def test_a_title_heading_is_matched_regardless_of_case_as_the_head_is():
     parts = passage_html("# rivers\n\nText.\n", terms=[], fits=1000, title="Rivers")
 
     assert "<h1" not in parts.body
+
+
+# ---------------------------------------------------------------------------
+# A figure the corpus holds (#642)
+# ---------------------------------------------------------------------------
+
+
+def held_at(*names: str) -> FigureAddress:
+    """An address for each of `names`, and none for any other."""
+
+    def address(name: str) -> str | None:
+        return f"/figure/notes/Paper/{name}" if name in names else None
+
+    return address
+
+
+def test_a_figure_the_corpus_holds_is_drawn():
+    rendered = to_html(
+        "![Residuals](0123456789abcdef.jpg)",
+        figure_address=held_at("0123456789abcdef.jpg"),
+    )
+    image = BeautifulSoup(rendered, "html.parser").select_one("img")
+
+    assert image is not None
+    assert image["src"] == "/figure/notes/Paper/0123456789abcdef.jpg"
+    assert image["alt"] == "Residuals"
+    assert IMAGE_MISSING not in rendered
+
+
+def test_a_reference_with_no_file_keeps_the_placeholder():
+    """The other side, so the test above cannot pass by drawing every
+    reference: a document converted before images were kept has none."""
+    rendered = to_html(
+        "![](images/abc123.jpg) and ![](gone.jpg)",
+        figure_address=held_at("0123456789abcdef.jpg"),
+    )
+
+    assert "<img" not in rendered
+    assert rendered.count(IMAGE_MISSING) == 2
+
+
+def test_a_remote_figure_is_never_asked_for_as_a_held_one():
+    """A remote reference stays the reader's decision whatever is held."""
+    asked: list[str] = []
+
+    def address(name: str) -> str | None:
+        asked.append(name)
+        return "/figure/notes/Paper/Fig1.png"
+
+    rendered = to_html("![](https://arxiv.org/html/1/Fig1.png)", figure_address=address)
+
+    assert asked == []
+    assert "<img" not in rendered
+    assert IMAGE_BLOCKED in rendered
+
+
+def test_a_held_figure_is_asked_for_by_the_name_of_its_file():
+    """A reference is an address, so a space in a file's name is written
+    `%20`; the file is named with the space."""
+    asked: list[str] = []
+
+    def address(name: str) -> str | None:
+        asked.append(name)
+        return None
+
+    to_html("![](my%20diagram.png)", figure_address=address)
+
+    assert asked == ["my diagram.png"]
+
+
+def test_a_held_figure_s_address_and_words_are_escaped():
+    rendered = to_html(
+        '![a "quoted" <caption>](x.jpg)',
+        figure_address=lambda name: '/figure/a"b/<x>.jpg',
+    )
+    image = BeautifulSoup(rendered, "html.parser").select_one("img")
+
+    assert image is not None
+    assert image["src"] == '/figure/a"b/<x>.jpg'
+    assert image["alt"] == 'a "quoted" <caption>'
+    assert "<x>" not in rendered
+    assert "<caption>" not in rendered
+
+
+def test_a_passage_draws_a_held_figure_and_does_not_count_it_as_fitting():
+    """A figure is tall as a table is: six lines would show its top edge."""
+    markdown = "Residual maps.\n\n![](0123456789abcdef.jpg)  \nFigure 1."
+    held = passage_html(
+        markdown, terms=[], fits=360, figure_address=held_at("0123456789abcdef.jpg")
+    )
+    without = passage_html(markdown, terms=[], fits=360, figure_address=held_at())
+    unasked = passage_html(markdown, terms=[], fits=360)
+
+    assert 'src="/figure/notes/Paper/0123456789abcdef.jpg"' in held.lead + held.body
+    assert not held.fits
+    assert "<img" not in without.lead + without.body
+    assert without.fits
+    assert unasked == without
+
+
+def test_a_remote_figure_in_a_passage_is_not_asked_for_and_is_not_tall():
+    """Blocked, it is one line of words, whatever an address would say."""
+    asked: list[str] = []
+
+    def address(name: str) -> str | None:
+        asked.append(name)
+        return "/figure/notes/Paper/Fig1.png"
+
+    parts = passage_html(
+        "Text.\n\n![](https://arxiv.org/html/1/Fig1.png)",
+        terms=[],
+        fits=360,
+        figure_address=address,
+    )
+
+    assert asked == []
+    assert parts.fits
+    assert "<img" not in parts.lead + parts.body

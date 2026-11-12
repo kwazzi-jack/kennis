@@ -31,14 +31,20 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
 # Raster formats only. An SVG is a document that can carry script, and the
 # window will one day serve these files to a browser.
-IMAGE_SUFFIXES: Final[frozenset[str]] = frozenset(
-    {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-)
+IMAGE_MEDIA_TYPES: Final[Mapping[str, str]] = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+IMAGE_SUFFIXES: Final[frozenset[str]] = frozenset(IMAGE_MEDIA_TYPES)
 
 _NAME_LENGTH: Final = 16
 
@@ -94,4 +100,4 @@ def _linked_image(target: str, root: Path) -> bytes | None:
         return None
 
 
-__all__ = ["IMAGE_SUFFIXES", "kept_images"]
+__all__ = ["IMAGE_MEDIA_TYPES", "IMAGE_SUFFIXES", "kept_images"]

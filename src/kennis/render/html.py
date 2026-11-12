@@ -24,11 +24,13 @@ on, `mdit_py_plugins` renders that token as a `<div>`, which inside a
 kennis renders all four maths tokens itself, and the inline forms are
 spans.
 
-**A local figure reference is dangling.** Converted PDFs reference
-`images/<sha>.jpg` and the conversion keeps no image files - concern
-#134. An `<img>` pointing at nothing renders as a broken icon, which
-says "this interface is faulty" rather than "this document lost its
-figures". A placeholder says the true thing.
+**A local figure is drawn only where the caller says its file is
+held.** A conversion keeps the images its markdown links (#134), but a
+document converted before that refers to `images/<sha>.jpg` and has no
+such file. An `<img>` pointing at nothing renders as a broken icon,
+which says "this interface is faulty" rather than "this document lost
+its figures". So the caller supplies `FigureAddress`, and a reference
+it has no address for is a placeholder saying the true thing.
 
 **A remote figure is an outbound request the user did not make.**
 Rendering an arXiv paper would tell arxiv.org which paper is being
@@ -46,7 +48,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 from typing import Final
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererProtocol
@@ -71,6 +73,11 @@ _REMOTE_SCHEMES: Final = frozenset({"http", "https"})
 # point of a rule here is that it is *ours* - the two image decisions
 # live inside one - and an untyped callback is where a wrong argument
 # order survives review.
+# Where the window serves a figure the corpus holds, given the name of its
+# file as the document's markdown refers to it, or None when no such file is
+# held. Supplied by the caller: `render/` reads no disk and knows no route.
+type FigureAddress = Callable[[str], str | None]
+
 type RenderRule = Callable[
     [RendererProtocol, Sequence[Token], int, OptionsDict, EnvType], str
 ]
@@ -113,8 +120,12 @@ def to_html(
     terms: Sequence[str] = (),
     heading_anchors: bool = False,
     margins: Sequence[MarginNote] = (),
+    figure_address: FigureAddress | None = None,
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
+
+    `figure_address` says where a local figure is served; without it, or
+    where it answers None, the figure is a placeholder.
 
     `load_remote_images` is off by default and is a per-request
     decision rather than a setting, because the reader consenting to
@@ -147,7 +158,9 @@ def to_html(
     in, after the title is dropped so a note on the first chunk does not
     keep the repeated title in place.
     """
-    parser = _parser(load_remote_images=load_remote_images)
+    parser = _parser(
+        load_remote_images=load_remote_images, figure_address=figure_address
+    )
     pattern = query_pattern(terms)
     if (
         marked is None
@@ -246,6 +259,7 @@ def passage_html(
     fits: int,
     section: str | None = None,
     title: str | None = None,
+    figure_address: FigureAddress | None = None,
 ) -> PassageHtml:
     """`markdown` rendered as `to_html` would, in two parts (#454).
 
@@ -260,8 +274,11 @@ def passage_html(
     as `hit_title_parts` compares them. Only the first block and only the
     same words: any other heading is text the reader has not been shown
     elsewhere.
+
+    A figure drawn by `figure_address` is tall as a table is, so a passage
+    holding one does not fit.
     """
-    parser = _parser(load_remote_images=False)
+    parser = _parser(load_remote_images=False, figure_address=figure_address)
     tokens = parser.parse(markdown)
     if len(tokens) >= 3 and tokens[0].type == "heading_open":
         words = tokens[1].content.strip()
@@ -287,7 +304,9 @@ def passage_html(
     return PassageHtml(
         lead=str(parser.renderer.render(tokens[:first], parser.options, {})),
         body=str(parser.renderer.render(tokens[first:], parser.options, {})),
-        fits=length <= fits and not any(token.type in _TALL for token in tokens),
+        fits=length <= fits
+        and not any(token.type in _TALL for token in tokens)
+        and not _draws_a_figure(tokens, figure_address),
         heading=(
             ""
             if not section
@@ -546,7 +565,36 @@ def _line_offsets(text: str) -> list[int]:
     return offsets
 
 
-def _parser(*, load_remote_images: bool) -> MarkdownIt:
+def _draws_a_figure(
+    tokens: Sequence[Token], figure_address: FigureAddress | None
+) -> bool:
+    """Whether any of `tokens` holds a local figure that will be drawn."""
+    if figure_address is None:
+        return False
+    return any(
+        _held_address(child, figure_address) is not None
+        for token in tokens
+        for child in token.children or ()
+        if child.type == "image"
+    )
+
+
+def _held_address(image: Token, figure_address: FigureAddress | None) -> str | None:
+    """Where a local image token's file is served, or None: a remote
+    reference, no caller to ask, or no such file."""
+    # `attrGet` is typed as returning a number too, because an attribute
+    # can be one. A `src` cannot, and coercing is honest where asserting
+    # the type would be a claim about someone else's parser.
+    source = str(image.attrGet("src") or "")
+    if figure_address is None or urlparse(source).scheme in _REMOTE_SCHEMES:
+        return None
+    # The parser percent-encodes a reference; a file is named decoded.
+    return figure_address(unquote(source))
+
+
+def _parser(
+    *, load_remote_images: bool, figure_address: FigureAddress | None = None
+) -> MarkdownIt:
     """A parser configured for corpus text.
 
     `html=False` is the important argument and not a default worth
@@ -563,7 +611,9 @@ def _parser(*, load_remote_images: bool) -> MarkdownIt:
         parser.add_render_rule(token_type, _maths_rule(element, classes))
     parser.add_render_rule(
         "image",
-        _image_rule(load_remote_images=load_remote_images),
+        _image_rule(
+            load_remote_images=load_remote_images, figure_address=figure_address
+        ),
     )
     parser.add_render_rule("link_open", _render_link_open)
     return parser
@@ -699,7 +749,9 @@ def _render_link_open(
     return f"<a{attributes}>"
 
 
-def _image_rule(*, load_remote_images: bool) -> RenderRule:
+def _image_rule(
+    *, load_remote_images: bool, figure_address: FigureAddress | None
+) -> RenderRule:
     """The render rule for `![alt](src)`, per the two rules above."""
 
     def render_image(
@@ -722,11 +774,14 @@ def _image_rule(*, load_remote_images: bool) -> RenderRule:
             if not load_remote_images:
                 return _placeholder(f"{IMAGE_BLOCKED} {host}", alt)
             return f'<img src="{_escaped(source)}" alt="{_escaped(alt)}">'
-        # Every non-remote reference is treated as missing. Not a
-        # guess: the corpus keeps no image files at all, so there is
-        # no path that could resolve. When conversion starts keeping
-        # them (concern #134) this becomes a real lookup, and until
-        # then pretending to look would be theatre.
+        address = _held_address(token, figure_address)
+        if address is not None:
+            return (
+                f'<img class="figure" src="{_escaped(address)}" '
+                f'alt="{_escaped(alt)}" loading="lazy">'
+            )
+        # No file is held for it: a document converted before images were
+        # kept, or an image removed by hand.
         return _placeholder(IMAGE_MISSING, alt)
 
     return render_image
@@ -755,6 +810,7 @@ def _escaped(text: str) -> str:
 __all__ = [
     "IMAGE_BLOCKED",
     "IMAGE_MISSING",
+    "FigureAddress",
     "Heading",
     "MarginNote",
     "MarkedRange",
