@@ -18,9 +18,9 @@ installation actually has.
 
 ## Search locates; read expands
 
-`search` searches all four, or the ones you name in `collections`, and
-returns ranked hits grouped by collection, each with a score, a source
-and a bounded snippet. It is a coordinate, not an answer. When a snippet
+`search` searches the collections you name in `collections`, or all four
+for `["all"]`, and returns ranked hits grouped by collection, each with a
+score, a source and a bounded snippet. It is a coordinate, not an answer. When a snippet
 is on-topic but cut off, follow up with `read`, which takes a list of
 requests, so follow up several hits in one call rather than one at a
 time. Relevance is ranked within a collection and is not comparable

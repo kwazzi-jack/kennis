@@ -1,3 +1,0 @@
-$ search {"collections": ["elsewhere"], "question": "CASA"}
---- error True
-Error calling tool 'search': collections must name one or more of context, literature, docs, notes, not elsewhere

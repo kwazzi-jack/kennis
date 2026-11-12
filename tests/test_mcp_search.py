@@ -16,14 +16,16 @@ no index is an error, an unnamed one a line in the answer.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
+from typing import cast
 
 import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
 from kennis.engine.errors import ContextNotFound, InputError, NothingToIndex
-from kennis.mcp.tools.search import search
+from kennis.mcp.tools.search import Searched, search
 
 
 @pytest.fixture(autouse=True)
@@ -271,7 +273,7 @@ def headings_of(answered: str) -> list[str]:
     ]
 
 
-def test_with_no_collection_named_every_indexed_scope_is_searched(
+def test_all_searches_every_indexed_scope(
     corpus: Path, isolated: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
 ):
     """And the ones with no index are named with the command that builds
@@ -279,7 +281,7 @@ def test_with_no_collection_named_every_indexed_scope_is_searched(
     indexed_notes(run, isolated, calibration="Antenna gains and sky models.")
     a_project_note(isolated, run, monkeypatch, "This project solves antenna gains.")
 
-    answered = search("antenna gains")
+    answered = search("antenna gains", ["all"])
 
     # Written by hand: the order a report lists scopes in, context first.
     assert headings_of(answered) == ["Context", "Notes"]
@@ -301,7 +303,7 @@ def test_a_scope_swept_into_with_no_index_is_named_with_its_command(
     assert run.invoke(main, ["context", "init"]).exit_code == 0
     assert run.invoke(main, ["remember", "--context", "Antenna gains."]).exit_code == 0
 
-    answered = search("antenna gains")
+    answered = search("antenna gains", ["all"])
 
     assert headings_of(answered) == ["Notes"]
     # Written by hand: the line, with the command for a bundle.
@@ -352,7 +354,7 @@ def test_top_k_is_how_many_each_collection_gives(
     indexed_notes(run, isolated, one="Antenna gains alpha.", two="Antenna gains beta.")
     a_project_note(isolated, run, monkeypatch, "This project solves antenna gains.")
 
-    answered = search("antenna gains", top_k=1)
+    answered = search("antenna gains", ["all"], top_k=1)
 
     assert answered.count("id=") == 1
     assert answered.count("path=") == 1
@@ -362,7 +364,7 @@ def test_with_nothing_to_search_anywhere_the_search_is_refused(corpus: Path):
     """An empty corpus: "no matching passages" would read as a search that
     looked and found nothing. The sweep's own refusal, with its command."""
     with pytest.raises(NothingToIndex, match="nothing to search"):
-        search("anything")
+        search("anything", ["all"])
 
 
 def test_a_miss_in_every_scope_is_one_sentence(
@@ -370,12 +372,33 @@ def test_a_miss_in_every_scope_is_one_sentence(
 ):
     indexed_notes(run, isolated, calibration="Antenna gains and sky models.")
 
-    assert search("zzzzz nothing matches this") == "no matching passages"
+    assert search("zzzzz nothing matches this", ["all"]) == "no matching passages"
 
 
 @pytest.mark.parametrize("collections", [["elsewhere"], ["notes", "paper"], []])
 def test_a_collection_that_does_not_exist_is_refused_with_the_ones_that_do(
     corpus: Path, collections: list[str]
 ):
-    with pytest.raises(InputError, match="context, literature, docs, notes"):
-        search("anything", collections)
+    with pytest.raises(InputError, match="all or one or more of context, literature"):
+        # Past the schema, as a direct caller or a lenient client gets.
+        search("anything", cast("list[Searched]", collections))
+
+
+def test_the_collections_must_be_said(corpus: Path):
+    """No default (Brian, 2026-11-12): an agent that gave it no thought
+    got every scope's hits. `all` is a choice it has to make."""
+    parameter = inspect.signature(search).parameters["collections"]
+
+    assert parameter.default is inspect.Parameter.empty
+
+
+def test_all_beside_a_name_is_all(
+    corpus: Path, isolated: Path, run: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """And swept, not promised: literature has no index and is no error."""
+    indexed_notes(run, isolated, calibration="Antenna gains and sky models.")
+    a_project_note(isolated, run, monkeypatch, "This project solves antenna gains.")
+
+    answered = search("antenna gains", ["literature", "all"])
+
+    assert headings_of(answered) == ["Context", "Notes"]

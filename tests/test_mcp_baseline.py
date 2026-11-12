@@ -77,8 +77,19 @@ CALLS: tuple[tuple[str, str, Arguments, str], ...] = (
         "project",
     ),
     # #643: no collection named, from inside a project and outside one.
-    ("search-everywhere", "search", {"question": "calibration"}, "."),
-    ("search-everywhere-in-a-project", "search", {"question": "CASA"}, "project"),
+    (
+        "search-everywhere",
+        "search",
+        {"question": "calibration", "collections": ["all"]},
+        ".",
+    ),
+    (
+        "search-everywhere-in-a-project",
+        "search",
+        {"question": "CASA", "collections": ["all"]},
+        "project",
+    ),
+    ("search-no-collection", "search", {"question": "CASA"}, "."),
     (
         "search-unknown-collection",
         "search",

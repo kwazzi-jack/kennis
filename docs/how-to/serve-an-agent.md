@@ -60,7 +60,7 @@ Install a pack, restart the agent, and the description changes. See
 | tool | what it does |
 |---|---|
 | `list_corpus` | what the corpus holds, per collection or in summary, with each docs project's versions |
-| `search` | search every collection and this project's `.context/` bundle, or the ones its `collections` argument names |
+| `search` | search the collections its `collections` argument names, among them this project's `.context/` bundle, or all of them |
 | `read` | read passages from notes, literature or documentation, several at once |
 | `cite` | a citation, its reference and its `kennis://` link for each passage cited, several at once |
 | `remember` | write one note |
@@ -71,7 +71,7 @@ Install a pack, restart the agent, and the description changes. See
 
 | argument | what it does |
 |---|---|
-| `collections` | any of `notes`, `literature`, `docs` and `context`. Left out, every one that has an index is searched, and one that has none is named with the command that builds it. A collection named here that has no index is an error. |
+| `collections` | required: `["all"]`, or any of `notes`, `literature`, `docs` and `context`. Under `all`, every one that has an index is searched, and one that has none is named with the command that builds it. A collection named here that has no index is an error. |
 | `top_k` | how many hits each collection gives, 5 unless given |
 | `version` | for `docs`: each project's current version is searched unless this names others, as `kennis search --version` does |
 | `projects` | for `context`: `"all"` for every project on this machine, or a list of project names |

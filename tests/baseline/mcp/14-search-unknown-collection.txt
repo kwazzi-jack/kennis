@@ -1,0 +1,6 @@
+$ search {"collections": ["elsewhere"], "question": "CASA"}
+--- error True
+1 validation error for call[search]
+collections.0
+  Input should be 'all', 'context', 'literature', 'docs' or 'notes' [type=literal_error, input_value='elsewhere', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.14/v/literal_error

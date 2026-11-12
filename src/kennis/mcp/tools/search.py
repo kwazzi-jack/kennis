@@ -14,16 +14,23 @@ is what an agent selects on. One tool can answer "where is this said"
 without the agent choosing first, and what each collection is for is in
 this docstring and in the server's instructions.
 
+**The collections are always said, and `all` is one of the answers**
+(Brian, 2026-11-12). With a default, an agent that gave it no thought
+got up to `top_k` hits from each of four scopes; saying `all` is a
+choice.
+
 **A scope the agent named is a promise, and one swept into is not** -
 the command line's own rule, because this is the same sweep. A named
 collection with no index is an error: answering "no hits" for an index
-that was never built tells the caller something false. With none named,
-a scope with no index is skipped and the answer says so.
+that was never built tells the caller something false. Under `all`, a
+scope with no index is skipped and the answer says so.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from kennis.client import api
 from kennis.context import existing_corpus
@@ -39,7 +46,7 @@ from kennis.render.hits import (
     score_style_for,
 )
 from kennis.render.words import ScoreStyle, describe_skipped, group_title
-from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
+from kennis.scopes import EVERY_SCOPE, MAX_TOP_K, SCOPE_NAMES
 
 # What the tool answers with when no scope holds anything for this
 # question. A sentence rather than an empty string: an agent handed ""
@@ -47,17 +54,21 @@ from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
 _NOTHING = "no matching passages"
 
 
+# What `collections` may name: the four scopes, or every one of them.
+type Searched = Literal["all", "context", "literature", "docs", "notes"]
+
+
 def search(
     question: str,
-    collections: list[str] | None = None,
+    collections: list[Searched],
     top_k: int = 5,
     version: list[str] | None = None,
     projects: str | list[str] = "",
     tags: list[str] | None = None,
 ) -> str:
-    """Search what kennis holds, in every collection or the ones named.
+    """Search what kennis holds, in the collections named.
 
-    `collections` is any of:
+    `collections` is required: `["all"]`, or any of:
 
     - `notes` - the user's own material, machine-global: their
       conventions, their decisions, what they asked kennis to remember.
@@ -69,9 +80,10 @@ def search(
     - `context` - this project's `.context/` bundle: decisions and
       conventions specific to the repository you are working in.
 
-    Omit it to search all four. Name the ones you want when you know
-    where the answer is: a named collection that has no index is an
-    error, while an unnamed one is skipped and the answer says so.
+    Name the ones you want when you know where the answer is, which
+    costs less to read; `["all"]` searches all four. A named collection
+    that has no index is an error, while under `all` one is skipped and
+    the answer says so.
 
     The answer is grouped by collection, each group ranked on its own.
     Relevance in one group is not comparable with another's. Each hit
@@ -94,7 +106,8 @@ def search(
 
     `tags` keeps only what carries every one of them.
     """
-    scopes = _scopes(collections)
+    everywhere = EVERY_SCOPE in collections
+    scopes = SCOPE_NAMES if everywhere else _scopes(collections)
     # The MCP server runs where its agent works, so its directory is the
     # project's (#508); the service is sent the bundle, never asked to
     # look for one.
@@ -106,7 +119,7 @@ def search(
         existing_corpus().corpus_root,
         question,
         scopes=scopes,
-        named=collections is not None,
+        named=not everywhere,
         # An agent may pass anything. Zero would return nothing and read
         # as a miss; a thousand would return an index as one payload.
         top_k=max(1, min(top_k, MAX_TOP_K)),
@@ -136,15 +149,16 @@ def search(
     return "\n\n".join(blocks)
 
 
-def _scopes(collections: list[str] | None) -> tuple[str, ...]:
-    """The scopes to search; an unknown name is refused with the ones there
-    are. In any order: the sweep answers in the order a report lists them."""
-    if collections is None:
-        return SCOPE_NAMES
+def _scopes(collections: Sequence[str]) -> tuple[str, ...]:
+    """The scopes named; an unknown name, or none, is refused with the ones
+    there are. In any order: the sweep answers in the order a report lists
+    them. Checked here as well as by the schema, which a direct caller and
+    a lenient client both get past."""
     unknown = [name for name in collections if name not in SCOPE_NAMES]
     if unknown or not collections:
         raise InputError(
-            f"collections must name one or more of {', '.join(SCOPE_NAMES)}"
+            f"collections must name {EVERY_SCOPE} or one or more of "
+            f"{', '.join(SCOPE_NAMES)}"
             + (f", not {', '.join(unknown)}" if unknown else "")
         )
     return tuple(collections)
@@ -185,4 +199,4 @@ def _other_projects(projects: str | list[str], *, here: Path | None) -> list[Pat
     return [project_named(name).bundle for name in projects]
 
 
-__all__ = ["search"]
+__all__ = ["Searched", "search"]

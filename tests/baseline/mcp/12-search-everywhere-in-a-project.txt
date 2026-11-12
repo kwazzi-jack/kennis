@@ -1,4 +1,4 @@
-$ search {"question": "CASA"}
+$ search {"collections": ["all"], "question": "CASA"}
 --- error False
 Context keywords as a fraction of the best match here
 [1] CASA is used here
