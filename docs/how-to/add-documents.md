@@ -137,8 +137,10 @@ Three limits, as of this version:
 - A document converted before images were kept holds its figure links and
   not the images.
 - Only mineru's images are kept. A paper read from arXiv's HTML keeps the
-  address of each figure and not the file, and datalab's images are not
-  kept.
+  address of each figure and not the file; the window loads those when you
+  ask, or without asking for a site named in `figures.trusted_hosts` (see
+  [Use the window](the-interface.md)). Such figures need a network
+  connection and are not in a backup. datalab's images are not kept.
 
 ## Conversion
 

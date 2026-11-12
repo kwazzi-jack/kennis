@@ -414,6 +414,7 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("terminal", "Command line"),
     ("logging", "Log file"),
     ("service", "Background service"),
+    ("reading", "Reading documents"),
 )
 KENNIS_SAVED = "Saved."
 KENNIS_UNCHANGED = "Nothing changed."
@@ -450,6 +451,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "logging.max_bytes": "Size before a new file (bytes)",
     "logging.backup_count": "Old files kept",
     "service.idle_minutes": "Stop when idle (minutes)",
+    "figures.trusted_hosts": "Sites whose figures load without asking",
 }
 # What each setting is for, in an info tip beside its name. The engine's
 # own description, which `config init` prints and the config file
@@ -537,6 +539,12 @@ SETTING_TIPS: Final[dict[str, str]] = {
     "service.idle_minutes": (
         "How long kennis keeps running with nothing to do. The next command "
         "or window starts it again."
+    ),
+    "figures.trusted_hosts": (
+        "Figures held at these sites are loaded as you scroll to them, "
+        "without the Load figures button. Loading a figure tells its site "
+        "which document you are reading. Write each site's name, such as "
+        "arxiv.org, separated by spaces."
     ),
 }
 

@@ -29,6 +29,8 @@ def describe_cost(cost: SettingCost) -> str:
             return "takes effect at the next citation"
         case "next_command":
             return "takes effect at the next command"
+        case "next_document":
+            return "takes effect at the next document opened"
         case "next_start":
             return "takes effect the next time kennis starts"
         case "rebuild":

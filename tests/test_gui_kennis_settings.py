@@ -65,6 +65,7 @@ EXPECTED_GROUPS = {
         "logging.backup_count",
     ],
     "Background service": ["service.idle_minutes"],
+    "Reading documents": ["figures.trusted_hosts"],
 }
 EXPECTED_ROWS = [key for keys in EXPECTED_GROUPS.values() for key in keys]
 

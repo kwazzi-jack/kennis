@@ -25,6 +25,7 @@ type SettingCost = Literal[
     "next_index",
     "next_cite",
     "next_command",
+    "next_document",
     "next_start",
     "rebuild",
     "leaves_machine",
@@ -71,6 +72,8 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "logging.backup_count": ("next_start",),
     # Read when the service starts, as the log's settings are.
     "service.idle_minutes": ("next_start",),
+    # Read each time a document's page is drawn.
+    "figures.trusted_hosts": ("next_document",),
 }
 
 # The values that send document text off this machine, per key.

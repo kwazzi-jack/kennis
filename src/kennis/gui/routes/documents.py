@@ -24,7 +24,12 @@ from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.repository import Repository
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
-from kennis.gui.figures import FIGURE_ROUTE, held_figure, media_type_of
+from kennis.gui.figures import (
+    FIGURE_ROUTE,
+    held_figure,
+    media_type_of,
+    trusted_figure_hosts,
+)
 from kennis.gui.pages import (
     ShownDocument,
     document_link,
@@ -244,6 +249,7 @@ def serve_document(
                     context, collection, document_id, bundle=None
                 ),
             ),
+            trusted_hosts=trusted_figure_hosts(),
         )
     except KennisError as error:
         return problem_page(request, error)
@@ -396,6 +402,7 @@ def serve_bundle_document(
                     resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
                 ),
             ),
+            trusted_hosts=trusted_figure_hosts(),
         )
     except KennisError as error:
         return problem_page(request, error)
