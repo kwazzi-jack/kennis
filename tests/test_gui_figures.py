@@ -10,6 +10,7 @@ The image is a JPEG's first bytes, never text (#649).
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 from pathlib import Path
@@ -274,3 +275,42 @@ def test_a_transparent_figure_is_on_white_in_both_themes():
     grounds = re.findall(r"--figure-ground:\s*([^;]+);", sheet)
     # Written by hand: light, dark by the system, dark by choice.
     assert grounds == ["#FFFFFF", "#FFFFFF", "#FFFFFF"]
+
+
+def test_a_backslash_never_reaches_a_file(context: Context, paper: Document):
+    """On Windows a backslash separates folders inside what was checked as
+    one name, so `x\\..\\` climbed back to a file the checks never saw.
+    Elsewhere it is a character of a name, and such a file is not served
+    either: one rule on every platform."""
+    root = context.corpus_root
+    directory = directory_of(context, paper)
+    assert paper.wrapper_dir is not None
+    if os.name != "nt":
+        (paper.wrapper_dir / f"x\\..\\{FIGURE}").write_bytes(JPEG)
+        (paper.wrapper_dir / "back\\slash.jpg").write_bytes(JPEG)
+    assert held_figure(root, f"{directory}/{FIGURE}") is not None
+
+    assert held_figure(root, f"{directory}/x\\..\\{FIGURE}") is None
+    assert held_figure(root, f"{directory}/back\\slash.jpg") is None
+    address = figure_addresses(root, f"{directory}/content.md")
+    assert address is not None
+    assert address(f"x\\..\\{FIGURE}") is None
+
+
+def test_a_link_out_of_the_corpus_is_not_a_figure(
+    context: Context, paper: Document, client: TestClient, tmp_path: Path
+):
+    """A link beside `content.md` is followed by every read of it."""
+    assert paper.wrapper_dir is not None
+    outside = tmp_path / "private.jpg"
+    outside.write_bytes(b"\xff\xd8 not the corpus's")
+    (paper.wrapper_dir / "linked.jpg").symlink_to(outside)
+    (paper.wrapper_dir / "within.jpg").symlink_to(paper.wrapper_dir / FIGURE)
+    directory = directory_of(context, paper)
+
+    assert held_figure(context.corpus_root, f"{directory}/linked.jpg") is None
+    answer = client.get(f"/figure/{directory}/linked.jpg")
+    assert answer.status_code == 404
+    assert b"not the corpus's" not in answer.content
+    # The other side: a link that stays inside is a figure.
+    assert held_figure(context.corpus_root, f"{directory}/within.jpg") is not None
