@@ -485,3 +485,73 @@ def test_the_next_write_removes_the_stray_setting(isolated: Path, run: CliRunner
 
     assert "sise" not in (isolated / "config.toml").read_text(encoding="utf-8")
     assert streams(run.invoke(main, ["config", "path"]))[1] == ""
+
+
+# ---------------------------------------------------------------------------
+# Clearing a setting (#666)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("figures.trusted_hosts", "arxiv.org"),
+        ("literature.unpaywall_email", "reader@example.org"),
+        ("corpus.default_group", "inbox"),
+    ],
+)
+def test_set_to_nothing_clears_the_setting(
+    run: CliRunner, isolated: Path, key: str, value: str
+):
+    """It said "Set" and kept the old value, so a site could not be taken
+    off the trusted ones, nor an address withdrawn, without editing the
+    file."""
+    section, _, name = key.partition(".")
+    assert run.invoke(main, ["config", "set", key, value]).exit_code == 0
+    held = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert held[section][name] == value, "the fixture no longer exercises the case"
+
+    cleared = run.invoke(main, ["config", "set", key, ""])
+
+    assert cleared.exit_code == 0, cleared.output
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written[section][name] == ""
+
+
+@pytest.mark.parametrize(
+    "key", ["embedding.backend", "chunking.size", "corpus.keep_original"]
+)
+def test_set_to_nothing_is_refused_where_nothing_is_not_a_value(
+    run: CliRunner, isolated: Path, key: str
+):
+    """A choice, a number, a yes or no: refused, never "Set"."""
+    result = run.invoke(main, ["config", "set", key, ""])
+
+    assert result.exit_code != 0
+    assert "Set" not in result.output
+    assert not (isolated / "config.toml").exists()
+
+
+def test_a_key_is_never_written_empty(isolated: Path):
+    """`config set` takes no key at all; this is the function under it,
+    for any caller that clears."""
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({"embedding.api_key": "", "chunking.size": "800"}, clearing=True)
+
+    assert not (isolated / "credentials.toml").exists()
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["chunking"]["size"] == 800
+
+
+def test_the_setup_still_keeps_what_an_empty_answer_leaves(isolated: Path):
+    """The other side: in `config init`, Enter on a question keeps what the
+    file holds. Only `config set` treats an empty answer as an answer."""
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({"figures.trusted_hosts": "arxiv.org"})
+    apply_answers({"figures.trusted_hosts": "", "chunking.size": "800"})
+
+    written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+    assert written["figures"]["trusted_hosts"] == "arxiv.org"
+    assert written["chunking"]["size"] == 800

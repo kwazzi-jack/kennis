@@ -136,7 +136,8 @@ def set_command(key: str, value: str) -> None:
     # value in the file or the environment refused every `set`, including
     # the one its own error named as the repair.
     _value_of(Settings.model_construct(), key)
-    apply_answers({key: value})
+    # An empty value was typed on purpose: it clears the setting (#666).
+    apply_answers({key: value}, clearing=True)
     display.operation("Set", f"{key} = {value}")
     overriding = overriding_variable(key)
     if overriding is not None:
