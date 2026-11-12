@@ -12,7 +12,7 @@ import pytest
 from click.testing import CliRunner
 
 from kennis.cli.__main__ import main
-from kennis.mcp.tools.search import search_notes
+from kennis.mcp.tools.search import search
 
 
 @pytest.fixture
@@ -73,8 +73,8 @@ def test_the_setting_can_hide_them(corpus: Path, monkeypatch: pytest.MonkeyPatch
 def test_an_agent_sees_what_the_setting_says(
     corpus: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    assert "keywords: very high" in search_notes("antenna gains")
+    assert "keywords: very high" in search("antenna gains", ["notes"])
 
     monkeypatch.setenv("KENNIS_RETRIEVAL_SCORES", "raw")
 
-    assert "bm25=" in search_notes("antenna gains")
+    assert "bm25=" in search("antenna gains", ["notes"])

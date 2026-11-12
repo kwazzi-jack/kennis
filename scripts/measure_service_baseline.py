@@ -109,7 +109,7 @@ def resident_mebibytes(process_id: int) -> float | None:
 
 
 def mcp_first_search(folder: Path) -> tuple[float, float | None]:
-    """Start `kennis serve`, initialise it, call `search_notes` once; the time
+    """Start `kennis serve`, initialise it, call `search` on notes once; the time
     from starting the process to the answer, and its memory after."""
     start = time.perf_counter()
     server = subprocess.Popen(
@@ -153,7 +153,10 @@ def mcp_first_search(folder: Path) -> tuple[float, float | None]:
             "jsonrpc": "2.0",
             "id": 2,
             "method": "tools/call",
-            "params": {"name": "search_notes", "arguments": {"question": QUERY}},
+            "params": {
+                "name": "search",
+                "arguments": {"question": QUERY, "collections": ["notes"]},
+            },
         }
     )
     reply = answer(2)

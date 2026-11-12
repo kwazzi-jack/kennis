@@ -25,14 +25,9 @@ from kennis.engine.pack.installed import InstalledPack
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.tools.cite import cite
 from kennis.mcp.tools.corpus import list_corpus
-from kennis.mcp.tools.read import read_docs, read_literature, read_notes
+from kennis.mcp.tools.read import read
 from kennis.mcp.tools.remember import remember
-from kennis.mcp.tools.search import (
-    search_context,
-    search_docs,
-    search_literature,
-    search_notes,
-)
+from kennis.mcp.tools.search import search
 from kennis.mcp.tools.tags import tag
 from kennis.protocol.spawn import holds_a_corpus
 
@@ -56,13 +51,8 @@ def build_server() -> FastMCP:
     """
     server = FastMCP(SERVER_NAME, instructions=instructions_for(_installed()))
     server.tool(list_corpus)
-    server.tool(search_notes)
-    server.tool(search_literature)
-    server.tool(search_docs)
-    server.tool(search_context)
-    server.tool(read_notes)
-    server.tool(read_literature)
-    server.tool(read_docs)
+    server.tool(search)
+    server.tool(read)
     server.tool(cite)
     server.tool(remember)
     server.tool(tag)

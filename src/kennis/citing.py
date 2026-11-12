@@ -11,7 +11,7 @@ resolves a handle as that module does.
 
 **One request's failure is its own.** A batch from an agent names several
 hits, and one removed document must not cost the others, as for the
-`read_*` tools; a failure is a `CiteRefusal` at its position.
+`read` tool; a failure is a `CiteRefusal` at its position.
 
 **A context passage is cited too** (#623): a file in a project's bundle,
 named by `bundle` with its path as the handle, found by membership as the

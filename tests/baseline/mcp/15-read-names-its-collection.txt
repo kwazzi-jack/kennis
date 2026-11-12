@@ -1,0 +1,14 @@
+$ read {"requests": [{"document_id": "doc0000001"}]}
+--- error False
+[notes] calibration  (doc0000001)  notes/calibration.md
+# Calibration
+
+Calibration solves for antenna gains and phase.
+
+## Gains
+
+The gain of each antenna is solved per interval.
+
+## Phase
+
+Phase calibration follows the bandpass.

@@ -1,5 +1,6 @@
-$ search_docs {"question": "tool"}
+$ search {"collections": ["docs"], "question": "tool"}
 --- error False
+Docs keywords as a fraction of the best match here
 [1] Tool
   keywords: very high  tool 1.0  id=22k3nnp36k chunk=0
   # Tool The tool's reference page.

@@ -111,7 +111,7 @@ kennis tags calibration    # each target, its link and its opening words
 
 An agent connected through `kennis serve` can tag and untag with the `tag`
 tool when you ask it to, search within tags with the `tags` argument of
-every `search_*` tool, and see the tags in use in `list_corpus`. See
+the `search` tool, and see the tags in use in `list_corpus`. See
 [Serve an agent](serve-an-agent.md#what-tag-will-and-will-not-do).
 
 ## Search by tag

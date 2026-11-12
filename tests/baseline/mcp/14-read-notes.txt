@@ -1,4 +1,4 @@
-$ read_notes {"requests": [{"document_id": "doc0000001"}, {"before": 0, "chunk_index": 2, "document_id": "doc0000001"}, {"document_id": "no-such-document"}, {"chunk_index": -1, "document_id": "doc0000001"}]}
+$ read {"requests": [{"document_id": "doc0000001"}, {"before": 0, "chunk_index": 2, "document_id": "doc0000001"}, {"document_id": "no-such-document"}, {"chunk_index": -1, "document_id": "doc0000001"}]}
 --- error False
 [notes] calibration  (doc0000001)  notes/calibration.md
 # Calibration
@@ -18,6 +18,6 @@ Phase calibration follows the bandpass.
 
 Phase calibration follows the bandpass.
 
-no-such-document: no document 'no-such-document' in the notes collection. Run `kennis corpus list`.
+no-such-document: no document 'no-such-document' in literature, docs or notes. Run `kennis corpus list`.
 
 doc0000001: chunk_index -1 is negative. Pass the `chunk` of a search hit, which counts from 0.

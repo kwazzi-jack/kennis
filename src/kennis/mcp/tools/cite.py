@@ -8,7 +8,7 @@ locator the chunk offers (#592), the reference, and the `kennis://` link,
 and a line of markdown that is the citation as a link.
 
 One block per request, numbered as asked, and a failed request is its own
-block, as for the `read_*` tools.
+block, as for the `read` tool.
 """
 
 from __future__ import annotations

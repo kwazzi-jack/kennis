@@ -1,6 +1,6 @@
-"""The three `read_*` tools: the follow-up to a search hit.
+"""The `read` tool: the follow-up to a search hit.
 
-**There is no `read_context`.** A bundle file is a file in the user's
+**A context hit is not read here.** A bundle file is a file in the user's
 own repository, so a context hit's handle is a path and the agent opens
 it with native file tools - the same reason `kennis read` refuses
 `--collection context`.
@@ -25,7 +25,7 @@ from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.rag.index import load_index
-from kennis.mcp.tools.read import ReadRequest, read_docs, read_literature, read_notes
+from kennis.mcp.tools.read import ReadRequest, read
 
 
 @pytest.fixture(autouse=True)
@@ -101,7 +101,7 @@ def test_the_provenance_line_is_the_same_in_both_front_ends(
 
     printed = run.invoke(main, ["read", identifier, "--chunks", "0:1"])
     assert printed.exit_code == 0, printed.output
-    answered = read_notes([ReadRequest(document_id=identifier, chunk_index=0)])
+    answered = read([ReadRequest(document_id=identifier, chunk_index=0)])
 
     provenance = next(line for line in answered.splitlines() if "[notes]" in line)
     assert provenance.strip() in printed.output
@@ -118,7 +118,7 @@ def test_a_chunk_read_returns_the_surrounding_prose(
     identifier = a_note(run, isolated, "calibration", "Antenna gains and sky models.")
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 
-    answered = read_notes([ReadRequest(document_id=identifier, chunk_index=0)])
+    answered = read([ReadRequest(document_id=identifier, chunk_index=0)])
 
     assert "Antenna gains and sky models." in answered
 
@@ -129,7 +129,7 @@ def test_a_whole_document_needs_no_index(corpus: Path, isolated: Path, run: CliR
     indexed is still readable."""
     identifier = a_note(run, isolated, "calibration", "Antenna gains and sky models.")
 
-    answered = read_notes([ReadRequest(document_id=identifier)])
+    answered = read([ReadRequest(document_id=identifier)])
 
     assert "Antenna gains and sky models." in answered
 
@@ -141,12 +141,10 @@ def test_before_and_after_widen_the_window(
     search: a chunk index, and a wish for a little more around it."""
     identifier = a_long_note(run, isolated, chunks_wanted=4)
 
-    narrow = read_notes(
+    narrow = read(
         [ReadRequest(document_id=identifier, chunk_index=1, before=0, after=0)]
     )
-    wide = read_notes(
-        [ReadRequest(document_id=identifier, chunk_index=1, before=1, after=1)]
-    )
+    wide = read([ReadRequest(document_id=identifier, chunk_index=1, before=1, after=1)])
 
     # Both must be real passages. Without this the test passes when the
     # narrow read failed and returned a short error block instead.
@@ -163,9 +161,7 @@ def test_a_hit_at_chunk_zero_does_not_ask_for_the_last_chunk(
     it. The same arithmetic the printed `--chunks` hint gets right."""
     identifier = a_long_note(run, isolated, chunks_wanted=4)
 
-    answered = read_notes(
-        [ReadRequest(document_id=identifier, chunk_index=0, before=1)]
-    )
+    answered = read([ReadRequest(document_id=identifier, chunk_index=0, before=1)])
 
     assert "Paragraph 0 about antenna gains." in answered
     assert "Paragraph 15 about antenna gains." not in answered
@@ -185,8 +181,8 @@ def test_both_kinds_of_read_name_the_document_the_same_way(
     identifier = a_note(run, isolated, "calibration", "Antenna gains.")
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 
-    whole = read_notes([ReadRequest(document_id=identifier)])
-    passage = read_notes([ReadRequest(document_id=identifier, chunk_index=0)])
+    whole = read([ReadRequest(document_id=identifier)])
+    passage = read([ReadRequest(document_id=identifier, chunk_index=0)])
 
     assert "notes/calibration.md" in whole
     assert "notes/calibration.md" in passage
@@ -205,9 +201,7 @@ def test_several_requests_are_answered_in_one_call(
     second = a_note(run, isolated, "imaging", "Deconvolution and cleaning.")
     assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 
-    answered = read_notes(
-        [ReadRequest(document_id=first), ReadRequest(document_id=second)]
-    )
+    answered = read([ReadRequest(document_id=first), ReadRequest(document_id=second)])
 
     assert "Antenna gains." in answered
     assert "Deconvolution and cleaning." in answered
@@ -221,7 +215,7 @@ def test_one_bad_identifier_does_not_cost_the_others(
     one failed."""
     good = a_note(run, isolated, "calibration", "Antenna gains.")
 
-    answered = read_notes(
+    answered = read(
         [ReadRequest(document_id="notarealid"), ReadRequest(document_id=good)]
     )
 
@@ -230,7 +224,7 @@ def test_one_bad_identifier_does_not_cost_the_others(
 
 
 def test_an_empty_batch_says_so_rather_than_returning_nothing(corpus: Path):
-    assert "no requests" in read_notes([])
+    assert "no requests" in read([])
 
 
 # ---------------------------------------------------------------------------
@@ -238,22 +232,31 @@ def test_an_empty_batch_says_so_rather_than_returning_nothing(corpus: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_note_cannot_be_read_through_the_literature_tool(
+def test_an_answer_opens_by_naming_the_collection_its_document_is_in(
     corpus: Path, isolated: Path, run: CliRunner
 ):
-    """The collection is fixed by which tool was called. Otherwise
-    `read_literature` would quietly serve a note and an agent citing it
-    would attribute a user's jotting to a paper."""
+    """One tool reads every collection (#643), so what stops a note being
+    cited as a paper is the answer saying which it is - for a whole
+    document and for a passage alike."""
     identifier = a_note(run, isolated, "calibration", "Antenna gains.")
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
 
-    answered = read_literature([ReadRequest(document_id=identifier)])
+    whole = read([ReadRequest(document_id=identifier)])
+    passage = read([ReadRequest(document_id=identifier, chunk_index=0)])
 
-    assert "Antenna gains." not in answered
-    assert identifier in answered
+    for answered in (whole, passage):
+        assert answered.splitlines()[0].startswith("[notes]")
+        assert "Antenna gains." in answered
 
 
-def test_read_docs_is_a_tool_of_its_own(corpus: Path):
-    assert "no requests" in read_docs([])
+def test_a_context_hit_s_path_is_sent_back_to_the_file_tools(corpus: Path):
+    """A context hit's handle is a path in the user's repository. Passed
+    here, the answer says what to do with it, not that no document has
+    that name."""
+    answered = read([ReadRequest(document_id=".context/imaging.md", chunk_index=0)])
+
+    assert "Open it with your file tools" in answered
+    assert "kennis corpus list" not in answered
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +274,7 @@ def test_a_long_whole_document_is_cut_and_says_so(
     body = "\n\n".join(f"Paragraph {number} about gains." for number in range(4000))
     identifier = a_note(run, isolated, "enormous", body)
 
-    answered = read_notes([ReadRequest(document_id=identifier)])
+    answered = read([ReadRequest(document_id=identifier)])
 
     assert len(answered) < len(body)
     assert "chunk_index" in answered
@@ -284,7 +287,7 @@ def test_a_short_whole_document_is_not_cut(
     tool truncating everything."""
     identifier = a_note(run, isolated, "calibration", "Antenna gains and sky models.")
 
-    answered = read_notes([ReadRequest(document_id=identifier)])
+    answered = read([ReadRequest(document_id=identifier)])
 
     assert "chunk_index" not in answered
 
@@ -297,7 +300,7 @@ def test_a_huge_batch_is_refused_rather_than_answered_in_part(
     identifier = a_note(run, isolated, "calibration", "Antenna gains.")
     many = [ReadRequest(document_id=identifier) for _ in range(40)]
 
-    answered = read_notes(many)
+    answered = read(many)
 
     assert "Antenna gains." not in answered
     assert "40" in answered

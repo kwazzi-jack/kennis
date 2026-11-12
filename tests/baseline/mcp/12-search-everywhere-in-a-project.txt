@@ -1,0 +1,5 @@
+$ search {"question": "CASA"}
+--- error False
+Context keywords as a fraction of the best match here
+[1] CASA is used here
+  keywords: very high  path=.context/CASA is used here.md chunk=0
