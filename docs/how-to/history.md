@@ -53,9 +53,14 @@ Every line is a point the corpus can be returned to.
 ## Put a document back
 
 ```
-kennis corpus restore <document-id>                      # from HEAD
-kennis corpus restore <document-id> --commit 9016f9bf    # from there
+kennis corpus restore <document-id>                      # as it was last held
+kennis corpus restore <document-id> --commit 9016f9bf    # as it was there
 ```
+
+With no `--commit`, the document comes from the most recent point that
+held it: for a removed document the point just before its removal, and for
+one still held its last recorded state. A paper is also named by its
+citekey, arXiv number, DOI or bibcode, as `corpus remove` names it.
 
 The document returns to its state at that commit **keeping its identifier**,
 which is what the identifier being surrogate is for. Anything that referenced

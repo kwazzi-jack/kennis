@@ -255,7 +255,7 @@ def remove_version(project: str, version: str) -> RemovedVersion:
     return operations.remove_docs_version(existing_corpus(), project, version)
 
 
-def restore_document(document_id: str, commit: str = "HEAD") -> RestoredDocument:
+def restore_document(document_id: str, commit: str | None = None) -> RestoredDocument:
     return operations.restore_a_document(existing_corpus(), document_id, commit=commit)
 
 

@@ -84,6 +84,15 @@ class ReturnChanges:
 
 
 @dataclass(frozen=True, slots=True)
+class HeldAt:
+    """A document found in a commit's tree: where, and its identifier, which
+    is not always the name it was asked for by."""
+
+    path: str
+    document_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class RestoredDocument:
     """What a restore put back, and where it came from."""
 
@@ -173,27 +182,80 @@ def read_history(
 
 
 def restore_document(
-    repository: Repository, document_id: str, *, commit: str
+    repository: Repository, handle: str, *, commit: str | None
 ) -> RestoredDocument:
-    """Put the document with `document_id` back as it was at `commit`.
+    """Put the document `handle` names back as it was at `commit`, or with
+    no commit as it was at the last point that held it.
 
-    The identifier is resolved against **that commit's tree** rather than
+    The handle is resolved against **that commit's tree** rather than
     against the corpus on disk, because the document being restored is often
     one that is no longer there - which is the case a restore exists for.
     """
-    path = document_path_at(repository, commit, document_id)
-    if path is None:
-        raise DocumentNotFound(
-            f"no document with identifier '{document_id}' existed at {commit[:12]}",
-            resolution="kennis corpus history",
-        )
-    for held in document_files_at(repository, commit, path):
-        if not repository.restore(held, commit=commit):
+    found = document_to_restore(repository, handle, commit)
+    for held in document_files_at(repository, found.commit, found.path):
+        if not repository.restore(held, commit=found.commit):
             raise DocumentNotFound(
-                f"'{held}' could not be restored from {commit[:12]}",
+                f"'{held}' could not be restored from {found.commit[:12]}",
                 resolution="kennis corpus history",
             )
-    return RestoredDocument(document_id=document_id, path=path, commit=commit)
+    return found
+
+
+def document_to_restore(
+    repository: Repository, handle: str, commit: str | None
+) -> RestoredDocument:
+    """Which document a restore of `handle` puts back, and from where.
+
+    **With no commit, the last point that held it** (#667). The default was
+    HEAD, where a removed document is not, so the plain command could not
+    undo a removal - the one thing it is most used for.
+    """
+    point = commit or last_point_holding(repository, handle)
+    if point is None:
+        raise DocumentNotFound(
+            f"no document named '{handle}' was held at any recorded point",
+            resolution="kennis corpus history",
+        )
+    held = document_at(repository, point, handle)
+    if held is None:
+        raise DocumentNotFound(
+            f"no document named '{handle}' existed at {point[:12]}",
+            resolution="kennis corpus history",
+        )
+    return RestoredDocument(document_id=held.document_id, path=held.path, commit=point)
+
+
+def last_point_holding(repository: Repository, handle: str) -> str | None:
+    """The newest commit whose tree holds the document `handle` names.
+
+    HEAD when it does. Otherwise `git log -S` proposes and `document_at`
+    decides: `-S` lists the commits where the count of the handle's
+    occurrences changed, which a removal is, and the document was last held
+    by such a commit or by its parent. What `document_path_at` warns of is
+    using `-S` to *answer*; a commit it lists for a mention in another
+    document is tried and holds nothing.
+    """
+    if not handle:
+        return None
+    if document_at(repository, "HEAD", handle) is not None:
+        head = repository.head()
+        if head is not None:
+            return head
+    # -S and its text are one argument, so a handle beginning with a dash is
+    # text. --fixed-strings is -S's default.
+    changed = git(
+        ["log", f"--format=%H{_SEPARATOR}%P", f"-S{handle}", "--", "*.md"],
+        cwd=repository.root,
+    )
+    if not changed.ok:
+        return None
+    for line in changed.lines():
+        commit, _, parents = line.partition(_SEPARATOR)
+        first_parent = parents.split(" ", 1)[0]
+        for point in (commit, first_parent):
+            if point and document_at(repository, point, handle) is not None:
+                return point
+    return None
 
 
 def document_files_at(repository: Repository, commit: str, path: str) -> list[str]:
@@ -218,7 +280,21 @@ def document_files_at(repository: Repository, commit: str, path: str) -> list[st
 def document_path_at(
     repository: Repository, commit: str, document_id: str
 ) -> str | None:
-    """The path of the document carrying `document_id`, as of `commit`.
+    """The path of the document `document_id` names, as of `commit`."""
+    held = document_at(repository, commit, document_id)
+    return held.path if held is not None else None
+
+
+def document_at(repository: Repository, commit: str, handle: str) -> HeldAt | None:
+    """The document `handle` names, as of `commit`: the one whose
+    identifier it is, or failing that the one paper it is the citekey,
+    arXiv number, DOI or bibcode of.
+
+    Those four because `corpus remove` takes them, and a document removed
+    by a name has to come back by it (#667). Not the title or the file
+    name, which `remove` also takes: both are found in the text of
+    whatever cites the document. A name two documents share names neither,
+    as `Collection.resolve` drops an ambiguous key.
 
     Read from the tree rather than searched for with `git log -S`: the latter
     finds commits where an identifier's occurrence count *changed*, which is
@@ -230,13 +306,13 @@ def document_path_at(
     and the limit that bounded it - the first 200 entries - left every paper
     and note of a larger corpus unfindable (#647).
     """
-    if not document_id:
+    if not handle:
         # An empty pattern matches every line of every file.
         return None
-    # -F and -e: an identifier is text, never a pattern or an option. -z: a
+    # -F and -e: a handle is text, never a pattern or an option. -z: a
     # path is written as it is, not quoted.
     found = git(
-        ["grep", "-l", "-z", "-F", "-e", document_id, commit, "--", "*.md"],
+        ["grep", "-l", "-z", "-F", "-e", handle, commit, "--", "*.md"],
         cwd=repository.root,
     )
     if not found.ok:
@@ -244,26 +320,48 @@ def document_path_at(
     # Each record is the point as it was given, a colon, then the path. Cut
     # by length: the point and the path may each hold a colon.
     prefix = f"{commit}:"
+    named: list[HeldAt] = []
     for record in found.records():
         path = record.removeprefix(prefix)
         content = repository.show(commit, path)
-        if content is not None and _states_identifier(content, document_id):
-            return path
-    return None
+        stated = _stated_names(content) if content is not None else None
+        if stated is None:
+            continue
+        document_id, aliases = stated
+        if document_id == handle:
+            return HeldAt(path=path, document_id=document_id)
+        if handle in aliases:
+            named.append(HeldAt(path=path, document_id=document_id))
+    return named[0] if len(named) == 1 else None
 
 
-def _states_identifier(content: str, document_id: str) -> bool:
-    """Whether a document's frontmatter states this identifier.
+# The names of a paper `Collection.resolve` answers to that are its own:
+# found in its frontmatter and not in a document that cites it.
+_BIB_NAMES: Final = ("citekey", "arxiv_id", "doi", "bibcode")
+
+
+def _stated_names(content: str) -> tuple[str, frozenset[str]] | None:
+    """A document's identifier and its paper's names, from its frontmatter.
 
     Read from the frontmatter rather than looked for anywhere in the text, so
     a document that merely *mentions* another's identifier - a note about a
-    paper, say - is not mistaken for it.
+    paper, say - is not mistaken for it. None for a file that states no
+    identifier.
     """
     try:
         frontmatter, _ = split_frontmatter(content)
     except (ValueError, yaml.YAMLError):
-        return False
-    return frontmatter.get("id") == document_id
+        return None
+    document_id = frontmatter.get("id")
+    if not isinstance(document_id, str) or not document_id:
+        return None
+    bib = frontmatter.get("bib")
+    aliases = (
+        frozenset(str(bib[name]) for name in _BIB_NAMES if bib.get(name))
+        if isinstance(bib, dict)
+        else frozenset[str]()
+    )
+    return document_id, aliases
 
 
 def point_in_history(repository: Repository, commit: str) -> str:
