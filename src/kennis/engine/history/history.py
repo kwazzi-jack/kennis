@@ -33,11 +33,6 @@ _SEPARATOR: Final = "\x1f"
 
 _DEFAULT_LIMIT: Final = 50
 
-# How far back to look for a document that is no longer in the corpus. A
-# deleted document's path cannot be found by walking the corpus, so history
-# is searched instead, and this bounds that search.
-_SEARCH_DEPTH: Final = 200
-
 
 @dataclass(frozen=True, slots=True)
 class HistoryEntry:
@@ -207,15 +202,30 @@ def document_path_at(
     finds commits where an identifier's occurrence count *changed*, which is
     close to but not the same question, and gives the wrong answer for a
     document whose identifier appears in a commit that only moved it.
+
+    One `git grep` names the files whose text holds the identifier, and only
+    those are read. Reading the tree's files one by one cost a process each,
+    and the limit that bounded it - the first 200 entries - left every paper
+    and note of a larger corpus unfindable (#647).
     """
-    listing = git(["ls-tree", "-r", "--name-only", commit], cwd=repository.root).lines()
-    for path in listing[:_SEARCH_DEPTH] if len(listing) > _SEARCH_DEPTH else listing:
-        if not path.endswith(".md"):
-            continue
+    if not document_id:
+        # An empty pattern matches every line of every file.
+        return None
+    # -F and -e: an identifier is text, never a pattern or an option. -z: a
+    # path is written as it is, not quoted.
+    found = git(
+        ["grep", "-l", "-z", "-F", "-e", document_id, commit, "--", "*.md"],
+        cwd=repository.root,
+    )
+    if not found.ok:
+        return None
+    # Each record is the point as it was given, a colon, then the path. Cut
+    # by length: the point and the path may each hold a colon.
+    prefix = f"{commit}:"
+    for record in found.records():
+        path = record.removeprefix(prefix)
         content = repository.show(commit, path)
-        if content is None:
-            continue
-        if _states_identifier(content, document_id):
+        if content is not None and _states_identifier(content, document_id):
             return path
     return None
 
