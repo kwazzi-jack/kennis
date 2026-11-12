@@ -14,6 +14,18 @@ abstract: >-
 authors:
   - family-names: Welman
     given-names: Brian
+    orcid: "https://orcid.org/0000-0002-0254-5173"
+    affiliation: "RATT, Department of Physics & Electronics, Rhodes University"
+  - family-names: Smirnov
+    given-names: Oleg M.
+    orcid: "https://orcid.org/0000-0003-1680-7936"
+    affiliation: >-
+      RATT, Department of Physics & Electronics, Rhodes University;
+      South African Radio Astronomy Observatory (SARAO)
+  - family-names: Atemkeng
+    given-names: Marcellin
+    orcid: "https://orcid.org/0000-0002-9020-3885"
+    affiliation: "Department of Pure & Applied Mathematics, Rhodes University"
 repository-code: "https://github.com/kwazzi-jack/kennis"
 url: "https://kwazzi-jack.github.io/kennis/"
 license: GPL-3.0-or-later

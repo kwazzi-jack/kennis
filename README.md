@@ -175,6 +175,14 @@ uv sync --extra mcp
 uv run kennis --help
 ```
 
+## Citing
+
+If you use kennis in your work, please cite it. On GitHub, **Cite this
+repository** in the sidebar gives the citation in APA and BibTeX; it is read
+from
+[`CITATION.cff`](https://github.com/kwazzi-jack/kennis/blob/main/CITATION.cff),
+which names the authors and the version.
+
 ## Licence
 
 GPL-3.0-or-later. See `LICENSE`.
