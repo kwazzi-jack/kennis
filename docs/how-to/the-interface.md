@@ -128,10 +128,24 @@ and its `kennis://` link, ready to cite. **Search within this tag** keeps a
 search to it until **Show everything**. See
 [Tag passages and documents](tag-passages.md).
 
-**A figure is never fetched on your behalf.** A converted paper refers to
-images held elsewhere, and requesting one would tell that site which
-document you are reading. So remote images are blocked, the host is named,
-and there is a control to load them if you want them. An image kept beside
+**A figure is never fetched on your behalf.** A paper read from a web page
+refers to images held elsewhere, and requesting one would tell that site
+which document you are reading. So remote images are blocked, the host is
+named, and **Load figures** loads them for that page.
+
+To load one site's figures every time, name it once:
+
+```console
+$ kennis config set figures.trusted_hosts arxiv.org
+```
+
+A document's page then loads the figures held at that site over HTTPS, each
+one as you scroll near it, so a paper with forty figures is not forty
+requests on opening. Separate several sites with spaces. Only the site named
+is trusted, not a site under it, and a search result's passage never loads a
+remote figure. The setting is empty until you set it.
+
+An image kept beside
 its document is drawn, on the document's page and in a search result's
 passage; a reference to a local figure that has no image shows as a
 placeholder rather than a broken image. See

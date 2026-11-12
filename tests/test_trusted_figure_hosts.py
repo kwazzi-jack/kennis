@@ -20,9 +20,11 @@ from pydantic import ValidationError
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.corpus.collection import Collection
+from kennis.engine.errors import SettingsError
 from kennis.engine.settings import FiguresSettings, figure_hosts, load_settings
 from kennis.gui import words
 from kennis.gui.app import build_app
+from kennis.gui.figures import trusted_figure_hosts
 from kennis.render.html import IMAGE_BLOCKED, passage_html, to_html
 
 TOKEN = "a-test-token"
@@ -265,3 +267,15 @@ def test_the_setting_is_offered_with_what_naming_a_host_discloses(
     assert (
         "which document you are reading" in words.SETTING_TIPS["figures.trusted_hosts"]
     )
+
+
+def test_a_refused_setting_trusts_nothing_and_stops_no_page(
+    monkeypatch: pytest.MonkeyPatch, corpus: Path
+):
+    """A settings file kennis refuses is reported by what it stops. It must
+    not also stop a document from being read."""
+    monkeypatch.setenv("KENNIS_FIGURES_TRUSTED_HOSTS", "https://arxiv.org/")
+    with pytest.raises(SettingsError):
+        load_settings()
+
+    assert trusted_figure_hosts() == frozenset()
