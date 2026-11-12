@@ -10,6 +10,7 @@ The image is a JPEG's first bytes, never text (#649).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.events import Outcome
 from kennis.gui.app import build_app
 from kennis.gui.figures import figure_addresses, held_figure
+from kennis.gui.theme import stylesheet
 from kennis.render.html import IMAGE_MISSING
 
 TOKEN = "a-test-token"
@@ -253,3 +255,22 @@ def test_a_page_is_given_addresses_only_for_what_the_address_answers(
     assert address("") is None
     # A document that is one file has no directory of its own to hold one.
     assert figure_addresses(root, "notes/Plain note.md") is None
+
+
+# ---------------------------------------------------------------------------
+# How a figure is drawn
+# ---------------------------------------------------------------------------
+
+
+def test_a_transparent_figure_is_on_white_in_both_themes():
+    """Black axes on the dark ground were close to invisible (#658). A
+    background shows only through transparent pixels, so an opaque image
+    is as it was."""
+    sheet = stylesheet()
+    figure = re.findall(r"img\.figure\s*\{([^}]*)\}", sheet)
+
+    assert len(figure) == 1
+    assert "background: var(--figure-ground);" in figure[0]
+    grounds = re.findall(r"--figure-ground:\s*([^;]+);", sheet)
+    # Written by hand: light, dark by the system, dark by choice.
+    assert grounds == ["#FFFFFF", "#FFFFFF", "#FFFFFF"]
