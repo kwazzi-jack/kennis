@@ -55,13 +55,14 @@ it, what the corpus is for - rather than about kennis in the abstract.
 Install a pack, restart the agent, and the description changes. See
 [Author a pack](author-a-pack.md).
 
-## The six tools
+## The seven tools
 
 | tool | what it does |
 |---|---|
 | `list_corpus` | what the corpus holds, per collection or in summary, with each docs project's versions |
 | `search` | search the collections its `collections` argument names, among them this project's `.context/` bundle, or all of them |
 | `read` | read passages from notes, literature or documentation, several at once |
+| `figure` | look at figures a document links, as images, up to four at once |
 | `cite` | a citation, its reference and its `kennis://` link for each passage cited, several at once |
 | `remember` | write one note |
 | `tag` | tag passages or documents, or take tags off them, several at once |
@@ -89,6 +90,22 @@ per collection. An agent's saved instructions that name `search_notes` or
 and optionally a chunk and how much either side of it to include. Each
 answer opens by naming the collection its document is in. An agent that has just run a search has several hits to follow, and
 one round trip is better than five.
+
+`figure` answers the images a passage links. `read` shows a figure as a
+link and its caption, and the agent passes the link's target to `figure` to
+see it. It answers only what the document's own text links as an image:
+
+- an image kept beside the document is answered at once;
+- an image held at a web site, as for a paper read from arXiv's HTML, is
+  fetched only if you have named that site in `figures.trusted_hosts`, since
+  fetching it tells the site which document is being read. The site's
+  `robots.txt` is honoured, so a figure from arxiv.org can take 15 seconds.
+  A fetched figure is kept in kennis's state folder, not in the corpus, and
+  is not fetched twice;
+- a figure larger than 3 MB is refused.
+
+When a site is not trusted, the agent is told so and told that naming it is
+your decision. See [Use the window](the-interface.md) for the setting.
 
 `cite` is batched the same way. The agent is told to cite through it rather
 than write a citation or a link itself, so a citation always names a document

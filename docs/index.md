@@ -85,7 +85,7 @@ is padded or re-wrapped.
   a window.
 
 - **Wiring up an agent?**
-  [Serve an agent](how-to/serve-an-agent.md) - MCP over stdio, six tools.
+  [Serve an agent](how-to/serve-an-agent.md) - MCP over stdio, seven tools.
 
 </div>
 

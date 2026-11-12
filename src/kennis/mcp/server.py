@@ -25,6 +25,7 @@ from kennis.engine.pack.installed import InstalledPack
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.tools.cite import cite
 from kennis.mcp.tools.corpus import list_corpus
+from kennis.mcp.tools.figure import figure
 from kennis.mcp.tools.read import read
 from kennis.mcp.tools.remember import remember
 from kennis.mcp.tools.search import search
@@ -53,6 +54,7 @@ def build_server() -> FastMCP:
     server.tool(list_corpus)
     server.tool(search)
     server.tool(read)
+    server.tool(figure)
     server.tool(cite)
     server.tool(remember)
     server.tool(tag)

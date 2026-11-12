@@ -139,7 +139,8 @@ Three limits, as of this version:
 - Only mineru's images are kept. A paper read from arXiv's HTML keeps the
   address of each figure and not the file; the window loads those when you
   ask, or without asking for a site named in `figures.trusted_hosts` (see
-  [Use the window](the-interface.md)). Such figures need a network
+  [Use the window](the-interface.md)), and an agent is given one only from
+  such a site. Such figures need a network
   connection and are not in a backup. datalab's images are not kept.
 
 ## Conversion

@@ -135,8 +135,12 @@ def get_politely(
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
     follow_redirects: bool | None = None,
+    limit: int | None = None,
 ) -> httpx.Response:
     """GET `url` if its host's robots.txt allows it, once its delay has passed.
+
+    `limit` is the most bytes the answer may hold, where a caller knows
+    less than `bounded`'s own ceiling is enough.
 
     Raises `Disallowed` without asking when the rules forbid the path. The
     query string is part of what the rules are matched against, as a
@@ -160,6 +164,7 @@ def get_politely(
                 params=params,
                 headers=headers,
                 follow_redirects=follow_redirects,
+                limit=limit,
             )
         finally:
             host.last_request = monotonic()

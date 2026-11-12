@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from filelock import FileLock
 
 import kennis.citing
+import kennis.figures
 import kennis.finding
 import kennis.holdings
 import kennis.operations
@@ -101,6 +102,7 @@ EXPECTED_OPERATIONS = frozenset(
         "contents",
         "docs_versions",
         "document_marks",
+        "figure",
         "found",
         "history",
         "holdings",
@@ -130,6 +132,29 @@ class Scene:
     corpus: Path
     note: str
     first_commit: str
+
+
+# A JPEG's first bytes, never text (#649).
+_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01"
+_FIGURED = "figured001"
+_FIGURE = "0123456789abcdef.jpg"
+
+
+def a_note_with_a_figure(scene: Scene) -> str:
+    """A note that is a folder holding its text and one image it links."""
+    folder = scene.corpus / "notes" / "Figured"
+    folder.mkdir()
+    (folder / "content.md").write_text(
+        f"---\nid: {_FIGURED}\ntitle: Figured\nowner: user\n"
+        "source:\n  from: 'path:/elsewhere/Figured.pdf'\n  via: mineru\n"
+        "  format: pdf\n"
+        f"  sha256: '{'a' * 64}'\n"
+        "  at: '2026-11-12T00:00:00Z'\n---\n"
+        f"\n# Figured\n\n![]({_FIGURE})  \nFigure 1.\n",
+        encoding="utf-8",
+    )
+    (folder / _FIGURE).write_bytes(_JPEG)
+    return _FIGURED
 
 
 def tagged_reading(scene: Scene) -> str:
@@ -324,6 +349,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
     "tree": lambda scene: {"collection": None},
     "version_pages": lambda scene: {"project": "tool", "version": "1.0"},
     "document_marks": lambda scene: {"collection": "notes"},
+    "figure": lambda scene: {"handle": a_note_with_a_figure(scene), "name": _FIGURE},
     "found": lambda scene: {"handle": "calibration", "collection": None},
     "cite": lambda scene: {"requests": [kennis.citing.CiteRequest("calibration")]},
     "tag": lambda scene: {
@@ -369,6 +395,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
 DIRECT: dict[str, Callable[[Context], object]] = {
     "contents": lambda context: kennis.holdings.contents_of(context, "notes"),
     "document_marks": lambda context: kennis.holdings.document_marks(context, "notes"),
+    "figure": lambda context: kennis.figures.figure_of(context, _FIGURED, _FIGURE),
     "found": lambda context: kennis.finding.found_document(
         context, "calibration", None
     ),

@@ -53,6 +53,11 @@ _NAME_LENGTH: Final = 16
 _IMAGE_LINK: Final = re.compile(r"!\[(?P<alt>[^\]\n]*)\]\((?P<target>[^()\s]+)\)")
 
 
+def linked_images(markdown: str) -> list[str]:
+    """The target of every image `markdown` links, as written, in order."""
+    return [match["target"] for match in _IMAGE_LINK.finditer(markdown)]
+
+
 def kept_images(markdown: str, directory: Path) -> tuple[str, dict[str, bytes]]:
     """`markdown` with each image it links from `directory` renamed, and
     those images' bytes under their new names.
@@ -100,4 +105,4 @@ def _linked_image(target: str, root: Path) -> bytes | None:
         return None
 
 
-__all__ = ["IMAGE_MEDIA_TYPES", "IMAGE_SUFFIXES", "kept_images"]
+__all__ = ["IMAGE_MEDIA_TYPES", "IMAGE_SUFFIXES", "kept_images", "linked_images"]
