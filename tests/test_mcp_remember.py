@@ -28,9 +28,9 @@ from click.testing import CliRunner
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.errors import ContextNotFound, InputError
-from kennis.mcp.tools.read import ReadRequest, read_notes
+from kennis.mcp.tools.read import ReadRequest, read
 from kennis.mcp.tools.remember import remember
-from kennis.mcp.tools.search import search_notes
+from kennis.mcp.tools.search import search
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +109,7 @@ def test_a_remembered_note_is_findable_without_a_second_call(
 
     assert "QuartiCal" in answered
     assert "indexed" in answered
-    assert "QuartiCal" in search_notes("time chunk long tracks")
+    assert "QuartiCal" in search("time chunk long tracks", ["notes"])
 
 
 def test_an_unindexed_collection_is_said_so_rather_than_silently_unsearchable(
@@ -141,7 +141,7 @@ def test_the_answer_carries_the_handle_a_read_tool_takes(corpus: Path):
     identifier = next(
         word.strip("()") for word in answered.split() if word.startswith("(")
     )
-    assert "Sky models are fitted per sub-band" in read_notes(
+    assert "Sky models are fitted per sub-band" in read(
         [ReadRequest(document_id=identifier)]
     )
 

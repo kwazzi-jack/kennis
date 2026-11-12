@@ -34,7 +34,7 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
 
     `collection` narrows to one of `notes`, `literature` or `docs`.
     `detail="documents"` adds a row per document with the `document_id`
-    a `read_*` tool takes - copy one from here, never construct it.
+    `read` takes - copy one from here, never construct it.
 
     The `context` bundle is not listed: it lives in the project's
     repository and its files are read with native file tools.
@@ -57,7 +57,7 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
         held = contents.documents
         lines.append(f"{name}: {len(held)} document{'' if len(held) == 1 else 's'}")
         if name == "docs":
-            # What `search_docs` may be told to search, as `kennis corpus
+            # What `search` may be told to search in docs, as `kennis corpus
             # version` says it: a line per project, not per page.
             lines.extend(
                 f"  {project}: {describe_held_versions(versions)}"

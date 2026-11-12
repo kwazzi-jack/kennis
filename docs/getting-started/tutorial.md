@@ -347,7 +347,7 @@ that speaks MCP starts `kennis serve` itself. For Claude Code, add this to
 ```
 
 In a new session, ask it *"What do my notes say about combining rankings?"*.
-The agent searches with `search_notes`, reads with `read_notes`, and cites
+The agent searches with `search`, reads with `read`, and cites
 the passage with `cite`, whose link opens it in your window. `remember` is
 the one tool that writes, and the agent is told to use it only for what you
 ask it to keep. See [Serve an agent](../how-to/serve-an-agent.md).

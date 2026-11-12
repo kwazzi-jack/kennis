@@ -87,7 +87,7 @@ def test_the_holdings_are_the_bytes_pack_list_prints():
 
 def test_every_generic_claim_survives_having_no_packs():
     """The generic half is about kennis itself - the collections, the
-    surrogate ids, what `search_context` returns - and none of it depends
+    surrogate ids, what a `context` hit is - and none of it depends
     on a pack being installed."""
     bare = instructions_for(())
 

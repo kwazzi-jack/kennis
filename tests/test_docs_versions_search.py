@@ -160,9 +160,9 @@ def test_a_version_nothing_holds_is_refused_at_the_command_line(corpus: Path):
 
 def test_an_agent_sees_the_current_version_alone(corpus: Path):
     """The agent's search is not the sweep, and once kept every version."""
-    from kennis.mcp.tools.search import search_docs
+    from kennis.mcp.tools.search import search
 
-    answer = search_docs("validators", top_k=10)
+    answer = search("validators", ["docs"], top_k=10)
 
     assert "pydantic 2.14" in answer
     assert "2.12" not in answer

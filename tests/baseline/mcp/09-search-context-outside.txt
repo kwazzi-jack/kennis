@@ -1,5 +1,6 @@
-$ search_context {"question": "CASA"}
+$ search {"collections": ["context"], "question": "CASA"}
 --- error False
+Context project keywords as a fraction of the best match here
 [1] CASA is used here
   keywords: very high  path=<scratch>/project/.context/CASA is used here.md chunk=0
   CASA is used here.

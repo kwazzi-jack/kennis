@@ -72,8 +72,7 @@ def remember(
     success would be worse than not recording it.
 
     `title` overrides the first line, and `group` puts the note in a
-    subdirectory. The answer carries the `document_id` a `read_*` tool
-    takes.
+    subdirectory. The answer carries the `document_id` `read` takes.
     """
     body = text.strip()
     if not body:

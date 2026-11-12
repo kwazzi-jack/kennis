@@ -3,7 +3,7 @@
 The `tag` tool writes, as `remember` does: it takes what a hit gives - a
 `document_id` or a context hit's `path`, with its `chunk` - as `cite` does,
 never a link the agent composed, and a batch is all or nothing. The
-`search_*` tools take `tags`, and `list_corpus` names the tags in use.
+`search` takes `tags`, and `list_corpus` names the tags in use.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from kennis.engine.tags import Anchor, read_tags
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.tools.cite import CiteRequest
 from kennis.mcp.tools.corpus import list_corpus
-from kennis.mcp.tools.search import search_context, search_literature, search_notes
+from kennis.mcp.tools.search import search
 from kennis.mcp.tools.tags import tag
 from test_cli_tags import PAPER_ID, SOLVING, chunk_holding, indexed_paper, run
 
@@ -138,15 +138,15 @@ def test_the_tool_refuses_what_it_cannot_tag_and_writes_nothing(
 def test_a_search_tool_is_kept_to_its_tags(corpus: Path):
     tag([CiteRequest(document_id=PAPER_ID)], ["calibration"])
 
-    assert "Drift" in search_notes("gains")
-    assert search_notes("gains", tags=["calibration"]) == "no matching passages"
-    assert PAPER_ID in search_literature("gains", tags=["calibration"])
+    assert "Drift" in search("gains", ["notes"])
+    assert search("gains", ["notes"], tags=["calibration"]) == "no matching passages"
+    assert PAPER_ID in search("gains", ["literature"], tags=["calibration"])
 
 
 def test_a_context_search_is_kept_to_the_project_s_tags(project: Path):
     tag([CiteRequest(path=".context/ours.md")], ["mine"])
 
-    said = search_context("gains", tags=["mine"])
+    said = search("gains", ["context"], tags=["mine"])
 
     assert "ours.md" in said
     assert "theirs.md" not in said
@@ -154,7 +154,7 @@ def test_a_context_search_is_kept_to_the_project_s_tags(project: Path):
 
 def test_a_tag_nothing_carries_is_refused_naming_the_listing(corpus: Path):
     with pytest.raises(KennisError) as refused:
-        search_literature("gains", tags=["nowhere"])
+        search("gains", ["literature"], tags=["nowhere"])
 
     assert refused.value.resolution == "kennis tags"
 

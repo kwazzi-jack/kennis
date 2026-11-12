@@ -55,29 +55,39 @@ it, what the corpus is for - rather than about kennis in the abstract.
 Install a pack, restart the agent, and the description changes. See
 [Author a pack](author-a-pack.md).
 
-## The eleven tools
+## The six tools
 
 | tool | what it does |
 |---|---|
 | `list_corpus` | what the corpus holds, per collection or in summary, with each docs project's versions |
-| `search_notes` | search the notes collection |
-| `search_literature` | search the literature collection |
-| `search_docs` | search the documentation collection: each project's current version, or the versions its `version` argument names |
-| `search_context` | search this project's `.context/` bundle |
-| `read_notes` | read passages from notes, several at once |
-| `read_literature` | read passages from literature, several at once |
-| `read_docs` | read passages from documentation, several at once |
+| `search` | search the collections its `collections` argument names, among them this project's `.context/` bundle, or all of them |
+| `read` | read passages from notes, literature or documentation, several at once |
 | `cite` | a citation, its reference and its `kennis://` link for each passage cited, several at once |
 | `remember` | write one note |
 | `tag` | tag passages or documents, or take tags off them, several at once |
 
-The four `search_*` tools take `tags`, which keeps a search to what carries
-every tag named, and `list_corpus` names the tags in use. `remember` and
-`tag` are the only tools that write.
+`search` answers in one group per collection, each ranked on its own, as
+`kennis search` does. Its arguments:
 
-The three `read_*` tools are **batched**: they take a list of requests, each
-naming a document and optionally a chunk and how much either side of it to
-include. An agent that has just run a search has several hits to follow, and
+| argument | what it does |
+|---|---|
+| `collections` | required: `["all"]`, or any of `notes`, `literature`, `docs` and `context`. Under `all`, every one that has an index is searched, and one that has none is named with the command that builds it. A collection named here that has no index is an error. |
+| `top_k` | how many hits each collection gives, 5 unless given |
+| `version` | for `docs`: each project's current version is searched unless this names others, as `kennis search --version` does |
+| `projects` | for `context`: `"all"` for every project on this machine, or a list of project names |
+| `tags` | keeps the search to what carries every tag named; `list_corpus` names the tags in use |
+
+A hit in `context` is a file in the project's own repository, so the agent
+opens it with its own file tools; `read` is for the other three. `remember`
+and `tag` are the only tools that write.
+
+Before version 0.15 there were four search tools and three read tools, one
+per collection. An agent's saved instructions that name `search_notes` or
+`read_literature` need `search` and `read` instead.
+
+`read` is **batched**: it takes a list of requests, each naming a document
+and optionally a chunk and how much either side of it to include. Each
+answer opens by naming the collection its document is in. An agent that has just run a search has several hits to follow, and
 one round trip is better than five.
 
 `cite` is batched the same way. The agent is told to cite through it rather
