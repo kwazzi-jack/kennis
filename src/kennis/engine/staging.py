@@ -45,7 +45,7 @@ import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final, cast
 
 from kennis.engine.atomic import make_writable, remove_file, remove_tree, replace_file
@@ -209,13 +209,21 @@ def journalled(
     restore or a return, which git writes into the working tree itself.
     `paths` is every file the write may touch; on any failure, here or at
     the next start, they are put back as they were. From here the task runs
-    to its end, cancelled or not."""
+    to its end, cancelled or not.
+
+    A directory one of them needs and the corpus does not have is the
+    write's to make, so it is journalled too and goes again with its files:
+    restoring a paper with images makes the paper's directory, and one left
+    empty by a failed restore is a group holding nothing."""
     past_cancelling()
     _write_journal(
         corpus_root,
         operation,
         Repository(corpus_root).head(),
-        Changes(placed=tuple(paths)),
+        Changes(
+            placed=tuple(paths),
+            made_directories=_directories_to_make(corpus_root, paths),
+        ),
     )
     try:
         yield
@@ -335,6 +343,17 @@ def _walk(root: Path) -> Iterator[tuple[str, str, os.stat_result]]:
                 yield path.relative_to(root).as_posix(), "file", path.lstat()
 
 
+def _directories_to_make(corpus_root: Path, paths: Sequence[str]) -> tuple[str, ...]:
+    """The directories above `paths` that are not in the corpus yet,
+    relative to it."""
+    missing: set[str] = set()
+    for relative in paths:
+        for parent in PurePosixPath(relative).parents:
+            if parent.as_posix() != "." and not (corpus_root / parent).is_dir():
+                missing.add(parent.as_posix())
+    return tuple(sorted(missing))
+
+
 def _identity(path: Path) -> tuple[int, int, int] | None:
     try:
         status = path.stat()
@@ -385,7 +404,9 @@ def _roll_back(corpus_root: Path) -> None:
     head = journal["head"]
     repository = Repository(corpus_root)
     for relative in journal["paths"]:
-        if head is not None and repository.show(head, relative) is not None:
+        # `holds`, not `show(...) is not None`: an image beside a document
+        # has no text to show, and was read here as never having existed.
+        if head is not None and repository.holds(head, relative):
             repository.restore(relative, commit=head)
             path = corpus_root / relative
             collection = relative.split("/", 1)[0]

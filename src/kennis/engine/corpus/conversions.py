@@ -8,12 +8,16 @@ again for minutes of MinerU, or for money with a hosted converter.
 under `.git/kennis-conversions/` - inside `.git` so no commit stages it -
 named by the converter and the source's sha256, since two converters write
 different markdown for one PDF and a renamed file is the same document.
+An entry holds the images the markdown links as well, as base64 in the same
+JSON document, because markdown answered without them is a paper whose
+figures point at nothing (#134).
 The service forgets an entry a day after it was written, at its start
 (`staging.recover`).
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 from collections.abc import Sequence
@@ -55,9 +59,12 @@ class KeptConversions:
     def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         entries = {path: self._entry_for(path) for path in paths}
         kept = {
-            path: json.loads(entry.read_text(encoding="utf-8"))
+            path: stored
             for path, entry in entries.items()
             if entry.is_file()
+            # An entry from before images were kept does not say whether
+            # the document had any, so it is not an answer.
+            and "images" in (stored := json.loads(entry.read_text(encoding="utf-8")))
         }
         unknown = [path for path in paths if path not in kept]
         batch = self._inner.convert(unknown) if unknown else ConversionBatch({})
@@ -72,6 +79,10 @@ class KeptConversions:
                         "markdown": markdown,
                         "front_page": batch.front_page.get(path, ""),
                         "repairs": batch.repairs.get(path, 0),
+                        "images": {
+                            name: base64.b64encode(content).decode("ascii")
+                            for name, content in batch.images.get(path, {}).items()
+                        },
                     }
                 ),
             )
@@ -89,6 +100,17 @@ class KeptConversions:
             repairs={
                 **{path: int(entry["repairs"]) for path, entry in kept.items()},
                 **batch.repairs,
+            },
+            images={
+                **{
+                    path: {
+                        str(name): base64.b64decode(content)
+                        for name, content in entry["images"].items()
+                    }
+                    for path, entry in kept.items()
+                    if entry["images"]
+                },
+                **batch.images,
             },
         )
 

@@ -122,7 +122,11 @@ def _identity_on_disk(
 ) -> tuple[str | None, str | None]:
     try:
         text = (repository.root / path).read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # Not UTF-8 is an image beside a document, or a document saved by
+        # an editor in another encoding. Either states no owner kennis can
+        # read, and is reported like a document whose YAML will not parse,
+        # never raised: this runs before every write.
         return None, None
     return _identity_in(text)
 
@@ -137,6 +141,8 @@ def _identity_in_history(
     """
     if head is None:
         return None, None
+    # None for a file that was not text as well as for one that was not
+    # there: a deleted image states no owner.
     text = repository.show(head, path)
     return _identity_in(text) if text is not None else (None, None)
 

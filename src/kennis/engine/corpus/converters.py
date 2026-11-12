@@ -46,6 +46,7 @@ from typing import Any, Final, Literal, Protocol, runtime_checkable
 import httpx
 
 from kennis.engine.cancelling import cancellation_asked, pause
+from kennis.engine.corpus.images import kept_images
 from kennis.engine.corpus.ligatures import (
     repair_ligatures,
     text_layer_vocabulary,
@@ -82,6 +83,13 @@ class ConversionBatch:
     # it is a direct measure of how badly a converter handled this document -
     # the number that would have shown concern #135 the day it appeared.
     repairs: dict[Path, int] = field(default_factory=dict)
+    # The images each document's markdown links, by the name the markdown
+    # links them under (`images.kept_images`). Carried out of the run's
+    # temporary directory for the same reason `front_page` is: nothing else
+    # holds them once the run is over, and before this every figure link in
+    # a stored paper pointed at nothing (#134). A document that links none
+    # has no entry.
+    images: dict[Path, dict[str, bytes]] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -298,7 +306,7 @@ class MineruConverter:
             staged = _stage(paths, staged_dir)
 
             completed = self._run(staged_dir, output_dir, len(paths))
-            markdown, front_page = _collect(staged, output_dir)
+            markdown, front_page, images = _collect(staged, output_dir)
 
         reason = _failure_reason(completed) if completed.returncode != 0 else None
         if not markdown and reason is not None:
@@ -310,6 +318,7 @@ class MineruConverter:
             front_page=front_page,
             failure_reason=reason,
             repairs=repairs,
+            images=images,
         )
 
     def _finish(
@@ -714,24 +723,34 @@ def _stage(paths: Sequence[Path], staged_dir: Path) -> dict[str, Path]:
 
 def _collect(
     staged: dict[str, Path], output_dir: Path
-) -> tuple[dict[Path, str], dict[Path, str]]:
-    """The markdown and page-one text MinerU produced, keyed by original path.
+) -> tuple[dict[Path, str], dict[Path, str], dict[Path, dict[str, bytes]]]:
+    """The markdown, page-one text and linked images MinerU produced, keyed
+    by original path.
 
     MinerU nests each document's output under a directory named after its
     input stem, at a depth that varies by version and backend, so the markdown
     is found by searching that directory rather than at a fixed path. A run
     can leave more than one markdown file there; the largest is the document.
+
+    The images are read relative to **that file's own directory**, which is
+    what its links are relative to: MinerU names a figure the same in two
+    documents' directories when it likes, so a name alone does not say whose
+    it is.
     """
     markdown: dict[Path, str] = {}
     front_page: dict[Path, str] = {}
+    images: dict[Path, dict[str, bytes]] = {}
     for stem, original in staged.items():
         produced = sorted((output_dir / stem).rglob("*.md"))
         if not produced:
             continue
         largest = max(produced, key=lambda candidate: candidate.stat().st_size)
-        markdown[original] = largest.read_text(encoding="utf-8", errors="replace")
+        text = largest.read_text(encoding="utf-8", errors="replace")
+        markdown[original], linked = kept_images(text, largest.parent)
+        if linked:
+            images[original] = linked
         front_page[original] = _front_page_text(largest)
-    return markdown, front_page
+    return markdown, front_page, images
 
 
 # How often a converter's wait looks for a cancellation.

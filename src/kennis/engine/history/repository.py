@@ -19,7 +19,7 @@ from typing import Final
 
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import CorpusExists, CorpusNotFound, HistoryUnwritable
-from kennis.engine.history.git import git, git_binary
+from kennis.engine.history.git import git, git_binary, git_content
 
 _GITATTRIBUTES: Final = """\
 # Line endings belong to the repository, not to the machine. Git for Windows
@@ -263,15 +263,39 @@ class Repository:
         return changes
 
     def show(self, commit: str, path: str) -> str | None:
-        """The contents of `path` as of `commit`, or None if it was not there.
+        """The text of `path` as of `commit`, or None if it was not there or
+        is not text.
 
         The only way to read a document that has been deleted: the file is
         gone from the working tree, and knowing what was lost is the whole
         point of noticing.
+
+        **None for a file that is not UTF-8**, an image beside a document or
+        a `.md` saved in another encoding. So None does not say the path was
+        absent - `holds` says that. Read as bytes and decoded here
+        (`git_content`): this is a file's content, not text git composed.
         """
         self._require_repository()
-        result = git(["show", f"{commit}:{path}"], cwd=self.root)
-        return result.stdout if result.ok else None
+        content = git_content(["show", f"{commit}:{path}"], cwd=self.root)
+        if content is None:
+            return None
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        # What reading it as text did before: one line ending, whatever a
+        # hand-made commit stored.
+        return text.replace("\r\n", "\n")
+
+    def holds(self, commit: str, path: str) -> bool:
+        """Whether `commit` has a file at `path`, read or unreadable.
+
+        Asked of git's object store without the content, so it is as true of
+        an image as of a document. A directory is not a file.
+        """
+        self._require_repository()
+        result = git(["cat-file", "-t", f"{commit}:{path}"], cwd=self.root)
+        return result.ok and result.stdout.strip() == "blob"
 
     def restore(self, path: str, *, commit: str = "HEAD") -> bool:
         """Put `path` back as it was at `commit`.

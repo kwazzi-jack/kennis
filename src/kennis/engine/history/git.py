@@ -148,6 +148,37 @@ def git(
     )
 
 
+def git_content(
+    arguments: Sequence[str],
+    *,
+    cwd: Path,
+    timeout: float = _TIMEOUT_SECONDS,
+) -> bytes | None:
+    """What one git command wrote, as bytes, or None when it failed.
+
+    For a command whose output is a file's **content** and not text git
+    composed: an image beside a document is not UTF-8. `git()` cannot be
+    asked and the error caught, because where the decode happens depends on
+    the platform - on Windows `subprocess` decodes in a reader thread, so
+    the `UnicodeDecodeError` is raised there, never reaches the caller, and
+    the output comes back missing. Nothing is decoded here.
+    """
+    command = (git_binary(), *_OVERRIDES, *arguments)
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+            env=_environment(),
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    return completed.stdout if completed.returncode == 0 else None
+
+
 def _environment() -> dict[str, str]:
     """The environment every git call runs in.
 

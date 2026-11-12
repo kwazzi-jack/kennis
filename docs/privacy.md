@@ -13,7 +13,7 @@ advice, and it does not decide what you are permitted to store or send.
 
 | what | Linux default | what it holds |
 |---|---|---|
-| the corpus | `~/.local/share/kennis` | the full text of every document and note, its search index, and the git history of both |
+| the corpus | `~/.local/share/kennis` | the full text of every document and note, the images a converted document links, its search index, and the git history of all of it |
 | configuration | `~/.config/kennis/config.toml` | your settings, including the Unpaywall email address if you set one |
 | credentials | `~/.config/kennis/credentials.toml` | API keys, readable only by your account where the platform has file modes |
 | state | `~/.local/state/kennis` | the window's recent searches: each query, its scope, its count and when it ran, never the results |

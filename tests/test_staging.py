@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from kennis.engine import staging
-from kennis.engine.atomic import make_read_only, remove_file
+from kennis.engine.atomic import make_read_only, remove_file, remove_tree
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.document import Document, write_document
 from kennis.engine.corpus.layout import STAGING_DIRNAME
@@ -347,6 +347,64 @@ def test_a_failure_while_placing_puts_back_exactly_what_was_placed(
     assert ids_in(corpus) == ["first", "second", "theirs"]
     assert "Changed" not in (corpus / "notes" / "first.md").read_text("utf-8")
     assert "An edit of theirs." in theirs.read_text("utf-8")
+    assert git_status(corpus) == ""
+    assert not journal_path(corpus).exists()
+
+
+# A JPEG's first bytes, which are not valid UTF-8. `b"png"` would be read
+# as text by anything that reads it, and prove nothing.
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+
+
+def a_paper_with_a_figure(root: Path, identifier: str) -> Path:
+    """A committed-shape document with assets: `content.md` and an image."""
+    frontmatter = NoteFrontmatter.model_validate(
+        {
+            "id": identifier,
+            "title": identifier,
+            "owner": "user",
+            "source": {"from": "path:/p.pdf", "via": "mineru", "format": "pdf"},
+        }
+    )
+    written = write_document(
+        root / "notes" / f"{identifier}.md",
+        frontmatter=frontmatter,
+        body="![](0123456789abcdef.jpg)\n",
+        assets={"0123456789abcdef.jpg": JPEG},
+    )
+    assert written.wrapper_dir is not None
+    return written.wrapper_dir
+
+
+def test_a_failed_publish_puts_back_a_document_whose_image_it_removed(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rollback asks of each journalled path whether the commit held it.
+    Asked by reading the file's content as text, an image raised
+    `UnicodeDecodeError` in the middle of putting a failed publish back,
+    and the corpus was left half removed (#134's unit, 2026-11-11)."""
+    directory = a_paper_with_a_figure(corpus, "figured")
+    Repository(corpus).commit("add", scope="notes", summary="1 added")
+    head = Repository(corpus).head()
+
+    real_commit = Repository.commit
+
+    def refused(
+        self: Repository, operation: str, *, scope: str, summary: str
+    ) -> str | None:
+        if operation == "record":
+            return real_commit(self, operation, scope=scope, summary=summary)
+        raise HistoryUnwritable("git refused the commit")
+
+    with mirrored(corpus) as mirror:
+        remove_tree(mirror.root / "notes" / "figured")
+        monkeypatch.setattr(Repository, "commit", refused)
+        with pytest.raises(HistoryUnwritable):
+            publish(mirror, operation="remove", scope="notes", summary="1 removed")
+
+    assert (directory / "0123456789abcdef.jpg").read_bytes() == JPEG
+    assert (directory / "content.md").is_file()
+    assert Repository(corpus).head() == head
     assert git_status(corpus) == ""
     assert not journal_path(corpus).exists()
 

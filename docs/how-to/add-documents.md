@@ -110,6 +110,34 @@ kennis corpus add paper.pdf -l --keep-original
 
 Or set `corpus.keep_original = true` to make it the default.
 
+## Figures
+
+A PDF, DOCX, PPTX or XLSX converted by mineru keeps the images its text
+links. Each is stored beside the document, which is then a directory:
+
+```
+literature/calibration/CubiCal - Kenyon et al - 2018/
+    content.md
+    10dad6eefa5d7f82.jpg
+    a6f82d4c0ffe226c.jpg
+```
+
+An image is named by its own content, and `content.md` links it by that
+name. A document that links no image stays a single `.md` file.
+
+Only what the text links is kept. A converter also writes an image for each
+equation and table it reads, which nothing refers to: for one paper mineru
+wrote 129 image files and the text linked 5.
+
+Three limits, as of this version:
+
+- The window does not draw a kept image yet; it shows a placeholder.
+- A document converted before images were kept holds its figure links and
+  not the images.
+- Only mineru's images are kept. A paper read from arXiv's HTML keeps the
+  address of each figure and not the file, and datalab's images are not
+  kept.
+
 ## Conversion
 
 Anything that is not already markdown or plain text goes through a converter.

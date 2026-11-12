@@ -78,6 +78,7 @@ from kennis.engine.history.history import (
     RestoredDocument,
     ReturnChanges,
     commit_summary,
+    document_files_at,
     document_path_at,
     outcome_summary,
     restore_document,
@@ -501,7 +502,10 @@ def restore_a_document(
     with exclusively(context.corpus_root):
         record_what_was_not_recorded(context)
         path = document_path_at(repository, commit, document_id)
-        with journalled(context.corpus_root, "restore", [path] if path else []):
+        # Every file the restore writes, so a failure partway puts each one
+        # back: a paper's images as well as its markdown.
+        files = document_files_at(repository, commit, path) if path else []
+        with journalled(context.corpus_root, "restore", files):
             restored = restore_document(repository, document_id, commit=commit)
             sealed_again(context, [restored.path])
             head = restored.path.split("/", 1)[0]
