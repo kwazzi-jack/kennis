@@ -98,3 +98,11 @@ How the process that owns the corpus behaves (milestone 14).
 | key | type | default | what it does |
 |---|---|---|---|
 | `idle_minutes` | `float` | `30.0` | Minutes the kennis service waits with no task, request or open window before it exits. The next command starts it again. |
+
+### `[figures]`
+
+Which remote figures a document's page loads without asking.
+
+| key | type | default | what it does |
+|---|---|---|---|
+| `trusted_hosts` | `str` | `""` | Hosts whose figures load when a document is opened, separated by spaces. Loading a figure tells its host which document you are reading. Empty: every remote figure waits to be asked for. |

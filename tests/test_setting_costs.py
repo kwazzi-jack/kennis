@@ -58,6 +58,7 @@ EXPECTED = {
     "logging.max_bytes": ("next_start",),
     "logging.backup_count": ("next_start",),
     "service.idle_minutes": ("next_start",),
+    "figures.trusted_hosts": ("next_document",),
 }
 
 

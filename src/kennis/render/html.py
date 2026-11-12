@@ -121,8 +121,14 @@ def to_html(
     heading_anchors: bool = False,
     margins: Sequence[MarginNote] = (),
     figure_address: FigureAddress | None = None,
+    trusted_hosts: frozenset[str] = frozenset(),
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
+
+    `trusted_hosts` are hosts the reader named once (#660): a figure held
+    at one over HTTPS is loaded as `load_remote_images` loads every one.
+    A passage takes none, because a search result is not a document the
+    reader opened.
 
     `figure_address` says where a local figure is served; without it, or
     where it answers None, the figure is a placeholder.
@@ -159,7 +165,9 @@ def to_html(
     keep the repeated title in place.
     """
     parser = _parser(
-        load_remote_images=load_remote_images, figure_address=figure_address
+        load_remote_images=load_remote_images,
+        figure_address=figure_address,
+        trusted_hosts=trusted_hosts,
     )
     pattern = query_pattern(terms)
     if (
@@ -593,7 +601,10 @@ def _held_address(image: Token, figure_address: FigureAddress | None) -> str | N
 
 
 def _parser(
-    *, load_remote_images: bool, figure_address: FigureAddress | None = None
+    *,
+    load_remote_images: bool,
+    figure_address: FigureAddress | None = None,
+    trusted_hosts: frozenset[str] = frozenset(),
 ) -> MarkdownIt:
     """A parser configured for corpus text.
 
@@ -612,7 +623,9 @@ def _parser(
     parser.add_render_rule(
         "image",
         _image_rule(
-            load_remote_images=load_remote_images, figure_address=figure_address
+            load_remote_images=load_remote_images,
+            figure_address=figure_address,
+            trusted_hosts=trusted_hosts,
         ),
     )
     parser.add_render_rule("link_open", _render_link_open)
@@ -749,8 +762,21 @@ def _render_link_open(
     return f"<a{attributes}>"
 
 
+def is_trusted(address: str, trusted_hosts: frozenset[str]) -> bool:
+    """Whether a figure at `address` is held by a host the reader named.
+
+    Over HTTPS only: the page's content policy admits a trusted host by
+    that scheme, so a plain-HTTP figure would be drawn and then refused.
+    """
+    parsed = urlparse(address)
+    return parsed.scheme == "https" and (parsed.hostname or "") in trusted_hosts
+
+
 def _image_rule(
-    *, load_remote_images: bool, figure_address: FigureAddress | None
+    *,
+    load_remote_images: bool,
+    figure_address: FigureAddress | None,
+    trusted_hosts: frozenset[str],
 ) -> RenderRule:
     """The render rule for `![alt](src)`, per the two rules above."""
 
@@ -771,9 +797,13 @@ def _image_rule(
         parsed = urlparse(source)
         host = parsed.netloc
         if parsed.scheme in _REMOTE_SCHEMES:
-            if not load_remote_images:
+            if not (load_remote_images or is_trusted(source, trusted_hosts)):
                 return _placeholder(f"{IMAGE_BLOCKED} {host}", alt)
-            return f'<img src="{_escaped(source)}" alt="{_escaped(alt)}">'
+            # Lazily, so opening a paper asks its host only for the
+            # figures the reader comes near.
+            return (
+                f'<img src="{_escaped(source)}" alt="{_escaped(alt)}" loading="lazy">'
+            )
         address = _held_address(token, figure_address)
         if address is not None:
             return (
@@ -816,6 +846,7 @@ __all__ = [
     "MarkedRange",
     "PassageHtml",
     "headings_of",
+    "is_trusted",
     "marked_text",
     "passage_html",
     "query_pattern",

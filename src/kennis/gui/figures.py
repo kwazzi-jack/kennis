@@ -20,6 +20,8 @@ from urllib.parse import quote
 from kennis.engine.corpus.images import IMAGE_MEDIA_TYPES
 from kennis.engine.corpus.layout import WRAPPED_DOCUMENT_FILENAME
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.errors import SettingsError
+from kennis.engine.settings import figure_hosts, load_settings
 from kennis.render.html import FigureAddress
 
 FIGURE_ROUTE = "/figure"
@@ -86,4 +88,24 @@ def figure_addresses(corpus_root: Path, document_path: str) -> FigureAddress | N
     return address
 
 
-__all__ = ["FIGURE_ROUTE", "figure_addresses", "held_figure", "media_type_of"]
+def trusted_figure_hosts() -> frozenset[str]:
+    """The hosts whose figures a document's page loads without asking
+    (`figures.trusted_hosts`, #660), read each time a page is drawn.
+
+    None when the settings cannot be read: a refused settings file is
+    reported by what it stops, and must not also stop a document from
+    being read. Trusting nothing is the state before the setting existed.
+    """
+    try:
+        return figure_hosts(load_settings().figures.trusted_hosts)
+    except SettingsError:
+        return frozenset()
+
+
+__all__ = [
+    "FIGURE_ROUTE",
+    "figure_addresses",
+    "held_figure",
+    "media_type_of",
+    "trusted_figure_hosts",
+]

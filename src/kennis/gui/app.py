@@ -41,6 +41,7 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.gui import words
+from kennis.gui.figures import trusted_figure_hosts
 from kennis.gui.presence import Presence
 from kennis.gui.responses import TEMPLATES, from_htmx, refused
 from kennis.gui.routes import (
@@ -81,6 +82,11 @@ _CROSS_ORIGIN: Final = "this interface accepts changes only from its own pages"
 _SAFE_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
+# The pages that draw a document's text, and so its figures. The settings
+# are read for these alone, not for every request the guard sees.
+_DOCUMENT_PAGES: Final = ("/document/", "/bundle/")
+
+
 def content_policy(request: Request) -> str:
     """What a page of this window may load and run, as `Content-Security-Policy`.
 
@@ -94,13 +100,18 @@ def content_policy(request: Request) -> str:
     - styles from here and inline, because KaTeX draws with `style=`, the
       pane's sizes are a `style` on `<html>`, and the stopped page carries
       its stylesheet inline (the server is gone when it arrives);
-    - images from here and `data:`, and from anywhere only on the page the
+    - images from here and `data:`; from anywhere only on the page the
       reader asked to load them on (`images=on`, #420's "nothing fetched on
-      the reader's behalf");
+      the reader's behalf"); and on a document's page, over HTTPS from the
+      hosts the reader named in `figures.trusted_hosts` (#660). The renderer
+      draws a trusted figure and this admits it: each needs the other;
     - no frame may hold it, so another page on loopback cannot dress it up
       and have the reader click.
     """
     images = "'self' data:"
+    if request.url.path.startswith(_DOCUMENT_PAGES):
+        for host in sorted(trusted_figure_hosts()):
+            images += f" https://{host}"
     if request.query_params.get("images") == "on":
         images += " http: https:"
     return "; ".join(

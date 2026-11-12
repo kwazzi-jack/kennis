@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import sys
 import tomllib
@@ -323,6 +324,40 @@ class ServiceSettings(BaseModel):
     )
 
 
+# One host's name: labels of letters, digits and hyphens joined by dots, at
+# least two of them. No scheme, path, port or wildcard, each of which reads
+# as though it would match something and would match nothing.
+_LABEL: Final = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+_HOST: Final = rf"{_LABEL}(?:\.{_LABEL})+"
+_HOST_SEPARATORS: Final = re.compile(r"[\s,]+")
+
+
+class FiguresSettings(BaseModel):
+    """Which remote figures a document's page loads without asking."""
+
+    trusted_hosts: str = Field(
+        default="",
+        pattern=rf"^[\s,]*(?:{_HOST}(?:[\s,]+{_HOST})*[\s,]*)?$",
+        description=(
+            "Hosts whose figures load when a document is opened, separated by "
+            "spaces. Loading a figure tells its host which document you are "
+            "reading. Empty: every remote figure waits to be asked for."
+        ),
+        examples=['"arxiv.org"'],
+    )
+
+
+def figure_hosts(trusted_hosts: str) -> frozenset[str]:
+    """The hosts `figures.trusted_hosts` names, lowercased.
+
+    Each is matched exactly: naming `arxiv.org` is the reader's decision
+    about that host, and says nothing about a host under it.
+    """
+    return frozenset(
+        host.lower() for host in _HOST_SEPARATORS.split(trusted_hosts) if host
+    )
+
+
 class Settings(BaseSettings):
     """Every setting kennis honours."""
 
@@ -338,6 +373,7 @@ class Settings(BaseSettings):
     logging: LoggingSettings = LoggingSettings()
     backup: BackupSettings = BackupSettings()
     service: ServiceSettings = ServiceSettings()
+    figures: FiguresSettings = FiguresSettings()
 
     @classmethod
     def settings_customise_sources(

@@ -12,6 +12,7 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -101,6 +102,7 @@ from kennis.render.html import (
     MarkedRange,
     PassageHtml,
     headings_of,
+    is_trusted,
     passage_html,
     query_pattern,
     terms_of,
@@ -929,6 +931,7 @@ def shown_document(
     marks: DocumentMarks | None = None,
     question: str = "",
     margins: Sequence[MarginNote] = (),
+    trusted_hosts: frozenset[str] = frozenset(),
 ) -> ShownDocument:
     """Read one document and render it.
 
@@ -956,6 +959,7 @@ def shown_document(
             document.body,
             load_remote_images=load_remote_images,
             figure_address=figure_addresses(corpus_root, path),
+            trusted_hosts=trusted_hosts,
             marked=marked,
             # The page already shows the title above the provenance.
             # 44 of 45 crawled pages then repeated it as their first
@@ -966,7 +970,7 @@ def shown_document(
             terms=terms_of(question),
             margins=margins,
         ),
-        has_blocked_images=_refers_remotely(document.body),
+        has_blocked_images=_refers_remotely(document.body, trusted_hosts),
         group=group,
         handle=(
             frontmatter.bib.citekey
@@ -1040,6 +1044,7 @@ def shown_bundle_document(
     marked: MarkedRange | None = None,
     question: str = "",
     margins: Sequence[MarginNote] = (),
+    trusted_hosts: frozenset[str] = frozenset(),
 ) -> ShownDocument:
     """One note out of this project's bundle, rendered.
 
@@ -1088,8 +1093,9 @@ def shown_bundle_document(
             heading_anchors=True,
             terms=terms_of(question),
             margins=margins,
+            trusted_hosts=trusted_hosts,
         ),
-        has_blocked_images=_refers_remotely(body),
+        has_blocked_images=_refers_remotely(body, trusted_hosts),
         handle=relative_path,
         # A bundle note's frontmatter is the user's own and has no
         # model, so its details are where it is and nothing more.
@@ -1107,14 +1113,22 @@ def shown_bundle_document(
     )
 
 
-def _refers_remotely(markdown: str) -> bool:
-    """Whether the body refers to an image kennis would have to fetch.
+_REMOTE_REFERENCE: Final = re.compile(r"\]\((https?://[^\s)]+)")
 
-    Crude on purpose - a substring, not a parse. Being wrong here
-    offers a control that loads nothing, or withholds one the reader
-    could have used; neither justifies parsing the document twice.
+
+def _refers_remotely(markdown: str, trusted_hosts: frozenset[str]) -> bool:
+    """Whether the body refers to an image that is still not loaded: a
+    remote one whose host the reader has not named.
+
+    Crude on purpose - a pattern, not a parse, so an ordinary link counts
+    too. Being wrong here offers a control that loads nothing, or
+    withholds one the reader could have used; neither justifies parsing
+    the document twice.
     """
-    return "](http://" in markdown or "](https://" in markdown
+    return any(
+        not is_trusted(address, trusted_hosts)
+        for address in _REMOTE_REFERENCE.findall(markdown)
+    )
 
 
 __all__ = [
