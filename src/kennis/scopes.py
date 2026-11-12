@@ -20,4 +20,9 @@ SCOPE_NAMES: Final[tuple[str, ...]] = (CONTEXT_COLLECTION, *COLLECTION_NAMES)
 # What the reader types, or picks, to mean all four.
 EVERY_SCOPE: Final = "all"
 
-__all__ = ["EVERY_SCOPE", "SCOPE_NAMES"]
+# The most hits one scope gives a caller that names its own number. Here
+# rather than beside the search, so a client that bounds what it was asked
+# for loads none of it.
+MAX_TOP_K: Final = 20
+
+__all__ = ["EVERY_SCOPE", "MAX_TOP_K", "SCOPE_NAMES"]

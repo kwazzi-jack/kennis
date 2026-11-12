@@ -1,6 +1,6 @@
 """An agent names docs versions as a person does (#489, unit V5).
 
-`search_docs` takes `version` in the command line's forms, `list_corpus`
+`search` takes `version` in the command line's forms, `list_corpus`
 says which versions of each project are held and which is current, and
 the instructions block says that a docs search covers the current version
 unless told otherwise.
@@ -19,7 +19,7 @@ from kennis.engine.errors import InputError
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.server import build_server
 from kennis.mcp.tools.corpus import list_corpus
-from kennis.mcp.tools.search import search_docs
+from kennis.mcp.tools.search import search
 
 SAME = "Validators run after parsing and may raise a ValueError."
 
@@ -60,11 +60,11 @@ def labels_in(answer: str) -> set[str]:
 
 
 def test_an_agent_searches_the_current_version_by_default(corpus: Path):
-    assert labels_in(search_docs("validators", top_k=10)) == {"pydantic 2.14"}
+    assert labels_in(search("validators", ["docs"], top_k=10)) == {"pydantic 2.14"}
 
 
 def test_an_agent_names_another_version(corpus: Path):
-    answer = search_docs("validators", top_k=10, version=["pydantic=2.12"])
+    answer = search("validators", ["docs"], top_k=10, version=["pydantic=2.12"])
 
     assert labels_in(answer) == {"pydantic 2.12"}
 
@@ -72,7 +72,7 @@ def test_an_agent_names_another_version(corpus: Path):
 def test_an_agent_searching_every_version_sees_one_copy_of_an_equal_passage(
     corpus: Path,
 ):
-    answer = search_docs("validators", top_k=10, version=["all"])
+    answer = search("validators", ["docs"], top_k=10, version=["all"])
 
     assert "pydantic 2.12, 2.14" in labels_in(answer)
     assert answer.count(SAME[:30]) <= 1
@@ -80,7 +80,7 @@ def test_an_agent_searching_every_version_sees_one_copy_of_an_equal_passage(
 
 def test_a_version_not_held_is_an_error_naming_the_ones_that_are(corpus: Path):
     with pytest.raises(InputError) as raised:
-        search_docs("validators", version=["9.9"])
+        search("validators", ["docs"], version=["9.9"])
 
     assert "2.12" in str(raised.value) and "2.14" in str(raised.value)
 
@@ -88,7 +88,7 @@ def test_a_version_not_held_is_an_error_naming_the_ones_that_are(corpus: Path):
 def test_the_published_schema_offers_version_as_a_list_of_strings(corpus: Path):
     async def listed() -> dict[str, object]:
         tools = await build_server().list_tools()
-        found = next(tool for tool in tools if tool.name == "search_docs")
+        found = next(tool for tool in tools if tool.name == "search")
         return found.parameters
 
     schema = asyncio.run(listed())

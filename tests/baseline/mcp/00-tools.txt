@@ -1,6 +1,6 @@
 [
   {
-    "description": "What the corpus holds, by collection.\n\nCall this to learn what exists before searching for it: which docs\nprojects are present, whether a paper was ever added, how much is in\neach collection. It needs no index, so it answers on a corpus that\nhas never been indexed.\n\n`collection` narrows to one of `notes`, `literature` or `docs`.\n`detail=\"documents\"` adds a row per document with the `document_id`\na `read_*` tool takes - copy one from here, never construct it.\n\nThe `context` bundle is not listed: it lives in the project's\nrepository and its files are read with native file tools.",
+    "description": "What the corpus holds, by collection.\n\nCall this to learn what exists before searching for it: which docs\nprojects are present, whether a paper was ever added, how much is in\neach collection. It needs no index, so it answers on a corpus that\nhas never been indexed.\n\n`collection` narrows to one of `notes`, `literature` or `docs`.\n`detail=\"documents\"` adds a row per document with the `document_id`\n`read` takes - copy one from here, never construct it.\n\nThe `context` bundle is not listed: it lives in the project's\nrepository and its files are read with native file tools.",
     "input": {
       "additionalProperties": false,
       "properties": {
@@ -41,102 +41,37 @@
     }
   },
   {
-    "description": "Search notes - the user's own material, machine-global.\n\nReach for this when a question is about *this user*: their\nconventions, their decisions, something they asked kennis to\nremember. Not upstream documentation and not published papers.\n\nReturns ranked hits, each with a relevance band, a `document_id` and\n`chunk` to pass to `read_notes`, and a snippet. Search locates; read\nexpands. `tags` keeps only what carries every one of them.",
+    "description": "Search what kennis holds, in the collections named.\n\n`collections` is required: `[\"all\"]`, or any of:\n\n- `notes` - the user's own material, machine-global: their\n  conventions, their decisions, what they asked kennis to remember.\n- `literature` - papers. Reach for it to ground *why* a method works\n  rather than answering from general knowledge, and cite what comes\n  back.\n- `docs` - documentation sites: upstream usage, configuration and\n  syntax.\n- `context` - this project's `.context/` bundle: decisions and\n  conventions specific to the repository you are working in.\n\nName the ones you want when you know where the answer is, which\ncosts less to read; `[\"all\"]` searches all four. A named collection\nthat has no index is an error, while under `all` one is skipped and\nthe answer says so.\n\nThe answer is grouped by collection, each group ranked on its own.\nRelevance in one group is not comparable with another's. Each hit\ncarries a relevance band, a snippet, and a `document_id` and `chunk`\nto pass to `read`. Search locates; read expands. `top_k` is how many\nhits each collection gives.\n\n**A `context` hit is a file location, not content**: its handle is a\npath in the user's own repository, so open it with your native file\ntools rather than `read`.\n\n`version` applies to `docs`: each project's current version is\nsearched unless it names others - `\"2.12\"` for every project holding\n2.12, `\"pydantic=2.12\"` for one project's, `\"all\"` for every version\nheld. `list_corpus` says which are held.\n\n`projects` applies to `context`: `\"all\"` for every project on this\nmachine, or a list of project names. Outside any project every\nproject is searched.\n\n`tags` keeps only what carries every one of them.",
     "input": {
       "additionalProperties": false,
       "properties": {
-        "question": {
-          "type": "string"
+        "collections": {
+          "items": {
+            "enum": [
+              "all",
+              "context",
+              "literature",
+              "docs",
+              "notes"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
-        "tags": {
+        "projects": {
           "anyOf": [
+            {
+              "type": "string"
+            },
             {
               "items": {
                 "type": "string"
               },
               "type": "array"
-            },
-            {
-              "type": "null"
             }
           ],
-          "default": null
+          "default": ""
         },
-        "top_k": {
-          "default": 5,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "question"
-      ],
-      "type": "object"
-    },
-    "name": "search_notes",
-    "output": {
-      "properties": {
-        "result": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "type": "object",
-      "x-fastmcp-wrap-result": true
-    }
-  },
-  {
-    "description": "Search the literature collection - papers, with their metadata.\n\nReach for this to ground an explanation of *why* a method works, or\nto justify a choice, rather than answering from general knowledge.\nCite what comes back.\n\nReturns ranked hits with a `document_id` and `chunk` for\n`read_literature`, which expands a hit that is on-topic but cut off.\n`tags` keeps only what carries every one of them.",
-    "input": {
-      "additionalProperties": false,
-      "properties": {
-        "question": {
-          "type": "string"
-        },
-        "tags": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "top_k": {
-          "default": 5,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "question"
-      ],
-      "type": "object"
-    },
-    "name": "search_literature",
-    "output": {
-      "properties": {
-        "result": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "type": "object",
-      "x-fastmcp-wrap-result": true
-    }
-  },
-  {
-    "description": "Search the docs collection - documentation sites, one folder per\nproject and version.\n\nReach for this for upstream usage, configuration and syntax. Call\n`list_corpus` first if you need to know which projects and versions\nare held.\n\nEach project's current version is searched unless `version` names\nothers: `\"2.12\"` for every project holding 2.12, `\"pydantic=2.12\"`\nfor one project's, `\"all\"` for every version held. Each hit names\nits version; a passage equal in several versions is shown once,\nnaming each.\n\nReturns ranked hits with a `document_id` and `chunk` for `read_docs`.\n`tags` keeps only what carries every one of them.",
-    "input": {
-      "additionalProperties": false,
-      "properties": {
         "question": {
           "type": "string"
         },
@@ -174,11 +109,12 @@
         }
       },
       "required": [
-        "question"
+        "question",
+        "collections"
       ],
       "type": "object"
     },
-    "name": "search_docs",
+    "name": "search",
     "output": {
       "properties": {
         "result": {
@@ -193,67 +129,7 @@
     }
   },
   {
-    "description": "Search this project's `.context/` bundle - its own conventions.\n\nReach for this for decisions and conventions specific to the\nrepository you are working in, before falling back to anything\nmachine-global.\n\n**Returns file locations, not content.** A bundle lives in the\nuser's own repository, so each hit's handle is a path: open it with\nyour native file tools. There is no `read_context`. Advice from a\npack the project uses is among them, as files its sync copied in.\n\n`projects` widens the search: `\"all\"` for every project on this\nmachine, or a list of project names. Each other project's hits name\nits folder in full. Outside any project every project is searched.\n`tags` keeps only what carries every one of them, in each project's\nown tags.",
-    "input": {
-      "additionalProperties": false,
-      "properties": {
-        "projects": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            }
-          ],
-          "default": ""
-        },
-        "question": {
-          "type": "string"
-        },
-        "tags": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "top_k": {
-          "default": 5,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "question"
-      ],
-      "type": "object"
-    },
-    "name": "search_context",
-    "output": {
-      "properties": {
-        "result": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "type": "object",
-      "x-fastmcp-wrap-result": true
-    }
-  },
-  {
-    "description": "Read passages from notes - the user's own material.\n\nCall this on a `document_id` from `search_notes` or `list_corpus`.\nPass the hit's `chunk` as `chunk_index` to expand that passage;\nomit it to read the whole note.\n\nSeveral requests are answered in one call, and one that fails does\nnot cost the others.",
+    "description": "Read passages of documents in `notes`, `literature` or `docs`.\n\nCall this on a `document_id` from `search` or `list_corpus`. Pass the\nhit's `chunk` as `chunk_index` to expand that passage, with `before`\nand `after` widening it by whole chunks; omit `chunk_index` to read\nthe whole document. Expanding a hit before citing it is the point: a\nsnippet is enough to rank a document and not enough to quote it.\n\nEach answer opens with a line naming the document and the collection\nit is in. Several requests are answered in one call, and one that\nfails does not cost the others.\n\nNot for a `context` hit: that is a file in the user's repository,\nwhich you open with your native file tools.",
     "input": {
       "additionalProperties": false,
       "properties": {
@@ -297,125 +173,7 @@
       ],
       "type": "object"
     },
-    "name": "read_notes",
-    "output": {
-      "properties": {
-        "result": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "type": "object",
-      "x-fastmcp-wrap-result": true
-    }
-  },
-  {
-    "description": "Read passages from the literature collection - papers.\n\nCall this on a `document_id` from `search_literature`. Expanding a\nhit before citing it is the point: a snippet is enough to rank a\npaper and not enough to quote it.\n\nSeveral requests are answered in one call.",
-    "input": {
-      "additionalProperties": false,
-      "properties": {
-        "requests": {
-          "items": {
-            "description": "One document to read, and how much of it.\n\n`chunk_index` is a hit's `chunk`, copied from a search answer.\nOmitted, the whole document is read - which needs no index, so a\ndocument added but never indexed is still readable.\n\n`before` and `after` widen the window around `chunk_index`, in\nchunks. The defaults give the hit with one chunk either side, which\nis usually enough to recover a sentence cut at a chunk boundary.",
-            "properties": {
-              "after": {
-                "default": 1,
-                "type": "integer"
-              },
-              "before": {
-                "default": 1,
-                "type": "integer"
-              },
-              "chunk_index": {
-                "anyOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null
-              },
-              "document_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "document_id"
-            ],
-            "type": "object"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "requests"
-      ],
-      "type": "object"
-    },
-    "name": "read_literature",
-    "output": {
-      "properties": {
-        "result": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "type": "object",
-      "x-fastmcp-wrap-result": true
-    }
-  },
-  {
-    "description": "Read passages from the docs collection - documentation sites.\n\nCall this on a `document_id` from `search_docs` or `list_corpus`,\nwith the hit's `chunk` as `chunk_index`. A configuration key or a\nsignature usually needs the surrounding paragraph, which is what\n`before` and `after` widen to.\n\nSeveral requests are answered in one call.",
-    "input": {
-      "additionalProperties": false,
-      "properties": {
-        "requests": {
-          "items": {
-            "description": "One document to read, and how much of it.\n\n`chunk_index` is a hit's `chunk`, copied from a search answer.\nOmitted, the whole document is read - which needs no index, so a\ndocument added but never indexed is still readable.\n\n`before` and `after` widen the window around `chunk_index`, in\nchunks. The defaults give the hit with one chunk either side, which\nis usually enough to recover a sentence cut at a chunk boundary.",
-            "properties": {
-              "after": {
-                "default": 1,
-                "type": "integer"
-              },
-              "before": {
-                "default": 1,
-                "type": "integer"
-              },
-              "chunk_index": {
-                "anyOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null
-              },
-              "document_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "document_id"
-            ],
-            "type": "object"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "requests"
-      ],
-      "type": "object"
-    },
-    "name": "read_docs",
+    "name": "read",
     "output": {
       "properties": {
         "result": {
@@ -497,7 +255,7 @@
     }
   },
   {
-    "description": "Write something down so it is still here in a later session.\n\n**This is durable and it is not a scratchpad.** A note goes into the\nuser's corpus, is committed to its history, and will come back in\nsearches months from now. Use it for what the user has decided,\ncorrected or asked you to keep - not for working state, not for a\nsummary of what you just did, and not without their say-so.\n\n`to_context=True` writes into this project's `.context/` bundle\ninstead: for a convention or a decision that belongs to this\nrepository rather than to the user everywhere. It fails when there\nis no bundle here rather than falling back to notes, because\nrecording a project decision somewhere machine-global and reporting\nsuccess would be worse than not recording it.\n\n`title` overrides the first line, and `group` puts the note in a\nsubdirectory. The answer carries the `document_id` a `read_*` tool\ntakes.",
+    "description": "Write something down so it is still here in a later session.\n\n**This is durable and it is not a scratchpad.** A note goes into the\nuser's corpus, is committed to its history, and will come back in\nsearches months from now. Use it for what the user has decided,\ncorrected or asked you to keep - not for working state, not for a\nsummary of what you just did, and not without their say-so.\n\n`to_context=True` writes into this project's `.context/` bundle\ninstead: for a convention or a decision that belongs to this\nrepository rather than to the user everywhere. It fails when there\nis no bundle here rather than falling back to notes, because\nrecording a project decision somewhere machine-global and reporting\nsuccess would be worse than not recording it.\n\n`title` overrides the first line, and `group` puts the note in a\nsubdirectory. The answer carries the `document_id` `read` takes.",
     "input": {
       "additionalProperties": false,
       "properties": {

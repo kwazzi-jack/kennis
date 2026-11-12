@@ -1,0 +1,6 @@
+$ search {"question": "CASA"}
+--- error True
+1 validation error for call[search]
+collections
+  Missing required argument [type=missing_argument, input_value={'question': 'CASA'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.14/v/missing_argument

@@ -39,7 +39,7 @@ from kennis.engine.errors import (
 from kennis.engine.rag.models import Chunk, ChunkPredicate, Filter
 from kennis.engine.rag.modes import Mode
 from kennis.render.hits import Hit
-from kennis.scopes import SCOPE_NAMES
+from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
 
 if TYPE_CHECKING:
     from kennis.engine.rag.index import LoadedIndex
@@ -48,7 +48,6 @@ if TYPE_CHECKING:
 # The most a caller may ask for. A ceiling rather than a validation
 # error: a caller asking for 500 wants "lots", and refusing them is
 # less useful than giving them the most that is sensible.
-MAX_TOP_K = 20
 
 _LOG: Final = logging.getLogger("kennis.retrieval")
 

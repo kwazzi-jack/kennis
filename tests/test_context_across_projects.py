@@ -25,7 +25,7 @@ from kennis.engine.context.projects import ProjectNotKnown
 from kennis.engine.context.sync import sync_bundle
 from kennis.engine.pack.update import update_pack
 from kennis.gui.app import build_app
-from kennis.mcp.tools.search import search_context
+from kennis.mcp.tools.search import search
 from kennis.retrieval import sweep
 
 
@@ -226,27 +226,27 @@ def test_context_index_project_refuses_an_unknown_name(two: Path):
 
 
 def test_an_agent_searches_its_own_project_by_default(two: Path):
-    answered = search_context("gains")
+    answered = search("gains", ["context"])
 
     assert "path=.context/" in answered
     assert str(two) not in answered
 
 
 def test_an_agent_may_search_every_project(two: Path):
-    answered = search_context("smooths", projects="all")
+    answered = search("smooths", ["context"], projects="all")
 
     assert f"path={two}/" in answered
 
 
 def test_an_agent_may_name_projects(two: Path):
-    answered = search_context("smooths", projects=["thesis"])
+    answered = search("smooths", ["context"], projects=["thesis"])
 
     assert f"path={two}/" in answered
 
 
 def test_an_agent_naming_an_unknown_project_is_refused(two: Path):
     with pytest.raises(ProjectNotKnown):
-        search_context("gains", projects=["nope"])
+        search("gains", ["context"], projects=["nope"])
 
 
 def test_an_agent_outside_any_project_searches_every_project(
@@ -256,7 +256,7 @@ def test_an_agent_outside_any_project_searches_every_project(
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
 
-    answered = search_context("smooths")
+    answered = search("smooths", ["context"])
 
     assert f"path={two}/" in answered
 

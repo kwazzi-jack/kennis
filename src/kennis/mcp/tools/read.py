@@ -1,14 +1,21 @@
-"""The three `read_*` tools: the follow-up to a search hit.
+"""The `read` tool: the follow-up to a search hit.
 
 A search answers "where", with a `document_id` and a `chunk`; these
 answer "what it actually says". The two halves are deliberately separate
 so that ten hits cost ten snippets and only the one worth expanding
 costs a passage.
 
-**There is no `read_context`.** A bundle file lives in the user's own
-repository, so `search_context` returns paths and the agent opens them
-with its native file tools - the same reason `kennis read` refuses
+**A context hit is not read here.** A bundle file lives in the user's
+own repository, so `search` returns its path and the agent opens it with
+its native file tools - the same reason `kennis read` refuses
 `--collection context`.
+
+**One tool, and the document says which collection it is in** (#643).
+It was three, the collection fixed by which was called, so that a note
+could not be served as a paper. A `document_id` is found across the
+collections, as `kennis read` finds it without `--collection`, and the
+provenance line that opens each answer names the collection it was
+found in.
 
 **The provenance line is not composed here.** `render/words.py` already
 phrases both kinds - `describe_document` for a whole document and
@@ -31,6 +38,7 @@ from typing import Final
 
 from kennis.client import api
 from kennis.context import existing_corpus
+from kennis.engine.context.bundle import BUNDLE_DIRNAME
 from kennis.engine.corpus.document import Document
 from kennis.engine.errors import KennisError
 from kennis.engine.rag.search import ChunkRange
@@ -70,50 +78,21 @@ class ReadRequest:
     after: int = 1
 
 
-def read_notes(requests: list[ReadRequest]) -> str:
-    """Read passages from notes - the user's own material.
+def read(requests: list[ReadRequest]) -> str:
+    """Read passages of documents in `notes`, `literature` or `docs`.
 
-    Call this on a `document_id` from `search_notes` or `list_corpus`.
-    Pass the hit's `chunk` as `chunk_index` to expand that passage;
-    omit it to read the whole note.
+    Call this on a `document_id` from `search` or `list_corpus`. Pass the
+    hit's `chunk` as `chunk_index` to expand that passage, with `before`
+    and `after` widening it by whole chunks; omit `chunk_index` to read
+    the whole document. Expanding a hit before citing it is the point: a
+    snippet is enough to rank a document and not enough to quote it.
 
-    Several requests are answered in one call, and one that fails does
-    not cost the others.
-    """
-    return _read("notes", requests)
+    Each answer opens with a line naming the document and the collection
+    it is in. Several requests are answered in one call, and one that
+    fails does not cost the others.
 
-
-def read_literature(requests: list[ReadRequest]) -> str:
-    """Read passages from the literature collection - papers.
-
-    Call this on a `document_id` from `search_literature`. Expanding a
-    hit before citing it is the point: a snippet is enough to rank a
-    paper and not enough to quote it.
-
-    Several requests are answered in one call.
-    """
-    return _read("literature", requests)
-
-
-def read_docs(requests: list[ReadRequest]) -> str:
-    """Read passages from the docs collection - documentation sites.
-
-    Call this on a `document_id` from `search_docs` or `list_corpus`,
-    with the hit's `chunk` as `chunk_index`. A configuration key or a
-    signature usually needs the surrounding paragraph, which is what
-    `before` and `after` widen to.
-
-    Several requests are answered in one call.
-    """
-    return _read("docs", requests)
-
-
-def _read(collection: str, requests: list[ReadRequest]) -> str:
-    """Every request in one collection, each rendered into its own block.
-
-    The collection is fixed by which tool was called rather than passed
-    in, so `read_literature` cannot serve a note: an agent citing what
-    came back would otherwise attribute a user's jotting to a paper.
+    Not for a `context` hit: that is a file in the user's repository,
+    which you open with your native file tools.
     """
     if not requests:
         return _NOTHING
@@ -123,12 +102,10 @@ def _read(collection: str, requests: list[ReadRequest]) -> str:
             f"Ask for at most {_MAX_REQUESTS}, best first."
         )
     corpus_root = existing_corpus().corpus_root
-    return "\n\n".join(
-        _answered(corpus_root, collection, request) for request in requests
-    )
+    return "\n\n".join(_answered(corpus_root, request) for request in requests)
 
 
-def _answered(corpus_root: Path, collection: str, request: ReadRequest) -> str:
+def _answered(corpus_root: Path, request: ReadRequest) -> str:
     """One request: its provenance line, then its text.
 
     Every domain failure becomes a block rather than an exception. The
@@ -137,6 +114,12 @@ def _answered(corpus_root: Path, collection: str, request: ReadRequest) -> str:
     whole document needs no index, so a batch of them answers on a corpus
     never indexed; each request is its own call to the service.
     """
+    if request.document_id.startswith(f"{BUNDLE_DIRNAME}/"):
+        # A context hit's handle, which `search` prints as `path=`.
+        return (
+            f"{request.document_id}: this is a file in the project's own "
+            "repository, not a document kennis holds. Open it with your file tools."
+        )
     if request.chunk_index is not None and request.chunk_index < 0:
         return (
             f"{request.document_id}: chunk_index {request.chunk_index} is negative. "
@@ -144,11 +127,13 @@ def _answered(corpus_root: Path, collection: str, request: ReadRequest) -> str:
         )
     try:
         if request.chunk_index is None:
+            # No collection: the identifier is found across them, and the
+            # answer's first line says where.
             read = api.read_document(
-                corpus_root, request.document_id, collection, frontmatter=False
+                corpus_root, request.document_id, None, frontmatter=False
             )
             return _whole(read.collection, read.document, read.text, corpus_root)
-        return _range(corpus_root, collection, request)
+        return _range(corpus_root, request)
     except KennisError as error:
         return _failed(request.document_id, error)
 
@@ -170,7 +155,7 @@ def _whole(collection: str, document: Document, body: str, corpus_root: Path) ->
     return f"{provenance}\n{body}"
 
 
-def _range(corpus_root: Path, collection: str, request: ReadRequest) -> str:
+def _range(corpus_root: Path, request: ReadRequest) -> str:
     """A window of chunks around the one a hit named.
 
     `max(0, ...)` on the start is not defensive tidiness: `ChunkRange`
@@ -183,7 +168,7 @@ def _range(corpus_root: Path, collection: str, request: ReadRequest) -> str:
         start=max(0, request.chunk_index - max(0, request.before)),
         stop=request.chunk_index + max(0, request.after) + 1,
     )
-    read = api.read_passage(corpus_root, request.document_id, collection, chunks=chunks)
+    read = api.read_passage(corpus_root, request.document_id, None, chunks=chunks)
     provenance = describe_span(read.collection, read.span, read.title)
     return f"{provenance}\n{read.span.text.strip()}"
 
@@ -194,4 +179,4 @@ def _failed(document_id: str, error: KennisError) -> str:
     return f"{document_id}: {error}.{resolution}"
 
 
-__all__ = ["ReadRequest", "read_docs", "read_literature", "read_notes"]
+__all__ = ["ReadRequest", "read"]

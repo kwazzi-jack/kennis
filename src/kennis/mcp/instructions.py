@@ -2,7 +2,7 @@
 
 Design section 11. Half of this is written and half is generated: the
 written half explains kennis - the collections, that ids are surrogates,
-what `search_context` returns - and the generated half names what *this*
+what a `context` hit is - and the generated half names what *this*
 installation holds, from the packs that are actually installed.
 
 Three things that buys, and they are the reason the block is generated
@@ -37,22 +37,24 @@ installation actually has.
   a question is about this user rather than about upstream behaviour.
 - `literature` - papers, with their bibliographic metadata.
 - `docs` - documentation sites, one folder per project and version.
-  `search_docs` searches each project's current version unless given
-  others, as `version=["2.12"]`, `version=["pydantic=2.12"]` or
-  `version=["all"]`; `list_corpus` says which versions are held.
+  `search` reads each project's current version unless given others, as
+  `version=["2.12"]`, `version=["pydantic=2.12"]` or `version=["all"]`;
+  `list_corpus` says which versions are held.
 - `context` - the current project's `.context/` bundle, committed with
   the repository. Project-specific conventions and decisions.
 
 ## Search locates; read expands
 
-A `search_*` tool returns ranked hits, each with a score, a source and a
-bounded snippet. It is a coordinate, not an answer. When a snippet is
-on-topic but cut off, follow up with the matching `read_*` tool. A
-`read_*` tool takes a list of requests, so follow up several hits in one
-call rather than one at a time.
+`search` searches the collections you name in `collections`, or all four
+for `["all"]`, and returns ranked hits grouped by collection, each with a
+score, a source and a bounded snippet. It is a coordinate, not an answer. When a snippet
+is on-topic but cut off, follow up with `read`, which takes a list of
+requests, so follow up several hits in one call rather than one at a
+time. Relevance is ranked within a collection and is not comparable
+between two.
 
-`search_context` is the exception: it returns file locations in the
-user's own repository, which you open with your native file tools.
+A `context` hit is the exception: it is a file location in the user's
+own repository, which you open with your native file tools.
 
 Call `list_corpus` when you need to know what a collection *contains*
 rather than what matches a query - which docs projects exist before
@@ -79,8 +81,8 @@ asked to be kept - not for working state, and not without their say-so.
 ## Tags
 
 A tag is a name the user put on a document or a passage, such as
-`calibration` or `to-cite`; `list_corpus` names the tags in use. Give a
-`search_*` tool `tags` to search only what carries them. Tag with `tag`
+`calibration` or `to-cite`; `list_corpus` names the tags in use. Give
+`search` its `tags` to search only what carries them. Tag with `tag`
 when the user asks you to tag, bookmark or gather passages, naming each as
 its hit gives it, as for `cite`.
 
