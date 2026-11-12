@@ -16,11 +16,13 @@ from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.history import (
     commit_summary,
+    document_path_at,
     outcome_summary,
     read_history,
     restore_document,
 )
 from kennis.engine.history.repository import Repository, initialise_corpus
+from platforms import needs_unportable_filenames
 
 
 @pytest.fixture
@@ -270,3 +272,157 @@ def test_no_outcome_is_a_word_ending_in_s():
     because every key is a plural noun or a participle. An outcome that
     ended in `s` would be cut short."""
     assert not [outcome.value for outcome in Outcome if outcome.value.endswith("s")]
+
+
+# ---------------------------------------------------------------------------
+# Finding the document to put back, wherever it is in the tree (#647)
+# ---------------------------------------------------------------------------
+
+# More documents than the 200 tree entries the search once stopped after.
+MANY: int = 230
+
+
+def many_documents_and_a_last_one(corpus: Path) -> str:
+    """`MANY` notes, then one that sorts after all of them; the commit."""
+    for number in range(MANY):
+        a_document(
+            corpus, f"a-{number:04}.md", identifier=f"filler{number:04}", body="Filler."
+        )
+    a_document(corpus, "z-last.md", identifier="aaaaaaaaaa", body="The last one.")
+    return recorded(corpus, "add", "notes", f"{MANY + 1} added")
+
+
+def test_a_document_is_found_wherever_it_is_in_the_tree(corpus: Path):
+    """Brian's corpus held 532 files and the search read the first 200, so
+    no paper and no note could be put back."""
+    commit = many_documents_and_a_last_one(corpus)
+
+    assert document_path_at(Repository(corpus), commit, "aaaaaaaaaa") == (
+        "notes/z-last.md"
+    )
+
+
+def test_finding_a_document_reads_only_the_files_naming_its_identifier(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """One process finds the candidates. A process per file is what the
+    limit of 200 was there to bound."""
+    commit = many_documents_and_a_last_one(corpus)
+    read: list[str] = []
+    show = Repository.show
+
+    def counted(self: Repository, commit: str, path: str) -> str | None:
+        read.append(path)
+        return show(self, commit, path)
+
+    monkeypatch.setattr(Repository, "show", counted)
+
+    assert document_path_at(Repository(corpus), commit, "aaaaaaaaaa") is not None
+    assert read == ["notes/z-last.md"]
+
+
+@pytest.mark.parametrize("identifier", ["", "..........", "filler"])
+def test_an_identifier_is_text_and_never_a_pattern(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch, identifier: str
+):
+    """Ten dots match every ten characters as a pattern, the empty string
+    matches every line, and `filler` begins 230 identifiers and is none."""
+    commit = many_documents_and_a_last_one(corpus)
+    read: list[str] = []
+    show = Repository.show
+
+    def counted(self: Repository, commit: str, path: str) -> str | None:
+        read.append(path)
+        return show(self, commit, path)
+
+    monkeypatch.setattr(Repository, "show", counted)
+
+    assert document_path_at(Repository(corpus), commit, identifier) is None
+    if identifier != "filler":
+        assert read == []
+
+
+def test_an_identifier_beginning_with_a_dash_is_not_an_option(corpus: Path):
+    """The identifier is whatever was typed after `corpus restore`, and git
+    grep has an option that runs a program."""
+    a_document(corpus, "one.md", identifier="-Otouch")
+    commit = recorded(corpus)
+
+    assert document_path_at(Repository(corpus), commit, "-Otouch") == "notes/one.md"
+
+
+def test_a_document_mentioning_an_identifier_is_not_the_document(corpus: Path):
+    """A note about a paper names the paper's identifier in its text, and
+    sorts first here."""
+    a_document(
+        corpus,
+        "about.md",
+        identifier="bbbbbbbbbb",
+        body="See aaaaaaaaaa.\n\nid: aaaaaaaaaa",
+    )
+    a_document(corpus, "the-one.md", identifier="aaaaaaaaaa")
+    commit = recorded(corpus, "add", "notes", "2 added")
+
+    assert document_path_at(Repository(corpus), commit, "aaaaaaaaaa") == (
+        "notes/the-one.md"
+    )
+    assert document_path_at(Repository(corpus), commit, "bbbbbbbbbb") == (
+        "notes/about.md"
+    )
+
+
+def test_a_document_is_found_in_any_folder_and_under_any_name(corpus: Path):
+    """Groups nest, a title holds spaces and accents, and a document with
+    figures is `content.md` inside a folder."""
+    accented = "Caf\u00e9 a study - Author et al - 2020"
+    a_document(
+        corpus,
+        f"tron/transients/deep/{accented}.md",
+        collection="literature",
+        identifier="aaaaaaaaaa",
+    )
+    a_document(
+        corpus,
+        "tron/With figures/content.md",
+        collection="literature",
+        identifier="bbbbbbbbbb",
+    )
+    commit = recorded(corpus, "add", "literature", "2 added")
+
+    assert document_path_at(Repository(corpus), commit, "aaaaaaaaaa") == (
+        f"literature/tron/transients/deep/{accented}.md"
+    )
+    assert document_path_at(Repository(corpus), commit, "bbbbbbbbbb") == (
+        "literature/tron/With figures/content.md"
+    )
+
+
+def test_a_document_is_found_at_a_point_named_by_an_expression(corpus: Path):
+    """`corpus restore --commit HEAD~1`: git writes the point back before
+    each path exactly as it was given."""
+    note = a_document(corpus, "one.md")
+    recorded(corpus)
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+    repository = Repository(corpus)
+
+    assert document_path_at(repository, "HEAD~1", "aaaaaaaaaa") == "notes/one.md"
+    assert document_path_at(repository, "HEAD@{1}", "aaaaaaaaaa") == "notes/one.md"
+    assert document_path_at(repository, "HEAD", "aaaaaaaaaa") is None
+    assert document_path_at(repository, "no-such-point", "aaaaaaaaaa") is None
+
+
+@needs_unportable_filenames
+def test_a_colon_in_the_point_or_the_path_does_not_move_the_cut(corpus: Path):
+    """git answers `<point>:<path>`, and a point named by a commit's message
+    holds a colon as a title may."""
+    titled = "Calibration: a study.md"
+    note = a_document(corpus, titled)
+    recorded(corpus)
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+    point = "HEAD^{/: 1 removed}~1"
+
+    assert document_path_at(Repository(corpus), point, "aaaaaaaaaa") == (
+        f"notes/{titled}"
+    )
