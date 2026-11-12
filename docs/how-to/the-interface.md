@@ -132,7 +132,8 @@ search to it until **Show everything**. See
 images held elsewhere, and requesting one would tell that site which
 document you are reading. So remote images are blocked, the host is named,
 and there is a control to load them if you want them. An image kept beside
-its document is not drawn yet: a reference to a local figure shows as a
+its document is drawn, on the document's page and in a search result's
+passage; a reference to a local figure that has no image shows as a
 placeholder rather than a broken image. See
 [Figures](add-documents.md#figures).
 

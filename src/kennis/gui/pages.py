@@ -60,6 +60,7 @@ from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Chunk
 from kennis.engine.refusals import Refusal, wanted_paper
 from kennis.gui import words
+from kennis.gui.figures import figure_addresses
 from kennis.gui.history import Search
 from kennis.gui.repairs import (
     OPEN_THE_PAPER,
@@ -260,9 +261,18 @@ _PASSAGE_FITS: Final = 360
 
 
 def shown_hits(
-    hits: list[Hit], *, question: str = "", chips_of: ChipsOf | None = None
+    hits: list[Hit],
+    *,
+    question: str = "",
+    chips_of: ChipsOf | None = None,
+    corpus_root: Path | None = None,
 ) -> list[ShownHit]:
-    """Every hit, rendered once, in rank order."""
+    """Every hit, rendered once, in rank order.
+
+    With `corpus_root`, a passage of a corpus document draws the figures
+    that document holds; a bundle's note is the user's repository and has
+    none kennis kept.
+    """
     if not hits:
         return []
     terms = terms_of(question)
@@ -289,6 +299,12 @@ def shown_hits(
                     fits=_PASSAGE_FITS,
                     section=rendered.section,
                     title=rendered.document_title,
+                    figure_address=(
+                        figure_addresses(corpus_root, hit.result.chunk.source_path)
+                        if corpus_root is not None
+                        and hit.collection in COLLECTION_NAMES
+                        else None
+                    ),
                 ),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
@@ -427,7 +443,11 @@ class ShownSkip:
 
 
 def shown_groups_of(
-    found: Sweep, question: str, order: str = "", chips_of: ChipsOf | None = None
+    found: Sweep,
+    question: str,
+    order: str = "",
+    chips_of: ChipsOf | None = None,
+    corpus_root: Path | None = None,
 ) -> list[ShownGroup]:
     """A sweep, in the pieces a page arranges."""
     return [
@@ -437,7 +457,10 @@ def shown_groups_of(
             # The bundle is drawn as a folder in the pane, so here too.
             icon=words.COLLECTION_ICONS.get(name, "folder"),
             hits=shown_hits(
-                ordered_by(hits, order), question=question, chips_of=chips_of
+                ordered_by(hits, order),
+                question=question,
+                chips_of=chips_of,
+                corpus_root=corpus_root,
             ),
         )
         for name, hits in found.groups.items()
@@ -923,14 +946,16 @@ def shown_document(
     frontmatter = document.frontmatter
     anchor = _anchor(document)
     group = _group_of(corpus_root, collection, anchor)
+    path = relative_to_corpus(document.md_path, corpus_root)
     return ShownDocument(
         title=frontmatter.title,
         document_id=document.id,
         collection=collection,
-        path=relative_to_corpus(document.md_path, corpus_root),
+        path=path,
         body_html=to_html(
             document.body,
             load_remote_images=load_remote_images,
+            figure_address=figure_addresses(corpus_root, path),
             marked=marked,
             # The page already shows the title above the provenance.
             # 44 of 45 crawled pages then repeated it as their first

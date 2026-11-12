@@ -170,7 +170,11 @@ def _hits_context(
             tags=tags,
         )
         context["groups"] = shown_groups_of(
-            found, question, order, chips_finder(existing_corpus(), others)
+            found,
+            question,
+            order,
+            chips_finder(existing_corpus(), others),
+            corpus_root=existing_corpus().corpus_root,
         )
         context["kept_tag_colours"] = tag_colours(existing_corpus())
         found_count = sum(len(hits) for hits in found.groups.values())

@@ -650,8 +650,9 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # 60th: POST /shown/{nonce}, a window taking a passage `kennis open` sent it
 # (Brian, 2026-11-01); 61st: GET /packs/{id}, what an installed pack contains;
 # 62nd to 66th: GET /packs, GET and POST /packs/{id}/uninstall, GET and POST
-# /projects/forget (Brian, 2026-11-04)
-EXPECTED_ROUTES = 83
+# /projects/forget (Brian, 2026-11-04); and GET /figure/{path}, an image a
+# document's markdown links (#642)
+EXPECTED_ROUTES = 84
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

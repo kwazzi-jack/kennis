@@ -131,7 +131,9 @@ wrote 129 image files and the text linked 5.
 
 Three limits, as of this version:
 
-- The window does not draw a kept image yet; it shows a placeholder.
+- The window draws a kept image on the document's page and in a search
+  result's passage. A figure link with no image beside it shows a
+  placeholder.
 - A document converted before images were kept holds its figure links and
   not the images.
 - Only mineru's images are kept. A paper read from arXiv's HTML keeps the
