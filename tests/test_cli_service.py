@@ -16,7 +16,8 @@ from click.testing import CliRunner
 
 from in_process import InProcessServices
 from kennis.cli.__main__ import main
-from kennis.engine.errors import InputError
+from kennis.engine.errors import InputError, TaskStopped
+from kennis.engine.history.repository import Repository
 
 WAIT = 30.0
 
@@ -100,14 +101,22 @@ def test_the_status_lists_the_unfinished_tasks(
     assert f"kennis service watch {job.id}" in result.output
 
 
-def test_ctrl_c_in_a_command_leaves_its_task_running_and_names_the_watch(
+def test_ctrl_c_twice_leaves_the_command_and_the_task_ends_whole(
     corpus: Path,
     service_in_this_process: InProcessServices,
     monkeypatch: pytest.MonkeyPatch,
-):
-    """The interrupt reaches the command while it follows the task's
-    events; the command exits 130 and says how to follow the task again,
-    and the task finishes in the service regardless (Brian's default 3)."""
+) -> None:
+    """Every event raises an interrupt here, so the command sees two: the
+    first asks the service to cancel the task and goes on following, the
+    second leaves it (`client/calls.py::watch`). The command exits 130 and
+    says how to follow the task again.
+
+    **Which way the task ends is a race, and both ways are right.** The
+    cancellation is honoured until the task begins to publish and not
+    after, so it ends stopped with nothing written, or finished with the
+    note. This asserted the second alone, from before a first Ctrl-C
+    cancelled anything, and failed about one run in six (#655). What must
+    hold either way is that the task ended whole."""
     from kennis.cli.sink import DisplaySink
     from kennis.engine.events import Event
 
@@ -126,4 +135,11 @@ def test_ctrl_c_in_a_command_leaves_its_task_running_and_names_the_watch(
     job = service_in_this_process.app(corpus).state.jobs.get(named.group(1))
     assert job is not None, (named.group(1), result.output)
     assert job.done.wait(WAIT)
-    assert len(sorted((corpus / "notes").rglob("*.md"))) == 1
+    assert job.crash is None, job.crash
+    notes = sorted((corpus / "notes").rglob("*.md"))
+    if job.error is None:
+        assert len(notes) == 1, "the task finished and its note is not there"
+    else:
+        assert isinstance(job.error, TaskStopped), job.error
+        assert notes == [], "the task was stopped and left a note behind"
+    assert Repository(corpus).is_clean()
