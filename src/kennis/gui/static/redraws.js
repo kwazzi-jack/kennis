@@ -24,11 +24,10 @@
       // The part is the request's source as well as its target: with no
       // source htmx files every request under `<body>`, whose queue sends
       // the first and the latest and drops the rest (#539).
-      window.htmx.ajax("GET", hook.dataset.redrawRoute, {
-        source: target,
-        target: target,
-        swap: "outerHTML",
-      });
+      var asked = { source: target, target: target, swap: "outerHTML" };
+      // A part redrawn from a whole page names itself in it (#49).
+      if (hook.dataset.redrawSelect) { asked.select = hook.dataset.redrawSelect; }
+      window.htmx.ajax("GET", hook.dataset.redrawRoute, asked);
     });
   }
 

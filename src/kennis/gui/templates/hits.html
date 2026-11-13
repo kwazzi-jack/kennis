@@ -93,7 +93,9 @@
     <div class="hit-head">
       <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a></p>
       {# The tags on this passage, and on its whole document (#627). #}
-      {% if hit.tags %}<p class="hit-tags">{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
+      {# Drawn when empty too, hidden, so a tag added from this card has
+         an element to redraw (#49). #}
+      <p class="hit-tags" id="{{ hit.tags_id }}"{% if not hit.tags %} hidden{% endif %}>{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>
       {# Which section the passage is from; the title is the document's
          alone. Marked, so `safe`. #}
       {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}
