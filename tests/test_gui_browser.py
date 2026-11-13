@@ -1311,3 +1311,63 @@ def test_a_passage_shown_by_the_service_opens_in_this_tab(
     assert answers == [True]
     page.wait_for_url("**/settings", timeout=_WAIT_MS)
     assert len(page.context.pages) == 1
+
+
+# ---------------------------------------------------------------------------
+# A tag shows where it was put, at once (#49)
+# ---------------------------------------------------------------------------
+
+
+def _tag_in_the_dialog(page: playwright.Page, name: str) -> None:
+    page.wait_for_selector("#dialog form.tag input[name=names]", timeout=_WAIT_MS)
+    page.fill("#dialog form.tag input[name=names]", name)
+    page.click("#dialog form.tag button[type=submit]")
+    page.wait_for_selector("#tag-outcome .role-added", timeout=_WAIT_MS)
+
+
+def test_a_passage_tagged_from_the_results_shows_its_tag_at_once(
+    page: playwright.Page,
+) -> None:
+    page.fill("input[name=q]", "antenna")
+    page.wait_for_selector("#hits .hit", timeout=_WAIT_MS)
+    card = page.locator("#hits .hit").first
+    assert card.locator(".tag-chip").count() == 0
+
+    card.hover()
+    card.locator(".bookmark-tab").click()
+    card.locator(".bookmark-items a.item[hx-get^='/tags/add']").click()
+    _tag_in_the_dialog(page, "drift")
+
+    cards = page.locator("#hits .hit").count()
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('#hits .hit')[0]"
+        ".querySelectorAll('.tag-chip')]"
+        ".some(chip => chip.textContent.trim() === 'drift')",
+        timeout=_WAIT_MS,
+    )
+    # The card's chips were replaced, and nothing else was put inside it: a
+    # redraw that took the whole page would nest a second page of results.
+    assert card.locator(".hit-tags").count() == 1
+    assert card.locator(".hit, header.bar, #hits").count() == 0
+    assert page.locator("#hits .hit").count() == cards
+    assert card.locator(".hit-tags").is_visible()
+
+
+def test_a_document_tagged_from_its_page_shows_its_tag_at_once(
+    page: playwright.Page,
+) -> None:
+    page.fill("input[name=q]", "antenna")
+    page.wait_for_selector("#hits .hit a.title", timeout=_WAIT_MS)
+    page.click("#hits .hit a.title")
+    page.wait_for_selector("a.tag-document", timeout=_WAIT_MS)
+
+    page.click("a.tag-document")
+    _tag_in_the_dialog(page, "calibration")
+
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('.inspector .tag-chip')]"
+        ".some(chip => chip.textContent.trim() === 'calibration')",
+        timeout=_WAIT_MS,
+    )
+    assert page.locator("details.tags").count() == 1
+    assert page.locator("header.bar").count() == 1

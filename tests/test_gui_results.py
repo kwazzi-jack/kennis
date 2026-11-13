@@ -282,9 +282,15 @@ def test_the_head_of_the_card_holds_the_measures_the_title_and_the_section(
 
     assert isinstance(head, Tag)
     names = [
-        " ".join(child.get("class") or []) for child in head.find_all(recursive=False)
+        " ".join(child.get("class") or [])
+        for child in head.find_all(recursive=False)
+        if not child.has_attr("hidden")
     ]
     assert names == ["heading", "passage-section", "measures"]
+    # An untagged passage's tags are drawn hidden, so a tag added from the
+    # card has an element to redraw (#49).
+    (tags,) = head.select(".hit-tags")
+    assert tags.has_attr("hidden")
     assert head.find(class_="handle") is not None
     following = head.find_next_sibling()
     assert isinstance(following, Tag) and "passage" in (following.get("class") or [])
