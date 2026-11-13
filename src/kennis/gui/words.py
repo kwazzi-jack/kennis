@@ -440,6 +440,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "chunking.overlap": "Passage overlap",
     "retrieval.context_method": "Way to match in a project",
     "retrieval.scores": "How a match is shown, in a terminal and to an agent",
+    "retrieval.default_collections": "Collections a search covers, in order",
     "corpus.keep_original": "Keep the original file",
     "corpus.default_group": "Default group",
     "conversion.repair_ligatures": "Repair ff, fi and fl",
@@ -508,6 +509,11 @@ SETTING_TIPS: Final[dict[str, str]] = {
     "retrieval.scores": (
         "Levels say how well each hit matched in words; the raw scores are "
         "the numbers they come from. The window always draws levels."
+    ),
+    "retrieval.default_collections": (
+        "What a search covers when no collection is chosen, and the order "
+        "the results are grouped in: any of context, literature, docs and "
+        "notes. One left out is still searched when you choose it."
     ),
     "corpus.keep_original": (
         "Keep the PDF or other file a document was converted from, beside the document."
@@ -1890,6 +1896,9 @@ REMOVE_TAG = "Remove"
 TAGGED_PASSAGE = "a passage"
 KEPT_TO_TAGS = "Kept to"
 SHOW_EVERYTHING = "Show everything"
+# Above the results of a default search that the setting
+# `retrieval.default_collections` narrows; each name after it is a button.
+LEFT_OUT_BY_DEFAULT = "Left out of this search by your settings:"
 # A chip for a tag on the whole document, shown on one of its passages.
 TAG_ON_DOCUMENT = "On the whole document"
 # The bookmark tab on a hit card, and what it holds (#627).
@@ -2061,6 +2070,7 @@ __all__ = [
     "KEY_ORDER",
     "KEY_SUMMARY",
     "LAST_CHANGE_LABEL",
+    "LEFT_OUT_BY_DEFAULT",
     "LEXICAL_ONLY_INDEX",
     "LINE_HELD",
     "LINE_KINDS",

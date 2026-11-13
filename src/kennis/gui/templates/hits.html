@@ -27,6 +27,11 @@
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
 {% endfor %}
+{# What the reader's own setting leaves out of a default search, each a
+   button to this search in it (#669). #}
+{% if left_out %}
+<p class="left-out">{{ icon("info") }}<span>{{ left_out_says }}</span>{% for entry in left_out %}<a class="button" href="{{ entry.href }}">{{ icon(entry.icon) }}{{ entry.name }}</a>{% endfor %}</p>
+{% endif %}
 {# A scope searched with another model, or by keywords because its model
    could not be used, each with its way out (issue #16). #}
 {% for notice in model_notices %}
