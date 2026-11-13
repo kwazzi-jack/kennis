@@ -12,8 +12,9 @@ from __future__ import annotations
 import itertools
 import math
 import re
+from html.parser import HTMLParser
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 from bs4 import BeautifulSoup, Tag
@@ -34,6 +35,9 @@ from test_gui_collection_colours import (
     _rgb,
 )
 from test_gui_tags import opened, page_of
+
+if TYPE_CHECKING:
+    from kennis.render.html import Band, RunHtml
 
 STATIC = Path(__file__).parent.parent / "src" / "kennis" / "gui" / "static"
 
@@ -419,33 +423,168 @@ def test_a_project_tag_s_colour_is_set_in_its_project(
 # A document's tagged passages
 
 
-def test_a_note_is_set_before_the_block_its_offset_falls_in():
-    from kennis.render.html import MarginNote, to_html
+class _Nesting(HTMLParser):
+    """Whether every element closes in the order it opened: a run and the
+    search mark are both wrapped around blocks, and if they crossed a
+    browser would close one early and redraw the page its own way."""
 
-    markdown = "First paragraph.\n\nSecond paragraph.\n\nThird.\n"
-    second = markdown.index("Second")
+    def __init__(self) -> None:
+        super().__init__()
+        self.open: list[str] = []
+        self.crossed: list[str] = []
 
-    html = to_html(markdown, margins=[MarginNote(second + 3, "<aside>N</aside>")])
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in ("br", "hr", "img", "input"):
+            self.open.append(tag)
 
-    assert html.index("First") < html.index("<aside>N</aside>") < html.index("Second")
-    assert to_html(markdown, margins=()) == to_html(markdown)
+    def handle_endtag(self, tag: str) -> None:
+        if not self.open or self.open[-1] != tag:
+            self.crossed.append(tag)
+        else:
+            self.open.pop()
 
 
-def test_a_document_shows_each_tagged_passage_s_tags_beside_it(corpus: Path):
+def _runs(html: str) -> list[tuple[str, list[str]]]:
+    """Each run's names and the first words of each paragraph inside it."""
+    page = BeautifulSoup(html, "html.parser")
+    return [
+        (
+            str(run["data-names"]),
+            [paragraph.get_text().split()[0] for paragraph in run.select("p")],
+        )
+        for run in page.select("div.run")
+    ]
+
+
+def _wrap(names: frozenset[str]) -> RunHtml:
+    from kennis.render.html import RunHtml
+
+    named = " ".join(sorted(names))
+    return RunHtml(f'<div class="run" data-names="{named}">', "</div>")
+
+
+THREE = "Alpha one.\n\nBravo two.\n\nCharlie three.\n\nDelta four.\n"
+
+
+def _band(first: str, last: str, *names: str) -> Band:
+    from kennis.render.html import Band
+
+    start = THREE.index(first)
+    end = THREE.index("\n", THREE.index(last)) + 1
+    return Band(start, end, frozenset(names))
+
+
+def test_adjacent_passages_with_the_same_tags_are_one_run() -> None:
+    """Brian, #50: "chunks next to each other with the same tags ... style
+    as one"."""
+    from kennis.render.html import to_html
+
+    html = to_html(
+        THREE,
+        bands=[_band("Alpha", "Alpha", "a"), _band("Bravo", "Bravo", "a")],
+        run=_wrap,
+    )
+
+    assert _runs(html) == [("a", ["Alpha", "Bravo"])]
+
+
+def test_a_change_of_tags_starts_a_new_run() -> None:
+    from kennis.render.html import to_html
+
+    html = to_html(
+        THREE,
+        bands=[
+            _band("Alpha", "Bravo", "a"),
+            _band("Bravo", "Charlie", "b"),
+        ],
+        run=_wrap,
+    )
+
+    assert _runs(html) == [("a", ["Alpha"]), ("a b", ["Bravo"]), ("b", ["Charlie"])]
+
+
+def test_a_run_never_crosses_the_search_mark() -> None:
+    from kennis.render.html import MarkedRange, to_html
+
+    marked = MarkedRange(THREE.index("Bravo"), THREE.index("Delta"), "chunk-1")
+    html = to_html(
+        THREE, marked=marked, bands=[_band("Alpha", "Delta", "a")], run=_wrap
+    )
+
+    nesting = _Nesting()
+    nesting.feed(html)
+    assert nesting.crossed == [] and nesting.open == []
+    assert _runs(html) == [
+        ("a", ["Alpha"]),
+        ("a", ["Bravo", "Charlie"]),
+        ("a", ["Delta"]),
+    ]
+    page = BeautifulSoup(html, "html.parser")
+    (mark,) = page.select(".document-body .chunk, div.chunk")
+    assert [run.get_text().split()[0] for run in mark.select("div.run")] == ["Bravo"]
+
+
+def test_no_bands_leave_the_document_as_it_was() -> None:
+    from kennis.render.html import to_html
+
+    assert to_html(THREE, bands=(), run=_wrap) == to_html(THREE)
+
+
+def test_a_document_shows_a_tagged_passage_as_a_run_with_its_tags(corpus: Path) -> None:
     solving = chunk_holding(corpus, SOLVING)
     run("tag", "calibration", f"id={PAPER_ID}", f"chunk={solving}", "--colour", "teal")
     run("tag", "to-read", f"id={PAPER_ID}")
 
     page = page_of(opened(), f"/document/literature/{PAPER_ID}")
 
-    (margin,) = page.select("aside.chunk-tags")
-    assert margin["data-chunk"] == str(solving)
-    assert [chip.get_text(strip=True) for chip in margin.select(".tag-chip")] == [
-        "calibration"
-    ]
-    assert margin.select_one(".tag-chip")["data-tag-colour"] == "teal"
-    following = margin.find_next("p")
-    assert following is not None and SOLVING in " ".join(following.get_text().split())
+    (tagged,) = page.select(".document-body .tag-run")
+    assert tagged["data-tag-colour"] == "teal"
+    chips = tagged.select(".tag-run-head .tag-chip")
+    assert [chip.get_text(strip=True) for chip in chips] == ["calibration"]
+    assert chips[0]["data-tag-colour"] == "teal"
+    words_in_run = " ".join(tagged.get_text().split())
+    assert SOLVING in words_in_run
+    assert "flagged for interference" not in words_in_run
+    # The head is reached from the keyboard, and says what it holds.
+    marker = tagged.select_one(".tag-run-head .tag-run-marker")
+    assert marker is not None and marker.name == "button"
+    assert marker["aria-label"] == words.tags_on_passage(["calibration"])
+    assert page.select("aside.chunk-tags") == []
+
+
+def test_a_passage_with_two_tags_shows_both_and_wears_the_first_s_colour(
+    corpus: Path,
+) -> None:
+    solving = chunk_holding(corpus, SOLVING)
+    run("tag", "to-cite", f"id={PAPER_ID}", f"chunk={solving}", "--colour", "blue")
+    run("tag", "calibration", f"id={PAPER_ID}", f"chunk={solving}", "--colour", "teal")
+
+    page = page_of(opened(), f"/document/literature/{PAPER_ID}")
+
+    (tagged,) = page.select(".document-body .tag-run")
+    chips = tagged.select(".tag-run-head .tag-chip")
+    assert [chip.get_text(strip=True) for chip in chips] == ["calibration", "to-cite"]
+    assert [chip["data-tag-colour"] for chip in chips] == ["teal", "blue"]
+    assert tagged["data-tag-colour"] == "teal"
+
+
+def test_two_adjacent_passages_with_one_tag_are_one_run_on_the_page(
+    corpus: Path,
+) -> None:
+    reducing = chunk_holding(corpus, "flagged for interference")
+    solving = chunk_holding(corpus, SOLVING)
+    # Every passage from the one to the other, the section heading between
+    # them included: adjacent, one tag each.
+    assert solving > reducing, "the fixture no longer orders its passages"
+    for chunk in range(reducing, solving + 1):
+        run("tag", "calibration", f"id={PAPER_ID}", f"chunk={chunk}")
+
+    page = page_of(opened(), f"/document/literature/{PAPER_ID}")
+
+    (tagged,) = page.select(".document-body .tag-run")
+    words_in_run = " ".join(tagged.get_text().split())
+    assert "flagged for interference" in words_in_run and SOLVING in words_in_run
+    assert len(tagged.select(".tag-run-head")) == 1
 
 
 def test_a_document_changed_since_its_index_withholds_the_marks(corpus: Path):
@@ -461,7 +600,7 @@ def test_a_document_changed_since_its_index_withholds_the_marks(corpus: Path):
 
     page = page_of(opened(), f"/document/literature/{PAPER_ID}")
 
-    assert page.select("aside.chunk-tags") == []
+    assert page.select(".tag-run") == []
 
 
 # ---------------------------------------------------------------------------

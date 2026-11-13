@@ -100,15 +100,27 @@ class MarkedRange:
 
 
 @dataclass(frozen=True, slots=True)
-class MarginNote:
-    """HTML to set before the block holding the source offset `start`.
+class Band:
+    """A range of the source carrying some names: a tagged passage (#50).
 
-    The caller composes the HTML - the tags a passage carries (#627) - and
-    `render/` only places it, as it places a mark it was told of.
-    """
+    `end` is exclusive, as a chunk's is."""
 
     start: int
-    html: str
+    end: int
+    names: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class RunHtml:
+    """The HTML set around one run of blocks carrying the same names. The
+    caller composes it - a run's tags, its marker - and `render/` only
+    places it, as it places a mark it was told of."""
+
+    opening: str
+    closing: str
+
+
+type RunOf = Callable[[frozenset[str]], RunHtml]
 
 
 def to_html(
@@ -119,7 +131,8 @@ def to_html(
     without_title: str | None = None,
     terms: Sequence[str] = (),
     heading_anchors: bool = False,
-    margins: Sequence[MarginNote] = (),
+    bands: Sequence[Band] = (),
+    run: RunOf | None = None,
     figure_address: FigureAddress | None = None,
     trusted_hosts: frozenset[str] = frozenset(),
 ) -> str:
@@ -160,9 +173,10 @@ def to_html(
     a page that offers an outline. Off by default, because a results
     page draws several passages and the same id twice is not HTML.
 
-    `margins` are set before the top-level block each one's offset falls
-    in, after the title is dropped so a note on the first chunk does not
-    keep the repeated title in place.
+    `bands` are tagged passages, drawn by `run` around each run of
+    top-level blocks that carry the same names (#50). Placed last, after
+    the mark and after the repeated title is dropped, so a run never keeps
+    the title in place and never crosses the mark.
     """
     parser = _parser(
         load_remote_images=load_remote_images,
@@ -175,7 +189,7 @@ def to_html(
         and without_title is None
         and pattern is None
         and not heading_anchors
-        and not margins
+        and not (bands and run is not None)
     ):
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
@@ -183,8 +197,8 @@ def to_html(
         tokens = _wrapped(tokens, markdown, marked)
     if without_title is not None:
         tokens = _without_title(tokens, without_title)
-    if margins:
-        tokens = _with_margins(tokens, markdown, margins)
+    if bands and run is not None:
+        tokens = _with_runs(tokens, markdown, bands, run)
     if pattern is not None:
         _mark_text(tokens, pattern)
     if heading_anchors:
@@ -510,36 +524,67 @@ def _wrapped(tokens: list[Token], markdown: str, marked: MarkedRange) -> list[To
     ]
 
 
-def _with_margins(
-    tokens: list[Token], markdown: str, margins: Sequence[MarginNote]
+def _with_runs(
+    tokens: list[Token], markdown: str, bands: Sequence[Band], run: RunOf
 ) -> list[Token]:
-    """`tokens` with each note set before the first top-level block that
-    reaches the line its offset is on; a note past every block is dropped,
-    as a mark that reaches no block is."""
+    """`tokens` with `run`'s HTML around each run of top-level blocks that
+    carry the same names.
+
+    **Decided per block, not per band.** A block carries the union of the
+    names of every band reaching it, by `_wrapped`'s line rule, and
+    consecutive blocks with the same non-empty set are one run. Two
+    adjacent passages with the same tags are therefore one run with nothing
+    to merge (Brian, #50), and a block two passages share carries both.
+
+    **A run never spans an element placed here before it** - the search
+    mark's `<div>`, which has no source position - so the two nest, and a
+    browser does not close one early and redraw the page its own way.
+    """
     offsets = _line_offsets(markdown)
-    before: dict[int, list[str]] = {}
-    for note in margins:
-        line = max(0, bisect_right(offsets, note.start) - 1)
-        position = next(
-            (
-                position
-                for position, token in enumerate(tokens)
-                if token.level == 0
-                and token.nesting != -1
-                and token.map is not None
-                and token.map[1] > line
-            ),
-            None,
+    # `-1` because an offset inside a line belongs to that line; `end` is
+    # exclusive, so `bisect_left` gives the line after the band.
+    reaches = [
+        (
+            max(0, bisect_right(offsets, band.start) - 1),
+            bisect_left(offsets, band.end),
+            band.names,
         )
-        if position is not None:
-            before.setdefault(position, []).append(note.html)
+        for band in bands
+    ]
+    # (first position, one past the last, names) for each run.
+    runs: list[tuple[int, int, frozenset[str]]] = []
+    position = 0
+    while position < len(tokens):
+        token = tokens[position]
+        if token.level != 0 or token.nesting == -1 or token.map is None:
+            position += 1
+            continue
+        first, last = token.map
+        names = frozenset(
+            name
+            for start, end, carried in reaches
+            if start < last and end > first
+            for name in carried
+        )
+        end = _closes_at(tokens, position)
+        if names and runs and runs[-1][1] == position and runs[-1][2] == names:
+            runs[-1] = (runs[-1][0], end, names)
+        elif names:
+            runs.append((position, end, names))
+        position = end
+    if not runs:
+        return tokens
     placed: list[Token] = []
-    for position, token in enumerate(tokens):
-        for html in before.get(position, ()):
-            block = Token("html_block", "", 0)
-            block.content = html if html.endswith("\n") else f"{html}\n"
-            placed.append(block)
-        placed.append(token)
+    previous = 0
+    for start, end, names in runs:
+        html = run(names)
+        opening = Token("html_block", "", 0)
+        opening.content = f"{html.opening}\n"
+        closing = Token("html_block", "", 0)
+        closing.content = f"{html.closing}\n"
+        placed.extend([*tokens[previous:start], opening, *tokens[start:end], closing])
+        previous = end
+    placed.extend(tokens[previous:])
     return placed
 
 
@@ -840,11 +885,13 @@ def _escaped(text: str) -> str:
 __all__ = [
     "IMAGE_BLOCKED",
     "IMAGE_MISSING",
+    "Band",
     "FigureAddress",
     "Heading",
-    "MarginNote",
     "MarkedRange",
     "PassageHtml",
+    "RunHtml",
+    "RunOf",
     "headings_of",
     "is_trusted",
     "marked_text",

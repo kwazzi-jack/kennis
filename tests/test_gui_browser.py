@@ -1311,3 +1311,66 @@ def test_a_passage_shown_by_the_service_opens_in_this_tab(
     assert answers == [True]
     page.wait_for_url("**/settings", timeout=_WAIT_MS)
     assert len(page.context.pages) == 1
+
+
+def _a_tagged_note(page: playwright.Page) -> None:
+    """The note's first passage tagged, and its page opened."""
+    from kennis.engine.corpus.layout import index_root
+    from kennis.engine.rag.index import load_index
+
+    (first, *_) = load_index(index_root(existing_corpus().corpus_root), "notes").chunks
+    tagged = CliRunner().invoke(
+        main,
+        ["tag", "calibration", f"id={first.document_id}", f"chunk={first.chunk_index}"],
+    )
+    assert tagged.exit_code == 0, tagged.output
+    page.fill("input[name=q]", "antenna")
+    page.wait_for_selector("#hits .hit a.title", timeout=_WAIT_MS)
+    page.click("#hits .hit a.title")
+    page.wait_for_selector("article .tag-run", timeout=_WAIT_MS)
+    page.wait_for_selector(".katex", timeout=_WAIT_MS)
+
+
+# Every element of the article that is the document's own, by position.
+_BOXES = """() => [...document.querySelectorAll('article *')]
+  .filter(element => !element.closest('.tag-run-head')
+                     && !element.matches('.tag-run'))
+  .map(element => {
+    const box = element.getBoundingClientRect();
+    return [element.tagName, box.left, box.top, box.width, box.height];
+  })"""
+
+
+def test_a_tagged_passage_moves_no_line_of_the_document(page: playwright.Page) -> None:
+    """Brian, #50: the tags "affect the text placement and wrapping, which I
+    feel they should not". Every box in the article, with the runs drawn,
+    against the same page with the runs taken out."""
+    _a_tagged_note(page)
+
+    drawn = page.evaluate(_BOXES)
+    page.evaluate(
+        """() => document.querySelectorAll('.tag-run').forEach(run => {
+             run.querySelector('.tag-run-head').remove();
+             run.replaceWith(...run.childNodes);
+           })"""
+    )
+    unwrapped = page.evaluate(_BOXES)
+
+    assert len(drawn) > 3
+    assert drawn == unwrapped
+
+
+def test_a_passage_s_tags_show_only_while_its_marker_is_pointed_at_or_focused(
+    page: playwright.Page,
+) -> None:
+    _a_tagged_note(page)
+    chips = page.locator("article .tag-run-chips")
+
+    assert not chips.is_visible()
+    page.focus("article .tag-run-marker")
+    assert chips.is_visible()
+    assert chips.inner_text().strip() == "calibration"
+    page.evaluate("document.activeElement.blur()")
+    assert not chips.is_visible()
+    page.hover("article .tag-run-marker")
+    assert chips.is_visible()
