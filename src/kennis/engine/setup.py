@@ -220,7 +220,7 @@ def validate_answer(question: Question, value: str) -> str | None:
     return None
 
 
-def apply_answers(answers: Mapping[str, str]) -> Settings:
+def apply_answers(answers: Mapping[str, str], *, clearing: bool = False) -> Settings:
     """Write the answers and return the settings they produce.
 
     **Validated before anything is written.** A setup that wrote each answer
@@ -228,9 +228,20 @@ def apply_answers(answers: Mapping[str, str]) -> Settings:
     one was rejected, and the user would have to work out which half.
 
     Answers left empty are not written at all, so a key keeps whatever it
-    had - including from an earlier run of this same command.
+    had - including from an earlier run of this same command. That is the
+    rule for a question: Enter keeps what is there.
+
+    `clearing` is for a caller whose empty answer was given on purpose,
+    which is `config set <key> ""`: the empty value is validated and
+    written as any other, so a setting can be put back to nothing (#666).
+    Never a key: the credentials file is written elsewhere, and an empty
+    key there is kept out as it always was.
     """
-    given = {key: value for key, value in answers.items() if value}
+    given = {
+        key: value
+        for key, value in answers.items()
+        if value or (clearing and not _is_secret(key))
+    }
     settings = _validated(given)
 
     secrets = {key: value for key, value in given.items() if _is_secret(key)}
