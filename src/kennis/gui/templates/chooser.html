@@ -7,8 +7,8 @@
   {% if listing.problem %}<p class="role-warning">{{ listing.problem }}</p>{% endif %}
   <p class="chooser-actions">
     {% if listing.parent_href %}<a class="up" href="{{ listing.parent_href }}" hx-get="{{ listing.parent_href }}" hx-target="closest .chooser">{{ chooser_up }}</a>{% endif %}
-    {% if folders and not listing.problem %}<button type="button" class="ghost" data-choose="{{ listing.path }}">{{ choose_folder }}</button>{% endif %}
-    {% if not page %}<button type="button" class="ghost" data-chooser-cancel>{{ chooser_cancel }}</button>{% endif %}
+    {% if folders and not listing.problem %}<button type="button" class="primary" data-choose="{{ listing.path }}">{{ icon("folder") }}{{ choose_folder }}</button>{% endif %}
+    {% if not page %}<button type="button" data-chooser-cancel>{{ chooser_cancel }}</button>{% endif %}
   </p>
   <ul class="entries">
     {% for entry in listing.entries %}

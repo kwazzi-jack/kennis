@@ -19,7 +19,7 @@
     <span class="need">{{ required }}</span>
     <span class="entry-row">
     <textarea id="lines-{{ index }}" name="lines-{{ index }}" rows="4" hx-get="/add/check?index={{ index }}" hx-trigger="input changed delay:600ms" hx-target="#checks-{{ index }}" hx-include="closest fieldset"></textarea>
-    <button type="button" class="ghost browse" hx-get="/browse?target=lines-{{ index }}&amp;folders=1" hx-target="#chooser-lines-{{ index }}">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+    <button type="button" class="browse" hx-get="/browse?target=lines-{{ index }}&amp;folders=1" hx-target="#chooser-lines-{{ index }}">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
     </span>
   </div>
   <div class="chooser" id="chooser-lines-{{ index }}"></div>

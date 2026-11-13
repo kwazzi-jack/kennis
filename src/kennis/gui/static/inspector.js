@@ -35,11 +35,13 @@
   if (!navigator.clipboard) { return; }
   document.querySelectorAll("button.copy[data-copy]").forEach(function (button) {
     button.hidden = false;
-    var label = button.textContent;
+    // Only the words change; the icon beside them stays.
+    var words = button.querySelector(".label");
+    var label = words.textContent;
     button.addEventListener("click", function () {
       navigator.clipboard.writeText(button.dataset.copy).then(function () {
-        button.textContent = button.dataset.copied;
-        setTimeout(function () { button.textContent = label; }, 1500);
+        words.textContent = button.dataset.copied;
+        setTimeout(function () { words.textContent = label; }, 1500);
       });
     });
   });

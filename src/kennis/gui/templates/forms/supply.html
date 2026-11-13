@@ -15,7 +15,7 @@
         <span class="upload-buttons">
           <label class="upload-button">{{ icon("file-plus") }}<span class="upload-label">{{ choose_the_file }}</span><input type="file" name="file-{{ loop.index0 }}"></label>
         </span>
-        <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="link upload-clear" data-upload-clear hidden>{{ upload_clear }}</button></span>
+        <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="upload-clear" data-upload-clear hidden>{{ icon("x") }}{{ upload_clear }}</button></span>
       </span>
     </li>
     {% endfor %}

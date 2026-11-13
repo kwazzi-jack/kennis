@@ -8,7 +8,7 @@
   {% if changed %}
   <p class="role-muted">{{ returned_index }}</p>
   <div class="form-foot">
-    <a class="button" href="/activity">{{ activity_heading }}</a>
+    <a class="button" href="/activity">{{ icon("activity") }}{{ activity_heading }}</a>
     <a class="button primary" href="/index" hx-get="/index" hx-target="#dialog" hx-swap="innerHTML">{{ icon("database") }}{{ index_now }}</a>
   </div>
   {% endif %}

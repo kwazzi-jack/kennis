@@ -21,7 +21,7 @@
   {% if field.upload == "both" %}<label class="upload-button">{{ icon("folder") }}<span class="upload-label">{{ upload_folder }}</span><input type="file" name="upload" webkitdirectory></label>{% endif %}
   {{ tip("upload-" ~ field.name, upload_files, upload_hint) }}
   </span>
-  <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="link upload-clear" data-upload-clear hidden>{{ upload_clear }}</button></span>
+  <span class="upload-chosen" role="status"><span class="upload-said"></span> <button type="button" class="upload-clear" data-upload-clear hidden>{{ icon("x") }}{{ upload_clear }}</button></span>
 </span>{% endmacro %}
 {% set typed %}{{ typed_input(field) }}{% endset %}
 {% if field.widget == "ways" %}

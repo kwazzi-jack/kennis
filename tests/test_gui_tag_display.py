@@ -321,7 +321,7 @@ def test_a_document_page_copies_its_reference(corpus: Path):
     page = page_of(opened(), f"/document/literature/{PAPER_ID}")
 
     (reference,) = cite(existing_corpus(), [CiteRequest(PAPER_ID)]).citations
-    button = page.select_one(".inspector button.copy-reference")
+    button = page.select_one(".inspector .copy-reference-row button.copy")
     assert button is not None
     assert button["data-copy"] == reference.reference
     assert button.has_attr("hidden")
@@ -342,7 +342,7 @@ def test_a_project_file_has_no_reference_to_copy(
 
     page = page_of(opened(), "/bundle/ours.md?project=pipelines")
 
-    assert page.select_one("button.copy-reference") is None
+    assert page.select_one(".copy-reference-row button.copy") is None
 
 
 # ---------------------------------------------------------------------------

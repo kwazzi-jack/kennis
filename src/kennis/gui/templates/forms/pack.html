@@ -9,7 +9,7 @@
     <label class="labelled" for="pack-path"><span class="name">{{ pack_path_label }}</span></label>
     <span class="entry-row">
       <input id="pack-path" type="text" name="path" placeholder="/path/to/pack.ken.yml" aria-describedby="pack-preamble" autofocus>
-      <button type="button" class="ghost browse" hx-get="/browse?target=path" hx-target="#chooser-pack" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+      <button type="button" class="browse" hx-get="/browse?target=path" hx-target="#chooser-pack" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
     </span>
     <div class="chooser" id="chooser-pack"></div>
   </div>
