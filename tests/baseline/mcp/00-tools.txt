@@ -188,6 +188,30 @@
     }
   },
   {
+    "description": "Look at figures of a document in `notes`, `literature` or `docs`.\n\n`read` shows a figure as a link and its caption, such as\n`![](<commit>.jpg)` followed by `Figure 2. ...`. Pass the\ndocument's `document_id` and, in `names`, the text between the\nparentheses of each figure you want, copied exactly: a file name, or a\nfull `https://` address. At most 4 a call.\n\nCall this only when seeing the figure matters to the answer - a plot\nwhose values the text does not give, a diagram a caption refers to. An\nimage costs far more to read than the passage around it.\n\nA figure kept with the document is answered at once. One held at a web\nsite is fetched only when the user has named that site as trusted, and\nmay take some seconds; when they have not, the answer says so and names\nthe setting, which is theirs to change, not yours. A document converted\nbefore images were kept has links and no images.\n\nEach figure is answered as a line naming it and then the image; one\nthat cannot be had is a line saying why, and does not cost the others.",
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "type": "string"
+        },
+        "names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "document_id",
+        "names"
+      ],
+      "type": "object"
+    },
+    "name": "figure",
+    "output": null
+  },
+  {
     "description": "Cite passages from notes, literature, docs or a project's context.\n\nCall this for every passage your answer relies on, all in one call:\na hit's `document_id`, or a context hit's `path`, with its `chunk`.\nEach comes back as:\n\n- `markdown`: the citation as a link to the passage. Write it as given.\n- `link`: the `kennis://` link alone. Write it after the citation where a\n  link cannot be shown.\n- `locator`: the figure, table, equation or section the passage is in,\n  if any, to name in your own words (\"in section 2.1 of ...\").\n- `reference`: the entry for a list of references.\n\nNever write a citation or a `kennis://` link yourself. A note saying a\ncitation reads the same as another means their links open different\npassages: say what each one is.",
     "input": {
       "additionalProperties": false,

@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from kennis.engine.rag.models import Filter
     from kennis.engine.rag.search import ChunkRange
     from kennis.engine.remember import RememberReport
+    from kennis.figures import Figure
     from kennis.finding import DocumentRead, Found, PassageRead
     from kennis.holdings import CollectionTree, CorpusStatus
     from kennis.operations import (
@@ -337,6 +338,15 @@ def show_in_window(corpus_root: Path, link: str, collection: str | None) -> bool
     except httpx.HTTPError:
         return False
     return answer.status_code == 200 and answer.json().get("shown") is True
+
+
+def figure(corpus_root: Path, handle: str, name: str) -> Figure:
+    """One image the document `handle` links, by the link's target as its
+    markdown writes it (#642). A figure held at a trusted site may be waited
+    for: its host's `Crawl-delay` is honoured."""
+    from kennis.figures import Figure
+
+    return _read(corpus_root, "figure", {"handle": handle, "name": name}, Figure)
 
 
 def read_document(
@@ -802,6 +812,7 @@ __all__ = [
     "delete_project",
     "deletion_preview",
     "docs_versions",
+    "figure",
     "forget_project",
     "found",
     "history",

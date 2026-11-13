@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kennis import citing, finding, operations, retrieval, tagging, writing
+from kennis import citing, figures, finding, operations, retrieval, tagging, writing
 from kennis import holdings as held
 from kennis.citing import Cited, CiteRequest
 from kennis.context import existing_corpus
@@ -52,6 +52,7 @@ from kennis.engine.pack.store import PackInstall
 from kennis.engine.rag.models import Filter
 from kennis.engine.rag.search import ChunkRange
 from kennis.engine.remember import INLINE_ORIGIN, RememberReport
+from kennis.figures import Figure
 from kennis.finding import DocumentRead, Found, PassageRead
 from kennis.holdings import (
     CollectionTree,
@@ -438,6 +439,10 @@ def read_passage(
     return finding.read_passage(existing_corpus(), handle, collection, chunks=chunks)
 
 
+def figure(handle: str, name: str) -> Figure:
+    return figures.figure_of(existing_corpus(), handle, name)
+
+
 def search_scope(
     collection: str,
     question: str,
@@ -527,6 +532,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(last_change),
         Operation(read_document),
         Operation(read_passage),
+        Operation(figure),
         Operation(reset_preview),
         Operation(deletion_preview),
         Operation(return_preview),

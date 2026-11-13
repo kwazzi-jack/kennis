@@ -19,44 +19,12 @@ from urllib.parse import quote
 
 from kennis.engine.corpus.images import IMAGE_MEDIA_TYPES
 from kennis.engine.corpus.layout import WRAPPED_DOCUMENT_FILENAME
-from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import SettingsError
 from kennis.engine.settings import figure_hosts, load_settings
+from kennis.figures import held_figure
 from kennis.render.html import FigureAddress
 
 FIGURE_ROUTE = "/figure"
-
-
-def held_figure(corpus_root: Path, path: str) -> Path | None:
-    """The image file at `path`, relative to the corpus, or None when it is
-    not a figure: a raster image that is a document's own asset.
-
-    Every part of the path is an ordinary name inside a collection, so
-    nothing is reached by climbing and nothing under `.git` or the index.
-    Raster formats only, because an SVG can carry script and this is served
-    to a page holding the reader's token.
-
-    No backslash anywhere: on Windows it separates folders inside what
-    this function took for one name, so a name written with one and
-    `..` climbed past every check here. And the file itself, links
-    followed, is inside the corpus, as `kept_images` requires of what a
-    conversion links.
-    """
-    parts = path.split("/")
-    if parts[0] not in COLLECTION_NAMES or "\\" in path:
-        return None
-    if any(not part or part.startswith(".") for part in parts):
-        return None
-    if PurePosixPath(path).suffix.lower() not in IMAGE_MEDIA_TYPES:
-        return None
-    candidate = corpus_root.joinpath(*parts)
-    if not (candidate.parent / WRAPPED_DOCUMENT_FILENAME).is_file():
-        return None
-    if not candidate.is_file():
-        return None
-    if not candidate.resolve().is_relative_to(corpus_root.resolve()):
-        return None
-    return candidate
 
 
 def media_type_of(figure: Path) -> str:

@@ -29,6 +29,10 @@ between two.
 A `context` hit is the exception: it is a file location in the user's
 own repository, which you open with your native file tools.
 
+A passage shows a figure as a link and its caption. `figure` answers the
+image itself, for the links you name; call it only when seeing the figure
+matters, since an image costs far more to read than text.
+
 Call `list_corpus` when you need to know what a collection *contains*
 rather than what matches a query - which docs projects exist before
 filtering a search by one, or whether a paper is held at all.
