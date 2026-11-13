@@ -32,7 +32,7 @@
   <span id="add-prefilled-note" class="visually-hidden">{{ prefilled_note }}</span>
   {% endif %}
   {% if kind == "site" %}
-  <button type="button" class="ghost probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview" hx-indicator="#add-looking">{{ check_site }}</button>
+  <button type="button" class="probe" hx-get="/add/preview/site?probe=1" hx-include="closest form" hx-target="#add-preview" hx-indicator="#add-looking">{{ icon("globe") }}{{ check_site }}</button>
   {% endif %}
   {% endif %}
   {# Where it goes, Cancel, and the add. Each part of the destination

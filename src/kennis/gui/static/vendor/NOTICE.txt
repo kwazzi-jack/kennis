@@ -56,7 +56,7 @@ Lucide 0.460.0 (lucide-static)
   icons/book-open.svg, icons/bookmark.svg, icons/chevron-left.svg, icons/grip-vertical.svg,
   icons/save.svg, icons/server.svg,
   icons/brain.svg, icons/chevron-down.svg, icons/chevron-right.svg,
-  icons/circle-check.svg, icons/circle-x.svg, icons/command.svg,
+  icons/circle-check.svg, icons/circle-x.svg, icons/command.svg, icons/copy.svg,
   icons/database.svg, icons/ellipsis.svg, icons/file-plus.svg, icons/file-text.svg, icons/folder.svg, icons/folder-plus.svg,
   icons/git-commit-horizontal.svg, icons/globe.svg, icons/hash.svg, icons/history.svg, icons/info.svg,
   icons/package.svg, icons/panel-left.svg, icons/panel-right.svg, icons/pencil.svg,
