@@ -79,7 +79,7 @@ from kennis.engine.history.history import (
     ReturnChanges,
     commit_summary,
     document_files_at,
-    document_path_at,
+    document_to_restore,
     outcome_summary,
     restore_document,
     return_to,
@@ -490,10 +490,10 @@ def remove_a_document(
 
 
 def restore_a_document(
-    context: Context, document_id: str, *, commit: str = "HEAD"
+    context: Context, document_id: str, *, commit: str | None = None
 ) -> RestoredDocument:
-    """Put one document back as it was at `commit`: held, journalled,
-    restore, commit.
+    """Put one document back as it was at `commit`, or with none as it was
+    at the last point that held it: held, journalled, restore, commit.
 
     Recorded under the collection it lands in, so `corpus history
     --collection` finds it by the route that found its removal.
@@ -501,12 +501,16 @@ def restore_a_document(
     repository = Repository(context.corpus_root)
     with exclusively(context.corpus_root):
         record_what_was_not_recorded(context)
-        path = document_path_at(repository, commit, document_id)
+        # After the record: with no commit the point is looked for, and a
+        # hand edit just recorded is the last point that held the document.
+        found = document_to_restore(repository, document_id, commit)
         # Every file the restore writes, so a failure partway puts each one
         # back: a paper's images as well as its markdown.
-        files = document_files_at(repository, commit, path) if path else []
+        files = document_files_at(repository, found.commit, found.path)
         with journalled(context.corpus_root, "restore", files):
-            restored = restore_document(repository, document_id, commit=commit)
+            restored = restore_document(
+                repository, found.document_id, commit=found.commit
+            )
             sealed_again(context, [restored.path])
             head = restored.path.split("/", 1)[0]
             repository.commit(

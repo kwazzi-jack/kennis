@@ -508,7 +508,7 @@ def move_document(
 
 
 def restore_document(
-    corpus_root: Path, document_id: str, commit: str
+    corpus_root: Path, document_id: str, commit: str | None
 ) -> Written[RestoredDocument]:
     from kennis.engine.history.history import RestoredDocument
 

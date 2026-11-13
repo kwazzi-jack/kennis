@@ -589,6 +589,24 @@ def test_restore_brings_back_a_removed_document(
     assert identifier_of(only_document(corpus)) == handle
 
 
+def test_restore_with_no_point_brings_back_what_was_just_removed(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """The plain command, which is what a person types after a removal;
+    `--commit` defaulted to HEAD, where a removed document is not (#667)."""
+    added(run, a_source(tmp_path, "trees.md"))
+    handle = identifier_of(only_document(corpus))
+    held_at = Repository(corpus).head()
+    assert held_at is not None
+    assert run.invoke(main, ["corpus", "remove", handle, "--yes"]).exit_code == 0
+
+    result = run.invoke(main, ["corpus", "restore", handle])
+
+    assert result.exit_code == 0, result.output
+    assert identifier_of(only_document(corpus)) == handle
+    assert held_at[:8] in result.output
+
+
 # ---------------------------------------------------------------------------
 # The lock
 # ---------------------------------------------------------------------------

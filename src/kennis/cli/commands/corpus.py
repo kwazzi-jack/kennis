@@ -695,10 +695,17 @@ def history_command(collection: str | None, limit: int) -> None:
 @corpus_group.command(name="restore")
 @click.argument("document_id")
 @click.option(
-    "--commit", "commit", default="HEAD", show_default=True, help="Restore from here."
+    "--commit",
+    "commit",
+    default=None,
+    help="Restore from here. [default: the last point that held the document]",
 )
-def restore_command(document_id: str, commit: str) -> None:
-    """Put a document back as it was at a commit."""
+def restore_command(document_id: str, commit: str | None) -> None:
+    """Put a document back: one that was removed, or one changed since.
+
+    DOCUMENT_ID is its identifier, or a paper's citekey, arXiv number, DOI
+    or bibcode. `kennis corpus history` lists the points to give --commit.
+    """
     restored = api.restore_document(
         existing_corpus().corpus_root, document_id, commit
     ).result

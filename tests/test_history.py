@@ -16,7 +16,9 @@ from kennis.engine.events import Outcome
 from kennis.engine.history.freshness import index_freshness
 from kennis.engine.history.history import (
     commit_summary,
+    document_at,
     document_path_at,
+    last_point_holding,
     outcome_summary,
     read_history,
     restore_document,
@@ -426,3 +428,186 @@ def test_a_colon_in_the_point_or_the_path_does_not_move_the_cut(corpus: Path):
     assert document_path_at(Repository(corpus), point, "aaaaaaaaaa") == (
         f"notes/{titled}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Restoring without naming a point, and by the names a paper has (#667)
+# ---------------------------------------------------------------------------
+
+
+def a_paper(corpus: Path, name: str, *, identifier: str, arxiv_id: str) -> Path:
+    path = corpus / "literature" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\nid: {identifier}\ntitle: A paper\nowner: user\n"
+        f"bib:\n  citekey: key{identifier}\n  arxiv_id: '{arxiv_id}'\n"
+        "  doi: 10.1000/example\n---\n\n# A paper\n\nBody.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_a_removed_document_is_restored_without_naming_a_point(corpus: Path):
+    """Brian's report: after a removal the document is not at HEAD, which
+    was the default, so the plain command could not undo a removal."""
+    note = a_document(corpus, "one.md")
+    held_at = recorded(corpus)
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+
+    restored = restore_document(Repository(corpus), "aaaaaaaaaa", commit=None)
+
+    assert note.is_file()
+    assert restored.commit == held_at
+
+
+def test_the_last_point_holding_a_document_is_the_newest_one(corpus: Path):
+    note = a_document(corpus, "one.md", body="First body.")
+    recorded(corpus)
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+    a_document(corpus, "one.md", body="Second body.")
+    second = recorded(corpus)
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+
+    assert last_point_holding(Repository(corpus), "aaaaaaaaaa") == second
+    restore_document(Repository(corpus), "aaaaaaaaaa", commit=None)
+    assert "Second body." in note.read_text(encoding="utf-8")
+
+
+def test_a_document_still_held_is_restored_from_the_latest_point(corpus: Path):
+    """Not from the commit that added it: an edit recorded since changes no
+    count of the identifier, so no search of the history proposes it."""
+    note = a_document(corpus, "one.md", body="First body.")
+    recorded(corpus)
+    a_document(corpus, "one.md", body="Recorded body.")
+    latest = recorded(corpus, "edit", "notes", "by hand")
+    note.write_text("damaged by hand", encoding="utf-8")
+
+    restored = restore_document(Repository(corpus), "aaaaaaaaaa", commit=None)
+
+    assert restored.commit == latest
+    assert "Recorded body." in note.read_text(encoding="utf-8")
+
+
+def test_a_removed_document_comes_back_as_it_was_last_recorded(corpus: Path):
+    """The point is the removal's parent, not the commit that added the
+    document, which holds it as it was before every edit since; and a
+    removal may be followed by any number of unrelated commits."""
+    note = a_document(corpus, "one.md", body="First body.")
+    recorded(corpus)
+    a_document(corpus, "one.md", body="Edited body.")
+    held_at = recorded(corpus, "edit", "notes", "by hand")
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+    a_document(corpus, "two.md", identifier="bbbbbbbbbb")
+    recorded(corpus)
+
+    assert last_point_holding(Repository(corpus), "aaaaaaaaaa") == held_at
+
+
+def test_a_document_never_recorded_has_no_point_and_is_refused(corpus: Path):
+    a_document(corpus, "one.md")
+    recorded(corpus)
+
+    assert last_point_holding(Repository(corpus), "zzzzzzzzzz") is None
+    with pytest.raises(DocumentNotFound) as refused:
+        restore_document(Repository(corpus), "zzzzzzzzzz", commit=None)
+    assert "HEAD" not in str(refused.value)
+
+
+def test_a_name_beginning_with_a_dash_is_looked_for_and_not_obeyed(corpus: Path):
+    note = a_document(corpus, "one.md", identifier="-Otouch")
+    held_at = recorded(corpus)
+    note.unlink()
+    recorded(corpus, "remove", "notes", "1 removed")
+
+    assert last_point_holding(Repository(corpus), "-Otouch") == held_at
+
+
+@pytest.mark.parametrize(
+    "name", ["2604.25345", "keypppppppppp", "10.1000/example"], ids=str
+)
+def test_a_removed_paper_is_restored_by_a_name_remove_took(corpus: Path, name: str):
+    """`corpus remove 2604.25345` worked and `corpus restore 2604.25345`
+    did not. The report names the identifier, whatever was typed."""
+    paper = a_paper(corpus, "paper.md", identifier="pppppppppp", arxiv_id="2604.25345")
+    held_at = recorded(corpus, "add", "literature")
+    paper.unlink()
+    recorded(corpus, "remove", "literature", "1 removed")
+
+    restored = restore_document(Repository(corpus), name, commit=None)
+
+    assert paper.is_file()
+    assert (restored.document_id, restored.commit) == ("pppppppppp", held_at)
+
+
+def test_an_identifier_wins_over_another_document_s_name(corpus: Path):
+    a_paper(corpus, "named.md", identifier="pppppppppp", arxiv_id="qqqqqqqqqq")
+    a_paper(corpus, "identified.md", identifier="qqqqqqqqqq", arxiv_id="2604.00001")
+    commit = recorded(corpus, "add", "literature")
+
+    held = document_at(Repository(corpus), commit, "qqqqqqqqqq")
+
+    assert held is not None
+    assert held.path == "literature/identified.md"
+
+
+def test_a_name_two_documents_share_names_neither(corpus: Path):
+    """As `Collection.resolve` drops an ambiguous key: restoring one of two
+    by a guess would put back the wrong paper and say it had the right one."""
+    a_paper(corpus, "one.md", identifier="pppppppppp", arxiv_id="2604.25345")
+    a_paper(corpus, "two.md", identifier="qqqqqqqqqq", arxiv_id="2604.25345")
+    commit = recorded(corpus, "add", "literature")
+
+    assert document_at(Repository(corpus), commit, "2604.25345") is None
+    assert document_at(Repository(corpus), commit, "10.1000/example") is None
+    assert document_at(Repository(corpus), commit, "pppppppppp") is not None
+
+
+def test_a_title_or_a_body_naming_a_paper_is_not_the_paper(corpus: Path):
+    a_paper(corpus, "paper.md", identifier="pppppppppp", arxiv_id="2604.25345")
+    a_document(corpus, "note.md", body="See 2604.25345 and A paper.")
+    commit = recorded(corpus)
+
+    held = document_at(Repository(corpus), commit, "2604.25345")
+
+    assert held is not None
+    assert held.path == "literature/paper.md"
+    assert document_at(Repository(corpus), commit, "A paper") is None
+
+
+def test_a_paper_s_name_is_taken_in_any_case_as_remove_takes_it(corpus: Path):
+    """`Collection.resolve` answers to a lowercased key, so a paper removed
+    as `keyabc` was not restorable as `keyabc` when its citekey is `KeyAbc`."""
+    paper = a_paper(corpus, "paper.md", identifier="pppppppppp", arxiv_id="2604.25345")
+    paper.write_text(
+        paper.read_text(encoding="utf-8").replace("keypppppppppp", "KeyPaper2026"),
+        encoding="utf-8",
+    )
+    held_at = recorded(corpus, "add", "literature")
+    paper.unlink()
+    recorded(corpus, "remove", "literature", "1 removed")
+
+    assert last_point_holding(Repository(corpus), "keypaper2026") == held_at
+    restored = restore_document(Repository(corpus), "KEYPAPER2026", commit=None)
+    assert restored.document_id == "pppppppppp"
+    assert paper.is_file()
+
+
+def test_two_documents_sharing_a_name_in_different_case_name_neither(corpus: Path):
+    a_paper(corpus, "one.md", identifier="pppppppppp", arxiv_id="astro-ph/0001")
+    a_paper(corpus, "two.md", identifier="qqqqqqqqqq", arxiv_id="Astro-PH/0001")
+    commit = recorded(corpus, "add", "literature")
+
+    assert document_at(Repository(corpus), commit, "astro-ph/0001") is None
+    assert document_at(Repository(corpus), commit, "Astro-PH/0001") is None
+
+
+def test_an_identifier_is_matched_exactly_whatever_its_case(corpus: Path):
+    a_document(corpus, "one.md", identifier="AbCdEfGhIj")
+    commit = recorded(corpus)
+
+    assert document_at(Repository(corpus), commit, "abcdefghij") is None
+    assert document_at(Repository(corpus), commit, "AbCdEfGhIj") is not None

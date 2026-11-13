@@ -273,6 +273,21 @@ def test_a_removal_says_what_it_removed_so_it_can_be_put_back(
     assert latest.operation == "restore"
 
 
+def test_a_removed_document_is_put_back_without_a_point(
+    corpus: tuple[Context, str],
+):
+    context, _ = corpus
+    removal = read_history(Repository(context.corpus_root), limit=1)[0].commit
+    (gone,) = removed_in(Repository(context.corpus_root), removal)
+
+    restored = restore_a_document(context, gone.document_id)
+
+    assert titles(context) == ["changed", "kept", "later"]
+    assert restored.document_id == gone.document_id
+    latest = read_history(Repository(context.corpus_root), limit=1)[0]
+    assert (latest.operation, latest.scope) == ("restore", "notes")
+
+
 def test_putting_back_a_document_not_at_the_commit_is_refused(
     corpus: tuple[Context, str],
 ):
