@@ -242,9 +242,10 @@ def last_point_holding(repository: Repository, handle: str) -> str | None:
         if head is not None:
             return head
     # -S and its text are one argument, so a handle beginning with a dash is
-    # text. --fixed-strings is -S's default.
+    # text. --fixed-strings is -S's default. -i: a paper's name is taken in
+    # any case, and `document_at` decides what a commit so found holds.
     changed = git(
-        ["log", f"--format=%H{_SEPARATOR}%P", f"-S{handle}", "--", "*.md"],
+        ["log", "-i", f"--format=%H{_SEPARATOR}%P", f"-S{handle}", "--", "*.md"],
         cwd=repository.root,
     )
     if not changed.ok:
@@ -310,9 +311,11 @@ def document_at(repository: Repository, commit: str, handle: str) -> HeldAt | No
         # An empty pattern matches every line of every file.
         return None
     # -F and -e: a handle is text, never a pattern or an option. -z: a
-    # path is written as it is, not quoted.
+    # path is written as it is, not quoted. -i: a paper's name is taken in
+    # any case, as `Collection.resolve` takes it; an identifier is still
+    # compared exactly below.
     found = git(
-        ["grep", "-l", "-z", "-F", "-e", handle, commit, "--", "*.md"],
+        ["grep", "-l", "-z", "-i", "-F", "-e", handle, commit, "--", "*.md"],
         cwd=repository.root,
     )
     if not found.ok:
@@ -330,7 +333,7 @@ def document_at(repository: Repository, commit: str, handle: str) -> HeldAt | No
         document_id, aliases = stated
         if document_id == handle:
             return HeldAt(path=path, document_id=document_id)
-        if handle in aliases:
+        if handle.lower() in aliases:
             named.append(HeldAt(path=path, document_id=document_id))
     return named[0] if len(named) == 1 else None
 
@@ -341,7 +344,7 @@ _BIB_NAMES: Final = ("citekey", "arxiv_id", "doi", "bibcode")
 
 
 def _stated_names(content: str) -> tuple[str, frozenset[str]] | None:
-    """A document's identifier and its paper's names, from its frontmatter.
+    """A document's identifier, and its paper's names in lower case.
 
     Read from the frontmatter rather than looked for anywhere in the text, so
     a document that merely *mentions* another's identifier - a note about a
@@ -357,7 +360,7 @@ def _stated_names(content: str) -> tuple[str, frozenset[str]] | None:
         return None
     bib = frontmatter.get("bib")
     aliases = (
-        frozenset(str(bib[name]) for name in _BIB_NAMES if bib.get(name))
+        frozenset(str(bib[name]).lower() for name in _BIB_NAMES if bib.get(name))
         if isinstance(bib, dict)
         else frozenset[str]()
     )

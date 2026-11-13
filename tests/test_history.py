@@ -576,3 +576,38 @@ def test_a_title_or_a_body_naming_a_paper_is_not_the_paper(corpus: Path):
     assert held is not None
     assert held.path == "literature/paper.md"
     assert document_at(Repository(corpus), commit, "A paper") is None
+
+
+def test_a_paper_s_name_is_taken_in_any_case_as_remove_takes_it(corpus: Path):
+    """`Collection.resolve` answers to a lowercased key, so a paper removed
+    as `keyabc` was not restorable as `keyabc` when its citekey is `KeyAbc`."""
+    paper = a_paper(corpus, "paper.md", identifier="pppppppppp", arxiv_id="2604.25345")
+    paper.write_text(
+        paper.read_text(encoding="utf-8").replace("keypppppppppp", "KeyPaper2026"),
+        encoding="utf-8",
+    )
+    held_at = recorded(corpus, "add", "literature")
+    paper.unlink()
+    recorded(corpus, "remove", "literature", "1 removed")
+
+    assert last_point_holding(Repository(corpus), "keypaper2026") == held_at
+    restored = restore_document(Repository(corpus), "KEYPAPER2026", commit=None)
+    assert restored.document_id == "pppppppppp"
+    assert paper.is_file()
+
+
+def test_two_documents_sharing_a_name_in_different_case_name_neither(corpus: Path):
+    a_paper(corpus, "one.md", identifier="pppppppppp", arxiv_id="astro-ph/0001")
+    a_paper(corpus, "two.md", identifier="qqqqqqqqqq", arxiv_id="Astro-PH/0001")
+    commit = recorded(corpus, "add", "literature")
+
+    assert document_at(Repository(corpus), commit, "astro-ph/0001") is None
+    assert document_at(Repository(corpus), commit, "Astro-PH/0001") is None
+
+
+def test_an_identifier_is_matched_exactly_whatever_its_case(corpus: Path):
+    a_document(corpus, "one.md", identifier="AbCdEfGhIj")
+    commit = recorded(corpus)
+
+    assert document_at(Repository(corpus), commit, "abcdefghij") is None
+    assert document_at(Repository(corpus), commit, "AbCdEfGhIj") is not None
