@@ -59,8 +59,17 @@ hand, comments included, is lost.
 
 **The settings page offers every setting** except two: `corpus.root`, because
 changing it under an open window moves the corpus from under every page, and
-`backup.folder`, which is chosen in the page's Backup section. `config init`
+`backup.folder`, which is chosen on the page's Backup tab. `config init`
 asks only the settings where the right answer depends on you.
+
+The page has five tabs, each with its own address: Window (this window's
+appearance, kept by the browser and not in the configuration file),
+Searching, Documents, System and Backup. A tab saves its own settings and
+leaves the others as they are; its Save button stays at the foot of the
+window however long the tab is, and what the save came to is said beside
+it. `retrieval.default_collections` is drawn as chips: drag one, or use its
+two arrows, to change the order, and untick one to leave it out of a
+default search.
 
 The `[logging]` section is read when kennis starts, so a change to it takes
 effect the next time a command runs or the window is opened.

@@ -343,7 +343,9 @@ def test_a_paper_with_no_copy_offers_its_page_and_an_add_from_a_pdf():
         "identifier": ["10.9999/a#b"],
     }
     unpaywall = by_label[SET_UNPAYWALL]
-    assert unpaywall.href == "/settings#setting-literature.unpaywall_email"
+    assert unpaywall.href == (
+        "/settings?tab=documents#setting-literature.unpaywall_email"
+    )
 
 
 def test_the_unpaywall_link_leads_to_a_field_on_the_settings_page(client: TestClient):
@@ -352,9 +354,12 @@ def test_the_unpaywall_link_leads_to_a_field_on_the_settings_page(client: TestCl
         for way in ways_out_for(NoPublisherText(kind="doi", value="10.9/a"))
         if way.label == SET_UNPAYWALL
     ]
-    page = BeautifulSoup(client.get("/settings").text, "html.parser")
+    address = urlsplit(way.href)
+    page = BeautifulSoup(
+        client.get(f"{address.path}?{address.query}").text, "html.parser"
+    )
 
-    field = page.find(id=urlsplit(way.href).fragment)
+    field = page.find(id=address.fragment)
 
     assert isinstance(field, Tag) and field.name == "input"
     assert field["name"] == "literature.unpaywall_email"

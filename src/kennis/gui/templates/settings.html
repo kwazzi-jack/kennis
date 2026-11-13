@@ -12,6 +12,13 @@
    `/settings`, which sets the cookies and returns here. #}
 <article class="settings">
 <h1>{{ settings_heading }}</h1>
+{# One tab a page (#670): each is a link to its own address, drawn as a
+   button with an icon, so Back, reload and a bookmark all work and no
+   script is needed to change tab. #}
+<nav class="settings-tabs" aria-label="{{ tabs_label }}">
+{% for entry in tabs %}<a class="settings-tab" href="{{ entry.href }}"{% if entry.current %} aria-current="page"{% endif %}>{{ icon(entry.icon) }}{{ entry.label }}</a>{% endfor %}
+</nav>
+{% if tab == "window" %}
 <section data-section="window">
 <h2>{{ window_heading }}</h2>
 <p class="role-muted">{{ window_note }} {{ tip("window-settings", window_heading, window_tip) }}</p>
@@ -44,10 +51,14 @@
 {% endif %}
 {% endfor %}
 {% endfor %}
-<button type="submit" class="prefs-save">{{ save_label }}</button>
+<button type="submit" class="prefs-save primary">{{ icon("save") }}{{ save_label }}</button>
 </form>
 </section>
-{% include "settings-kennis.html" %}
+{% elif tab == "backup" %}
 {% include "settings-backup.html" %}
+{% else %}
+{% include "settings-kennis.html" %}
+<script defer src="/static/order.js"></script>
+{% endif %}
 </article>
 {% endblock %}

@@ -188,7 +188,7 @@ def sweep(
     corpus_root: Path,
     question: str,
     *,
-    scopes: Sequence[str],
+    scopes: Sequence[str] | None,
     named: bool,
     top_k: int | None,
     filters: list[Filter] | None,
@@ -205,7 +205,7 @@ def sweep(
         "sweep",
         {
             "question": question,
-            "scopes": list(scopes),
+            "scopes": None if scopes is None else list(scopes),
             "named": named,
             "top_k": top_k,
             "filters": filters,

@@ -50,8 +50,9 @@ _CONTEXT_DEFAULT: Final = 1
 
 def _scopes(
     _context: click.Context, _parameter: click.Parameter, value: str
-) -> tuple[str, ...]:
-    """The selector's value as the scopes to search.
+) -> tuple[str, ...] | None:
+    """The selector's value as the scopes to search, or None for the
+    default search, which is the setting's to say (#669).
 
     Comma-separated rather than a repeated flag. `click.Choice` cannot
     express a list, so the validation is here, and it names both the value
@@ -59,7 +60,7 @@ def _scopes(
     choice" leaves the reader to find the four names somewhere else.
 
     Duplicates and order in the value are discarded: the report's order is
-    `SCOPE_NAMES` and nothing a caller writes should change it.
+    the setting's and nothing a caller writes should change it.
     """
     from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
 
@@ -72,7 +73,7 @@ def _scopes(
                 f"'{EVERY_SCOPE}' already means every scope; "
                 "drop it or name the scopes you want"
             )
-        return SCOPE_NAMES
+        return None
     unknown = [name for name in asked if name not in SCOPE_NAMES]
     if unknown:
         raise click.BadParameter(
@@ -93,7 +94,8 @@ def _scopes(
     callback=_scopes,
     help="Comma-separated scopes to search: "
     + ", ".join((*SCOPE_NAMES, EVERY_SCOPE))
-    + ". 'context' is this project's bundle.",
+    + ". 'context' is this project's bundle; 'all' is the scopes the "
+    "setting retrieval.default_collections lists.",
 )
 @click.option("-k", "--top-k", type=int, default=None, help="How many hits to show.")
 @click.option(
@@ -151,7 +153,7 @@ def _scopes(
 )
 def search_command(
     question: str,
-    selected: tuple[str, ...],
+    selected: tuple[str, ...] | None,
     top_k: int | None,
     mode: str | None,
     group: str | None,
@@ -168,7 +170,8 @@ def search_command(
     **`context` is a scope, not a separate command.** The question a reader
     is answering is which scopes to look in - this project, the machine, or
     both - and that is one question, so it is one option. Without
-    `--collection` every scope that has an index is searched.
+    `--collection` every scope the setting `retrieval.default_collections`
+    lists is searched, if it has an index.
 
     A scope you name is a promise and a scope you did not is not: asking for
     `context` outside a project is an error, while a sweep that finds no
@@ -189,7 +192,7 @@ def search_command(
     # Not inferred from the count inside the sweep, because "fewer
     # than all" and "asked for by name" are different facts that
     # happen to coincide here.
-    named = len(selected) < len(SCOPE_NAMES)
+    named = selected is not None and len(selected) < len(SCOPE_NAMES)
     bundle = find_bundle(Path.cwd())
     others = present_bundles() if all_projects else ()
     filters = _filters(group if group is not None else project)
@@ -247,7 +250,7 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     it ranks within a collection, and across them it only presents.
     """
     from kennis.render.hits import basis_phrase, best_lexical, rendered_hit, summary_of
-    from kennis.render.words import describe_skipped, group_title
+    from kennis.render.words import describe_left_out, describe_skipped, group_title
 
     # Grouped by the command they share rather than one line per scope.
     # On a corpus with only notes indexed, a warning per collection is two
@@ -257,6 +260,10 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
     for resolution, names in _by_resolution(found.skipped).items():
         display.note(describe_skipped(names))
         display.next_step(resolution)
+    if found.left_out:
+        # Not a next step: the command that reaches one carries the
+        # question, and a remedy is only ever a line that runs as printed.
+        display.note(f"{describe_left_out(found.left_out)} (--collection searches one)")
 
     groups = found.groups
     if not groups:

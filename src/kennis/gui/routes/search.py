@@ -23,9 +23,11 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.gui import history, words
+from kennis.gui.configuration import setting_address
 from kennis.gui.pages import (
     shown_groups_of,
     shown_key,
+    shown_left_out,
     shown_model_notices,
     shown_orders,
     shown_recents,
@@ -35,7 +37,7 @@ from kennis.gui.pages import (
 from kennis.gui.responses import SCOPES, TEMPLATES, action_page, from_htmx
 from kennis.gui.tagged import chips_finder, tag_colours
 from kennis.retrieval import sweep
-from kennis.scopes import EVERY_SCOPE, SCOPE_NAMES
+from kennis.scopes import EVERY_SCOPE
 
 router = APIRouter()
 
@@ -139,7 +141,8 @@ def _hits_context(
     if order not in {value for value, _ in words.ORDER_CHOICES}:
         context["problem"] = words.unknown_order(order)
         return context
-    asked = SCOPE_NAMES if scope == EVERY_SCOPE else (scope,)
+    # No scopes is the default search, which the setting decides (#669).
+    asked = None if scope == EVERY_SCOPE else (scope,)
     # Three per collection unless "More from" asked for more: only ever
     # the first three showed, and narrowing to one collection still gave
     # three (the flows review, F4).
@@ -211,6 +214,8 @@ def _hits_context(
                 versions=chosen,
             )
         context["skips"] = shown_skips(found)
+        context["left_out"] = shown_left_out(found, question, mode)
+        context["left_out_says"] = words.LEFT_OUT_BY_DEFAULT
         context["model_notices"] = shown_model_notices(found)
         # The command line has printed this since milestone 1 and the
         # page never did. A control offering "Meaning only" that
@@ -271,7 +276,7 @@ def shown_keywords_only(degraded: Sequence[str]) -> dict[str, str]:
     if existing_corpus().settings.embedding.backend == "none":
         label, href, target = (
             words.KEYWORDS_ONLY_CHOOSE,
-            "/settings#setting-embedding.backend",
+            setting_address("embedding.backend"),
             "",
         )
     else:

@@ -260,7 +260,7 @@ def test_a_trusted_host_is_admitted_on_a_document_s_page_and_nowhere_else(
 def test_the_setting_is_offered_with_what_naming_a_host_discloses(
     corpus: Path, client: TestClient
 ):
-    page = client.get("/settings")
+    page = client.get("/settings?tab=documents")
 
     assert page.status_code == 200
     assert words.SETTING_NAMES["figures.trusted_hosts"] in page.text

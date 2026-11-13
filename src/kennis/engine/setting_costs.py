@@ -44,6 +44,7 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "retrieval.corpus_method": ("next_search",),
     "retrieval.default_top_k": ("next_search",),
     "retrieval.scores": ("next_search",),
+    "retrieval.default_collections": ("next_search",),
     "chunking.size": ("rebuild",),
     # Sends a DOI and this address to Unpaywall, not a document's text, so
     # it is not `leaves_machine`; setting it is the asking (#475).

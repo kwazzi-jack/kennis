@@ -24,6 +24,7 @@ from kennis.engine.setup import apply_answers, validate_answer
 from kennis.engine.typed import without_quotes
 from kennis.gui import words
 from kennis.gui.configuration import (
+    TAB_GROUPS,
     answers_in,
     changed_answers,
     needs_rebuild,
@@ -62,15 +63,49 @@ from kennis.render.settings import describe_unknown_settings
 router = APIRouter()
 
 
+# The tab `/settings` alone is, and the one a configuration section is
+# drawn for when a request does not say which.
+_FIRST_TAB = words.SETTINGS_TABS[0][0]
+_FIRST_CONFIGURATION_TAB = next(iter(TAB_GROUPS))
+
+
+def _address_of(tab: str) -> str:
+    """A tab's own address: a tab is a page, so Back, reload and a link
+    all reach it with no script (#670)."""
+    return "/settings" if tab == _FIRST_TAB else f"/settings?tab={tab}"
+
+
+def _configuration_tab(asked: object) -> str:
+    """The configuration tab a form or an address names, or the first."""
+    return (
+        asked
+        if isinstance(asked, str) and asked in TAB_GROUPS
+        else (_FIRST_CONFIGURATION_TAB)
+    )
+
+
 def _settings_page(
     request: Request,
     kennis: dict[str, object],
     backup: dict[str, object] | None = None,
+    *,
+    tab: str,
 ) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(
         request,
         "settings.html",
         {
+            "tab": tab,
+            "tabs": [
+                {
+                    "label": label,
+                    "icon": words.SETTINGS_TAB_ICONS[name],
+                    "href": _address_of(name),
+                    "current": name == tab,
+                }
+                for name, label in words.SETTINGS_TABS
+            ],
+            "tabs_label": words.SETTINGS_TABS_LABEL,
             "chosen": preferences_of(request),
             "sections": (
                 ("appearance", words.APPEARANCE_HEADING),
@@ -82,7 +117,11 @@ def _settings_page(
             "window_tip": words.WINDOW_SETTINGS_TIP,
             "save_label": words.SAVE,
             **kennis,
-            **(backup if backup is not None else _backup_section()),
+            **(
+                (backup if backup is not None else _backup_section())
+                if tab == "backup"
+                else {}
+            ),
         },
     )
 
@@ -90,6 +129,7 @@ def _settings_page(
 def _kennis_section(
     answers: Mapping[str, str],
     *,
+    tab: str = _FIRST_CONFIGURATION_TAB,
     problems: Mapping[str, str] | None = None,
     outcome: str = "",
     outcome_is_problem: bool = False,
@@ -102,7 +142,14 @@ def _kennis_section(
         "kennis_settings_heading": words.KENNIS_SETTINGS_HEADING,
         "kennis_note": words.KENNIS_SETTINGS_NOTE,
         "kennis_save": words.KENNIS_SAVE,
-        "kennis_groups": words.KENNIS_GROUPS,
+        "kennis_groups": [
+            (group, heading)
+            for group, heading in words.KENNIS_GROUPS
+            if group in TAB_GROUPS[tab]
+        ],
+        "kennis_tab": tab,
+        "kennis_tab_address": _address_of(tab),
+        "order_hint": words.ORDER_HINT,
         "outcome": outcome,
         "outcome_is_problem": outcome_is_problem,
         "rebuild": rebuild,
@@ -186,14 +233,18 @@ def _backup_section(
 def _backup_answer(request: Request, section: dict[str, object]) -> HTMLResponse:
     if from_htmx(request):
         return TEMPLATES.TemplateResponse(request, "settings-backup.html", section)
-    return _settings_page(request, _kennis_section({}), section)
+    return _settings_page(request, {}, section, tab="backup")
 
 
 @router.get("/settings")
-def serve_settings(request: Request) -> HTMLResponse:
-    """The settings page: this window's preferences (12a) and
-    kennis's own configuration (12b)."""
-    return _settings_page(request, _kennis_section({}))
+def serve_settings(request: Request, tab: str = _FIRST_TAB) -> Response:
+    """One tab of the settings page (#670): this window's preferences
+    (12a), a part of kennis's own configuration (12b), or the backup. A
+    tab there is not answers with the first one's address."""
+    if tab not in dict(words.SETTINGS_TABS):
+        return RedirectResponse(_address_of(_FIRST_TAB), status_code=303)
+    kennis = _kennis_section({}, tab=tab) if tab in TAB_GROUPS else {}
+    return _settings_page(request, kennis, tab=tab)
 
 
 @router.get("/settings/kennis")
@@ -204,10 +255,11 @@ def redraw_kennis_settings(request: Request) -> HTMLResponse:
     engine's answer for what the form holds rather than for what
     is saved. Nothing is written.
     """
-    section = _kennis_section(answers_in(request.query_params))
+    tab = _configuration_tab(request.query_params.get("tab"))
+    section = _kennis_section(answers_in(request.query_params), tab=tab)
     if from_htmx(request):
         return TEMPLATES.TemplateResponse(request, "settings-kennis.html", section)
-    return _settings_page(request, section)
+    return _settings_page(request, section, tab=tab)
 
 
 @router.post("/settings/kennis")
@@ -219,6 +271,9 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
     set: the page should say which value, not only that one was wrong.
     """
     answers = answers_in(form)
+    # A tab posts its own fields. An answer absent or empty means "keep",
+    # so the other tabs' settings are not touched.
+    tab = _configuration_tab(form.get("tab"))
     problems = {
         question.key: problem
         for question in offered(answers)
@@ -242,6 +297,7 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
     if problems:
         section = _kennis_section(
             answers,
+            tab=tab,
             problems=problems,
             outcome=problems.get("", words.KENNIS_NOT_SAVED),
             outcome_is_problem=True,
@@ -249,15 +305,16 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
     elif changed:
         section = _kennis_section(
             {},
+            tab=tab,
             outcome=words.KENNIS_SAVED,
             rebuild=needs_rebuild(changed),
             previous=previous,
         )
     else:
-        section = _kennis_section({}, outcome=words.KENNIS_UNCHANGED)
+        section = _kennis_section({}, tab=tab, outcome=words.KENNIS_UNCHANGED)
     if from_htmx(request):
         return TEMPLATES.TemplateResponse(request, "settings-kennis.html", section)
-    return _settings_page(request, section)
+    return _settings_page(request, section, tab=tab)
 
 
 @router.post("/settings")

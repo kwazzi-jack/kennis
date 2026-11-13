@@ -460,7 +460,7 @@ def search_scope(
 
 def sweep(
     question: str,
-    scopes: Sequence[str],
+    scopes: Sequence[str] | None,
     named: bool,
     top_k: int | None = None,
     filters: list[Filter] | None = None,
