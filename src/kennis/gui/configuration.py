@@ -26,6 +26,7 @@ from kennis.engine.setting_costs import costs_of
 from kennis.engine.settings import (
     CREDENTIALS_KEPT,
     credentials_path,
+    default_scopes,
     overriding_variable,
 )
 from kennis.engine.setup import (
@@ -38,8 +39,55 @@ from kennis.engine.setup import (
 )
 from kennis.gui import words
 from kennis.render.settings import describe_cost, describe_costs, describe_fit
+from kennis.scopes import SCOPE_NAMES
 
 type Answers = Mapping[str, str]
+
+
+# Which headings of the configuration each tab of the settings page
+# holds (#670). `window` and `backup` are tabs too and hold none of it.
+TAB_GROUPS: Final[dict[str, tuple[str, ...]]] = {
+    "searching": ("searching",),
+    "documents": ("converting", "adding", "citing", "reading"),
+    "system": ("terminal", "logging", "service"),
+}
+
+# The settings whose value is an ordered list of names, and the names
+# there are: drawn as chips to drag as well as a field.
+_ORDERED: Final[dict[str, tuple[str, ...]]] = {
+    "retrieval.default_collections": SCOPE_NAMES,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ShownChip:
+    """One value an ordered setting may hold, and whether it holds it."""
+
+    name: str
+    icon: str
+    included: bool
+    include_label: str
+    earlier_label: str
+    later_label: str
+
+
+def _chips(key: str, value: str) -> tuple[ShownChip, ...]:
+    """Every name the setting may list: the listed ones in their order,
+    then the rest. A name the value holds and the setting does not know is
+    left to the field and its refusal."""
+    known = _ORDERED.get(key, ())
+    listed = [name for name in dict.fromkeys(default_scopes(value)) if name in known]
+    return tuple(
+        ShownChip(
+            name=name,
+            icon=words.COLLECTION_ICONS.get(name, "folder"),
+            included=name in listed,
+            include_label=words.chip_included(name),
+            earlier_label=words.chip_earlier(name),
+            later_label=words.chip_later(name),
+        )
+        for name in (*listed, *(name for name in known if name not in listed))
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +129,9 @@ class ShownSetting:
     # A field whose change redraws the section, as a choice's does: the
     # chunk size, so its fit is said for the size typed.
     redraws: bool = False
+    # For a setting that is an ordered list: every name it may hold, as
+    # chips a script lets the reader drag. Empty for every other setting.
+    order: tuple[ShownChip, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,6 +288,21 @@ _GROUP_OF_SECTION: Final[dict[str, str]] = {
 }
 
 
+def _group_of(key: str) -> str:
+    """The heading a setting sits under."""
+    section = key.partition(".")[0]
+    return _GROUP_OF_KEY.get(key, _GROUP_OF_SECTION.get(section, "searching"))
+
+
+def setting_address(key: str) -> str:
+    """Where a setting's field is: its tab's address, at its row (#670).
+    What a link elsewhere in the window sends the reader to, so the tab a
+    setting is on is decided in one place."""
+    group = _group_of(key)
+    tab = next(name for name, groups in TAB_GROUPS.items() if group in groups)
+    return f"/settings?tab={tab}#setting-{key}"
+
+
 def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     secret = question.kind == "secret"
     value = "" if secret else typed or question.suggested
@@ -244,9 +310,7 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     costs = costs_of(question.key, value)
     return ShownSetting(
         key=question.key,
-        group=_GROUP_OF_KEY.get(
-            question.key, _GROUP_OF_SECTION.get(question.section, "searching")
-        ),
+        group=_group_of(question.key),
         name=words.SETTING_NAMES[question.key],
         tip=words.setting_tip(
             _sentence(question),
@@ -265,6 +329,7 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
         credential=credential_status(question.key) if secret else None,
         install_hint=_missing_converter(question.key, value),
         overridden_by="" if secret else overriding_variable(question.key) or "",
+        order=_chips(question.key, value),
     )
 
 

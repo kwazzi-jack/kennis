@@ -105,7 +105,7 @@ def finished(client: TestClient, answer_text: str) -> str:
 
 
 def test_the_section_says_what_the_backup_holds(client: TestClient):
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=backup").text)
 
     assert section.get("id") == "backup"
     assert BACKUP_CONTENTS in section.get_text(" ", strip=True)
@@ -116,7 +116,7 @@ def test_the_caution_is_a_warning_with_a_page_that_explains_it(client: TestClien
     with "a link to something to help them understand the issue"."""
     from kennis.render.backup import BACKUP_CAUTION, BACKUP_CAUTION_PAGE
 
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=backup").text)
     caution = section.select_one(".notice.role-warning")
     assert isinstance(caution, Tag)
     link = caution.find("a")
@@ -164,14 +164,14 @@ def test_the_caution_page_is_a_section_of_the_docs():
 
 
 def test_with_no_folder_it_says_so(client: TestClient):
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=backup").text)
 
     assert NO_BACKUP_FOLDER in section.get_text(" ", strip=True)
 
 
 def test_with_a_folder_it_says_what_a_check_says(client: TestClient, folder: Path):
     configured(folder)
-    text = section_of(client.get("/settings").text).get_text(" ", strip=True)
+    text = section_of(client.get("/settings?tab=backup").text).get_text(" ", strip=True)
     checked = check_backup(folder)
 
     assert describe_folder(checked) in text
@@ -179,7 +179,7 @@ def test_with_a_folder_it_says_what_a_check_says(client: TestClient, folder: Pat
 
 
 def test_restoring_is_a_command_not_a_control(client: TestClient):
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=backup").text)
     command = section.find(
         "code", string=lambda text: bool(text) and "kennis backup restore" in text
     )
@@ -194,7 +194,7 @@ def test_restoring_is_a_command_not_a_control(client: TestClient):
 
 
 def test_the_folder_field_opens_the_chooser_on_folders(client: TestClient):
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=backup").text)
     browse = section.find(
         attrs={"hx-get": lambda value: bool(value) and value.startswith("/browse")}
     )
@@ -212,7 +212,7 @@ def test_the_folder_field_opens_the_chooser_on_folders(client: TestClient):
 
 
 def test_saving_a_folder_writes_the_setting(client: TestClient, folder: Path):
-    form = form_of(section_of(client.get("/settings").text), "backup-folder")
+    form = form_of(section_of(client.get("/settings?tab=backup").text), "backup-folder")
 
     answer = client.post(
         str(form["hx-post"]), data={"backup.folder": str(folder)}, headers=HTMX
@@ -259,7 +259,7 @@ def test_back_up_now_runs_as_a_job_and_says_what_it_wrote(
     client: TestClient, folder: Path
 ):
     configured(folder)
-    form = form_of(section_of(client.get("/settings").text), "backup-now")
+    form = form_of(section_of(client.get("/settings?tab=backup").text), "backup-now")
     assert form["hx-post"] == form["action"] == "/backup"
     assert form["hx-target"] == "#job"
 
@@ -310,7 +310,7 @@ def test_without_a_folder_nothing_starts(client: TestClient):
 
 def test_no_password_field_is_drawn_with_a_value(client: TestClient, folder: Path):
     configured(folder)
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=backup").text)
     fields = section.find_all("input", attrs={"type": "password"})
 
     assert len(fields) == 3  # two to back up, one to test
@@ -334,7 +334,7 @@ def test_testing_with_the_password_says_every_file_matched(
             headers=HTMX,
         ).text,
     )
-    form = form_of(section_of(client.get("/settings").text), "backup-test")
+    form = form_of(section_of(client.get("/settings?tab=backup").text), "backup-test")
 
     answer = client.post(
         str(form["hx-post"]), data={"password": PASSWORD}, headers=HTMX

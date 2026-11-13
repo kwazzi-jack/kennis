@@ -59,6 +59,7 @@ EXPECTED_GROUPS = {
         "literature.unpaywall_email",
     ],
     "Citing passages": ["literature.citation_style"],
+    "Reading documents": ["figures.trusted_hosts"],
     "Command line": ["terminal.messages"],
     "Log file": [
         "logging.level",
@@ -66,9 +67,29 @@ EXPECTED_GROUPS = {
         "logging.backup_count",
     ],
     "Background service": ["service.idle_minutes"],
-    "Reading documents": ["figures.trusted_hosts"],
 }
 EXPECTED_ROWS = [key for keys in EXPECTED_GROUPS.values() for key in keys]
+# The tabs of the settings page that hold the configuration, in order, and
+# the tab each section's settings are on - by hand, as the page's own table
+# would agree with itself (#373, #670).
+CONFIGURATION_TABS = ("searching", "documents", "system")
+TAB_OF_SECTION = {
+    "embedding": "searching",
+    "chunking": "searching",
+    "retrieval": "searching",
+    "conversion": "documents",
+    "corpus": "documents",
+    "literature": "documents",
+    "figures": "documents",
+    "terminal": "system",
+    "logging": "system",
+    "service": "system",
+}
+
+
+def tab_holding(key: str) -> str:
+    """The address of the tab a setting's row is drawn on."""
+    return f"/settings?tab={TAB_OF_SECTION[key.partition('.')[0]]}"
 
 
 @pytest.fixture
@@ -118,19 +139,30 @@ def saved() -> dict[str, dict[str, object]]:
 
 
 def test_the_section_is_kenniss_and_says_so(client: TestClient):
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=searching").text)
 
     assert words.KENNIS_SETTINGS_NOTE in section.get_text(" ", strip=True)
 
 
+def every_tab(client: TestClient) -> list[Tag]:
+    """The configuration's section on each tab that holds part of it, in
+    the tabs' order (#670)."""
+    return [
+        section_of(client.get(f"/settings?tab={tab}").text)
+        for tab in CONFIGURATION_TABS
+    ]
+
+
 def test_the_rows_are_the_questions_that_apply(client: TestClient):
-    assert rows_of(section_of(client.get("/settings").text)) == EXPECTED_ROWS
+    drawn = [key for section in every_tab(client) for key in rows_of(section)]
+
+    assert drawn == EXPECTED_ROWS
 
 
 def test_the_rows_sit_under_their_headings(client: TestClient):
-    section = section_of(client.get("/settings").text)
     grouped = {
         str(group.find("h3").get_text(strip=True)): rows_of(group)
+        for section in every_tab(client)
         for group in section.select(".setting-group")
     }
 
@@ -138,14 +170,14 @@ def test_the_rows_sit_under_their_headings(client: TestClient):
 
 
 def test_the_corpus_root_is_not_offered(client: TestClient):
-    assert "corpus.root" not in client.get("/settings").text
+    assert "corpus.root" not in client.get("/settings?tab=documents").text
 
 
 @pytest.mark.parametrize("key", EXPECTED_ROWS)
 def test_each_row_says_what_a_change_costs(client: TestClient, key: str):
     """Every cost, once: sending a document away on the row itself, as a
     warning, and the rest in the row's info tip, which ends with the key."""
-    row = row_of(section_of(client.get("/settings").text), key)
+    row = row_of(section_of(client.get(tab_holding(key)).text), key)
     current = load_settings()
     section_name, _, field = key.partition(".")
     value = str(getattr(getattr(current, section_name), field))
@@ -168,7 +200,7 @@ def test_each_row_says_what_a_change_costs(client: TestClient, key: str):
 
 
 def test_a_row_shows_the_value_in_force(client: TestClient):
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=searching").text)
     size = row_of(section, "chunking.size").find(
         "input", attrs={"name": "chunking.size"}
     )
@@ -183,7 +215,7 @@ def test_a_row_shows_the_value_in_force(client: TestClient):
 def test_choosing_a_backend_redraws_with_its_questions(client: TestClient):
     """The engine's `when` decides, with the form's values, not the saved
     ones - one rule, as `config init` walks it."""
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=searching").text)
     choice = row_of(section, "embedding.backend").find("select")
     assert isinstance(choice, Tag)
     assert choice["hx-get"] == "/settings/kennis"
@@ -212,7 +244,7 @@ def test_choosing_a_backend_offers_its_own_model_and_saving_writes_it(
     why the offered value is not the value in force. Concern #441."""
     form = redrawn_from(
         client,
-        form_of(section_of(client.get("/settings").text)),
+        form_of(section_of(client.get("/settings?tab=searching").text)),
         **{"embedding.backend": "openai"},
     )
     model = row_of(form, "embedding.model").find("input")
@@ -228,7 +260,7 @@ def test_a_model_follows_the_backend_there_and_back(client: TestClient):
     """The page's own offer is not something the person typed: a redraw
     through ollama and back to openai offers openai's model again, rather
     than keeping ollama's because the field now holds it."""
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
     for backend in ("ollama", "openai"):
         form = redrawn_from(client, form, **{"embedding.backend": backend})
 
@@ -239,7 +271,7 @@ def test_a_model_follows_the_backend_there_and_back(client: TestClient):
 def test_a_model_the_person_typed_survives_a_redraw(client: TestClient):
     form = redrawn_from(
         client,
-        form_of(section_of(client.get("/settings").text)),
+        form_of(section_of(client.get("/settings?tab=searching").text)),
         **{"embedding.model": "BAAI/bge-base-en-v1.5", "chunking.size": "777"},
     )
     form = redrawn_from(client, form, **{"retrieval.corpus_method": "bm25"})
@@ -249,7 +281,9 @@ def test_a_model_the_person_typed_survives_a_redraw(client: TestClient):
 
 
 def test_a_local_backend_is_not_drawn_as_a_warning(client: TestClient):
-    row = row_of(section_of(client.get("/settings").text), "embedding.backend")
+    row = row_of(
+        section_of(client.get("/settings?tab=searching").text), "embedding.backend"
+    )
 
     assert isinstance(row.select_one(".tip"), Tag)
     assert row.select(".role-warning") == []
@@ -278,7 +312,9 @@ def test_a_key_is_its_variable_and_whether_it_is_set(
 ):
     monkeypatch.setenv("DATALAB_API_KEY", "dl-secret-value")
     page = client.get(
-        "/settings/kennis", params={"conversion.backend": "datalab"}, headers=HTMX
+        "/settings/kennis",
+        params={"tab": "documents", "conversion.backend": "datalab"},
+        headers=HTMX,
     ).text
     row = row_of(section_of(page), "conversion.api_key")
     field = row.find("input", attrs={"name": "conversion.api_key"})
@@ -293,7 +329,9 @@ def test_a_key_is_its_variable_and_whether_it_is_set(
 
 def test_an_unset_key_says_so(client: TestClient):
     page = client.get(
-        "/settings/kennis", params={"conversion.backend": "datalab"}, headers=HTMX
+        "/settings/kennis",
+        params={"tab": "documents", "conversion.backend": "datalab"},
+        headers=HTMX,
     ).text
 
     text = row_of(section_of(page), "conversion.api_key").get_text()
@@ -307,7 +345,9 @@ def test_a_typed_key_never_travels_in_an_address(client: TestClient):
     the history and the log. The key's field must not be among them."""
     section = section_of(
         client.get(
-            "/settings/kennis", params={"conversion.backend": "datalab"}, headers=HTMX
+            "/settings/kennis",
+            params={"tab": "documents", "conversion.backend": "datalab"},
+            headers=HTMX,
         ).text
     )
     choice = row_of(section, "conversion.backend").find("select")
@@ -342,7 +382,9 @@ def test_the_converter_says_whether_mineru_is_here(
     from kennis.engine.corpus import converters
 
     monkeypatch.setattr(converters.MineruConverter, "is_available", lambda self: False)
-    row = row_of(section_of(client.get("/settings").text), "conversion.backend")
+    row = row_of(
+        section_of(client.get("/settings?tab=documents").text), "conversion.backend"
+    )
     hint = converters.MineruConverter().install_hint()
 
     assert words.CONVERTER_NAMES["mineru"] in row.get_text()
@@ -356,7 +398,9 @@ def test_an_installed_converter_raises_no_warning(
     from kennis.engine.corpus import converters
 
     monkeypatch.setattr(converters.MineruConverter, "is_available", lambda self: True)
-    row = row_of(section_of(client.get("/settings").text), "conversion.backend")
+    row = row_of(
+        section_of(client.get("/settings?tab=documents").text), "conversion.backend"
+    )
 
     assert words.CONVERTER_MISSING not in row.get_text()
 
@@ -408,7 +452,7 @@ def redrawn_from(client: TestClient, form: Tag, **changes: str) -> Tag:
 
 
 def test_saving_as_drawn_writes_through_the_engine(client: TestClient):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
     assert form["hx-post"] == form["action"] == "/settings/kennis"
 
     answer = client.post(
@@ -425,7 +469,7 @@ def test_saving_as_drawn_writes_through_the_engine(client: TestClient):
 def test_saving_as_drawn_writes_every_setting(client: TestClient):
     """Saving is choosing what the page shows, defaults included, and the
     file holds every setting so it can be synced (Brian, 2026-10-12)."""
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
 
     client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
 
@@ -438,7 +482,7 @@ def test_saving_as_drawn_writes_every_setting(client: TestClient):
 def test_a_refused_value_is_named_beside_its_field_and_nothing_is_written(
     client: TestClient,
 ):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
 
     answer = client.post(
         "/settings/kennis",
@@ -459,7 +503,7 @@ def test_a_key_is_written_to_the_credentials_and_never_shown(client: TestClient)
         section_of(
             client.get(
                 "/settings/kennis",
-                params={"conversion.backend": "datalab"},
+                params={"tab": "documents", "conversion.backend": "datalab"},
                 headers=HTMX,
             ).text
         )
@@ -483,7 +527,7 @@ def test_a_key_is_written_to_the_credentials_and_never_shown(client: TestClient)
 
 
 def test_without_a_script_saving_answers_with_the_page(client: TestClient):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
 
     answer = client.post(
         "/settings/kennis", data=sent_from(form, **{"retrieval.default_top_k": "5"})
@@ -512,7 +556,7 @@ def test_a_rebuild_is_offered_now_later_or_undone(
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
     index_notes(tmp_path)
     monkeypatch.delenv("KENNIS_EMBEDDING_BACKEND")
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
 
     answer = client.post(
         "/settings/kennis",
@@ -534,7 +578,7 @@ def test_a_rebuild_is_offered_now_later_or_undone(
 
 
 def test_undo_restores_the_value_that_was_in_force(client: TestClient):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
     answer = client.post(
         "/settings/kennis",
         data=sent_from(form, **{"chunking.size": "900"}),
@@ -553,7 +597,7 @@ def test_undo_restores_the_value_that_was_in_force(client: TestClient):
 
 
 def test_a_change_that_needs_no_rebuild_offers_none(client: TestClient):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
 
     answer = client.post(
         "/settings/kennis",
@@ -568,7 +612,7 @@ def test_a_key_the_page_does_not_offer_is_not_written(
     client: TestClient, tmp_path: Path
 ):
     """An edited form or address cannot reach a setting the page left out."""
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=documents").text))
     elsewhere = str(tmp_path / "elsewhere")
 
     client.post(
@@ -595,7 +639,9 @@ def test_a_value_the_environment_sets_is_shown_and_not_offered(
     and the environment went on winning."""
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
 
-    row = row_of(section_of(client.get("/settings").text), "embedding.backend")
+    row = row_of(
+        section_of(client.get("/settings?tab=searching").text), "embedding.backend"
+    )
 
     assert row.find("select").has_attr("disabled")
     assert "KENNIS_EMBEDDING_BACKEND" in row.get_text(" ", strip=True)
@@ -633,7 +679,7 @@ def test_the_settings_page_leaves_the_panels_own_heading_alone(client: TestClien
 
 
 def test_the_openai_key_variable_is_offered_with_openai(client: TestClient):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
     redrawn = redrawn_from(client, form, **{"embedding.backend": "openai"})
 
     assert redrawn.find(attrs={"data-key": "embedding.api_key_env"}) is not None
@@ -641,7 +687,9 @@ def test_the_openai_key_variable_is_offered_with_openai(client: TestClient):
 
 
 def test_a_yes_or_no_setting_is_a_box(client: TestClient):
-    row = row_of(section_of(client.get("/settings").text), "corpus.keep_original")
+    row = row_of(
+        section_of(client.get("/settings?tab=documents").text), "corpus.keep_original"
+    )
     box = row.find("input", attrs={"type": "checkbox"})
 
     assert isinstance(box, Tag)
@@ -651,7 +699,7 @@ def test_a_yes_or_no_setting_is_a_box(client: TestClient):
 
 
 def test_ticking_a_box_writes_true(client: TestClient):
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=documents").text))
 
     client.post(
         "/settings/kennis",
@@ -671,7 +719,7 @@ def test_clearing_a_box_writes_false(client: TestClient):
         .exit_code
         == 0
     )
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=documents").text))
     box = form.find("input", attrs={"name": "corpus.keep_original", "type": "checkbox"})
     assert isinstance(box, Tag) and box.has_attr("checked")
     del box["checked"]
@@ -682,13 +730,16 @@ def test_clearing_a_box_writes_false(client: TestClient):
 
 
 def test_a_number_field_takes_a_fraction(client: TestClient):
-    row = row_of(section_of(client.get("/settings").text), "literature.request_delay")
+    row = row_of(
+        section_of(client.get("/settings?tab=documents").text),
+        "literature.request_delay",
+    )
     field = row.find("input", attrs={"name": "literature.request_delay"})
     assert isinstance(field, Tag)
     assert field["type"] == "number"
     assert field["step"] == "any"
 
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=documents").text))
     client.post(
         "/settings/kennis",
         data=sent_from(form, **{"literature.request_delay": "1.5"}),
@@ -708,7 +759,7 @@ def test_the_section_names_a_setting_kennis_does_not_read(client: TestClient):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("[chunking]\nsise = 900\n", encoding="utf-8")
 
-    section = section_of(client.get("/settings").text)
+    section = section_of(client.get("/settings?tab=searching").text)
 
     notice = section.select_one("p.notice.role-warning#unknown-settings")
     assert isinstance(notice, Tag)
@@ -719,7 +770,7 @@ def test_saving_removes_it_and_the_notice_with_it(client: TestClient):
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("[chunking]\nsise = 900\n", encoding="utf-8")
-    form = form_of(section_of(client.get("/settings").text))
+    form = form_of(section_of(client.get("/settings?tab=searching").text))
 
     answer = client.post("/settings/kennis", data=sent_from(form), headers=HTMX)
 

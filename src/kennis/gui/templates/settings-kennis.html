@@ -11,7 +11,6 @@
 <h2>{{ kennis_settings_heading }}</h2>
 <p class="role-muted">{{ kennis_note }}</p>
 {% if unknown_settings %}<p class="notice role-warning" id="unknown-settings">{{ icon("triangle-alert") }}<span>{{ unknown_settings }}</span></p>{% endif %}
-{% if outcome %}<p class="outcome{% if outcome_is_problem %} role-error{% endif %}" role="status">{{ outcome }}</p>{% endif %}
 {% if rebuild %}
 <div class="rebuild">
 <h3>{{ rebuild_heading }}</h3>
@@ -31,19 +30,23 @@
 </form>
 {% endif %}
 <form class="undo" action="/settings/kennis" method="post" hx-post="/settings/kennis" hx-target="closest section" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+<input type="hidden" name="tab" value="{{ kennis_tab }}">
 {% for key, value in previous.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <button type="submit" class="ghost">{{ undo_label }}</button>
 </form>
-<a href="/settings" class="later" data-later hx-get="/settings/kennis" hx-target="closest section" hx-swap="outerHTML">{{ rebuild_later }}</a>
+<a href="{{ kennis_tab_address }}" class="later" data-later hx-get="/settings/kennis?tab={{ kennis_tab }}" hx-target="closest section" hx-swap="outerHTML">{{ rebuild_later }}</a>
 </div>
 </div>
 {% endif %}
 <form class="kennis-settings" action="/settings/kennis" method="post" hx-post="/settings/kennis" hx-target="closest section" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]" hx-disinherit="*">
+{# Which tab this form is, for the save and for a redraw: a tab posts
+   its own fields and is answered with itself (#670). #}
+<input type="hidden" name="tab" value="{{ kennis_tab }}" data-redraw>
 {% for group, group_heading in kennis_groups %}
 <div class="setting-group" data-group="{{ group }}">
 <h3>{{ group_heading }}</h3>
 {% for setting in kennis_settings if setting.group == group %}
-<div class="setting" data-key="{{ setting.key }}">
+<div class="setting{% if setting.order %} setting-wide{% endif %}" data-key="{{ setting.key }}">
 <div class="setting-head"><label class="setting-name" for="setting-{{ setting.key }}">{{ setting.name }}</label> {{ tip("setting-" ~ setting.key, setting.name, setting.tip) }}</div>
 <div class="setting-control">
 {% if setting.kind == "choice" %}
@@ -62,6 +65,15 @@
 <input id="setting-{{ setting.key }}" type="checkbox" name="{{ setting.key }}" value="true"{% if setting.value == "true" %} checked{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
 {% else %}
 <input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
+{% if setting.order and not setting.overridden_by %}
+{# An ordered list, as chips (#670). The field above is the setting and
+   all there is without a script; `order.js` shows these, hides it, and
+   writes it. A chip's tick box is no field of the form. #}
+<ol class="order-chips" data-order-for="setting-{{ setting.key }}" aria-label="{{ setting.name }}" hidden>
+{% for chip in setting.order %}<li class="order-chip" data-value="{{ chip.name }}" data-collection="{{ chip.name }}" draggable="true"{% if not chip.included %} data-left-out{% endif %}><span class="grip">{{ icon("grip-vertical") }}</span><label class="chip-name"><input type="checkbox" data-order-include aria-label="{{ chip.include_label }}"{% if chip.included %} checked{% endif %}>{{ icon(chip.icon) }}<span>{{ chip.name }}</span></label><button type="button" class="ghost chip-move" data-move="earlier" aria-label="{{ chip.earlier_label }}">{{ icon("chevron-left") }}</button><button type="button" class="ghost chip-move" data-move="later" aria-label="{{ chip.later_label }}">{{ icon("chevron-right") }}</button></li>
+{% endfor %}</ol>
+<p class="order-hint role-muted" hidden>{{ order_hint }}</p>
+{% endif %}
 {% endif %}
 {% if setting.problem %}<p class="role-error">{{ setting.problem }}</p>{% endif %}
 </div>
@@ -74,6 +86,12 @@
 {% endfor %}
 </div>
 {% endfor %}
-<button type="submit">{{ kennis_save }}</button>
+{# The form's one action, kept in view: at the foot of a long tab the
+   button was a screen away from the field just changed, and what the
+   save came to was said at the top (Brian, 2026-11-13, #670). #}
+<div class="save-bar">
+<button type="submit" class="primary">{{ icon("save") }}{{ kennis_save }}</button>
+{% if outcome %}<p class="outcome{% if outcome_is_problem %} role-error{% endif %}" role="status">{{ outcome }}</p>{% endif %}
+</div>
 </form>
 </section>

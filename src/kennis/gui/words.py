@@ -411,11 +411,30 @@ KENNIS_GROUPS: Final[tuple[tuple[str, str], ...]] = (
     ("converting", "Converting documents"),
     ("adding", "Adding documents"),
     ("citing", "Citing passages"),
+    ("reading", "Reading documents"),
     ("terminal", "Command line"),
     ("logging", "Log file"),
     ("service", "Background service"),
-    ("reading", "Reading documents"),
 )
+# The settings page's tabs, in page order, each its own address (#670):
+# the first is `/settings` and the rest `/settings?tab=<name>`.
+SETTINGS_TABS: Final[tuple[tuple[str, str], ...]] = (
+    ("window", "Window"),
+    ("searching", "Searching"),
+    ("documents", "Documents"),
+    ("system", "System"),
+    ("backup", "Backup"),
+)
+SETTINGS_TAB_ICONS: Final[dict[str, str]] = {
+    "window": "app-window",
+    "searching": "search",
+    "documents": "file-text",
+    "system": "server",
+    "backup": "archive",
+}
+SETTINGS_TABS_LABEL = "Settings"
+# Under a setting drawn as chips, once a script has drawn them.
+ORDER_HINT = "Drag to reorder. Untick one to leave it out."
 KENNIS_SAVED = "Saved."
 KENNIS_UNCHANGED = "Nothing changed."
 KENNIS_NOT_SAVED = "Nothing saved. Each refused value says why."
@@ -440,7 +459,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "chunking.overlap": "Passage overlap",
     "retrieval.context_method": "Way to match in a project",
     "retrieval.scores": "How a match is shown, in a terminal and to an agent",
-    "retrieval.default_collections": "Collections a search covers, in order",
+    "retrieval.default_collections": "Collections searched, in order",
     "corpus.keep_original": "Keep the original file",
     "corpus.default_group": "Default group",
     "conversion.repair_ligatures": "Repair ff, fi and fl",
@@ -561,6 +580,19 @@ def credential_tip(backend: str, file_name: str, kept: str) -> str:
         f"Your {backend} API key. Kept in {file_name}, {kept}, never in the "
         "config file."
     )
+
+
+def chip_included(name: str) -> str:
+    """A chip's tick box, named for a screen reader."""
+    return f"Include {name}"
+
+
+def chip_earlier(name: str) -> str:
+    return f"Move {name} earlier"
+
+
+def chip_later(name: str) -> str:
+    return f"Move {name} later"
 
 
 def setting_tip(sentence: str, costs: str, key: str) -> str:
@@ -2129,6 +2161,7 @@ __all__ = [
     "OPEN_AT_PASSAGE",
     "OPTIONAL",
     "ORDER_CHOICES",
+    "ORDER_HINT",
     "ORDER_LABEL",
     "ORDER_LIMIT",
     "OUTCOME_WORDS",
@@ -2212,6 +2245,9 @@ __all__ = [
     "SERVICE_GONE_COMMAND",
     "SERVICE_GONE_HEADING",
     "SETTINGS_HEADING",
+    "SETTINGS_TABS",
+    "SETTINGS_TABS_LABEL",
+    "SETTINGS_TAB_ICONS",
     "SETTING_CHOICES",
     "SETTING_NAMES",
     "SETTING_TIPS",
@@ -2286,6 +2322,9 @@ __all__ = [
     "built_with",
     "cancelled",
     "change_line",
+    "chip_earlier",
+    "chip_included",
+    "chip_later",
     "chooser_truncated",
     "corpus_at",
     "credential_tip",
