@@ -1658,7 +1658,11 @@ img.figure + br { display: none; }
   border-radius: 6px;
   scroll-margin-top: 2rem;
 }
-.chunk > :last-child { margin-bottom: 0; }
+/* Through a tag run too (#50): the run is a box of its own, so without the
+   second selector the last paragraph kept its margin inside the padding and
+   a tagged passage grew by a line's gap. */
+.chunk > :last-child,
+.chunk > .tag-run:last-child > :last-child { margin-bottom: 0; }
 /* A chunk that was only the title, which the page shows as its heading:
    nothing to frame, and an empty bar under the title said "here" about
    nothing. Kept as the place a link lands, far enough down that the
@@ -3227,15 +3231,63 @@ html:not(.can-copy) .copy-citation { display: none; }
   color: var(--role-muted);
 }
 
-/* A document's tagged passage (#627): its tags at the right of the
-   passage's first line - its heading, or its first paragraph - so they
-   are read as that passage's and not the one above. */
-.chunk-tags {
-  float: right;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.3rem;
-  max-width: 40%;
-  margin: 0.35rem 0 0.35rem 0.75rem;
+/* A run of a document's blocks carrying the same tags (#50): a rule down
+   the margin in the first tag's colour, and a marker at its head whose
+   chips show while it is pointed at or focused. Nothing here takes room in
+   the column, so a tag never moves a line (Brian, #50); the wrapper has no
+   box of its own, and margins collapse through it as before. Both sit
+   inside `.reading`'s 1.5rem of padding, which clips anything further
+   out. */
+.tag-run { position: relative; }
+.tag-run::before {
+  content: "";
+  position: absolute;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  left: -0.65rem;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--tag, var(--rule));
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
 }
+.tag-run:hover::before, .tag-run:has(.tag-run-head:focus-within)::before { opacity: 1; }
+.tag-run-head {
+  position: absolute;
+  top: 0;
+  left: -1.2rem;
+  z-index: 3;
+}
+.tag-run-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--tag, var(--rule));
+  color: var(--ground);
+  cursor: default;
+}
+.tag-run-marker .icon { width: 0.7rem; height: 0.7rem; }
+.tag-run-marker:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.tag-run-chips {
+  display: none;
+  position: absolute;
+  top: -0.3rem;
+  left: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  width: max-content;
+  max-width: 24rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  /* The menus' ground: `--raised` is a tint and the text showed through. */
+  background: var(--ground);
+  box-shadow: 0 4px 14px var(--rule);
+}
+.tag-run-head:hover > .tag-run-chips,
+.tag-run-head:focus-within > .tag-run-chips { display: flex; }

@@ -43,7 +43,7 @@ from kennis.holdings import (
     document_marks,
     freshness_of,
 )
-from kennis.render.html import MarginNote, MarkedRange
+from kennis.render.html import Band, MarkedRange, RunHtml, RunOf
 from kennis.retrieval import (
     chunk_range,
     document_chunks,
@@ -240,7 +240,7 @@ def serve_document(
             marked=marked,
             marks=document_marks(context, collection),
             question=q,
-            margins=_tag_margins(
+            bands=_tag_bands(
                 tags,
                 in_step=lambda: _in_step(
                     freshness_of(context, Repository(context.corpus_root), collection)
@@ -249,6 +249,7 @@ def serve_document(
                     context, collection, document_id, bundle=None
                 ),
             ),
+            run=_tag_run(tags),
             trusted_hosts=trusted_figure_hosts(),
         )
     except KennisError as error:
@@ -294,36 +295,44 @@ def _in_step(freshness: Freshness | None) -> bool:
     return freshness is not None and freshness.state == "in step"
 
 
-def _tag_margins(
+def _tag_bands(
     tags: Sequence[ShownDocumentTag],
     *,
     in_step: Callable[[], bool],
     chunks: Callable[[], list[Chunk]],
-) -> list[MarginNote]:
-    """Beside each tagged passage, its tags (#627).
+) -> list[Band]:
+    """Each tagged passage's range, carrying its tags (#50).
 
     By the rule that withholds a mark: a passage placed by the index is
-    set beside the offsets that index recorded, which address the document
+    drawn over the offsets that index recorded, which address the document
     only while the index is in step with it. Neither the freshness nor the
     chunks are read when nothing is tagged by passage.
     """
-    by_chunk: dict[int, list[ShownDocumentTag]] = {}
+    by_chunk: dict[int, set[str]] = {}
     for tagged in tags:
         if tagged.chunk is not None and tagged.placed:
-            by_chunk.setdefault(tagged.chunk, []).append(tagged)
+            by_chunk.setdefault(tagged.chunk, set()).add(tagged.name)
     if not by_chunk or not in_step():
         return []
-    margin = TEMPLATES.get_template("tag-margin.html")
     return [
-        MarginNote(
-            start=chunk.char_start,
-            html=margin.render(
-                chips=by_chunk[chunk.chunk_index], chunk=chunk.chunk_index
-            ),
-        )
+        Band(chunk.char_start, chunk.char_end, frozenset(by_chunk[chunk.chunk_index]))
         for chunk in chunks()
         if chunk.chunk_index in by_chunk
     ]
+
+
+def _tag_run(tags: Sequence[ShownDocumentTag]) -> RunOf:
+    """What is drawn around a run of blocks carrying `names`: its chips in
+    name order, the first one's colour down the margin."""
+    by_name = {tagged.name: tagged for tagged in reversed(tags)}
+    template = TEMPLATES.get_template("tag-run.html")
+
+    def drawn(names: frozenset[str]) -> RunHtml:
+        chips = [by_name[name] for name in sorted(names)]
+        label = words.tags_on_passage([chip.name for chip in chips])
+        return RunHtml(template.render(chips=chips, label=label).strip(), "</div>")
+
+    return drawn
 
 
 def _tags_or_none(
@@ -395,13 +404,14 @@ def serve_bundle_document(
             load_remote_images=load_remote,
             marked=marked,
             question=q,
-            margins=_tag_margins(
+            bands=_tag_bands(
                 tags,
                 in_step=lambda: _in_step(bundle_freshness(bundle)),
                 chunks=lambda: document_chunks(
                     resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
                 ),
             ),
+            run=_tag_run(tags),
             trusted_hosts=trusted_figure_hosts(),
         )
     except KennisError as error:
