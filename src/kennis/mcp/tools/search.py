@@ -45,7 +45,12 @@ from kennis.render.hits import (
     rendered_hit,
     score_style_for,
 )
-from kennis.render.words import ScoreStyle, describe_skipped, group_title
+from kennis.render.words import (
+    ScoreStyle,
+    describe_left_out,
+    describe_skipped,
+    group_title,
+)
 from kennis.scopes import EVERY_SCOPE, MAX_TOP_K, SCOPE_NAMES
 
 # What the tool answers with when no scope holds anything for this
@@ -81,7 +86,9 @@ def search(
       conventions specific to the repository you are working in.
 
     Name the ones you want when you know where the answer is, which
-    costs less to read; `["all"]` searches all four. A named collection
+    costs less to read; `["all"]` searches the ones the user's settings
+    list for a default search - all four unless they left one out, which
+    the answer then says, and which you search by naming it. A named collection
     that has no index is an error, while under `all` one is skipped and
     the answer says so.
 
@@ -107,7 +114,9 @@ def search(
     `tags` keeps only what carries every one of them.
     """
     everywhere = EVERY_SCOPE in collections
-    scopes = SCOPE_NAMES if everywhere else _scopes(collections)
+    # None is the default search: the scopes the user's setting lists, in
+    # its order (#669).
+    scopes = None if everywhere else _scopes(collections)
     # The MCP server runs where its agent works, so its directory is the
     # project's (#508); the service is sent the bundle, never asked to
     # look for one.
@@ -146,6 +155,11 @@ def search(
         f"{describe_skipped([skipped.name])}. Run `{skipped.resolution}`."
         for skipped in found.skipped
     )
+    if found.left_out:
+        blocks.append(
+            f"{describe_left_out(found.left_out)}, by the user's settings. "
+            "Name one in `collections` to search it."
+        )
     return "\n\n".join(blocks)
 
 

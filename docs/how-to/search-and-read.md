@@ -42,13 +42,27 @@ has no link, because its handle is already the file's path.
 |---|---|
 | `literature`, `docs`, `notes` | the corpus, which is machine-global |
 | `context` | this project's `.context/` bundle, found by walking up from where you are |
-| `all` | every one of them that has an index - the default |
+| `all` | the default: every one of them that has an index, unless you have narrowed it (below) |
 
 ```
 kennis search "query"                             # every scope (the default)
 kennis search "query" --collection context        # this project only
 kennis search "query" --collection notes,context  # comma-separated
 ```
+
+**What a default search covers, and in what order, is yours to set.**
+
+```
+kennis config set retrieval.default_collections "literature notes"
+```
+
+A search with no `--collection` then covers the literature and your notes,
+in that order, and says which scopes it left out. A scope left out is still
+searched when you name it. Every search shows its groups in the order the
+setting lists them, with any scope not listed after those. The same setting
+decides what the window's search and an agent's `["all"]` cover. The order
+is yours and is never a ranking: kennis does not compare one collection's
+hits with another's.
 
 **A scope you name is a promise; a scope you did not is not.** Asking for
 `context` outside a project is an error. A default sweep outside a project

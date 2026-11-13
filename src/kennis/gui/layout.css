@@ -3037,6 +3037,19 @@ html:not(.can-copy) .copy-citation { display: none; }
 .copy-reference-row { margin: 0.4rem 0 0; }
 .copy-reference { padding-inline: 0; }
 
+/* What a default search left out by the reader's setting, each name a
+   button to the search that covers it (#669). */
+.left-out {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+  color: var(--role-muted);
+  margin: 0.4rem 0 0;
+}
+
 /* What the results are kept to, above them, with the way back. */
 .kept-tags {
   display: flex;
