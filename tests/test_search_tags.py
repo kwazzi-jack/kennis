@@ -18,74 +18,8 @@ from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.corpus.collection import Collection
-from kennis.engine.rag.models import Chunk
 from kennis.engine.rag.search import _CANDIDATES
-from kennis.engine.tags import Anchor, admitting
 from kennis.retrieval import sweep
-
-DOCUMENT = "k3v9x0a2mq"
-
-
-def a_chunk(number: int, text: str, document: str = DOCUMENT) -> Chunk:
-    return Chunk(
-        id=f"{document}::{number}",
-        collection="notes",
-        document_id=document,
-        chunk_index=number,
-        text=text,
-        source_path="notes/a.md",
-        char_start=0,
-        char_end=len(text),
-    )
-
-
-# ---------------------------------------------------------------------------
-# What a tag admits
-
-
-def test_a_document_tag_admits_every_chunk_of_it_and_no_other():
-    chunks = [a_chunk(0, "a"), a_chunk(1, "b"), a_chunk(0, "c", "other00001")]
-
-    admits = admitting({"t": (Anchor(DOCUMENT),)}, ("t",), chunks)
-
-    assert [admits(chunk) for chunk in chunks] == [True, True, False]
-
-
-def test_a_passage_tag_admits_the_chunk_it_is_placed_at_now():
-    chunks = [a_chunk(0, "Intro."), a_chunk(1, "New."), a_chunk(2, "Gains drift.")]
-    moved = Anchor(DOCUMENT, chunk=1, quote="Gains drift.")
-
-    admits = admitting({"t": (moved,)}, ("t",), chunks)
-
-    assert [admits(chunk) for chunk in chunks] == [False, False, True]
-
-
-def test_a_detached_passage_admits_nothing():
-    chunks = [a_chunk(0, "Intro."), a_chunk(1, "Other words.")]
-    gone = Anchor(DOCUMENT, chunk=1, quote="Gains drift.")
-
-    admits = admitting({"t": (gone,)}, ("t",), chunks)
-
-    assert not any(admits(chunk) for chunk in chunks)
-
-
-def test_several_tags_admit_what_all_of_them_name():
-    chunks = [a_chunk(0, "a"), a_chunk(1, "b"), a_chunk(2, "c")]
-    held = {
-        "x": (Anchor(DOCUMENT),),
-        "y": (Anchor(DOCUMENT, chunk=1, quote="b"),),
-    }
-
-    admits = admitting(held, ("x", "y"), chunks)
-
-    assert [admits(chunk) for chunk in chunks] == [False, True, False]
-
-
-def test_a_tag_the_store_does_not_hold_admits_nothing():
-    chunks = [a_chunk(0, "a")]
-
-    assert not admitting({"x": (Anchor(DOCUMENT),)}, ("x", "y"), chunks)(chunks[0])
-
 
 # ---------------------------------------------------------------------------
 # Searching

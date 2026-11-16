@@ -3,9 +3,9 @@
 A passage is named as `kennis cite` takes it - a search hit's `id=X
 chunk=N` or `path=P chunk=N`, a `kennis://` link, or any handle for a whole
 document - and the names are one argument, comma-separated, because a tag
-holds no comma or space. The service writes the corpus's `tags.yml` and
-commits it, and a project's `.context/tags.yml`, which it leaves for the
-person to commit.
+holds no comma or space. The service writes the corpus's
+`annotations.json` and commits it, and a project's
+`.context/annotations.json`, which it leaves for the person to commit.
 """
 
 from __future__ import annotations
@@ -151,7 +151,12 @@ def _all_tags(listed: list[TagListing]) -> None:
 
 
 def _one_tag(listing: TagListing) -> None:
-    from kennis.render.tags import target_state, target_title, untag_command
+    from kennis.render.tags import (
+        opening_words,
+        target_state,
+        target_title,
+        untag_command,
+    )
     from kennis.tagging import DETACHED, MISSING
 
     display.heading(listing.name)
@@ -159,7 +164,7 @@ def _one_tag(listing: TagListing) -> None:
         display.hit(target_title(target))
         display.hit_link(target.link)
         if target.quote is not None:
-            display.hit_detail(f'"{target.quote}"')
+            display.hit_detail(f'"{opening_words(target.quote)}"')
         trouble = target_state(target)
         if trouble is not None:
             display.note(trouble)

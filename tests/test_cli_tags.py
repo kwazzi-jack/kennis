@@ -2,10 +2,11 @@
 2026-11-06-tags, part t1).
 
 `kennis tag NAMES PASSAGE...` and `kennis untag` take a passage as `kennis
-cite` does; `kennis tags [NAME]` lists. Corpus tags are `tags.yml` at the
-corpus root, committed by kennis; a project's are `.context/tags.yml`,
-written and left for the person to commit. A passage that can no longer be
-found is listed as detached, with the command that removes its tag.
+cite` does; `kennis tags [NAME]` lists. Corpus tags are in
+`annotations.json` at the corpus root, committed by kennis; a project's in
+`.context/annotations.json`, written and left for the person to commit. A
+passage that can no longer be found is listed as detached, with the
+command that removes its tag.
 """
 
 from __future__ import annotations
@@ -16,12 +17,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from annotating import ANNOTATIONS, Target, tagged
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.rag.index import load_index
-from kennis.engine.tags import Anchor, read_tags
 from kennis.links import context_link, link_to
 
 PAPER_ID = "paper00001"
@@ -126,24 +127,24 @@ def test_a_passage_is_tagged_as_search_prints_it(corpus: Path):
 
     said = run("tag", "calibration", f"id={PAPER_ID}", f"chunk={chunk}")
 
-    (anchor,) = read_tags(corpus / "tags.yml")["calibration"]
+    (anchor,) = tagged(corpus)["calibration"]
     assert anchor.document == PAPER_ID
     assert anchor.chunk == chunk
-    assert anchor.quote is not None and SOLVING.startswith(anchor.quote[:20])
+    assert anchor.quote is not None and SOLVING in anchor.quote
     assert "calibration" in said
 
 
 def test_a_tag_is_committed_and_leaves_nothing_unrecorded(corpus: Path):
     run("tag", "calibration", f"id={PAPER_ID}")
 
-    assert "tags.yml" in git(corpus, "show", "--name-only", "--format=", "HEAD")
+    assert ANNOTATIONS in git(corpus, "show", "--name-only", "--format=", "HEAD")
     assert git(corpus, "status", "--porcelain") == ""
 
 
 def test_a_whole_document_is_tagged_by_any_handle(corpus: Path):
     run("tag", "to-read", "smirnov2011")
 
-    assert read_tags(corpus / "tags.yml") == {"to-read": (Anchor(PAPER_ID),)}
+    assert tagged(corpus) == {"to-read": (Target(PAPER_ID),)}
 
 
 def test_a_link_names_the_passage(corpus: Path):
@@ -151,14 +152,14 @@ def test_a_link_names_the_passage(corpus: Path):
 
     run("tag", "calibration", link_to(PAPER_ID, chunk))
 
-    (anchor,) = read_tags(corpus / "tags.yml")["calibration"]
+    (anchor,) = tagged(corpus)["calibration"]
     assert anchor.chunk == chunk
 
 
 def test_several_names_are_given_with_commas_and_folded(corpus: Path):
     run("tag", "Calibration,to-cite", f"id={PAPER_ID}")
 
-    assert set(read_tags(corpus / "tags.yml")) == {"calibration", "to-cite"}
+    assert set(tagged(corpus)) == {"calibration", "to-cite"}
 
 
 def test_tagging_again_says_so_and_commits_nothing(corpus: Path):
@@ -177,14 +178,14 @@ def test_untagging_removes_and_drops_an_empty_tag(corpus: Path):
 
     run("untag", "calibration", f"id={PAPER_ID}", f"chunk={chunk}")
 
-    assert set(read_tags(corpus / "tags.yml")) == {"to-cite"}
+    assert set(tagged(corpus)) == {"to-cite"}
 
 
 def test_a_chunk_the_index_has_not_got_is_refused_and_nothing_written(corpus: Path):
     said = refused("tag", "calibration", f"id={PAPER_ID}", "chunk=999")
 
     assert "kennis corpus index" in said
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 def test_one_refused_passage_writes_none_of_the_batch(corpus: Path):
@@ -193,13 +194,13 @@ def test_one_refused_passage_writes_none_of_the_batch(corpus: Path):
     said = refused("tag", "calibration", f"id={PAPER_ID}", "chunk=999", "smirnov2011")
 
     assert "chunk 999" in said
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 def test_a_name_with_a_space_is_refused(corpus: Path):
     refused("tag", "phase calibration", f"id={PAPER_ID}")
 
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +283,7 @@ def test_a_detached_passage_s_untag_works_as_printed(corpus: Path):
 
     run("untag", "calibration", link_to(PAPER_ID, chunk))
 
-    assert read_tags(corpus / "tags.yml") == {}
+    assert tagged(corpus) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -305,10 +306,10 @@ def project(corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pa
 def test_a_context_passage_is_tagged_in_the_project_s_file(project: Path, corpus: Path):
     run("tag", "ours", "path=.context/ours.md", "chunk=0")
 
-    (anchor,) = read_tags(project / "tags.yml")["ours"]
+    (anchor,) = tagged(project)["ours"]
     assert anchor.document == "ours.md"
     assert anchor.chunk == 0
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 def test_tags_in_a_project_are_listed_beside_the_corpus_s(project: Path):

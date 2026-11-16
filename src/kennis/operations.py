@@ -521,8 +521,11 @@ def restore_a_document(
     return restored
 
 
-def place_corpus_tags(context: Context, text: str, *, counts: dict[str, int]) -> None:
-    """Write the corpus's `tags.yml` and commit it as `tag(corpus)` (#625).
+def place_corpus_annotations(
+    context: Context, text: str, *, counts: dict[str, int]
+) -> None:
+    """Write the corpus's `annotations.json` and commit it as `tag(corpus)`
+    (#625, #50).
 
     Held exclusively, with hand edits recorded first so they do not enter
     history under the tag's name. No mirror: what a mirror keeps out of
@@ -530,13 +533,13 @@ def place_corpus_tags(context: Context, text: str, *, counts: dict[str, int]) ->
     which is already whole or absent. Journalled, so a failure before the
     commit puts the file back. Empty text removes the file.
     """
+    from kennis.engine.annotations import ANNOTATIONS_FILENAME
     from kennis.engine.atomic import remove_file, replace_file
-    from kennis.engine.tags import TAGS_FILENAME
 
-    store = context.corpus_root / TAGS_FILENAME
+    store = context.corpus_root / ANNOTATIONS_FILENAME
     with exclusively(context.corpus_root):
         record_what_was_not_recorded(context)
-        with journalled(context.corpus_root, "tag", [TAGS_FILENAME]):
+        with journalled(context.corpus_root, "tag", [ANNOTATIONS_FILENAME]):
             if text:
                 replace_file(store, text)
             else:
@@ -701,7 +704,7 @@ def _commit_the_index(
     collection: str | None,
     built: Sequence[BuiltIndex],
 ) -> None:
-    from kennis.engine.tags import TAGS_FILENAME
+    from kennis.engine.annotations import ANNOTATIONS_FILENAME
     from kennis.tagging import WRITING_TAGS
 
     documents = sum(index.documents for index in built)
@@ -715,7 +718,7 @@ def _commit_the_index(
     with (
         WRITING_TAGS,
         exclusively(context.corpus_root),
-        journalled(context.corpus_root, "index", [TAGS_FILENAME]),
+        journalled(context.corpus_root, "index", [ANNOTATIONS_FILENAME]),
     ):
         _rehint_corpus_tags(context, [index.collection for index in built])
         repository.commit(
@@ -726,24 +729,30 @@ def _commit_the_index(
 
 
 def _rehint_corpus_tags(context: Context, collections: Sequence[str]) -> None:
-    """Set each tagged passage's hint in `tags.yml` to where the indexes
-    just built place it, writing the file only when one moved (#626)."""
+    """Set each selection's hint in `annotations.json` to where the
+    indexes just built place it, writing the file only when one moved
+    (#626)."""
+    from kennis.engine.annotations import (
+        ANNOTATIONS_FILENAME,
+        read_annotations,
+        rehinted,
+        written,
+    )
     from kennis.engine.atomic import replace_file
     from kennis.engine.rag.index import load_chunks
-    from kennis.engine.tags import TAGS_FILENAME, read_store, rehinted, written
 
-    store = context.corpus_root / TAGS_FILENAME
-    held = read_store(store)
-    if not held.tags:
+    store = context.corpus_root / ANNOTATIONS_FILENAME
+    held = read_annotations(store)
+    if not held.annotations:
         return
     chunks = [
         chunk
         for name in collections
         for chunk in load_chunks(index_root(context.corpus_root), name)
     ]
-    moved = rehinted(held.tags, chunks)
-    if moved != held.tags:
-        replace_file(store, written(moved, colours=held.colours))
+    moved = rehinted(held, chunks)
+    if moved != held:
+        replace_file(store, written(moved))
 
 
 def _kept_when_cancelled(built: Sequence[BuiltIndex]) -> str:
@@ -987,7 +996,7 @@ __all__ = [
     "install_a_pack",
     "make_docs_version_current",
     "move_a_document",
-    "place_corpus_tags",
+    "place_corpus_annotations",
     "record_what_was_not_recorded",
     "remove_a_document",
     "remove_docs_version",

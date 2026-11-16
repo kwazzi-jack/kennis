@@ -475,8 +475,8 @@ class TagColourRefused(KennisError):
     default_message = "a tag colour is one of eight names or a hex colour"
 
 
-class TagsUnreadable(KennisError):
-    """A tags file that is not one kennis can read, and is therefore never
-    rewritten (#625)."""
+class AnnotationsUnreadable(KennisError):
+    """An annotations file that is not one kennis can read, and is
+    therefore never rewritten (#625, #50)."""
 
-    default_message = "the tags file cannot be read"
+    default_message = "the annotations file cannot be read"

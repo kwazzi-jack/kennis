@@ -19,8 +19,9 @@ from typing import TYPE_CHECKING, Literal
 import pytest
 from bs4 import BeautifulSoup, Tag
 
+from annotating import ANNOTATIONS, colours_in
 from kennis.engine.context.bundle import init_bundle
-from kennis.engine.tags import TAG_COLOURS, TAGS_FILENAME, colour_of, read_store
+from kennis.engine.tags import TAG_COLOURS, colour_of
 from kennis.gui import words
 from kennis.gui.theme import TAG_COLOURS as TAG_COLOUR_VALUES
 from kennis.gui.theme import stylesheet
@@ -368,7 +369,7 @@ def test_the_tag_page_chooses_a_colour_and_every_chip_wears_it(corpus: Path):
     )
 
     assert answer.status_code == 303
-    assert read_store(corpus / TAGS_FILENAME).colours == {"calibration": "purple"}
+    assert colours_in(corpus) == {"calibration": "purple"}
     page = page_of(client, "/tags?tag=calibration")
     assert page.select_one(".tag-head")["data-tag-colour"] == "purple"
     pane = page.select_one("a.tag-node")
@@ -386,7 +387,7 @@ def test_from_its_name_clears_the_chosen_colour(corpus: Path):
     )
 
     assert answer.headers.get("HX-Refresh") == "true"
-    assert read_store(corpus / TAGS_FILENAME).colours == {}
+    assert colours_in(corpus) == {}
 
 
 def test_a_colour_outside_the_palette_is_refused(corpus: Path):
@@ -397,7 +398,7 @@ def test_a_colour_outside_the_palette_is_refused(corpus: Path):
     )
 
     assert "is not a tag colour" in answer.text
-    assert read_store(corpus / TAGS_FILENAME).colours == {}
+    assert colours_in(corpus) == {}
 
 
 def test_a_project_tag_s_colour_is_set_in_its_project(
@@ -415,8 +416,8 @@ def test_a_project_tag_s_colour_is_set_in_its_project(
 
     opened().post("/tags/colour", data={"tag": "mine", "colour": "teal"})
 
-    assert read_store(root / ".context" / TAGS_FILENAME).colours == {"mine": "teal"}
-    assert not (corpus / TAGS_FILENAME).exists()
+    assert colours_in(root / ".context") == {"mine": "teal"}
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -587,14 +588,40 @@ def test_two_adjacent_passages_with_one_tag_are_one_run_on_the_page(
     assert len(tagged.select(".tag-run-head")) == 1
 
 
-def test_a_document_changed_since_its_index_withholds_the_marks(corpus: Path):
+def test_a_document_changed_since_its_index_draws_a_passage_where_it_is_now(
+    corpus: Path,
+):
+    """The page finds a selection in the text it draws, so an index out of
+    step with the document no longer withholds the run (#50): the words
+    decide where it is."""
+    solving = chunk_holding(corpus, SOLVING)
+    run("tag", "calibration", f"id={PAPER_ID}", f"chunk={solving}")
+    paper = corpus / "literature" / "smirnov.md"
+    text = paper.read_text(encoding="utf-8")
+    # Longer than the passage, so its old offsets now fall in the preface.
+    preface = "".join(
+        f"New words ahead of the rest, paragraph {number}.\n\n" for number in range(40)
+    )
+    assert len(preface) > text.index("## 2.2"), "the edit no longer moves it far"
+    paper.write_text(
+        text.replace("## Abstract", f"## Preface\n\n{preface}## Abstract"),
+        encoding="utf-8",
+    )
+
+    page = page_of(opened(), f"/document/literature/{PAPER_ID}")
+
+    (run_drawn,) = page.select(".tag-run")
+    words_in_run = " ".join(run_drawn.get_text().split())
+    assert SOLVING in words_in_run
+    assert "New words ahead" not in words_in_run
+
+
+def test_a_passage_whose_words_are_gone_is_not_drawn(corpus: Path):
     solving = chunk_holding(corpus, SOLVING)
     run("tag", "calibration", f"id={PAPER_ID}", f"chunk={solving}")
     paper = corpus / "literature" / "smirnov.md"
     paper.write_text(
-        paper.read_text(encoding="utf-8").replace(
-            "## Abstract", "## Preface\n\nNew.\n\n## Abstract"
-        ),
+        paper.read_text(encoding="utf-8").replace(SOLVING, "Something else."),
         encoding="utf-8",
     )
 
@@ -678,7 +705,7 @@ def test_the_picker_sets_a_colour_without_its_radio_being_pressed(corpus: Path):
 
     client.post(str(form["action"]), data=sent)
 
-    assert read_store(corpus / TAGS_FILENAME).colours == {"calibration": "#123456"}
+    assert colours_in(corpus) == {"calibration": "#123456"}
 
 
 def test_the_picker_left_alone_changes_nothing_but_the_radio(corpus: Path):
@@ -695,4 +722,4 @@ def test_the_picker_left_alone_changes_nothing_but_the_radio(corpus: Path):
 
     client.post(str(form["action"]), data=sent)
 
-    assert read_store(corpus / TAGS_FILENAME).colours == {"calibration": "pink"}
+    assert colours_in(corpus) == {"calibration": "pink"}

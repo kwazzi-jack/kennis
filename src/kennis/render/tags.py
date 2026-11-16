@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import shlex
+from typing import Final
 
+from kennis.citing import passage_words
 from kennis.tagging import DETACHED, MISSING, UNCHECKED, TaggedTarget
+
+# Long enough to tell two tagged passages apart on a line, short enough
+# that a listing of many stays a listing.
+OPENING_LENGTH: Final = 80
 
 
 def joined_names(names: tuple[str, ...]) -> str:
@@ -38,6 +44,17 @@ def target_state(target: TaggedTarget) -> str | None:
     return None
 
 
+def opening_words(quote: str) -> str:
+    """A selection's opening words for a line: leading heading lines
+    passed over, whitespace collapsed, cut at a word near
+    `OPENING_LENGTH` characters."""
+    words = passage_words(quote)
+    if len(words) <= OPENING_LENGTH:
+        return words
+    cut = words.rfind(" ", 0, OPENING_LENGTH + 1)
+    return words[: cut if cut > 0 else OPENING_LENGTH]
+
+
 def untag_command(name: str, target: TaggedTarget) -> str:
     """The command that takes `name` from `target`, as it runs when typed."""
     return f"kennis untag {shlex.quote(name)} {shlex.quote(target.link)}"
@@ -56,6 +73,7 @@ __all__ = [
     "coloured",
     "joined_names",
     "not_tagged",
+    "opening_words",
     "target_state",
     "target_title",
     "untag_command",

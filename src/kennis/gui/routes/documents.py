@@ -20,7 +20,6 @@ from kennis.engine.context.status import bundle_freshness
 from kennis.engine.errors import (
     KennisError,
 )
-from kennis.engine.history.freshness import Freshness
 from kennis.engine.history.repository import Repository
 from kennis.engine.rag.models import Chunk
 from kennis.gui import words
@@ -38,7 +37,7 @@ from kennis.gui.pages import (
     shown_matches,
 )
 from kennis.gui.responses import TEMPLATES, problem_page
-from kennis.gui.tagged import ShownDocumentTag, document_tags
+from kennis.gui.tagged import ShownDocumentTag, annotation_bands, document_tags
 from kennis.holdings import (
     document_marks,
     freshness_of,
@@ -240,13 +239,10 @@ def serve_document(
             marked=marked,
             marks=document_marks(context, collection),
             question=q,
-            bands=_tag_bands(
+            bands=_bands_of(
                 tags,
-                in_step=lambda: _in_step(
-                    freshness_of(context, Repository(context.corpus_root), collection)
-                ),
-                chunks=lambda: document_chunks(
-                    context, collection, document_id, bundle=None
+                lambda body: annotation_bands(
+                    context, document=document_id, body=body, bundle=None
                 ),
             ),
             run=_tag_run(tags),
@@ -290,35 +286,22 @@ def _reference_of(context: Context, document_id: str) -> str | None:
     return cited.citations[0].reference if cited.citations else None
 
 
-def _in_step(freshness: Freshness | None) -> bool:
-    """Whether an index's offsets address the document as it is now."""
-    return freshness is not None and freshness.state == "in step"
+def _bands_of(
+    tags: Sequence[ShownDocumentTag], read: Callable[[str], list[Band]]
+) -> Callable[[str], list[Band]] | None:
+    """What finds the tagged selections in the body a page draws (#50):
+    nothing is read when no tag is on a passage, and a store that cannot be
+    read draws none, as `_tags_or_none` shows none."""
+    if not any(tagged.chunk is not None for tagged in tags):
+        return None
 
+    def bands(body: str) -> list[Band]:
+        try:
+            return read(body)
+        except KennisError:
+            return []
 
-def _tag_bands(
-    tags: Sequence[ShownDocumentTag],
-    *,
-    in_step: Callable[[], bool],
-    chunks: Callable[[], list[Chunk]],
-) -> list[Band]:
-    """Each tagged passage's range, carrying its tags (#50).
-
-    By the rule that withholds a mark: a passage placed by the index is
-    drawn over the offsets that index recorded, which address the document
-    only while the index is in step with it. Neither the freshness nor the
-    chunks are read when nothing is tagged by passage.
-    """
-    by_chunk: dict[int, set[str]] = {}
-    for tagged in tags:
-        if tagged.chunk is not None and tagged.placed:
-            by_chunk.setdefault(tagged.chunk, set()).add(tagged.name)
-    if not by_chunk or not in_step():
-        return []
-    return [
-        Band(chunk.char_start, chunk.char_end, frozenset(by_chunk[chunk.chunk_index]))
-        for chunk in chunks()
-        if chunk.chunk_index in by_chunk
-    ]
+    return bands
 
 
 def _tag_run(tags: Sequence[ShownDocumentTag]) -> RunOf:
@@ -404,11 +387,10 @@ def serve_bundle_document(
             load_remote_images=load_remote,
             marked=marked,
             question=q,
-            bands=_tag_bands(
+            bands=_bands_of(
                 tags,
-                in_step=lambda: _in_step(bundle_freshness(bundle)),
-                chunks=lambda: document_chunks(
-                    resolve_context(), CONTEXT_COLLECTION, relative_path, bundle=bundle
+                lambda body: annotation_bands(
+                    resolve_context(), document=relative_path, body=body, bundle=bundle
                 ),
             ),
             run=_tag_run(tags),

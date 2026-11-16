@@ -63,7 +63,7 @@ The colour derived from a name comes from a checksum of the name's letters,
 not from what the name means, so `calibration` and `calibrations` are not
 given similar colours.
 
-A chosen colour is kept in the same `tags.yml` as the tag. The command
+A chosen colour is kept in the same `annotations.json` as the tag. The command
 line prints tag names in one colour whatever you choose, because a
 terminal's colours depend on its theme.
 
@@ -153,15 +153,24 @@ there is nothing to compare the words with. `kennis corpus index` (or
 
 ## Where tags are kept
 
-- Tags on the corpus are in `tags.yml` at the corpus root. kennis commits
-  every change to it, so it has history and is included in backups.
-- Tags on a project's `.context/` files are in `.context/tags.yml`. kennis
-  writes it and leaves it for you to commit with the project, so the
-  project's collaborators see the same tags.
+- Tags on the corpus are in `annotations.json` at the corpus root. kennis
+  commits every change to it, so it has history and is included in
+  backups.
+- Tags on a project's `.context/` files are in
+  `.context/annotations.json`. kennis writes it and leaves it for you to
+  commit with the project, so the project's collaborators see the same
+  tags.
 
-Both files are plain YAML, listed by tag, and can be edited by hand. A tag
-with a chosen colour is written as `colour:` and `targets:` under its name;
-any other tag is its list of targets. Each passage's chunk number is
-rewritten to where its words are now whenever the file's tags change, and
-the corpus's after every `kennis corpus index`, in the index's own commit.
-A file kennis cannot read is reported with its path and left as it is.
+Each file is a list of annotations: a selection of a document's text, or
+the whole document, with the tags on it. A selection is kept as its words
+(`exact`), a few dozen characters either side of it (`prefix` and
+`suffix`), and where it was last found (`start`, `end` and `chunk`). The
+words are what find it again; the positions are rewritten to where the
+words are now whenever the file's tags change, and the corpus's after every
+`kennis corpus index`, in the index's own commit. Chosen colours are under
+`colours`. The file is JSON, written with sorted keys so a change shows as
+a small diff, and can be edited by hand; a file kennis cannot read is
+reported with its path and what is wrong, and left as it is.
+
+Earlier versions kept tags in `tags.yml`. kennis no longer reads it, and
+an old one can be deleted.

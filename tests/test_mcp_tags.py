@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from annotating import ANNOTATIONS, Target, tagged
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.errors import KennisError
-from kennis.engine.tags import Anchor, read_tags
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.tools.cite import CiteRequest
 from kennis.mcp.tools.corpus import list_corpus
@@ -57,7 +57,7 @@ def test_the_tool_tags_a_passage_as_a_hit_gives_it(corpus: Path):
 
     said = tag([CiteRequest(document_id=PAPER_ID, chunk=chunk)], ["Calibration"])
 
-    (anchor,) = read_tags(corpus / "tags.yml")["calibration"]
+    (anchor,) = tagged(corpus)["calibration"]
     assert (anchor.document, anchor.chunk) == (PAPER_ID, chunk)
     assert said.startswith("[1] Revisiting the radio interferometer")
     assert "tagged: calibration" in said
@@ -66,14 +66,14 @@ def test_the_tool_tags_a_passage_as_a_hit_gives_it(corpus: Path):
 def test_the_tool_tags_a_whole_document(corpus: Path):
     tag([CiteRequest(document_id=PAPER_ID)], ["to-read"])
 
-    assert read_tags(corpus / "tags.yml") == {"to-read": (Anchor(PAPER_ID),)}
+    assert tagged(corpus) == {"to-read": (Target(PAPER_ID),)}
 
 
 def test_the_tool_tags_a_context_hit_by_its_path(project: Path, corpus: Path):
     tag([CiteRequest(path=".context/ours.md", chunk=0)], ["mine"])
 
-    assert read_tags(project / "tags.yml")["mine"][0].document == "ours.md"
-    assert not (corpus / "tags.yml").exists()
+    assert tagged(project)["mine"][0].document == "ours.md"
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 def test_the_tool_removes_a_tag(corpus: Path):
@@ -81,7 +81,7 @@ def test_the_tool_removes_a_tag(corpus: Path):
 
     said = tag([CiteRequest(document_id=PAPER_ID)], ["to-read"], remove=True)
 
-    assert read_tags(corpus / "tags.yml") == {}
+    assert tagged(corpus) == {}
     assert "untagged" in said
 
 
@@ -102,7 +102,7 @@ def test_one_refused_request_writes_none_and_says_which(corpus: Path):
         ["calibration"],
     )
 
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
     assert "[2]" in said
     assert "[1]" not in said
     assert "Nothing was tagged" in said
@@ -128,7 +128,7 @@ def test_the_tool_refuses_what_it_cannot_tag_and_writes_nothing(
     said = tag(requests, names)
 
     assert refusal in said
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +183,6 @@ def test_a_path_the_server_cannot_place_writes_none_of_the_batch(corpus: Path):
         ["calibration"],
     )
 
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
     assert said.startswith("[2] ")
     assert "Nothing was tagged" in said

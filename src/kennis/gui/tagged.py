@@ -16,22 +16,23 @@ from typing import Final
 from urllib.parse import quote
 
 from kennis.context import Context
+from kennis.engine.annotations import (
+    ANNOTATIONS_FILENAME,
+    AnnotationStore,
+    located,
+    read_annotations,
+    rehinted,
+    tags_on,
+)
 from kennis.engine.context.groups import project_group
 from kennis.engine.context.projects import known_projects, project_names
 from kennis.engine.errors import KennisError
 from kennis.engine.rag.models import Chunk
-from kennis.engine.tags import (
-    TAGS_FILENAME,
-    Tags,
-    TagStore,
-    colour_of,
-    read_store,
-    rehinted,
-    tags_on,
-)
+from kennis.engine.tags import colour_of
 from kennis.gui import words
 from kennis.gui.pages import ChipsOf, ShownChip, passage_href
-from kennis.render.tags import target_state
+from kennis.render.html import Band
+from kennis.render.tags import opening_words, target_state
 from kennis.tagging import (
     DETACHED,
     MISSING,
@@ -104,19 +105,23 @@ def tag_href(name: str) -> str:
     return f"/tags?tag={quote(name, safe='')}"
 
 
-def _stores(context: Context, bundles: Sequence[Path]) -> list[tuple[Path, TagStore]]:
+def _stores(
+    context: Context, bundles: Sequence[Path]
+) -> list[tuple[Path, AnnotationStore]]:
     """Each readable store, the corpus's first; one that cannot be read is
     left out, and its page says why."""
-    read: list[tuple[Path, TagStore]] = []
+    read: list[tuple[Path, AnnotationStore]] = []
     for root in (context.corpus_root, *bundles):
         try:
-            read.append((root, read_store(root / TAGS_FILENAME)))
+            read.append((root, read_annotations(root / ANNOTATIONS_FILENAME)))
         except KennisError:
             continue
     return read
 
 
-def chosen_colours(stores: Sequence[tuple[Path, TagStore]]) -> dict[str, str]:
+def chosen_colours(
+    stores: Sequence[tuple[Path, AnnotationStore]],
+) -> dict[str, str]:
     """The colour chosen for each tag: where two stores chose differently,
     the corpus's, then the first project's (#627)."""
     chosen: dict[str, str] = {}
@@ -135,7 +140,11 @@ def tag_colours(context: Context) -> dict[str, str]:
     """The colour each tag in use is drawn in, chosen or derived."""
     stores = _stores(context, present_bundles())
     chosen = chosen_colours(stores)
-    return {name: colour_of(name, chosen) for _, store in stores for name in store.tags}
+    return {
+        name: colour_of(name, chosen)
+        for _, store in stores
+        for name in store.tag_names()
+    }
 
 
 def pane_tags(context: Context) -> tuple[ShownTag, ...]:
@@ -145,8 +154,9 @@ def pane_tags(context: Context) -> tuple[ShownTag, ...]:
     chosen = chosen_colours(stores)
     counts: dict[str, int] = {}
     for _, store in stores:
-        for name, anchors in store.tags.items():
-            counts[name] = counts.get(name, 0) + len(anchors)
+        for annotation in store.annotations:
+            for name in annotation.tags:
+                counts[name] = counts.get(name, 0) + 1
     return tuple(
         ShownTag(
             name=name,
@@ -169,18 +179,20 @@ def chips_finder(context: Context, bundles: Sequence[Path]) -> ChipsOf:
 
     stores = _stores(context, bundles)
     chosen = chosen_colours(stores)
-    corpus = stores[0][1].tags if stores and stores[0][0] == context.corpus_root else {}
-    projects: dict[str, Tags] = {}
+    corpus = (
+        stores[0][1]
+        if stores and stores[0][0] == context.corpus_root
+        else AnnotationStore()
+    )
+    projects: dict[str, AnnotationStore] = {}
     for root, store in stores:
-        if root == context.corpus_root or not store.tags:
+        if root == context.corpus_root or not store.annotations:
             continue
-        projects[project_names([root])[root]] = rehinted(
-            store.tags, _bundle_chunks(root)
-        )
+        projects[project_names([root])[root]] = rehinted(store, _bundle_chunks(root))
 
     def chips_of(collection: str, chunk: Chunk) -> tuple[ShownChip, ...]:
         project = project_of_group(collection)
-        held = corpus if project is None else projects.get(project, {})
+        held = corpus if project is None else projects.get(project, AnnotationStore())
         return tuple(
             ShownChip(
                 name=name,
@@ -227,7 +239,7 @@ def _shown(name: str, target: TaggedTarget) -> ShownTagged:
         title=title,
         href=_way_in(target),
         link=target.link,
-        quote=target.quote,
+        quote=None if target.quote is None else opening_words(target.quote),
         trouble=target_state(target),
         remove_label=words.remove_tag_from(name, title),
     )
@@ -263,7 +275,7 @@ def document_tags(
                     href=tag_href(listing.name),
                     link=target.link,
                     chunk=target.chunk,
-                    quote=target.quote,
+                    quote=None if target.quote is None else opening_words(target.quote),
                     colour=colour_of(listing.name, chosen),
                     placed=target.state == PLACED,
                     remove_label=words.remove_tag_from(
@@ -272,6 +284,25 @@ def document_tags(
                 )
             )
     return shown
+
+
+def annotation_bands(
+    context: Context, *, document: str, body: str, bundle: Path | None
+) -> list[Band]:
+    """Each tagged selection of `document`, found in `body` - the text the
+    page draws - carrying its tags (#50). A whole-document annotation has
+    no range, and a selection whose words are gone is not drawn."""
+    root = context.corpus_root if bundle is None else bundle
+    store = read_annotations(root / ANNOTATIONS_FILENAME)
+    bands: list[Band] = []
+    for annotation in store.annotations:
+        selector = annotation.selector
+        if annotation.document != document or selector is None or not annotation.tags:
+            continue
+        span = located(selector, body)
+        if span is not None:
+            bands.append(Band(span.start, span.end, frozenset(annotation.tags)))
+    return bands
 
 
 def tags_in_use(context: Context) -> list[str]:
@@ -285,6 +316,7 @@ __all__ = [
     "ShownDocumentTag",
     "ShownTag",
     "ShownTagged",
+    "annotation_bands",
     "chips_finder",
     "chosen_colours",
     "chosen_colours_here",
