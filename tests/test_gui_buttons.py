@@ -68,7 +68,7 @@ def _drawn() -> list[Drawn]:
             words_only = re.sub(r"<[^>]+>", "", words_only)
             found.append(
                 Drawn(
-                    template=str(path.relative_to(TEMPLATES)),
+                    template=path.relative_to(TEMPLATES).as_posix(),
                     line=source[: match.start()].count("\n") + 1,
                     tag=tag,
                     classes=names,
