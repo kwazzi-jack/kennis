@@ -12,6 +12,7 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -236,6 +237,11 @@ class ShownHit:
     tags: tuple[ShownChip, ...] = ()
 
     @property
+    def tags_id(self) -> str:
+        """The id of the card's tags, which a tag added to it redraws."""
+        return tags_anchor(self.link)
+
+    @property
     def opens(self) -> bool:
         """Whether the passage is too long or too tall to show whole. A
         passage that fits is drawn whole, its lead included."""
@@ -340,6 +346,17 @@ def _link(collection: str, document_id: str, chunk: int | None) -> str:
     if project is not None:
         return context_link(project, document_id, chunk)
     return link_to(document_id, chunk)
+
+
+def tags_anchor(link: str) -> str:
+    """The id of the element that shows the tags on what `link` names, so
+    an answer that changed them can ask for that element again (#49). From
+    the link's digest: a link holds characters an id may not."""
+    return f"tags-{hashlib.sha256(link.encode('utf-8')).hexdigest()[:16]}"
+
+
+# The id of a document page's tag section, which a tag added there redraws.
+DOCUMENT_TAGS: Final = "document-tags"
 
 
 def document_link(collection: str, document_id: str) -> str:

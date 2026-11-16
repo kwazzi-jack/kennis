@@ -77,7 +77,7 @@
   {% endif %}
   {# The document's tags, whole or by passage, each with Remove, and the
      dialog that tags it whole (#625). #}
-  <details class="tags" open>
+  <details class="tags" id="{{ document_tags_id }}" open>
     <summary>{{ icon("chevron-right") }}{{ tags_heading }}</summary>
     {% if document_tags %}
     <ul class="tag-chips">
