@@ -19,10 +19,8 @@ from kennis.engine.errors import (
 )
 from kennis.engine.history.outofband import OutOfBandChange
 from kennis.gui import words
-from kennis.gui.pages import (
-    ShownOutcome,
-    known_groups,
-)
+from kennis.gui.outcomes import ShownOutcome
+from kennis.gui.pages import known_groups
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,

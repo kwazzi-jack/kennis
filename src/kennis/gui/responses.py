@@ -37,8 +37,8 @@ from kennis.engine.history.history import HistoryEntry
 from kennis.gui import words
 from kennis.gui.icons import icon
 from kennis.gui.layout import SIZES, sizes_of
+from kennis.gui.outcomes import ShownOutcome
 from kennis.gui.pages import (
-    ShownOutcome,
     ShownVersionProject,
     shown_version_choices,
 )
