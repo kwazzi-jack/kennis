@@ -17,7 +17,7 @@ from kennis.engine.corpus.add import AddReport
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.events import Outcome
 from kennis.engine.remember import RememberReport
-from kennis.gui.pages import ShownOutcome
+from kennis.gui.outcomes import ShownOutcome
 from kennis.holdings import Holding
 from kennis.operations import BuiltIndex, IndexBuild
 from kennis.render.words import (

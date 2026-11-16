@@ -25,7 +25,8 @@ from kennis.engine.tags import (
     tag_name,
 )
 from kennis.gui import words
-from kennis.gui.pages import DOCUMENT_TAGS, ShownOutcome, tags_anchor
+from kennis.gui.outcomes import ShownOutcome
+from kennis.gui.pages import DOCUMENT_TAGS, tags_anchor
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
