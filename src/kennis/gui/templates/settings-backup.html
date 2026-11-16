@@ -34,7 +34,7 @@
 <div class="setting-control">
 <label class="password">{{ backup_password }} <input type="password" name="password" autocomplete="new-password" required></label>
 <label class="password">{{ backup_confirmation }} <input type="password" name="confirmation" autocomplete="new-password" required></label>
-<button type="submit">{{ backup_now_label }}</button>
+<button type="submit" class="primary">{{ icon("archive") }}{{ backup_now_label }}</button>
 </div>
 <p class="setting-sentence role-muted">{{ backup_now_note }} {{ tip("backup-now", backup_now_label, backup_now_tip) }}</p>
 </div>
