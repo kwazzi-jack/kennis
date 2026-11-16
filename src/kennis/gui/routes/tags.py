@@ -9,6 +9,8 @@ here cannot interleave with one from the command line or an agent.
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -23,7 +25,7 @@ from kennis.engine.tags import (
     tag_name,
 )
 from kennis.gui import words
-from kennis.gui.pages import ShownOutcome
+from kennis.gui.pages import DOCUMENT_TAGS, ShownOutcome, tags_anchor
 from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
@@ -135,8 +137,35 @@ def add_tags(request: Request, form: PostedForm) -> Response:
     if not from_htmx(request):
         return RedirectResponse(tag_href(names[0]), status_code=303)
     return TEMPLATES.TemplateResponse(
-        request, "outcome.html", {"outcome": _outcome(tagged), "state": ""}
+        request,
+        "outcome.html",
+        {
+            "outcome": _outcome(tagged),
+            "state": "",
+            "redraws": _redraws(request, link) if tagged.changes[0].changed else [],
+        },
     )
+
+
+def _redraws(request: Request, link: str) -> list[tuple[str, str, str]]:
+    """What a tag just added changed on the page the dialog was opened on
+    (#49): a result card's tags, or a document page's tag section. Each is
+    asked for again from that page and taken out of it by its id; the page
+    asks only for the ones it has.
+
+    The page is htmx's `HX-Current-URL`, kept to its path and query, and
+    nothing when it is not a path in this window.
+    """
+    current = urlsplit(request.headers.get("HX-Current-URL", ""))
+    path = current.path
+    if current.scheme not in ("http", "https") or not path.startswith("/"):
+        return []
+    if path.startswith("//"):
+        return []
+    page = f"{path}?{current.query}" if current.query else path
+    return [
+        (element, page, f"#{element}") for element in (tags_anchor(link), DOCUMENT_TAGS)
+    ]
 
 
 @router.post("/tags/remove")

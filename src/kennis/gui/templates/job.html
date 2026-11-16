@@ -46,7 +46,7 @@
     <ul class="job-lines"></ul>
     <div class="job-outcome">{{ outcome | default("") }}</div>
     <div class="panel-foot">
-      {% if state in ("running", "queued") %}<form class="job-cancel" method="post" action="/job/{{ job_id }}/cancel" hx-post="/job/{{ job_id }}/cancel" hx-target="this" hx-swap="outerHTML"><button type="submit" class="ghost">{{ icon("x") }}{{ cancel_task }}</button></form>{% endif %}
+      {% if state in ("running", "queued") %}<form class="job-cancel" method="post" action="/job/{{ job_id }}/cancel" hx-post="/job/{{ job_id }}/cancel" hx-target="this" hx-swap="outerHTML"><button type="submit">{{ icon("x") }}{{ cancel_task }}</button></form>{% endif %}
       {% if not inline %}<a class="ghost" href="/job/{{ job_id }}">{{ icon("arrow-up-right") }}{{ open_as_page }}</a>{% endif %}
       <a class="ghost" href="/activity">{{ icon("activity") }}{{ activity_heading }}</a>
     </div>

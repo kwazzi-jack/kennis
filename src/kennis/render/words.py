@@ -343,6 +343,13 @@ def group_title(name: str) -> str:
     return group_name(name).capitalize()
 
 
+def describe_left_out(names: Sequence[str]) -> str:
+    """Which scopes a default search did not cover because the reader's
+    setting leaves them out (#669). What reaches one is each front end's
+    to say: an option, an argument, a button."""
+    return f"left out by default: {', '.join(names)}"
+
+
 def describe_skipped(names: Sequence[str]) -> str:
     """Which scopes a search did not reach, and why.
 

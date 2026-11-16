@@ -9,7 +9,7 @@
       data-mode="{{ mode }}" data-title="{% if question %}kennis - {{ question }}{% else %}kennis{% endif %}" hidden></span>
 {# What the results are kept to, and the way back to everything (#625). #}
 {% if kept_tags %}
-<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" {{ tag_paint((kept_tag_colours | default({})).get(name, "")) }}>{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ show_everything }}</a></p>
+<p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" {{ tag_paint((kept_tag_colours | default({})).get(name, "")) }}>{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ icon("x") }}{{ show_everything }}</a></p>
 {% endif %}
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>
@@ -22,11 +22,16 @@
    applies to, and the step that would change it. #}
 {% if keywords_only %}
 <p class="notice quiet">{{ icon("info") }}<span>{{ keywords_only.sentence }}
-  <a class="button" href="{{ keywords_only.href }}"{% if keywords_only.target %} hx-get="{{ keywords_only.href }}" hx-target="{{ keywords_only.target }}" hx-swap="innerHTML"{% endif %}>{{ keywords_only.label }}</a></span></p>
+  <a class="button" href="{{ keywords_only.href }}"{% if keywords_only.target %} hx-get="{{ keywords_only.href }}" hx-target="{{ keywords_only.target }}" hx-swap="innerHTML"{% endif %}>{{ icon("database") }}{{ keywords_only.label }}</a></span></p>
 {% endif %}
 {% for skip in skips %}
 <p class="skipped role-muted">{{ skip.names }}<span class="role-command">{{ skip.resolution }}</span></p>
 {% endfor %}
+{# What the reader's own setting leaves out of a default search, each a
+   button to this search in it (#669). #}
+{% if left_out %}
+<p class="left-out">{{ icon("info") }}<span>{{ left_out_says }}</span>{% for entry in left_out %}<a class="button" href="{{ entry.href }}">{{ icon(entry.icon) }}{{ entry.name }}</a>{% endfor %}</p>
+{% endif %}
 {# A scope searched with another model, or by keywords because its model
    could not be used, each with its way out (issue #16). #}
 {% for notice in model_notices %}
@@ -93,7 +98,9 @@
     <div class="hit-head">
       <p class="heading"><a class="title" href="{{ hit.href }}">{{ hit.title }}</a></p>
       {# The tags on this passage, and on its whole document (#627). #}
-      {% if hit.tags %}<p class="hit-tags">{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
+      {# Drawn when empty too, hidden, so a tag added from this card has
+         an element to redraw (#49). #}
+      <p class="hit-tags" id="{{ hit.tags_id }}"{% if not hit.tags %} hidden{% endif %}>{% for chip in hit.tags %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}{% if chip.whole %} data-whole title="{{ tag_on_document }}"{% endif %}>{{ chip.name }}</a>{% endfor %}</p>
       {# Which section the passage is from; the title is the document's
          alone. Marked, so `safe`. #}
       {% if hit.passage.heading %}<p class="passage-section">{{ icon("hash") }}<span>{{ hit.passage.heading | safe }}</span></p>{% endif %}

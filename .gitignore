@@ -40,3 +40,6 @@ credentials.toml
 .coverage
 .coverage.*
 htmlcov/
+
+# graphify knowledge graph, kept local
+graphify-out/
