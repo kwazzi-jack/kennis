@@ -40,7 +40,7 @@ from typing import Any, Final, Literal, get_args, get_origin
 
 from dotenv import dotenv_values
 from platformdirs import user_config_dir, user_log_dir, user_state_dir
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -48,7 +48,9 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.corpus.layout import published_corpus
+from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import SettingsError
 
 _ENVIRONMENT_PREFIX: Final = "KENNIS"
@@ -133,6 +135,20 @@ class ChunkingSettings(BaseModel):
     )
 
 
+# What a search may cover, in the order kennis lists them unasked: the
+# project's bundle, then the corpus's collections. `kennis/scopes.py` says
+# the same for a client, which must not load this module to offer them.
+_SEARCHABLE: Final = (CONTEXT_COLLECTION, *COLLECTION_NAMES)
+_NAME_SEPARATORS: Final = re.compile(r"[\s,]+")
+
+
+def default_scopes(default_collections: str) -> tuple[str, ...]:
+    """The scopes `retrieval.default_collections` names, in its order."""
+    return tuple(
+        name.lower() for name in _NAME_SEPARATORS.split(default_collections) if name
+    )
+
+
 class RetrievalSettings(BaseModel):
     """How a search is run."""
 
@@ -150,9 +166,39 @@ class RetrievalSettings(BaseModel):
             "sweep can return this many times the number of scopes."
         ),
     )
+    # A string, as every setting is one value: an answer is text, and so
+    # is what the environment and `config set` give. The order is the
+    # reader's and is never a ranking of the collections (#669).
+    default_collections: str = Field(
+        default=" ".join(_SEARCHABLE),
+        description=(
+            "What a search covers when no collection is named, and the order "
+            "its groups are shown in: any of context, literature, docs and "
+            "notes, separated by spaces. One left out is still searched when "
+            "it is named."
+        ),
+        examples=['"literature notes"'],
+    )
     corpus_method: Literal["hybrid", "bm25", "dense"] = Field(
         default="hybrid", description="Retrieval method for corpus collections."
     )
+
+    @field_validator("default_collections")
+    @classmethod
+    def _names_what_a_search_covers(cls, value: str) -> str:
+        names = default_scopes(value)
+        choices = ", ".join(_SEARCHABLE)
+        if not names:
+            raise ValueError(f"name at least one of {choices}")
+        for name in names:
+            if name not in _SEARCHABLE:
+                raise ValueError(
+                    f"'{name}' is not something a search covers; choose from {choices}"
+                )
+            if names.count(name) > 1:
+                raise ValueError(f"'{name}' is named twice")
+        return " ".join(names)
+
     # `bm25` rather than `hybrid`, and it is the design's decision rather
     # than a cautious default. A dense bundle index would turn `context
     # init` from an offline scaffold into a 65 MB model download, and it

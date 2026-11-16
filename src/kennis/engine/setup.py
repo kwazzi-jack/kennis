@@ -126,6 +126,7 @@ _ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     ("chunking.overlap", ()),
     ("retrieval.context_method", ()),
     ("retrieval.scores", ()),
+    ("retrieval.default_collections", ()),
     ("corpus.keep_original", ()),
     ("corpus.default_group", ()),
     ("conversion.repair_ligatures", (("conversion.backend", "mineru"),)),

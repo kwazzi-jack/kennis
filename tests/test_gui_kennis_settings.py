@@ -42,6 +42,7 @@ EXPECTED_GROUPS = {
         "chunking.size",
         "chunking.overlap",
         "retrieval.default_top_k",
+        "retrieval.default_collections",
         "retrieval.corpus_method",
         "retrieval.context_method",
         "retrieval.scores",

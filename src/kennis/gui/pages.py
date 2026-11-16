@@ -543,6 +543,30 @@ def shown_skips(found: Sweep) -> list[ShownSkip]:
 
 
 @dataclass(frozen=True, slots=True)
+class ShownLeftOut:
+    """A scope the reader's setting leaves out of a default search, and
+    the address of this search in it."""
+
+    name: str
+    icon: str
+    href: str
+
+
+def shown_left_out(found: Sweep, question: str, mode: str) -> list[ShownLeftOut]:
+    """The scopes a default search did not cover, each with the search
+    that does (#669)."""
+    asked_mode = f"&mode={quote(mode)}" if mode else ""
+    return [
+        ShownLeftOut(
+            name=name,
+            icon=words.COLLECTION_ICONS.get(name, "folder"),
+            href=f"/?q={quote(question)}&scope={quote(name)}{asked_mode}",
+        )
+        for name in found.left_out
+    ]
+
+
+@dataclass(frozen=True, slots=True)
 class ShownModelNotice:
     """A scope searched with a model other than the configured one, or not
     by meaning at all, and the command that changes it (issue #16)."""
