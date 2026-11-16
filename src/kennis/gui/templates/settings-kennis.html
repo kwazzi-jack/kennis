@@ -34,7 +34,7 @@
 {% for key, value in previous.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <button type="submit">{{ icon("history") }}{{ undo_label }}</button>
 </form>
-<a href="{{ kennis_tab_address }}" class="later" data-later hx-get="/settings/kennis?tab={{ kennis_tab }}" hx-target="closest section" hx-swap="outerHTML">{{ rebuild_later }}</a>
+<a href="{{ kennis_tab_address }}" class="button" data-later hx-get="/settings/kennis?tab={{ kennis_tab }}" hx-target="closest section" hx-swap="outerHTML">{{ rebuild_later }}</a>
 </div>
 </div>
 {% endif %}
