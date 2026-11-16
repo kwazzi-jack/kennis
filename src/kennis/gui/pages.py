@@ -98,10 +98,11 @@ from kennis.render.hits import (
     score_style_for,
 )
 from kennis.render.html import (
+    Band,
     Heading,
-    MarginNote,
     MarkedRange,
     PassageHtml,
+    RunOf,
     headings_of,
     is_trusted,
     passage_html,
@@ -971,7 +972,8 @@ def shown_document(
     marked: MarkedRange | None = None,
     marks: DocumentMarks | None = None,
     question: str = "",
-    margins: Sequence[MarginNote] = (),
+    bands: Sequence[Band] = (),
+    run: RunOf | None = None,
     trusted_hosts: frozenset[str] = frozenset(),
 ) -> ShownDocument:
     """Read one document and render it.
@@ -1009,7 +1011,8 @@ def shown_document(
             without_title=frontmatter.title,
             heading_anchors=True,
             terms=terms_of(question),
-            margins=margins,
+            bands=bands,
+            run=run,
         ),
         has_blocked_images=_refers_remotely(document.body, trusted_hosts),
         group=group,
@@ -1084,7 +1087,8 @@ def shown_bundle_document(
     load_remote_images: bool,
     marked: MarkedRange | None = None,
     question: str = "",
-    margins: Sequence[MarginNote] = (),
+    bands: Sequence[Band] = (),
+    run: RunOf | None = None,
     trusted_hosts: frozenset[str] = frozenset(),
 ) -> ShownDocument:
     """One note out of this project's bundle, rendered.
@@ -1133,7 +1137,8 @@ def shown_bundle_document(
             without_title=str(title),
             heading_anchors=True,
             terms=terms_of(question),
-            margins=margins,
+            bands=bands,
+            run=run,
             trusted_hosts=trusted_hosts,
         ),
         has_blocked_images=_refers_remotely(body, trusted_hosts),

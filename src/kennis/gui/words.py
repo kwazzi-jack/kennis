@@ -1926,6 +1926,14 @@ NO_TAGS = (
 REMOVE_TAG = "Remove"
 # Beside a tag in a document's inspector, when the tag is on one passage.
 TAGGED_PASSAGE = "a passage"
+
+
+def tags_on_passage(names: Sequence[str]) -> str:
+    """The marker in a document's margin beside a tagged passage (#50),
+    for a reader who cannot see the chips it opens."""
+    return f"Tags on this passage: {', '.join(names)}"
+
+
 KEPT_TO_TAGS = "Kept to"
 SHOW_EVERYTHING = "Show everything"
 # Above the results of a default search that the setting
@@ -2375,6 +2383,7 @@ __all__ = [
     "syncing_project",
     "tagged_with",
     "tagging",
+    "tags_on_passage",
     "time_ago",
     "tip_about",
     "to_index",

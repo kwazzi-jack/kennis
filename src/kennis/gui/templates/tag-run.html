@@ -1,0 +1,7 @@
+{# The opening of a run of a document's blocks that carry the same tags
+   (#50). Rendered alone, into the body, so it carries what it needs; the
+   route closes the element. A rule down the margin in the first tag's
+   colour, and at its head a marker whose chips show while it is pointed
+   at or focused - the bookmark's rule, so no script. Nothing in it takes
+   room in the column. #}
+<div class="tag-run" {{ tag_paint(chips[0].colour) }}><div class="tag-run-head"><button type="button" class="tag-run-marker" aria-label="{{ label }}" title="{{ label }}">{{ icon("tag") }}</button><span class="tag-run-chips">{% for chip in chips %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}>{{ chip.name }}</a>{% endfor %}</span></div>
