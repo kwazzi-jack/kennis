@@ -16,22 +16,24 @@ from typing import Final
 from urllib.parse import quote
 
 from kennis.context import Context
+from kennis.engine.annotations import (
+    ANNOTATIONS_FILENAME,
+    AnnotationLinks,
+    AnnotationStore,
+    links_for,
+    located,
+    read_annotations,
+    tags_on,
+)
 from kennis.engine.context.groups import project_group
 from kennis.engine.context.projects import known_projects, project_names
 from kennis.engine.errors import KennisError
 from kennis.engine.rag.models import Chunk
-from kennis.engine.tags import (
-    TAGS_FILENAME,
-    Tags,
-    TagStore,
-    colour_of,
-    read_store,
-    rehinted,
-    tags_on,
-)
+from kennis.engine.tags import colour_of
 from kennis.gui import words
 from kennis.gui.pages import ChipsOf, ShownChip, passage_href
-from kennis.render.tags import target_state
+from kennis.render.html import Band
+from kennis.render.tags import opening_words, target_state
 from kennis.tagging import (
     DETACHED,
     MISSING,
@@ -71,6 +73,11 @@ class ShownTagged:
     quote: str | None
     trouble: str | None
     remove_label: str
+    # The annotation, and the project whose store holds it (None for the
+    # corpus's), which is how a remove names it: a detached selection has
+    # no chunk to name.
+    annotation: str = ""
+    project: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +96,8 @@ class ShownDocumentTag:
     # Whether `chunk` is where the passage's words are now, which is what a
     # mark beside the chunk in the text needs (#627).
     placed: bool = False
+    annotation: str = ""
+    project: str | None = None
 
 
 def present_bundles() -> list[Path]:
@@ -104,19 +113,23 @@ def tag_href(name: str) -> str:
     return f"/tags?tag={quote(name, safe='')}"
 
 
-def _stores(context: Context, bundles: Sequence[Path]) -> list[tuple[Path, TagStore]]:
+def _stores(
+    context: Context, bundles: Sequence[Path]
+) -> list[tuple[Path, AnnotationStore]]:
     """Each readable store, the corpus's first; one that cannot be read is
     left out, and its page says why."""
-    read: list[tuple[Path, TagStore]] = []
+    read: list[tuple[Path, AnnotationStore]] = []
     for root in (context.corpus_root, *bundles):
         try:
-            read.append((root, read_store(root / TAGS_FILENAME)))
+            read.append((root, read_annotations(root / ANNOTATIONS_FILENAME)))
         except KennisError:
             continue
     return read
 
 
-def chosen_colours(stores: Sequence[tuple[Path, TagStore]]) -> dict[str, str]:
+def chosen_colours(
+    stores: Sequence[tuple[Path, AnnotationStore]],
+) -> dict[str, str]:
     """The colour chosen for each tag: where two stores chose differently,
     the corpus's, then the first project's (#627)."""
     chosen: dict[str, str] = {}
@@ -135,7 +148,11 @@ def tag_colours(context: Context) -> dict[str, str]:
     """The colour each tag in use is drawn in, chosen or derived."""
     stores = _stores(context, present_bundles())
     chosen = chosen_colours(stores)
-    return {name: colour_of(name, chosen) for _, store in stores for name in store.tags}
+    return {
+        name: colour_of(name, chosen)
+        for _, store in stores
+        for name in store.tag_names()
+    }
 
 
 def pane_tags(context: Context) -> tuple[ShownTag, ...]:
@@ -145,8 +162,9 @@ def pane_tags(context: Context) -> tuple[ShownTag, ...]:
     chosen = chosen_colours(stores)
     counts: dict[str, int] = {}
     for _, store in stores:
-        for name, anchors in store.tags.items():
-            counts[name] = counts.get(name, 0) + len(anchors)
+        for annotation in store.annotations:
+            for name in annotation.tags:
+                counts[name] = counts.get(name, 0) + 1
     return tuple(
         ShownTag(
             name=name,
@@ -161,26 +179,60 @@ def pane_tags(context: Context) -> tuple[ShownTag, ...]:
 def chips_finder(context: Context, bundles: Sequence[Path]) -> ChipsOf:
     """What a results page asks of each hit: the tags on its chunk (#627).
 
-    The stores are read once per page. The corpus's hints are current
-    (#626) and trusted; a project's are rewritten only when its tags
-    change, so its store is placed in memory against its index first.
+    By the links between each store and the index the hit came from
+    (`annotations.links_for`), read from beside that index build, so a
+    page never parses a whole index; each store and each collection's
+    links are read once per page, and only for a store that holds
+    anything.
     """
-    from kennis.engine.context.groups import project_of_group
+    from kennis.engine.context.bundle import index_root_for
+    from kennis.engine.context.groups import CONTEXT_COLLECTION, project_of_group
+    from kennis.engine.corpus.layout import index_root
 
     stores = _stores(context, bundles)
     chosen = chosen_colours(stores)
-    corpus = stores[0][1].tags if stores and stores[0][0] == context.corpus_root else {}
-    projects: dict[str, Tags] = {}
-    for root, store in stores:
-        if root == context.corpus_root or not store.tags:
-            continue
-        projects[project_names([root])[root]] = rehinted(
-            store.tags, _bundle_chunks(root)
-        )
+    by_project = {
+        project_names([root])[root]: (root, store)
+        for root, store in stores
+        if root != context.corpus_root
+    }
+    corpus = next(
+        (store for root, store in stores if root == context.corpus_root),
+        AnnotationStore(),
+    )
+    linked: dict[str, AnnotationLinks | None] = {}
+
+    def links_of(collection: str, project: str | None) -> AnnotationLinks | None:
+        if collection in linked:
+            return linked[collection]
+        found: AnnotationLinks | None = None
+        try:
+            if project is None:
+                found = links_for(
+                    index_root(context.corpus_root),
+                    collection,
+                    context.corpus_root / ANNOTATIONS_FILENAME,
+                )
+            elif project in by_project:
+                root = by_project[project][0]
+                found = links_for(
+                    index_root_for(root),
+                    CONTEXT_COLLECTION,
+                    root / ANNOTATIONS_FILENAME,
+                )
+        except KennisError:
+            found = None
+        linked[collection] = found
+        return found
 
     def chips_of(collection: str, chunk: Chunk) -> tuple[ShownChip, ...]:
         project = project_of_group(collection)
-        held = corpus if project is None else projects.get(project, {})
+        held = corpus if project is None else by_project.get(project, (None, None))[1]
+        if held is None or not held.annotations:
+            return ()
+        found = links_of(collection, project)
+        if found is None:
+            return ()
         return tuple(
             ShownChip(
                 name=name,
@@ -188,7 +240,7 @@ def chips_finder(context: Context, bundles: Sequence[Path]) -> ChipsOf:
                 colour=colour_of(name, chosen),
                 whole=whole,
             )
-            for name, whole in tags_on(held, chunk)
+            for name, whole in tags_on(held, found, chunk)
         )
 
     return chips_of
@@ -222,14 +274,16 @@ def _shown(name: str, target: TaggedTarget) -> ShownTagged:
     if target.project is not None:
         title = f"{title} ({target.project})"
     return ShownTagged(
-        kind=PASSAGE if target.chunk is not None else DOCUMENT,
+        kind=PASSAGE if target.quote is not None else DOCUMENT,
         state=target.state,
         title=title,
         href=_way_in(target),
         link=target.link,
-        quote=target.quote,
+        quote=None if target.quote is None else opening_words(target.quote),
         trouble=target_state(target),
         remove_label=words.remove_tag_from(name, title),
+        annotation=target.annotation,
+        project=target.project,
     )
 
 
@@ -263,15 +317,36 @@ def document_tags(
                     href=tag_href(listing.name),
                     link=target.link,
                     chunk=target.chunk,
-                    quote=target.quote,
+                    quote=None if target.quote is None else opening_words(target.quote),
                     colour=colour_of(listing.name, chosen),
                     placed=target.state == PLACED,
+                    annotation=target.annotation,
+                    project=target.project,
                     remove_label=words.remove_tag_from(
                         listing.name, target.title or target.document
                     ),
                 )
             )
     return shown
+
+
+def annotation_bands(
+    context: Context, *, document: str, body: str, bundle: Path | None
+) -> list[Band]:
+    """Each tagged selection of `document`, found in `body` - the text the
+    page draws - carrying its tags (#50). A whole-document annotation has
+    no range, and a selection whose words are gone is not drawn."""
+    root = context.corpus_root if bundle is None else bundle
+    store = read_annotations(root / ANNOTATIONS_FILENAME)
+    bands: list[Band] = []
+    for annotation in store.annotations:
+        selector = annotation.selector
+        if annotation.document != document or selector is None or not annotation.tags:
+            continue
+        span = located(selector, body)
+        if span is not None:
+            bands.append(Band(span.start, span.end, frozenset(annotation.tags)))
+    return bands
 
 
 def tags_in_use(context: Context) -> list[str]:
@@ -285,6 +360,7 @@ __all__ = [
     "ShownDocumentTag",
     "ShownTag",
     "ShownTagged",
+    "annotation_bands",
     "chips_finder",
     "chosen_colours",
     "chosen_colours_here",

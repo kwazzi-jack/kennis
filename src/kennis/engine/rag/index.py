@@ -431,6 +431,13 @@ def _read_chunks(index_dir: Path) -> list[Chunk]:
     ]
 
 
+def published_directory(index_root: Path, collection: str) -> Path:
+    """The directory of `collection`'s published build, which a reader may
+    keep what it derives from that build beside (`annotation-links.json`);
+    raises `NothingToIndex` when there is none."""
+    return _published_dir(index_root, collection)
+
+
 def _published_dir(index_root: Path, collection: str) -> Path:
     collection_root = index_root / collection
     pointer_path = collection_root / _POINTER_FILE

@@ -159,10 +159,11 @@ def a_note_with_a_figure(scene: Scene) -> str:
 
 def tagged_reading(scene: Scene) -> str:
     """Tags the note `reading`, so a colour has a tag to be chosen for."""
-    from kennis.engine.tags import TAGS_FILENAME
+    from annotating import whole_document, write_store
+    from kennis.engine.annotations import AnnotationStore
 
-    (scene.corpus / TAGS_FILENAME).write_text(
-        f"reading:\n- document: {scene.note}\n", encoding="utf-8"
+    write_store(
+        scene.corpus, AnnotationStore((whole_document(scene.note, ("reading",)),))
     )
     return "reading"
 

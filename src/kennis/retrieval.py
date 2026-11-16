@@ -43,8 +43,8 @@ from kennis.render.hits import Hit
 from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
 
 if TYPE_CHECKING:
+    from kennis.engine.annotations import AnnotationStore
     from kennis.engine.rag.index import LoadedIndex
-    from kennis.engine.tags import Tags
 
 # The most a caller may ask for. A ceiling rather than a validation
 # error: a caller asking for 500 wants "lots", and refusing them is
@@ -567,31 +567,41 @@ class _Tagged:
     """The tags a sweep keeps, and each store's tags, read once."""
 
     names: tuple[str, ...]
-    stores: dict[Path, Tags]
+    stores: dict[Path, AnnotationStore]
 
     def within(self, root: Path, index: LoadedIndex) -> ChunkPredicate | None:
         """What a group's search is kept to: None when no tag was asked."""
-        from kennis.engine.tags import TAGS_FILENAME, admitting
+        from kennis.engine.annotations import (
+            ANNOTATIONS_FILENAME,
+            AnnotationStore,
+            admitting,
+        )
 
         if not self.names:
             return None
         return admitting(
-            self.stores.get(root / TAGS_FILENAME, {}), self.names, index.chunks
+            self.stores.get(root / ANNOTATIONS_FILENAME, AnnotationStore()),
+            self.names,
+            index.chunks,
         )
 
 
 def _tags_asked(
     context: Context, tags: Sequence[str], bundles: Sequence[Path | None]
 ) -> _Tagged:
+    from kennis.engine.annotations import ANNOTATIONS_FILENAME, read_annotations
     from kennis.engine.errors import KennisError
-    from kennis.engine.tags import TAGS_FILENAME, read_tags, tag_name
+    from kennis.engine.tags import tag_name
 
     names = tuple(dict.fromkeys(tag_name(tag) for tag in tags))
     if not names:
         return _Tagged((), {})
     roots = [context.corpus_root, *(bundle for bundle in bundles if bundle is not None)]
-    stores = {root / TAGS_FILENAME: read_tags(root / TAGS_FILENAME) for root in roots}
-    held = {name for store in stores.values() for name in store}
+    stores = {
+        root / ANNOTATIONS_FILENAME: read_annotations(root / ANNOTATIONS_FILENAME)
+        for root in roots
+    }
+    held = {name for store in stores.values() for name in store.tag_names()}
     for name in names:
         if name not in held:
             raise KennisError(f"nothing is tagged {name}", resolution="kennis tags")

@@ -3,9 +3,9 @@
 A passage is named as `kennis cite` takes it - a search hit's `id=X
 chunk=N` or `path=P chunk=N`, a `kennis://` link, or any handle for a whole
 document - and the names are one argument, comma-separated, because a tag
-holds no comma or space. The service writes the corpus's `tags.yml` and
-commits it, and a project's `.context/tags.yml`, which it leaves for the
-person to commit.
+holds no comma or space. The service writes the corpus's
+`annotations.json` and commits it, and a project's
+`.context/annotations.json`, which it leaves for the person to commit.
 """
 
 from __future__ import annotations
@@ -41,7 +41,8 @@ def tag_command(names: str, passages: tuple[str, ...], colour: str | None) -> No
     `NAMES` is one or more tags separated by commas, such as
     `calibration,to-cite`; a tag is one word, folded to lowercase. A
     `PASSAGE` is named as `kennis cite` takes it: a hit's `id=X chunk=N` or
-    `path=P chunk=N`, a `kennis://` link, or a handle for the whole document.
+    `path=P chunk=N`, a `kennis://` link, a handle for the whole document,
+    or `annotation=ID` as `kennis tags` prints it.
     """
     if not passages and colour is None:
         raise click.UsageError("name at least one PASSAGE, or give --colour")
@@ -55,7 +56,12 @@ def tag_command(names: str, passages: tuple[str, ...], colour: str | None) -> No
 @click.argument("names", metavar="NAMES")
 @click.argument("passages", nargs=-1, required=True, metavar="PASSAGE...")
 def untag_command(names: str, passages: tuple[str, ...]) -> None:
-    """Take each of `NAMES` from passages or documents, named as for `kennis tag`."""
+    """Take each of `NAMES` from passages or documents, named as for `kennis tag`.
+
+    A chunk loses the tag from every annotation on it, a selection across
+    two chunks included; `annotation=ID`, as `kennis tags` prints for a
+    selection whose words are gone, names one annotation.
+    """
     _changed(names, passages, remove=True)
 
 
@@ -151,7 +157,12 @@ def _all_tags(listed: list[TagListing]) -> None:
 
 
 def _one_tag(listing: TagListing) -> None:
-    from kennis.render.tags import target_state, target_title, untag_command
+    from kennis.render.tags import (
+        opening_words,
+        target_state,
+        target_title,
+        untag_command,
+    )
     from kennis.tagging import DETACHED, MISSING
 
     display.heading(listing.name)
@@ -159,7 +170,7 @@ def _one_tag(listing: TagListing) -> None:
         display.hit(target_title(target))
         display.hit_link(target.link)
         if target.quote is not None:
-            display.hit_detail(f'"{target.quote}"')
+            display.hit_detail(f'"{opening_words(target.quote)}"')
         trouble = target_state(target)
         if trouble is not None:
             display.note(trouble)

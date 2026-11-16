@@ -972,7 +972,7 @@ def shown_document(
     marked: MarkedRange | None = None,
     marks: DocumentMarks | None = None,
     question: str = "",
-    bands: Sequence[Band] = (),
+    bands: Callable[[str], Sequence[Band]] | None = None,
     run: RunOf | None = None,
     trusted_hosts: frozenset[str] = frozenset(),
 ) -> ShownDocument:
@@ -980,6 +980,9 @@ def shown_document(
 
     Raises `DocumentNotFound` or `DocumentInvalid`, which the interface
     turns into a page rather than a traceback.
+
+    `bands` is asked for the annotated ranges of the body it reads, so the
+    annotations are found where their words are in the text drawn.
 
     `marked` is a character range of the body, already decided
     elsewhere: this function reads the corpus and never the index, so
@@ -1011,7 +1014,7 @@ def shown_document(
             without_title=frontmatter.title,
             heading_anchors=True,
             terms=terms_of(question),
-            bands=bands,
+            bands=() if bands is None else bands(document.body),
             run=run,
         ),
         has_blocked_images=_refers_remotely(document.body, trusted_hosts),
@@ -1087,7 +1090,7 @@ def shown_bundle_document(
     load_remote_images: bool,
     marked: MarkedRange | None = None,
     question: str = "",
-    bands: Sequence[Band] = (),
+    bands: Callable[[str], Sequence[Band]] | None = None,
     run: RunOf | None = None,
     trusted_hosts: frozenset[str] = frozenset(),
 ) -> ShownDocument:
@@ -1137,7 +1140,7 @@ def shown_bundle_document(
             without_title=str(title),
             heading_anchors=True,
             terms=terms_of(question),
-            bands=bands,
+            bands=() if bands is None else bands(body),
             run=run,
             trusted_hosts=trusted_hosts,
         ),

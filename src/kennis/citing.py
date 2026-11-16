@@ -39,7 +39,6 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.errors import KennisError, SearchUnavailable
 from kennis.engine.rag.index import LoadedIndex, load_index
 from kennis.engine.rag.models import Chunk
-from kennis.engine.tags import passage_words
 from kennis.finding import resolve_document
 from kennis.links import Target, context_link, link_to
 from kennis.publishing import reading
@@ -56,12 +55,15 @@ from kennis.render.citations import (
 class CiteRequest:
     """A passage to cite: a document by any handle, and its chunk if any.
 
-    With `bundle`, `handle` is a path in that project's bundle.
+    With `bundle`, `handle` is a path in that project's bundle. With
+    `annotation`, `handle` is an annotation's id (`annotation=<id>`), which
+    tagging takes and citing refuses.
     """
 
     handle: str
     chunk: int | None = None
     bundle: Path | None = None
+    annotation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +176,12 @@ def _found(
     request: CiteRequest,
     indexes: dict[str, LoadedIndex],
 ) -> _Found:
+    if request.annotation:
+        raise KennisError(
+            f"'annotation={request.handle}' names an annotation, not a passage; "
+            "cite its document or a chunk of it",
+            resolution="kennis tags",
+        )
     if request.bundle is not None:
         return _found_in_bundle(position, request, request.bundle)
     where, document = resolve_document(context, request.handle, None)
@@ -335,6 +343,18 @@ def _marked_alike(citations: list[Citation]) -> list[Citation]:
         )
         for citation in citations
     ]
+
+
+def passage_words(text: str) -> str:
+    """A chunk's words as kennis quotes them: leading heading lines passed
+    over, since a section's heading is not its passage's own words, and
+    whitespace collapsed to single spaces."""
+    lines = text.splitlines()
+    while len(lines) > 1 and (
+        not lines[0].strip() or lines[0].lstrip().startswith("#")
+    ):
+        lines = lines[1:]
+    return " ".join("\n".join(lines).split())
 
 
 __all__ = ["Citation", "CiteRefusal", "CiteRequest", "Cited", "cite"]

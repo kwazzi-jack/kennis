@@ -16,8 +16,8 @@ import pytest
 from bs4 import BeautifulSoup, Tag
 from fastapi.testclient import TestClient
 
+from annotating import ANNOTATIONS, Target, tagged
 from kennis.engine.context.bundle import init_bundle
-from kennis.engine.tags import Anchor, read_tags
 from kennis.gui.app import build_app
 from kennis.links import context_link, link_to
 from test_cli_tags import PAPER_ID, SOLVING, chunk_holding, indexed_paper, run
@@ -82,7 +82,7 @@ def test_a_hit_card_tags_its_passage_through_the_dialog_it_opens(corpus: Path):
         client, tag_button_for(page, link_to(PAPER_ID, chunk)), "Calibration"
     )
 
-    (anchor,) = read_tags(corpus / "tags.yml")["calibration"]
+    (anchor,) = tagged(corpus)["calibration"]
     assert (anchor.document, anchor.chunk) == (PAPER_ID, chunk)
 
 
@@ -110,7 +110,7 @@ def test_a_name_with_a_space_is_refused_and_nothing_written(corpus: Path):
     )
 
     assert "not a tag name" in answer.text
-    assert not (corpus / "tags.yml").exists()
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 def test_a_context_hit_is_tagged_in_its_project(
@@ -131,8 +131,8 @@ def test_a_context_hit_is_tagged_in_its_project(
         client, tag_button_for(page, context_link("pipelines", "ours.md", 0)), "mine"
     )
 
-    assert read_tags(root / ".context" / "tags.yml")["mine"][0].document == "ours.md"
-    assert not (corpus / "tags.yml").exists()
+    assert tagged(root / ".context")["mine"][0].document == "ours.md"
+    assert not (corpus / ANNOTATIONS).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ def test_removing_on_the_tag_page_untags(corpus: Path):
     answer = client.post(str(form["action"]), data=fields_of(form))
 
     assert answer.status_code == 303
-    assert read_tags(corpus / "tags.yml") == {}
+    assert tagged(corpus) == {}
 
 
 def test_a_detached_bookmark_says_so_and_can_still_be_removed(corpus: Path):
@@ -208,7 +208,7 @@ def test_a_detached_bookmark_says_so_and_can_still_be_removed(corpus: Path):
 
     client.post(str(form["action"]), data=fields_of(form))
 
-    assert read_tags(corpus / "tags.yml") == {}
+    assert tagged(corpus) == {}
 
 
 def test_the_pane_lists_the_tags(corpus: Path):
@@ -277,7 +277,7 @@ def test_the_inspector_lists_the_document_s_tags_and_tags_it_whole(corpus: Path)
 
     tagged_through(client, str(control["href"]), "to-read")
 
-    assert read_tags(corpus / "tags.yml")["to-read"] == (Anchor(PAPER_ID),)
+    assert tagged(corpus)["to-read"] == (Target(PAPER_ID),)
 
 
 def test_removing_in_the_inspector_returns_to_the_document(corpus: Path):
@@ -291,7 +291,7 @@ def test_removing_in_the_inspector_returns_to_the_document(corpus: Path):
 
     assert answer.status_code == 303
     assert answer.headers["location"] == address
-    assert read_tags(corpus / "tags.yml") == {}
+    assert tagged(corpus) == {}
 
 
 @pytest.mark.parametrize("elsewhere", ["//example.com/", "https://example.com/", ""])

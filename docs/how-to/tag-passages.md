@@ -63,7 +63,7 @@ The colour derived from a name comes from a checksum of the name's letters,
 not from what the name means, so `calibration` and `calibrations` are not
 given similar colours.
 
-A chosen colour is kept in the same `tags.yml` as the tag. The command
+A chosen colour is kept in the same `annotations.json` as the tag. The command
 line prints tag names in one colour whatever you choose, because a
 terminal's colours depend on its theme.
 
@@ -133,6 +133,15 @@ a search with no results.
 kennis untag calibration id=k7f2a9c1x0 chunk=14
 ```
 
+A chunk loses the tag from everything tagged on it, including a passage
+that runs on into the next chunk, so a search hit that shows a tag can
+always have it removed. A tag `kennis tags` lists as detached is removed by
+the command it prints, which names the annotation by its id:
+
+```text
+kennis untag calibration annotation=6434d594
+```
+
 ## When a passage changes
 
 kennis finds a tagged passage again by its words, not only by its chunk
@@ -144,8 +153,9 @@ link where it is now.
 If the words are gone, the tag is listed as **detached**. kennis does not
 move it to a nearby passage or widen it to the whole document, because a
 bookmark that moved without telling you would point you at text you did not
-choose. `kennis tags` prints the `kennis untag` command that removes it; tag
-the passage you want instead.
+choose. `kennis tags` prints the `kennis untag` command that removes it,
+naming it by its id since it has no passage left to name; tag the passage
+you want instead.
 
 A tag on a document that is not in an index is listed as not checked, since
 there is nothing to compare the words with. `kennis corpus index` (or
@@ -153,15 +163,26 @@ there is nothing to compare the words with. `kennis corpus index` (or
 
 ## Where tags are kept
 
-- Tags on the corpus are in `tags.yml` at the corpus root. kennis commits
-  every change to it, so it has history and is included in backups.
-- Tags on a project's `.context/` files are in `.context/tags.yml`. kennis
-  writes it and leaves it for you to commit with the project, so the
-  project's collaborators see the same tags.
+- Tags on the corpus are in `annotations.json` at the corpus root. kennis
+  commits every change to it, so it has history and is included in
+  backups.
+- Tags on a project's `.context/` files are in
+  `.context/annotations.json`. kennis writes it and leaves it for you to
+  commit with the project, so the project's collaborators see the same
+  tags.
 
-Both files are plain YAML, listed by tag, and can be edited by hand. A tag
-with a chosen colour is written as `colour:` and `targets:` under its name;
-any other tag is its list of targets. Each passage's chunk number is
-rewritten to where its words are now whenever the file's tags change, and
-the corpus's after every `kennis corpus index`, in the index's own commit.
-A file kennis cannot read is reported with its path and left as it is.
+Each file is a list of annotations: a selection of a document's text, or
+the whole document, with the tags on it. A selection is kept as its words
+(`exact`), a few dozen characters either side of it (`prefix` and
+`suffix`), and where it was last found (`start` and `end`). The words are
+what find it again; the positions are rewritten to where the words are now
+whenever the file's tags change. No chunk number is kept: which chunks of
+an index carry a tag is worked out for each index build and kept beside
+that build, so rebuilding an index never changes the file. Chosen colours
+are under
+`colours`. The file is JSON, written with sorted keys so a change shows as
+a small diff, and can be edited by hand; a file kennis cannot read is
+reported with its path and what is wrong, and left as it is.
+
+Earlier versions kept tags in `tags.yml`. kennis no longer reads it, and
+an old one can be deleted.

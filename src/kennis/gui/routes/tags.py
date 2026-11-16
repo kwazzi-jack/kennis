@@ -9,12 +9,13 @@ here cannot interleave with one from the command line or an agent.
 
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from kennis.citing import request_for
+from kennis.citing import CiteRequest, request_for
 from kennis.context import existing_corpus
 from kennis.engine.errors import KennisError
 from kennis.engine.tags import (
@@ -171,17 +172,27 @@ def _redraws(request: Request, link: str) -> list[tuple[str, str, str]]:
 
 @router.post("/tags/remove")
 def remove_tag(request: Request, form: PostedForm) -> Response:
-    """Take one tag from one target, then back to the page it was taken on.
+    """Take one tag from one annotation, then back to the page it was
+    taken on.
 
-    Untagging needs no index, so a detached passage is removed as the page
-    names it."""
+    By the annotation's id when the page names one, which needs no index
+    and no chunk, so a detached selection is removed as the page lists it;
+    otherwise by the link."""
     link = str(form.get("link") or "")
     back = str(form.get("back") or "")
+    annotation = str(form.get("annotation") or "")
     try:
         name = tag_name(str(form.get("tag") or ""))
-        change_tags(
-            existing_corpus(), [request_for(target_of(link))], [name], remove=True
+        asked = (
+            CiteRequest(
+                annotation,
+                annotation=True,
+                bundle=_bundle_named(str(form.get("project") or "")),
+            )
+            if annotation
+            else request_for(target_of(link))
         )
+        change_tags(existing_corpus(), [asked], [name], remove=True)
     except KennisError as error:
         return refused_a_post(request, str(error), resolution=error.resolution)
     # Only a path in this window: a `back` naming another host is refused
@@ -189,6 +200,21 @@ def remove_tag(request: Request, form: PostedForm) -> Response:
     if not back.startswith("/") or back.startswith("//"):
         back = tag_href(name)
     return RedirectResponse(back, status_code=303)
+
+
+def _bundle_named(project: str) -> Path | None:
+    """The bundle of the listed project named `project`; None for none."""
+    from kennis.engine.context.projects import known_projects
+
+    if not project:
+        return None
+    for known in known_projects():
+        if known.name == project:
+            return known.bundle
+    raise KennisError(
+        f"no project on this machine is called '{project}'",
+        resolution="kennis context list",
+    )
 
 
 @router.post("/tags/colour")
