@@ -459,7 +459,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "chunking.overlap": "Passage overlap",
     "retrieval.context_method": "Way to match in a project",
     "retrieval.scores": "How a match is shown, in a terminal and to an agent",
-    "retrieval.default_collections": "Collections searched, in order",
+    "retrieval.default_collections": "Collections a search covers, in order",
     "corpus.keep_original": "Keep the original file",
     "corpus.default_group": "Default group",
     "conversion.repair_ligatures": "Repair ff, fi and fl",
