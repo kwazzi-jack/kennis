@@ -53,7 +53,7 @@
     <summary>{{ icon("chevron-right") }}{{ details_heading }}</summary>
     <dl>
       {% for detail in document.details %}
-      <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{% if detail.href %}<a href="{{ detail.href }}"{% if detail.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ detail.value }}</a>{% else %}{{ detail.value }}{% endif %}{% if detail.copyable %} <button type="button" class="ghost copy" data-copy="{{ detail.value }}" data-copied="{{ copied_label }}" hidden>{{ copy_label }}</button>{% endif %}</dd>
+      <dt>{{ detail.label }}</dt><dd{% if detail.verbatim %} class="verbatim"{% endif %}>{% if detail.href %}<a href="{{ detail.href }}"{% if detail.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ detail.value }}</a>{% else %}{{ detail.value }}{% endif %}{% if detail.copyable %} <button type="button" class="copy" data-copy="{{ detail.value }}" data-copied="{{ copied_label }}" hidden>{{ icon("copy") }}<span class="label">{{ copy_label }}</span></button>{% endif %}</dd>
       {% endfor %}
       {% if document.other_versions %}
       <dt>{{ also_held }}</dt><dd class="other-versions">{% for version, href in document.other_versions %}<a href="{{ href }}">{{ version }}</a>{% endfor %}</dd>
@@ -61,7 +61,7 @@
     </dl>
     {# The full reference by the person's citation style, copied as the
        citekey is: drawn hidden, shown where the clipboard can be reached. #}
-    {% if reference %}<p class="copy-reference-row"><button type="button" class="ghost copy copy-reference" data-copy="{{ reference }}" data-copied="{{ copied_label }}" hidden>{{ copy_reference }}</button></p>{% endif %}
+    {% if reference %}<p class="copy-reference-row"><button type="button" class="copy" data-copy="{{ reference }}" data-copied="{{ copied_label }}" hidden>{{ icon("quote") }}<span class="label">{{ copy_reference }}</span></button></p>{% endif %}
   </details>
   {% if question %}
   <details class="matches" open>

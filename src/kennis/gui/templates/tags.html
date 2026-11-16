@@ -36,7 +36,7 @@
       <span>{{ colour_own }}</span>
     </label>
   </fieldset>
-  <button type="submit" class="ghost">{{ colour_set }}</button>
+  <button type="submit">{{ icon("circle-check") }}{{ colour_set }}</button>
 </form>
 <ol class="tagged-list">
   {% for item in tagged %}
@@ -50,7 +50,7 @@
       <input type="hidden" name="tag" value="{{ tag }}">
       <input type="hidden" name="link" value="{{ item.link }}">
       <input type="hidden" name="back" value="{{ back }}">
-      <button type="submit" class="ghost" aria-label="{{ item.remove_label }}">{{ icon("x") }}<span>{{ remove_tag }}</span></button>
+      <button type="submit" aria-label="{{ item.remove_label }}">{{ icon("x") }}<span>{{ remove_tag }}</span></button>
     </form>
   </li>
   {% endfor %}

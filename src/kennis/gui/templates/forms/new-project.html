@@ -7,7 +7,7 @@
     <label class="labelled" for="new-project-folder"><span class="name">{{ new_project_folder }}</span></label>
     <span class="entry-row">
       <input id="new-project-folder" type="text" name="folder" placeholder="/path/to/project" aria-describedby="new-project-preamble" autofocus>
-      <button type="button" class="ghost browse" hx-get="/browse?target=folder&amp;folders=1" hx-target="#chooser-new-project" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+      <button type="button" class="browse" hx-get="/browse?target=folder&amp;folders=1" hx-target="#chooser-new-project" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
     </span>
     <div class="chooser" id="chooser-new-project"></div>
   </div>

@@ -552,7 +552,9 @@ a.return-here { white-space: nowrap; }
   color: var(--role-muted);
 }
 .menu-items .item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   width: 100%;
   padding: 0.3rem 0.5rem;
   border: 0;
@@ -917,7 +919,6 @@ main {
 .rebuild ul { margin: 0.3rem 0 0.6rem; padding-left: 1.2rem; }
 .rebuild-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .rebuild-actions form, .rebuild-actions .undo { margin: 0; }
-.rebuild-actions .later { color: var(--role-muted); }
 .kennis .credential code { font-size: 0.8125rem; }
 /* The Backup section: three forms, each a row like the settings above. */
 .backup .backup-folder,
@@ -2142,6 +2143,15 @@ button {
   cursor: pointer;
   padding: 0.45rem 1rem;
 }
+/* An icon and its words on one line, apart, whatever kind of button holds
+   them. `:where` keeps this at one class's weight, so a control drawn its
+   own way - a bookmark tab, a tip - still wins by coming later. */
+:where(button):has(> .icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
 
 button:hover { border-color: var(--role-muted); }
 
@@ -2297,15 +2307,7 @@ form > .checks .check, p + .checks .check { margin: 0 0 0.3rem; }
 }
 :is(.add-tab, .supply-papers) .uploads:not([data-enhanced]) .upload-chosen { display: none; }
 :is(.add-tab, .supply-papers) .upload-chosen { font-size: 0.8rem; color: var(--ink); }
-:is(.add-tab, .supply-papers) .upload-clear {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--role-command);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
+:is(.add-tab, .supply-papers) .upload-clear { margin-left: 0.4rem; }
 /* The papers kennis could not fetch, one to a row: the paper and its
    page, then its picker (Brian, 2026-10-26). */
 .supply-papers { list-style: none; margin: 0.75rem 0; padding: 0; display: grid; gap: 0.9rem; }
@@ -2379,6 +2381,7 @@ form > .checks .check, p + .checks .check { margin: 0 0 0.3rem; }
 a.button {
   display: inline-flex;
   align-items: center;
+  gap: 0.4rem;
   border: 1px solid var(--rule);
   border-radius: 3px;
   padding: 0.45rem 1rem;
@@ -3123,7 +3126,6 @@ html:not(.can-copy) .copy-citation { display: none; }
 
 /* A document's Copy reference, under its details. */
 .copy-reference-row { margin: 0.4rem 0 0; }
-.copy-reference { padding-inline: 0; }
 
 /* What a default search left out by the reader's setting, each name a
    button to the search that covers it (#669). */

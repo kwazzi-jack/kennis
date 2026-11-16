@@ -176,15 +176,15 @@
     <details class="menu">
       <summary class="menu-button" aria-label="{{ menu_for(project) }}">{{ icon("ellipsis") }}</summary>
       <div class="menu-items">
-        <a class="item" href="{{ packs }}" hx-get="{{ packs }}" hx-target="#dialog" hx-swap="innerHTML">{{ project_packs }}</a>
-        <a class="item" href="{{ sync }}" hx-get="{{ sync }}" hx-target="#dialog" hx-swap="innerHTML">{{ sync_project }}</a>
+        <a class="item" href="{{ packs }}" hx-get="{{ packs }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("package") }}{{ project_packs }}</a>
+        <a class="item" href="{{ sync }}" hx-get="{{ sync }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("refresh-cw") }}{{ sync_project }}</a>
         <form class="index-project" action="/projects/index" method="post">
           <input type="hidden" name="project" value="{{ project }}">
-          <button type="submit" class="item">{{ index_project }}</button>
+          <button type="submit" class="item">{{ icon("database") }}{{ index_project }}</button>
         </form>
-        <a class="item" href="{{ reset }}" hx-get="{{ reset }}" hx-target="#dialog" hx-swap="innerHTML">{{ reset_project }}</a>
-        <a class="item" href="{{ forget }}" hx-get="{{ forget }}" hx-target="#dialog" hx-swap="innerHTML">{{ forget_project }}</a>
-        <a class="item" href="{{ delete }}" hx-get="{{ delete }}" hx-target="#dialog" hx-swap="innerHTML">{{ delete_project }}</a>
+        <a class="item" href="{{ reset }}" hx-get="{{ reset }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("history") }}{{ reset_project }}</a>
+        <a class="item" href="{{ forget }}" hx-get="{{ forget }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("circle-x") }}{{ forget_project }}</a>
+        <a class="item" href="{{ delete }}" hx-get="{{ delete }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("trash-2") }}{{ delete_project }}</a>
       </div>
     </details>
     </li>
@@ -197,7 +197,7 @@
       <div class="node top leaf missing">{{ icon("folder") }}<span class="name">{{ project }}</span><span class="count">{{ project_missing }}</span></div>
       <details class="menu">
         <summary class="menu-button" aria-label="{{ menu_for(project) }}">{{ icon("ellipsis") }}</summary>
-        <div class="menu-items"><a class="item" href="{{ forget }}" hx-get="{{ forget }}" hx-target="#dialog" hx-swap="innerHTML">{{ forget_project }}</a></div>
+        <div class="menu-items"><a class="item" href="{{ forget }}" hx-get="{{ forget }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("circle-x") }}{{ forget_project }}</a></div>
       </details>
     </li>
     {% endfor %}
@@ -260,7 +260,7 @@
     <p class="role-muted" data-change></p>
     <div class="form-foot">
       <button type="button" data-later>{{ corpus_changed_later }}</button>
-      <button type="button" class="primary" data-reload>{{ corpus_changed_reload }}</button>
+      <button type="button" class="primary" data-reload>{{ icon("refresh-cw") }}{{ corpus_changed_reload }}</button>
     </div>
   </div>
 </dialog>

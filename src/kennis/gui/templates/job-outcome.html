@@ -38,7 +38,7 @@
     </form>
     {% endfor %}
     <form class="skip" action="/skip" hx-get="/skip" hx-target="closest .repairs" hx-swap="outerHTML">
-      <button type="submit" class="ghost">{{ skip_label }}</button>
+      <button type="submit">{{ skip_label }}</button>
     </form>
     </div>
     {% endif %}
@@ -72,12 +72,12 @@
 {% if shown.index_after %}
 <form class="index-now" action="/index" method="post" hx-post="/index" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
   <input type="hidden" name="collection" value="">
-  <button type="submit">{{ index_now_label }}</button>
+  <button type="submit" class="primary">{{ icon("database") }}{{ index_now_label }}</button>
 </form>
 {% endif %}
 {% if shown.sync_after %}{% set pane = pane_now(request) %}
 <form class="index-now" action="/sync" method="post" hx-post="/sync" hx-target="#job" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
-  <button type="submit">{{ sync_corpus_label }}</button>
+  <button type="submit" class="primary">{{ icon("refresh-cw") }}{{ sync_corpus_label }}</button>
 </form>
 {% endif %}
 {% for step in shown.next_steps %}<p class="role-command">{{ step }}</p>{% endfor %}

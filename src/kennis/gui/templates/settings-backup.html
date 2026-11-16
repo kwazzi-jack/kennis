@@ -16,10 +16,10 @@
 <div class="setting-control">
 <span class="entry-row">
 <input id="backup-folder" type="text" name="backup.folder" value="{{ backup_folder }}">
-<button type="button" class="ghost browse" hx-get="/browse?target=backup.folder&amp;folders=1" hx-target="#chooser-backup-folder" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
+<button type="button" class="browse" hx-get="/browse?target=backup.folder&amp;folders=1" hx-target="#chooser-backup-folder" hx-swap="innerHTML">{{ icon("folder") }}<span class="label">{{ browse }}</span></button>
 </span>
 <div class="chooser" id="chooser-backup-folder"></div>
-<button type="submit">{{ backup_save_folder }}</button>
+<button type="submit">{{ icon("save") }}{{ backup_save_folder }}</button>
 {% if backup_about == "folder" %}{% if backup_outcome %}<p class="outcome" role="status">{{ backup_outcome }}</p>{% endif %}{% if backup_problem %}<p class="outcome role-error" role="status">{{ backup_problem }}</p>{% endif %}{% endif %}
 </div>
 <p class="backup-state">{{ backup_folder_state }}</p>
@@ -44,7 +44,7 @@
 <span class="setting-name">{{ backup_test_label }}</span>
 <div class="setting-control">
 <label class="password">{{ backup_password }} <input type="password" name="password" autocomplete="current-password" required></label>
-<button type="submit">{{ backup_test_label }}</button>
+<button type="submit">{{ icon("circle-check") }}{{ backup_test_label }}</button>
 {% if backup_about == "test" %}{% if backup_outcome %}<p class="outcome" role="status">{{ backup_outcome }}</p>{% endif %}{% if backup_problem %}<p class="outcome role-error" role="status">{{ backup_problem }}</p>{% endif %}{% endif %}
 </div>
 <p class="setting-sentence role-muted">{{ backup_test_note }}</p>
