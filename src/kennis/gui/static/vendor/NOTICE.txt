@@ -52,7 +52,9 @@ Lucide 0.460.0 (lucide-static)
   Icons for the bar, the pane, the dialogs and the search results.
   Only the icons the interface uses are carried, as the SVG files
   Lucide publishes, inlined by the server so they take the text colour.
-  icons/activity.svg, icons/arrow-up-right.svg, icons/book-open.svg, icons/bookmark.svg,
+  icons/activity.svg, icons/app-window.svg, icons/archive.svg, icons/arrow-up-right.svg,
+  icons/book-open.svg, icons/bookmark.svg, icons/chevron-left.svg, icons/grip-vertical.svg,
+  icons/save.svg, icons/server.svg,
   icons/brain.svg, icons/chevron-down.svg, icons/chevron-right.svg,
   icons/circle-check.svg, icons/circle-x.svg, icons/command.svg,
   icons/database.svg, icons/ellipsis.svg, icons/file-plus.svg, icons/file-text.svg, icons/folder.svg, icons/folder-plus.svg,

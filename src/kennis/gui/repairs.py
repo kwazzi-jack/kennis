@@ -50,6 +50,7 @@ from kennis.engine.refusals import (
     SymlinkSkipped,
     UnsupportedFormat,
 )
+from kennis.gui.configuration import setting_address
 from kennis.render.refusals import paper_page
 
 # The labels of the ways out, beside the repairs' own: `words` imports
@@ -146,7 +147,7 @@ def ways_out_for(refusal: Refusal) -> tuple[WayOut, ...]:
 
 
 # The setting's row on the settings page, by the id its field carries.
-_UNPAYWALL_SETTING: Final = "/settings#setting-literature.unpaywall_email"
+_UNPAYWALL_SETTING: Final = setting_address("literature.unpaywall_email")
 
 
 def _from_a_pdf(identifier: str) -> WayOut:

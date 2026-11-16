@@ -23,6 +23,7 @@ from kennis.engine.errors import (
     KennisError,
 )
 from kennis.gui import history, words
+from kennis.gui.configuration import setting_address
 from kennis.gui.pages import (
     shown_groups_of,
     shown_key,
@@ -275,7 +276,7 @@ def shown_keywords_only(degraded: Sequence[str]) -> dict[str, str]:
     if existing_corpus().settings.embedding.backend == "none":
         label, href, target = (
             words.KEYWORDS_ONLY_CHOOSE,
-            "/settings#setting-embedding.backend",
+            setting_address("embedding.backend"),
             "",
         )
     else:
