@@ -55,12 +55,15 @@ from kennis.render.citations import (
 class CiteRequest:
     """A passage to cite: a document by any handle, and its chunk if any.
 
-    With `bundle`, `handle` is a path in that project's bundle.
+    With `bundle`, `handle` is a path in that project's bundle. With
+    `annotation`, `handle` is an annotation's id (`annotation=<id>`), which
+    tagging takes and citing refuses.
     """
 
     handle: str
     chunk: int | None = None
     bundle: Path | None = None
+    annotation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +176,12 @@ def _found(
     request: CiteRequest,
     indexes: dict[str, LoadedIndex],
 ) -> _Found:
+    if request.annotation:
+        raise KennisError(
+            f"'annotation={request.handle}' names an annotation, not a passage; "
+            "cite its document or a chunk of it",
+            resolution="kennis tags",
+        )
     if request.bundle is not None:
         return _found_in_bundle(position, request, request.bundle)
     where, document = resolve_document(context, request.handle, None)

@@ -18,10 +18,11 @@ from urllib.parse import quote
 from kennis.context import Context
 from kennis.engine.annotations import (
     ANNOTATIONS_FILENAME,
+    AnnotationLinks,
     AnnotationStore,
+    links_for,
     located,
     read_annotations,
-    rehinted,
     tags_on,
 )
 from kennis.engine.context.groups import project_group
@@ -72,6 +73,11 @@ class ShownTagged:
     quote: str | None
     trouble: str | None
     remove_label: str
+    # The annotation, and the project whose store holds it (None for the
+    # corpus's), which is how a remove names it: a detached selection has
+    # no chunk to name.
+    annotation: str = ""
+    project: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +96,8 @@ class ShownDocumentTag:
     # Whether `chunk` is where the passage's words are now, which is what a
     # mark beside the chunk in the text needs (#627).
     placed: bool = False
+    annotation: str = ""
+    project: str | None = None
 
 
 def present_bundles() -> list[Path]:
@@ -171,28 +179,60 @@ def pane_tags(context: Context) -> tuple[ShownTag, ...]:
 def chips_finder(context: Context, bundles: Sequence[Path]) -> ChipsOf:
     """What a results page asks of each hit: the tags on its chunk (#627).
 
-    The stores are read once per page. The corpus's hints are current
-    (#626) and trusted; a project's are rewritten only when its tags
-    change, so its store is placed in memory against its index first.
+    By the links between each store and the index the hit came from
+    (`annotations.links_for`), read from beside that index build, so a
+    page never parses a whole index; each store and each collection's
+    links are read once per page, and only for a store that holds
+    anything.
     """
-    from kennis.engine.context.groups import project_of_group
+    from kennis.engine.context.bundle import index_root_for
+    from kennis.engine.context.groups import CONTEXT_COLLECTION, project_of_group
+    from kennis.engine.corpus.layout import index_root
 
     stores = _stores(context, bundles)
     chosen = chosen_colours(stores)
-    corpus = (
-        stores[0][1]
-        if stores and stores[0][0] == context.corpus_root
-        else AnnotationStore()
+    by_project = {
+        project_names([root])[root]: (root, store)
+        for root, store in stores
+        if root != context.corpus_root
+    }
+    corpus = next(
+        (store for root, store in stores if root == context.corpus_root),
+        AnnotationStore(),
     )
-    projects: dict[str, AnnotationStore] = {}
-    for root, store in stores:
-        if root == context.corpus_root or not store.annotations:
-            continue
-        projects[project_names([root])[root]] = rehinted(store, _bundle_chunks(root))
+    linked: dict[str, AnnotationLinks | None] = {}
+
+    def links_of(collection: str, project: str | None) -> AnnotationLinks | None:
+        if collection in linked:
+            return linked[collection]
+        found: AnnotationLinks | None = None
+        try:
+            if project is None:
+                found = links_for(
+                    index_root(context.corpus_root),
+                    collection,
+                    context.corpus_root / ANNOTATIONS_FILENAME,
+                )
+            elif project in by_project:
+                root = by_project[project][0]
+                found = links_for(
+                    index_root_for(root),
+                    CONTEXT_COLLECTION,
+                    root / ANNOTATIONS_FILENAME,
+                )
+        except KennisError:
+            found = None
+        linked[collection] = found
+        return found
 
     def chips_of(collection: str, chunk: Chunk) -> tuple[ShownChip, ...]:
         project = project_of_group(collection)
-        held = corpus if project is None else projects.get(project, AnnotationStore())
+        held = corpus if project is None else by_project.get(project, (None, None))[1]
+        if held is None or not held.annotations:
+            return ()
+        found = links_of(collection, project)
+        if found is None:
+            return ()
         return tuple(
             ShownChip(
                 name=name,
@@ -200,7 +240,7 @@ def chips_finder(context: Context, bundles: Sequence[Path]) -> ChipsOf:
                 colour=colour_of(name, chosen),
                 whole=whole,
             )
-            for name, whole in tags_on(held, chunk)
+            for name, whole in tags_on(held, found, chunk)
         )
 
     return chips_of
@@ -234,7 +274,7 @@ def _shown(name: str, target: TaggedTarget) -> ShownTagged:
     if target.project is not None:
         title = f"{title} ({target.project})"
     return ShownTagged(
-        kind=PASSAGE if target.chunk is not None else DOCUMENT,
+        kind=PASSAGE if target.quote is not None else DOCUMENT,
         state=target.state,
         title=title,
         href=_way_in(target),
@@ -242,6 +282,8 @@ def _shown(name: str, target: TaggedTarget) -> ShownTagged:
         quote=None if target.quote is None else opening_words(target.quote),
         trouble=target_state(target),
         remove_label=words.remove_tag_from(name, title),
+        annotation=target.annotation,
+        project=target.project,
     )
 
 
@@ -278,6 +320,8 @@ def document_tags(
                     quote=None if target.quote is None else opening_words(target.quote),
                     colour=colour_of(listing.name, chosen),
                     placed=target.state == PLACED,
+                    annotation=target.annotation,
+                    project=target.project,
                     remove_label=words.remove_tag_from(
                         listing.name, target.title or target.document
                     ),

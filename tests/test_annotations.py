@@ -11,7 +11,6 @@ document.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
 
@@ -26,10 +25,12 @@ from kennis.engine.annotations import (
     Span,
     Unchecked,
     admitting,
-    chunk_at,
     indexed_text,
+    links,
+    links_for,
     located,
     own_end,
+    own_ranges,
     placed,
     read_annotations,
     rehinted,
@@ -366,14 +367,14 @@ def test_the_indexed_text_is_the_body_with_blank_gaps_as_spaces() -> None:
     assert rebuilt[15:63].strip() == ""
 
 
-def test_a_selection_is_placed_in_the_chunk_it_begins_in() -> None:
+def test_a_selection_is_placed_where_its_words_are() -> None:
     chunks = chunks_of(BODY, [15, 63, 112])
     annotation = an_annotation(selecting(BODY, "gains drift slowly"))
 
     where = placed(annotation, chunks)
 
-    assert isinstance(where, Placed)
-    assert where.chunk == 2
+    assert isinstance(where, Placed) and where.span is not None
+    assert BODY[where.span.start : where.span.end] == "gains drift slowly"
 
 
 def test_a_selection_whose_words_are_gone_is_detached_not_moved() -> None:
@@ -397,7 +398,7 @@ def test_a_document_the_index_does_not_hold_is_unchecked() -> None:
 
 
 def test_a_whole_document_is_placed_while_the_index_holds_it() -> None:
-    assert placed(an_annotation(None), chunks_of(BODY, [15])) == Placed(None, None)
+    assert placed(an_annotation(None), chunks_of(BODY, [15])) == Placed(None)
 
 
 def test_a_hint_rewritten_after_each_edit_follows_its_selection() -> None:
@@ -409,7 +410,6 @@ def test_a_hint_rewritten_after_each_edit_follows_its_selection() -> None:
     selector = moved.annotations[0].selector
     assert selector is not None
     assert edited[selector.start : selector.end] == "gains drift slowly"
-    assert selector.chunk == 2
 
 
 def test_a_detached_selection_keeps_its_hint() -> None:
@@ -419,66 +419,12 @@ def test_a_detached_selection_keeps_its_hint() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Which chunks carry a tag
-
-
-def test_a_chunk_carries_its_selections_tags_and_its_document_s() -> None:
-    chunks = chunks_of(BODY, [15, 63])
-    store = AnnotationStore(
-        (
-            an_annotation(
-                replace(selecting(BODY, "gains drift slowly"), chunk=2), ("b",)
-            ),
-            an_annotation(None, ("a",), identifier="0000000b"),
-        )
-    )
-
-    assert tags_on(store, chunks[2]) == [("a", True), ("b", False)]
-    assert tags_on(store, chunks[1]) == [("a", True)]
-
-
-def test_a_chunk_whose_words_differ_from_the_hint_carries_nothing() -> None:
-    selector = replace(selecting(BODY, "gains drift slowly"), chunk=2)
-    store = AnnotationStore((an_annotation(selector),))
-    edited = BODY.replace("drift slowly", "never move")
-
-    assert tags_on(store, chunks_of(edited, [15, 63])[2]) == []
-
-
-def test_a_tag_on_the_document_and_a_selection_is_said_once() -> None:
-    chunks = chunks_of(BODY, [15, 63])
-    store = AnnotationStore(
-        (
-            an_annotation(replace(selecting(BODY, "gains drift slowly"), chunk=2)),
-            an_annotation(None, identifier="0000000b"),
-        )
-    )
-
-    assert tags_on(store, chunks[2]) == [("a", True)]
-
-
-def test_a_document_tag_admits_every_chunk_of_it_and_no_other() -> None:
-    chunks = chunks_of(BODY, [15, 63]) + chunks_of("Other", [], document="other00001")
-    admits = admitting(AnnotationStore((an_annotation(None),)), ["a"], chunks)
-
-    assert [admits(chunk) for chunk in chunks] == [True, True, True, False]
-
-
-def test_a_selection_admits_every_chunk_it_overlaps() -> None:
-    """A selection across a chunk boundary is in both chunks; the others
-    are not."""
-    chunks = chunks_of(BODY, [15, 70, 112])
-    start = BODY.index("A second")
-    store = AnnotationStore((an_annotation(selector_of(BODY, start, start + 20)),))
-    admits = admitting(store, ["a"], chunks)
-
-    assert [admits(chunk) for chunk in chunks] == [False, True, True, False]
+# Links: which chunks carry which annotations
 
 
 def overlapping_windows(text: str, size: int, step: int) -> list[Chunk]:
     """`text` cut as the chunker cuts a long block: windows of `size`,
     each starting `step` after the last, so neighbours overlap."""
-    starts = range(0, len(text), step)
     return [
         Chunk(
             id=f"{DOCUMENT}::{number}",
@@ -490,37 +436,124 @@ def overlapping_windows(text: str, size: int, step: int) -> list[Chunk]:
             char_start=start,
             char_end=min(start + size, len(text)),
         )
-        for number, start in enumerate(starts)
+        for number, start in enumerate(range(0, len(text), step))
     ]
 
 
-WINDOWED = " ".join(f"word{number}" for number in range(120))
+# Windows of 1000 characters every 850: window 1 is [850, 1850) and its own
+# text [850, 1700), as the example given to Brian on 2026-11-16.
+WINDOWED = " ".join(f"w{number:04d}" for number in range(700))
+
+
+def windows() -> list[Chunk]:
+    chunks = overlapping_windows(WINDOWED, 1000, 850)
+    assert len(chunks) > 3, "the fixture no longer has a window on each side"
+    return chunks
+
+
+def linked_numbers(selector: Selector | None, chunks: list[Chunk]) -> list[int]:
+    store = AnnotationStore((an_annotation(selector),))
+    numbers = {chunk.id: chunk.chunk_index for chunk in chunks}
+    return sorted(
+        numbers[each] for each in links(store, chunks).by_annotation.get("0000000a", ())
+    )
 
 
 def test_a_window_s_own_text_is_up_to_where_the_next_begins() -> None:
-    chunks = overlapping_windows(WINDOWED, 200, 150)
+    chunks = windows()
 
-    assert own_end(chunks, chunks[1]) == 300
+    assert own_ranges(chunks)[chunks[1].id] == Span(850, 1700)
     assert own_end(chunks, chunks[-1]) == len(WINDOWED)
-    assert chunk_at(chunks, 160) == 1
 
 
-def test_a_tag_on_one_window_is_on_no_neighbour() -> None:
-    """Windows overlap, so a selection of one window's whole text would
-    reach into both neighbours; a tag on a window selects its own text,
-    and is on that window alone - for search and for a hit's chips."""
-    chunks = overlapping_windows(WINDOWED, 200, 150)
-    middle = chunks[1]
-    selector = selector_of(
-        WINDOWED, middle.char_start, own_end(chunks, middle), middle.chunk_index
+# Written by hand (#373): the rule's cases, each with the windows it links.
+LINK_CASES = [
+    ("a tag on window 1, its own text", (850, 1700), [1]),
+    ("a sentence inside the overlap of windows 0 and 1", (900, 950), [1]),
+    ("a selection from inside window 0 to inside window 1", (400, 1200), [0, 1]),
+    ("a selection inside window 0's own text", (100, 200), [0]),
+]
+
+
+@pytest.mark.parametrize(
+    ("span", "expected"),
+    [(span, expected) for _, span, expected in LINK_CASES],
+    ids=[case for case, _, _ in LINK_CASES],
+)
+def test_a_selection_is_linked_to_the_windows_whose_own_text_it_meets(
+    span: tuple[int, int], expected: list[int]
+) -> None:
+    chunks = windows()
+    start, end = span
+    while WINDOWED[start] == " ":
+        start += 1
+
+    assert linked_numbers(selector_of(WINDOWED, start, end), chunks) == expected
+
+
+def test_a_whole_document_is_linked_to_every_chunk_of_it() -> None:
+    chunks = windows()
+
+    assert linked_numbers(None, chunks) == [chunk.chunk_index for chunk in chunks]
+
+
+def test_a_detached_selection_is_linked_to_nothing() -> None:
+    selector = selecting(BODY, "gains drift slowly")
+
+    assert linked_numbers(selector, chunks_of(BODY.replace("drift", "x"), [15])) == []
+
+
+def test_links_are_looked_up_from_either_side() -> None:
+    chunks = windows()
+    store = AnnotationStore((an_annotation(selector_of(WINDOWED, 400, 1200)),))
+
+    linked = links(store, chunks)
+
+    assert linked.by_annotation["0000000a"] == (chunks[0].id, chunks[1].id)
+    assert linked.by_chunk[chunks[1].id] == ("0000000a",)
+    assert chunks[2].id not in linked.by_chunk
+
+
+def test_a_chunk_carries_its_selections_tags_and_its_document_s() -> None:
+    chunks = chunks_of(BODY, [15, 63])
+    store = AnnotationStore(
+        (
+            an_annotation(selecting(BODY, "gains drift slowly"), ("b",)),
+            an_annotation(None, ("a",), identifier="0000000b"),
+        )
     )
-    store = AnnotationStore((an_annotation(selector),))
-    admits = admitting(store, ["a"], chunks)
+    linked = links(store, chunks)
 
-    expected = [chunk is middle for chunk in chunks]
-    assert len(chunks) > 3, "the fixture no longer has a window on each side"
-    assert [admits(chunk) for chunk in chunks] == expected
-    assert [bool(tags_on(store, chunk)) for chunk in chunks] == expected
+    assert tags_on(store, linked, chunks[2]) == [("a", True), ("b", False)]
+    assert tags_on(store, linked, chunks[1]) == [("a", True)]
+
+
+def test_a_tag_on_the_document_and_a_selection_is_said_once() -> None:
+    chunks = chunks_of(BODY, [15, 63])
+    store = AnnotationStore(
+        (
+            an_annotation(selecting(BODY, "gains drift slowly")),
+            an_annotation(None, identifier="0000000b"),
+        )
+    )
+
+    assert tags_on(store, links(store, chunks), chunks[2]) == [("a", True)]
+
+
+def test_a_document_tag_admits_every_chunk_of_it_and_no_other() -> None:
+    chunks = chunks_of(BODY, [15, 63]) + chunks_of("Other", [], document="other00001")
+    admits = admitting(AnnotationStore((an_annotation(None),)), ["a"], chunks)
+
+    assert [admits(chunk) for chunk in chunks] == [True, True, True, False]
+
+
+def test_a_tag_on_one_window_admits_that_window_alone() -> None:
+    chunks = windows()
+    middle = chunks[1]
+    selector = selector_of(WINDOWED, middle.char_start, own_end(chunks, middle))
+    admits = admitting(AnnotationStore((an_annotation(selector),)), ["a"], chunks)
+
+    assert [admits(chunk) for chunk in chunks] == [chunk is middle for chunk in chunks]
 
 
 def test_a_detached_selection_admits_nothing() -> None:
@@ -549,3 +582,64 @@ def test_a_tag_the_store_does_not_hold_admits_nothing() -> None:
     admits = admitting(AnnotationStore((an_annotation(None),)), ["z"], chunks)
 
     assert not any(admits(chunk) for chunk in chunks)
+
+
+# ---------------------------------------------------------------------------
+# The links' cache beside an index build
+
+
+@pytest.fixture
+def built(tmp_path: Path) -> tuple[Path, Path]:
+    """An index root holding one published build of `literature`, and a
+    corpus root with a store tagging a selection in it."""
+    from kennis.engine.rag.models import Chunk as Stored
+
+    index = tmp_path / "index"
+    build = index / "literature" / "build0001"
+    build.mkdir(parents=True)
+    (index / "literature" / "latest.json").write_text(
+        json.dumps({"index_id": "build0001"}), encoding="utf-8"
+    )
+    lines = [Stored.model_dump_json(chunk) for chunk in chunks_of(BODY, [15, 63])]
+    (build / "chunks.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    store = AnnotationStore((an_annotation(selecting(BODY, "gains drift slowly")),))
+    (tmp_path / "annotations.json").write_text(written(store), encoding="utf-8")
+    return index, tmp_path / "annotations.json"
+
+
+def test_links_are_kept_beside_the_build_and_read_back(
+    built: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index, store = built
+    first = links_for(index, "literature", store)
+    assert (index / "literature" / "build0001" / "annotation-links.json").is_file()
+
+    def no_chunks(*_: object) -> list[Chunk]:
+        raise AssertionError("the cache was not read")
+
+    monkeypatch.setattr("kennis.engine.rag.index.load_chunks", no_chunks)
+
+    assert links_for(index, "literature", store) == first
+
+
+def test_a_changed_store_is_linked_again(built: tuple[Path, Path]) -> None:
+    index, store = built
+    before = links_for(index, "literature", store)
+    changed = AnnotationStore(
+        (an_annotation(selecting(BODY, "A second paragraph"), identifier="0000000c"),)
+    )
+    store.write_text(written(changed), encoding="utf-8")
+
+    after = links_for(index, "literature", store)
+
+    assert after != before
+    assert set(after.by_annotation) == {"0000000c"}
+
+
+def test_a_cache_kennis_cannot_read_is_computed_again(built: tuple[Path, Path]) -> None:
+    index, store = built
+    expected = links_for(index, "literature", store)
+    cache = index / "literature" / "build0001" / "annotation-links.json"
+    cache.write_text("{not json", encoding="utf-8")
+
+    assert links_for(index, "literature", store) == expected

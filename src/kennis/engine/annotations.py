@@ -29,6 +29,7 @@ this, is not read (Brian, 2026-11-16: start fresh).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -74,9 +75,9 @@ class Selector:
     """A selection, by its words.
 
     `exact` is the whole selected text and `prefix` and `suffix` what was
-    either side of it; `start` and `end` are where it was last found, and
-    `chunk` the index chunk it began in then - a hint, kept so a selection
-    whose words are gone can still be named by the chunk it was listed at.
+    either side of it; `start` and `end` are where it was last found, a
+    hint. No chunk is kept: which chunks carry a selection is derived
+    (`links`), because a chunk is the index's and not the reader's.
     """
 
     exact: str
@@ -84,7 +85,6 @@ class Selector:
     suffix: str
     start: int
     end: int
-    chunk: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,11 +117,9 @@ class AnnotationStore:
 
 @dataclass(frozen=True, slots=True)
 class Placed:
-    """Found: at `span` of the text, beginning in `chunk`; both None for
-    the whole document."""
+    """Found: at `span` of the text; None for the whole document."""
 
     span: Span | None
-    chunk: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +147,6 @@ class _SelectorRecord(BaseModel):
     suffix: str
     start: int = Field(ge=0)
     end: int = Field(ge=0)
-    chunk: int | None = Field(default=None, ge=0)
 
 
 class _AnnotationRecord(BaseModel):
@@ -242,7 +239,6 @@ def _annotation(record: _AnnotationRecord) -> Annotation:
             selector.suffix,
             selector.start,
             selector.end,
-            selector.chunk,
         ),
         tags=tuple(sorted(record.tags)),
         comment=record.comment or None,
@@ -294,7 +290,6 @@ def _record_of(annotation: Annotation) -> dict[str, object]:
             "suffix": selector.suffix,
             "start": selector.start,
             "end": selector.end,
-            **({} if selector.chunk is None else {"chunk": selector.chunk}),
         }
     return record
 
@@ -303,7 +298,7 @@ def _record_of(annotation: Annotation) -> dict[str, object]:
 # Making and changing
 
 
-def selector_of(text: str, start: int, end: int, chunk: int | None = None) -> Selector:
+def selector_of(text: str, start: int, end: int) -> Selector:
     """The selector for `text[start:end]`, which must hold a word."""
     if not 0 <= start < end <= len(text) or not text[start:end].strip():
         raise ValueError(f"{start}..{end} selects no words of the text")
@@ -313,7 +308,6 @@ def selector_of(text: str, start: int, end: int, chunk: int | None = None) -> Se
         suffix=text[end : end + CONTEXT_CHARACTERS],
         start=start,
         end=end,
-        chunk=chunk,
     )
 
 
@@ -474,41 +468,152 @@ def indexed_text(chunks: Sequence[Chunk]) -> str:
     return "".join(pieces)
 
 
+def own_ranges(chunks: Sequence[Chunk]) -> dict[str, Span]:
+    """Each chunk's own text, by chunk id: from its start to where the next
+    chunk of its document starts, or its own end if sooner.
+
+    A long block is cut into overlapping windows, so a chunk's start is
+    inside the one before. Own ranges do not overlap: each character of a
+    document is in one chunk's own text, which is what lets a selection be
+    linked to the chunks it is in without also being linked to a
+    neighbour that merely shares some of its characters. The chunks
+    themselves, and what search scores, are untouched.
+    """
+    ranges: dict[str, Span] = {}
+    for own in by_document(chunks).values():
+        ordered = sorted(own, key=lambda chunk: chunk.char_start)
+        for position, chunk in enumerate(ordered):
+            following = ordered[position + 1 :]
+            stop = chunk.char_end
+            if following:
+                stop = min(stop, following[0].char_start)
+            ranges[chunk.id] = Span(chunk.char_start, stop)
+    return ranges
+
+
 def own_end(chunks: Sequence[Chunk], chunk: Chunk) -> int:
-    """Where `chunk`'s own text ends: at the next chunk's start when the
-    chunker's sliding windows overlap them, otherwise at its own end.
+    """Where `chunk`'s own text ends among `chunks`; see `own_ranges`."""
+    return own_ranges(
+        [each for each in chunks if each.document_id == chunk.document_id]
+    )[chunk.id].end
 
-    A long block is cut into overlapping windows, so the start of one
-    chunk is inside the one before; the text a chunk has to itself is what
-    a tag on it selects, or a tag on one window would reach into the next.
+
+@dataclass(frozen=True, slots=True)
+class AnnotationLinks:
+    """Which chunks of one index carry which annotations: the rows
+    (annotation id, chunk id), looked up from either side."""
+
+    by_annotation: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    by_chunk: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    @classmethod
+    def of(cls, rows: Mapping[str, Sequence[str]]) -> AnnotationLinks:
+        by_chunk: dict[str, list[str]] = {}
+        for annotation, chunk_ids in rows.items():
+            for chunk_id in chunk_ids:
+                by_chunk.setdefault(chunk_id, []).append(annotation)
+        return cls(
+            {annotation: tuple(ids) for annotation, ids in rows.items() if ids},
+            {chunk_id: tuple(ids) for chunk_id, ids in by_chunk.items()},
+        )
+
+
+def links(store: AnnotationStore, chunks: Sequence[Chunk]) -> AnnotationLinks:
+    """The rows linking `store`'s annotations to `chunks`.
+
+    A whole-document annotation is linked to every chunk of its document.
+    A selection, found by `located` in its document's indexed text, is
+    linked to every chunk whose own text (`own_ranges`) it intersects - so
+    one selection across two chunks is on both, and a tag on one window
+    is not on the window it overlaps. A detached selection, or one whose
+    document this index does not hold, is linked to none.
     """
-    later = [
-        each.char_start
-        for each in chunks
-        if each.document_id == chunk.document_id and each.char_start > chunk.char_start
-    ]
-    return min([chunk.char_end, *later])
+    grouped = by_document(chunks)
+    own = own_ranges(chunks)
+    texts: dict[str, str] = {}
+    rows: dict[str, list[str]] = {}
+    for annotation in store.annotations:
+        held = sorted(
+            grouped.get(annotation.document, []), key=lambda chunk: chunk.char_start
+        )
+        if not held:
+            continue
+        if annotation.selector is None:
+            rows[annotation.id] = [chunk.id for chunk in held]
+            continue
+        if annotation.document not in texts:
+            texts[annotation.document] = indexed_text(held)
+        span = located(annotation.selector, texts[annotation.document])
+        if span is None:
+            continue
+        rows[annotation.id] = [
+            chunk.id
+            for chunk in held
+            if span.overlaps(own[chunk.id].start, own[chunk.id].end)
+        ]
+    return AnnotationLinks.of(rows)
 
 
-def chunk_at(chunks: Sequence[Chunk], position: int) -> int | None:
-    """The number of the chunk whose own text holds `position`, or of the
-    first after it when it falls in a gap; None past the last."""
-    ordered = sorted(chunks, key=lambda each: each.char_start)
-    for chunk in ordered:
-        if chunk.char_start <= position < own_end(ordered, chunk):
-            return chunk.chunk_index
-    following = [chunk for chunk in ordered if chunk.char_start > position]
-    return following[0].chunk_index if following else None
+_LINKS_FILENAME: Final = "annotation-links.json"
 
 
-def on_chunk(span: Span, begins_in: int | None, chunk: Chunk) -> bool:
-    """Whether a selection at `span`, beginning in chunk `begins_in`, is on
-    `chunk`: the chunk it begins in, or one that begins inside it.
+def store_digest(path: Path) -> str:
+    """The sha256 of a store's text, or of nothing when there is none."""
+    content = path.read_bytes() if path.is_file() else b""
+    return hashlib.sha256(content).hexdigest()
 
-    Not every chunk the span overlaps: a window overlaps its neighbours,
-    and a selection of one window's text is not on the next.
+
+def links_for(index_root: Path, collection: str, store_path: Path) -> AnnotationLinks:
+    """The links between the store at `store_path` and the published index
+    of `collection`, read from beside that index build or computed.
+
+    The cache lives in the build's own directory, which git ignores and a
+    new build replaces, so it cannot outlive its index; it records the
+    digest of the store it was computed from, and a different one means it
+    is computed again. Two processes computing at once write the same
+    text, each by replacement. Raises what `load_chunks` raises when there
+    is no index.
     """
-    return chunk.chunk_index == begins_in or span.start < chunk.char_start < span.end
+    from kennis.engine.atomic import replace_file
+    from kennis.engine.rag.index import load_chunks, published_directory
+
+    cache = published_directory(index_root, collection) / _LINKS_FILENAME
+    digest = store_digest(store_path)
+    cached = _cached_links(cache, digest)
+    if cached is not None:
+        return cached
+    computed = links(read_annotations(store_path), load_chunks(index_root, collection))
+    replace_file(
+        cache,
+        json.dumps(
+            {"store": digest, "links": computed.by_annotation},
+            sort_keys=True,
+            ensure_ascii=True,
+        ),
+    )
+    return computed
+
+
+def _cached_links(cache: Path, digest: str) -> AnnotationLinks | None:
+    """The cache's links when it was computed from this store; None when it
+    is absent, from another store, or not what kennis writes."""
+    try:
+        document = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(document, dict) or document.get("store") != digest:
+        return None
+    rows = document.get("links")
+    if not isinstance(rows, dict):
+        return None
+    checked: dict[str, list[str]] = {}
+    for annotation, chunk_ids in rows.items():
+        if not isinstance(chunk_ids, list) or not all(
+            isinstance(each, str) for each in chunk_ids
+        ):
+            return None
+        checked[str(annotation)] = chunk_ids
+    return AnnotationLinks.of(checked)
 
 
 def placed(annotation: Annotation, chunks: Sequence[Chunk]) -> Placement:
@@ -517,11 +622,9 @@ def placed(annotation: Annotation, chunks: Sequence[Chunk]) -> Placement:
     if not own:
         return Unchecked()
     if annotation.selector is None:
-        return Placed(None, None)
+        return Placed(None)
     span = located(annotation.selector, indexed_text(own))
-    if span is None:
-        return Detached()
-    return Placed(span, chunk_at(own, span.start))
+    return Detached() if span is None else Placed(span)
 
 
 def by_document(chunks: Iterable[Chunk]) -> dict[str, list[Chunk]]:
@@ -555,94 +658,43 @@ def rehinted(store: AnnotationStore, chunks: Sequence[Chunk]) -> AnnotationStore
         if span is None:
             changed.append(annotation)
             continue
-        moved = selector_of(text, span.start, span.end, chunk_at(own, span.start))
-        changed.append(replace(annotation, selector=moved))
+        changed.append(
+            replace(annotation, selector=selector_of(text, span.start, span.end))
+        )
     return replace(store, annotations=tuple(changed))
 
 
-def carries(annotation: Annotation, chunk: Chunk) -> bool:
-    """Whether `annotation`, taken at its hint, is on `chunk` - the chunk's
-    own words checked, so a hint out of date carries nothing.
-
-    For a caller holding one chunk, such as a results page: by
-    `on_chunk`'s rule at the hinted span and chunk, and the part of the
-    selection inside the chunk must be the chunk's words there.
-    """
-    if annotation.document != chunk.document_id:
-        return False
-    selector = annotation.selector
-    if selector is None:
-        return True
-    if not on_chunk(Span(selector.start, selector.end), selector.chunk, chunk):
-        return False
-    start = max(selector.start, chunk.char_start)
-    end = min(selector.end, chunk.char_end)
-    if start >= end:
-        return False
-    inside = chunk.text[start - chunk.char_start : end - chunk.char_start]
-    expected = selector.exact[start - selector.start : end - selector.start]
-    return _collapsed(inside) == _collapsed(expected)
-
-
-def tags_on(store: AnnotationStore, chunk: Chunk) -> list[tuple[str, bool]]:
-    """The tags `chunk` carries, in order of name, each with whether it is
-    on the whole document.
-
-    **The hint is trusted, with the words checked in the chunk itself**: a
-    store's hints are set at every write and every corpus index build
-    (#626). A caller holding a store whose hints may be older - a
-    project's - rehints it in memory first.
-    """
+def tags_on(
+    store: AnnotationStore, linked: AnnotationLinks, chunk: Chunk
+) -> list[tuple[str, bool]]:
+    """The tags `chunk` carries by `linked`, in order of name, each with
+    whether it is on the whole document."""
+    carried = set(linked.by_chunk.get(chunk.id, ()))
     whole: set[str] = set()
     passage: set[str] = set()
     for annotation in store.annotations:
-        if not carries(annotation, chunk):
-            continue
-        (whole if annotation.selector is None else passage).update(annotation.tags)
+        if annotation.id in carried:
+            (whole if annotation.selector is None else passage).update(annotation.tags)
     return [(name, name in whole) for name in sorted(whole | passage)]
 
 
 def admitting(
     store: AnnotationStore, names: Sequence[str], chunks: Sequence[Chunk]
 ) -> ChunkPredicate:
-    """Whether a chunk of this index carries every one of `names`.
-
-    A whole-document annotation admits each of its chunks; a selection
-    the chunks it is on where it is placed now (`on_chunk`), and nothing
-    when it is detached. A name the store does not hold admits nothing, so
-    several names intersect.
-    """
-    grouped = by_document(chunks)
-    texts: dict[str, str] = {}
-    documents: dict[str, set[str]] = {name: set() for name in names}
-    passages: dict[str, set[str]] = {name: set() for name in names}
-    for annotation in store.annotations:
-        wanted = [name for name in names if name in annotation.tags]
-        if not wanted:
-            continue
-        if annotation.selector is None:
-            for name in wanted:
-                documents[name].add(annotation.document)
-            continue
-        own = grouped.get(annotation.document, [])
-        if not own:
-            continue
-        if annotation.document not in texts:
-            texts[annotation.document] = indexed_text(own)
-        span = located(annotation.selector, texts[annotation.document])
-        if span is None:
-            continue
-        begins_in = chunk_at(own, span.start)
-        for chunk in own:
-            if on_chunk(span, begins_in, chunk):
-                for name in wanted:
-                    passages[name].add(chunk.id)
+    """Whether a chunk of this index carries every one of `names`, by the
+    links between `store` and `chunks`. A name the store does not hold
+    admits nothing, so several names intersect."""
+    linked = links(store, chunks)
+    tags_of = {annotation.id: annotation.tags for annotation in store.annotations}
+    wanted = set(names)
 
     def admits(chunk: Chunk) -> bool:
-        return all(
-            chunk.document_id in documents[name] or chunk.id in passages[name]
-            for name in names
-        )
+        carried = {
+            name
+            for annotation in linked.by_chunk.get(chunk.id, ())
+            for name in tags_of.get(annotation, ())
+        }
+        return wanted <= carried
 
     return admits
 
@@ -659,6 +711,7 @@ __all__ = [
     "ANNOTATIONS_FILENAME",
     "CONTEXT_CHARACTERS",
     "Annotation",
+    "AnnotationLinks",
     "AnnotationStore",
     "Detached",
     "Placed",
@@ -669,20 +722,21 @@ __all__ = [
     "admitting",
     "annotations_of",
     "by_document",
-    "carries",
-    "chunk_at",
     "colours_kept",
     "indexed_text",
+    "links",
+    "links_for",
     "located",
     "new_id",
     "now",
-    "on_chunk",
     "own_end",
+    "own_ranges",
     "placed",
     "read_annotations",
     "rehinted",
     "same_selection",
     "selector_of",
+    "store_digest",
     "tags_on",
     "with_tags",
     "without_tags",

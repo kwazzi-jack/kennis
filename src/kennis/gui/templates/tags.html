@@ -49,6 +49,8 @@
     <form class="untag" action="/tags/remove" method="post">
       <input type="hidden" name="tag" value="{{ tag }}">
       <input type="hidden" name="link" value="{{ item.link }}">
+      <input type="hidden" name="annotation" value="{{ item.annotation }}">
+      {% if item.project %}<input type="hidden" name="project" value="{{ item.project }}">{% endif %}
       <input type="hidden" name="back" value="{{ back }}">
       <button type="submit" class="ghost" aria-label="{{ item.remove_label }}">{{ icon("x") }}<span>{{ remove_tag }}</span></button>
     </form>

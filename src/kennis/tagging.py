@@ -40,12 +40,14 @@ from kennis.context import Context
 from kennis.engine.annotations import (
     ANNOTATIONS_FILENAME,
     Annotation,
+    AnnotationLinks,
     AnnotationStore,
     Detached,
     Placed,
     Selector,
     Unchecked,
     indexed_text,
+    links,
     own_end,
     placed,
     read_annotations,
@@ -169,9 +171,12 @@ class _Named:
     selector: Selector | None
     title: str | None
     link: str
-    # The index's chunks of the document, for an untag to match where a
-    # stored passage is placed now; empty when there is none to read.
+    # The index's chunks of the document, for an untag to find the
+    # annotations linked to the chunk; empty when there is none to read.
     chunks: tuple[Chunk, ...]
+    # The annotation named by its id (`annotation=<id>`), which needs no
+    # chunk: how a detached selection is untagged.
+    annotation: str | None = None
 
 
 def change_tags(
@@ -216,12 +221,7 @@ def _changed_tags(
     for position, (request, one) in enumerate(zip(requests, named, strict=True)):
         store = held[one.store]
         if remove:
-            chosen = [
-                annotation.id
-                for annotation in store.annotations
-                if _begins_in(annotation, one)
-            ]
-            store, changed = without_tags(store, chosen, folded)
+            store, changed = without_tags(store, _untagged_by(store, one), folded)
         else:
             store, changed = with_tags(store, one.document, one.selector, folded)
         held[one.store] = store
@@ -329,23 +329,26 @@ def colour_tags(
         )
 
 
-def _begins_in(annotation: Annotation, one: _Named) -> bool:
-    """Whether an untag of `one` takes names from `annotation`.
+def _untagged_by(store: AnnotationStore, one: _Named) -> list[str]:
+    """The ids of the annotations an untag of `one` takes names from.
 
-    The whole document for a document; otherwise an annotation that begins
-    in the chunk asked for - where it is placed now, or, when its words are
-    gone or its index cannot say, the chunk it was last placed in, which
-    is the chunk `kennis tags` prints for it. Beginning, not overlapping,
-    so one request never untags a selection that only reaches into it.
+    The one named by its id; for a document, its whole-document
+    annotations; for a chunk, every annotation linked to it - so a hit
+    that shows a tag can always have it removed, a selection across two
+    chunks included.
     """
-    if annotation.document != one.document:
-        return False
-    if one.chunk is None or annotation.selector is None:
-        return one.chunk is None and annotation.selector is None
-    where = placed(annotation, one.chunks)
-    if isinstance(where, Placed):
-        return where.chunk == one.chunk
-    return annotation.selector.chunk == one.chunk
+    if one.annotation is not None:
+        return [one.annotation]
+    if one.chunk is None:
+        return [
+            annotation.id
+            for annotation in store.annotations
+            if annotation.document == one.document and annotation.selector is None
+        ]
+    chunk = next((each for each in one.chunks if each.chunk_index == one.chunk), None)
+    if chunk is None:
+        return []
+    return list(links(store, one.chunks).by_chunk.get(chunk.id, ()))
 
 
 def _counts(
@@ -407,6 +410,8 @@ def _named(
     *,
     remove: bool,
 ) -> _Named:
+    if request.annotation:
+        return _named_annotation(context, request, held)
     if request.bundle is not None:
         return _named_in_bundle(request, request.bundle, held, remove=remove)
     from kennis.engine.corpus.layout import index_root
@@ -460,6 +465,47 @@ def _named(
         title,
         link,
         chunks,
+    )
+
+
+def _named_annotation(
+    context: Context, request: CiteRequest, held: dict[Path, AnnotationStore]
+) -> _Named:
+    """An annotation named by its id: in the project's store when the
+    request names one, then in the corpus's."""
+    stores = [_corpus_store(context)]
+    if request.bundle is not None:
+        stores.insert(0, request.bundle / ANNOTATIONS_FILENAME)
+    for store in stores:
+        found = next(
+            (
+                annotation
+                for annotation in _held(store, held).annotations
+                if annotation.id == request.handle
+            ),
+            None,
+        )
+        if found is None:
+            continue
+        if request.bundle is not None and store.parent == request.bundle:
+            from kennis.engine.context.projects import project_names
+
+            project = project_names([request.bundle])[request.bundle]
+            link = context_link(project, found.document, None)
+        else:
+            link = link_to(found.document, None)
+        return _Named(
+            store,
+            found.document,
+            None,
+            found.selector,
+            None,
+            link,
+            (),
+            annotation=found.id,
+        )
+    raise KennisError(
+        f"no annotation has the id '{request.handle}'", resolution="kennis tags"
     )
 
 
@@ -530,12 +576,7 @@ def _passage_selector(
     chunk = next((one for one in chunks if one.chunk_index == number), None)
     if chunk is None:
         raise SearchUnavailable(unindexed, resolution=resolution)
-    return selector_of(
-        indexed_text(chunks),
-        chunk.char_start,
-        own_end(chunks, chunk),
-        chunk.chunk_index,
-    )
+    return selector_of(indexed_text(chunks), chunk.char_start, own_end(chunks, chunk))
 
 
 def _held(store: Path, held: dict[Path, AnnotationStore]) -> AnnotationStore:
@@ -595,7 +636,7 @@ def _listed_corpus(
     from kennis.finding import resolve_document
     from kennis.publishing import shared
 
-    indexes: dict[str, tuple[Chunk, ...] | None] = {}
+    indexes: dict[str, _Placing | None] = {}
     with shared(context.corpus_root):
         for annotation in store.annotations:
             if not annotation.tags:
@@ -603,16 +644,14 @@ def _listed_corpus(
             try:
                 where, document = resolve_document(context, annotation.document, None)
             except DocumentNotFound:
-                target = _target(
-                    None, annotation, _hint(annotation), None, MISSING, link_to
-                )
+                target = _target(None, annotation, None, None, MISSING, link_to)
                 for name in annotation.tags:
                     listed.setdefault(name, []).append(target)
                 continue
             if where.name not in indexes:
                 try:
-                    indexes[where.name] = tuple(
-                        load_chunks(index_root(context.corpus_root), where.name)
+                    indexes[where.name] = _Placing.of(
+                        store, load_chunks(index_root(context.corpus_root), where.name)
                     )
                 except KennisError:
                     indexes[where.name] = None
@@ -640,54 +679,73 @@ def _listed_bundle(
         return context_link(project, path, chunk)
 
     try:
-        chunks: tuple[Chunk, ...] | None = tuple(load_bundle_index(bundle).chunks)
+        placing: _Placing | None = _Placing.of(store, load_bundle_index(bundle).chunks)
     except KennisError:
-        chunks = None
+        placing = None
     for annotation in store.annotations:
         if not annotation.tags:
             continue
         try:
             _, file = bundle_member(bundle, annotation.document)
         except DocumentNotFound:
-            target = _target(
-                project, annotation, _hint(annotation), None, MISSING, linked
-            )
+            target = _target(project, annotation, None, None, MISSING, linked)
         else:
             target = _placed_target(
-                project, annotation, bundle_title(file), chunks, linked
+                project, annotation, bundle_title(file), placing, linked
             )
         for name in annotation.tags:
             listed.setdefault(name, []).append(target)
+
+
+@dataclass(frozen=True, slots=True)
+class _Placing:
+    """One index's chunks and their links to a store, computed once for a
+    listing rather than once per annotation."""
+
+    chunks: tuple[Chunk, ...]
+    linked: AnnotationLinks
+    numbers: dict[str, int]
+
+    @classmethod
+    def of(cls, store: AnnotationStore, chunks: Sequence[Chunk]) -> _Placing:
+        return cls(
+            tuple(chunks),
+            links(store, chunks),
+            {chunk.id: chunk.chunk_index for chunk in chunks},
+        )
 
 
 def _placed_target(
     project: str | None,
     annotation: Annotation,
     title: str | None,
-    chunks: tuple[Chunk, ...] | None,
+    placing: _Placing | None,
     linked: _Linker,
     collection: str | None = None,
 ) -> TaggedTarget:
-    placement = Unchecked() if chunks is None else placed(annotation, chunks)
-    hint = _hint(annotation)
-    match placement:
-        case Placed(chunk=chunk):
+    """`annotation` as it stands in an index: a placed selection at the
+    first chunk linked to it, a whole document at none."""
+    if placing is None:
+        return _target(project, annotation, None, title, UNCHECKED, linked, collection)
+    match placed(annotation, placing.chunks):
+        case Placed(span=None):
+            return _target(project, annotation, None, title, PLACED, linked, collection)
+        case Placed():
+            chunk = min(
+                placing.numbers[each]
+                for each in placing.linked.by_annotation.get(annotation.id, ())
+            )
             return _target(
                 project, annotation, chunk, title, PLACED, linked, collection
             )
         case Detached():
             return _target(
-                project, annotation, hint, title, DETACHED, linked, collection
+                project, annotation, None, title, DETACHED, linked, collection
             )
         case Unchecked():
             return _target(
-                project, annotation, hint, title, UNCHECKED, linked, collection
+                project, annotation, None, title, UNCHECKED, linked, collection
             )
-
-
-def _hint(annotation: Annotation) -> int | None:
-    """The chunk a selection was last placed in; None for the document."""
-    return None if annotation.selector is None else annotation.selector.chunk
 
 
 def _target(

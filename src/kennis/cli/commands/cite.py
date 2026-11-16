@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 _CHUNK: str = "chunk="
 _PATH: str = "path="
+_ANNOTATION: str = "annotation="
 
 
 @click.command(cls=KennisCommand, name="cite")
@@ -100,6 +101,18 @@ def requests_from(passages: tuple[str, ...]) -> list[CiteRequest]:
                     f"`{passage}` names its own chunk; drop the `chunk=` after it"
                 )
             requests.append(from_link(target_of(passage)))
+        elif passage.startswith(_ANNOTATION):
+            if chunk is not None:
+                raise display.CliError(
+                    f"`{passage}` names an annotation; drop the `chunk=` after it"
+                )
+            # An annotation is looked for in this project's store first,
+            # then the corpus's.
+            requests.append(
+                CiteRequest(
+                    passage.removeprefix(_ANNOTATION), annotation=True, bundle=here
+                )
+            )
         elif passage.startswith(_PATH):
             requests.append(
                 from_path(

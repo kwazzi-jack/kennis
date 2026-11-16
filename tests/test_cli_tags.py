@@ -11,6 +11,8 @@ command that removes its tag.
 
 from __future__ import annotations
 
+import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -20,6 +22,13 @@ from click.testing import CliRunner
 from annotating import ANNOTATIONS, Target, tagged
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
+from kennis.engine.annotations import (
+    indexed_text,
+    links,
+    read_annotations,
+    with_tags,
+    written,
+)
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.rag.index import load_index
@@ -267,12 +276,14 @@ def test_a_passage_whose_words_are_gone_is_listed_as_detached_with_its_untag(
 
     said = run("tags", "calibration")
 
+    (annotation,) = read_annotations(corpus / ANNOTATIONS).annotations
     assert "detached" in said
-    assert f"kennis untag calibration {link_to(PAPER_ID, chunk)}" in said
+    assert f"kennis untag calibration annotation={annotation.id}" in said
 
 
 def test_a_detached_passage_s_untag_works_as_printed(corpus: Path):
-    """The printed chunk may no longer exist; untagging must not need it."""
+    """The passage's chunk is gone; the printed command names the
+    annotation, and runs as printed."""
     chunk = chunk_holding(corpus, SOLVING)
     run("tag", "calibration", f"id={PAPER_ID}", f"chunk={chunk}")
     paper = corpus / "literature" / "smirnov.md"
@@ -280,10 +291,41 @@ def test_a_detached_passage_s_untag_works_as_printed(corpus: Path):
         paper.read_text(encoding="utf-8").split("## 2.2")[0], encoding="utf-8"
     )
     run("corpus", "index")
+    printed = re.search(r"kennis untag \S+ \S+", run("tags", "calibration"))
+    assert printed is not None
 
-    run("untag", "calibration", link_to(PAPER_ID, chunk))
+    run(*shlex.split(printed.group())[1:])
 
     assert tagged(corpus) == {}
+
+
+def test_untagging_one_chunk_of_a_selection_across_two_untags_both(corpus: Path):
+    """A hit that shows a tag can always have it removed: the tag is on the
+    annotation, and the annotation is on both chunks."""
+    from kennis.engine.annotations import AnnotationStore, selector_of
+
+    chunks = [
+        chunk
+        for chunk in load_index(index_root(corpus), "literature").chunks
+        if chunk.document_id == PAPER_ID
+    ]
+    first, second = sorted(chunks, key=lambda chunk: chunk.char_start)[3:5]
+    text = indexed_text(chunks)
+    selector = selector_of(text, first.char_end - 20, second.char_start + 20)
+    store, _ = with_tags(AnnotationStore(), PAPER_ID, selector, ("across",))
+    (corpus / ANNOTATIONS).write_text(written(store), encoding="utf-8")
+    run("tag", "other", f"id={PAPER_ID}")
+    (annotation,) = [
+        each
+        for each in read_annotations(corpus / ANNOTATIONS).annotations
+        if "across" in each.tags
+    ]
+    linked = links(read_annotations(corpus / ANNOTATIONS), chunks)
+    assert set(linked.by_annotation[annotation.id]) == {first.id, second.id}
+
+    run("untag", "across", f"id={PAPER_ID}", f"chunk={second.chunk_index}")
+
+    assert "across" not in tagged(corpus)
 
 
 # ---------------------------------------------------------------------------

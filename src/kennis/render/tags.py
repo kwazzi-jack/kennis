@@ -56,8 +56,13 @@ def opening_words(quote: str) -> str:
 
 
 def untag_command(name: str, target: TaggedTarget) -> str:
-    """The command that takes `name` from `target`, as it runs when typed."""
-    return f"kennis untag {shlex.quote(name)} {shlex.quote(target.link)}"
+    """The command that takes `name` from `target`, as it runs when typed:
+    by its annotation's id, which needs neither the document nor its words
+    to still be there."""
+    return (
+        f"kennis untag {shlex.quote(name)} "
+        f"{shlex.quote('annotation=' + target.annotation)}"
+    )
 
 
 def target_title(target: TaggedTarget) -> str:

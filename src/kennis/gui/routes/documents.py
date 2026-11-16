@@ -292,7 +292,7 @@ def _bands_of(
     """What finds the tagged selections in the body a page draws (#50):
     nothing is read when no tag is on a passage, and a store that cannot be
     read draws none, as `_tags_or_none` shows none."""
-    if not any(tagged.chunk is not None for tagged in tags):
+    if not any(tagged.quote is not None for tagged in tags):
         return None
 
     def bands(body: str) -> list[Band]:

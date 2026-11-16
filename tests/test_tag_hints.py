@@ -1,11 +1,13 @@
-"""A passage tag's chunk hint kept current (#626, sketch 2026-11-06-tag-hints).
+"""A selection's hint kept current, and its chunks derived (#626, #50;
+sketches 2026-11-06-tag-hints and 2026-11-16-annotations).
 
 A selection is found again by its words, and where they occur more than
 once the surroundings and then the stored hint decide. So the hint is
-rewritten to where the selection is now: in every store a tag change
-writes, and in the corpus's `annotations.json` after an index build,
-inside that build's commit. A project's file is rewritten only when its
-tags change, because it is the person's file in their repository.
+rewritten to where the selection is now in every store a tag change
+writes. An index build writes nothing to a store: which chunks carry a
+selection is derived for each build. A project's file is rewritten only
+when its tags change, because it is the person's file in their
+repository.
 """
 
 from __future__ import annotations
@@ -50,9 +52,12 @@ def edited(root: Path) -> None:
     )
 
 
-def test_an_index_build_rewrites_the_hints_inside_its_own_commit(corpus: Path):
+def test_an_index_build_moves_the_links_and_leaves_the_store_alone(corpus: Path):
+    """Which chunk carries a selection is derived per build, so the build
+    follows the passage without writing the reader's file."""
     before = chunk_holding(corpus, SOLVING)
     run("tag", "calibration", f"id={PAPER_ID}", f"chunk={before}")
+    stored = (corpus / ANNOTATIONS).read_text(encoding="utf-8")
     edited(corpus)
 
     run("corpus", "index")
@@ -61,10 +66,9 @@ def test_an_index_build_rewrites_the_hints_inside_its_own_commit(corpus: Path):
     assert after != before, "the edit no longer moves the passage"
     (anchor,) = tagged(corpus)["calibration"]
     assert anchor.chunk == after
+    assert (corpus / ANNOTATIONS).read_text(encoding="utf-8") == stored
     assert git(corpus, "status", "--porcelain") == ""
-    subject = git(corpus, "log", "-1", "--format=%s")
-    assert subject.startswith("index(")
-    assert ANNOTATIONS in git(corpus, "show", "--name-only", "--format=", "HEAD")
+    assert ANNOTATIONS not in git(corpus, "show", "--name-only", "--format=", "HEAD")
 
 
 def test_an_index_build_that_moves_no_passage_leaves_the_file_alone(corpus: Path):
@@ -79,17 +83,22 @@ def test_an_index_build_that_moves_no_passage_leaves_the_file_alone(corpus: Path
 
 def test_a_tag_change_rewrites_every_hint_in_its_store(corpus: Path):
     """A hint written wrong by hand stands until the next tag change to the
-    corpus, which places every passage and writes where each is now."""
+    corpus, which finds every selection and writes where each is now."""
     solving = chunk_holding(corpus, SOLVING)
     run("tag", "calibration", f"id={PAPER_ID}", f"chunk={solving}")
     store = json.loads((corpus / ANNOTATIONS).read_text(encoding="utf-8"))
     (selection,) = [each["selector"] for each in store["annotations"]]
-    selection.update(chunk=0, start=0, end=len(selection["exact"]))
+    right = (selection["start"], selection["end"])
+    selection.update(start=0, end=len(selection["exact"]))
     (corpus / ANNOTATIONS).write_text(json.dumps(store), encoding="utf-8")
-    assert tagged(corpus)["calibration"][0].chunk == 0
 
     run("tag", "to-read", f"id={PAPER_ID}")
 
+    rewritten = json.loads((corpus / ANNOTATIONS).read_text(encoding="utf-8"))
+    (selection,) = [
+        each["selector"] for each in rewritten["annotations"] if "selector" in each
+    ]
+    assert (selection["start"], selection["end"]) == right
     (target,) = tagged(corpus)["calibration"]
     assert target.chunk == solving
 

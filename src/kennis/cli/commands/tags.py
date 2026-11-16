@@ -41,7 +41,8 @@ def tag_command(names: str, passages: tuple[str, ...], colour: str | None) -> No
     `NAMES` is one or more tags separated by commas, such as
     `calibration,to-cite`; a tag is one word, folded to lowercase. A
     `PASSAGE` is named as `kennis cite` takes it: a hit's `id=X chunk=N` or
-    `path=P chunk=N`, a `kennis://` link, or a handle for the whole document.
+    `path=P chunk=N`, a `kennis://` link, a handle for the whole document,
+    or `annotation=ID` as `kennis tags` prints it.
     """
     if not passages and colour is None:
         raise click.UsageError("name at least one PASSAGE, or give --colour")
@@ -55,7 +56,12 @@ def tag_command(names: str, passages: tuple[str, ...], colour: str | None) -> No
 @click.argument("names", metavar="NAMES")
 @click.argument("passages", nargs=-1, required=True, metavar="PASSAGE...")
 def untag_command(names: str, passages: tuple[str, ...]) -> None:
-    """Take each of `NAMES` from passages or documents, named as for `kennis tag`."""
+    """Take each of `NAMES` from passages or documents, named as for `kennis tag`.
+
+    A chunk loses the tag from every annotation on it, a selection across
+    two chunks included; `annotation=ID`, as `kennis tags` prints for a
+    selection whose words are gone, names one annotation.
+    """
     _changed(names, passages, remove=True)
 
 
