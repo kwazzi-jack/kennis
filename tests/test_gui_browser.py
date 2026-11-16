@@ -1616,6 +1616,16 @@ _SELECT = """([first, last, after]) => {
 }"""
 
 
+_MARK_DIALOG_SETTLED = """() => {
+  delete document.documentElement.dataset.dialogSettled;
+  document.body.addEventListener('htmx:afterSettle', (event) => {
+    if (event.detail.target && event.detail.target.id === 'dialog') {
+      document.documentElement.dataset.dialogSettled = 'yes';
+    }
+  });
+}"""
+
+
 def _annotate(
     page: playwright.Page, first: str, last: str, comment: str, after: str = ""
 ) -> None:
@@ -1624,9 +1634,17 @@ def _annotate(
     assert not page.is_visible(".annotate-selection")
     page.evaluate(_SELECT, [first, last, after])
     page.wait_for_selector(".annotate-selection", state="visible", timeout=_WAIT_MS)
+    # htmx gives the `autofocus` field the focus again when the swap settles,
+    # 20 ms after the dialog's own focus; a comment typed between the two
+    # went into the tags (measured: one run in three). A person is not that
+    # quick, so the test waits for the settle, which it marks on the page.
+    page.evaluate(_MARK_DIALOG_SETTLED)
     page.click(".annotate-selection")
     page.wait_for_selector(".annotate-selection", state="hidden", timeout=_WAIT_MS)
-    page.wait_for_selector("dialog form.annotate", timeout=_WAIT_MS)
+    page.wait_for_selector(
+        "html[data-dialog-settled]", state="attached", timeout=_WAIT_MS
+    )
+    assert page.is_visible("dialog form.annotate")
     page.fill("dialog form.annotate input[name=tags]", "calibration")
     page.fill("dialog form.annotate textarea[name=comment]", comment)
     page.click("dialog form.annotate button[type=submit]")
