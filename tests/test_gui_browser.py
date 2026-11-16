@@ -1311,3 +1311,192 @@ def test_a_passage_shown_by_the_service_opens_in_this_tab(
     assert answers == [True]
     page.wait_for_url("**/settings", timeout=_WAIT_MS)
     assert len(page.context.pages) == 1
+
+
+# ---------------------------------------------------------------------------
+# The settings page: chips for an ordered setting, and the save bar (#670)
+# ---------------------------------------------------------------------------
+
+_ORDER_KEY = "retrieval.default_collections"
+
+
+def _open_settings(page: playwright.Page, address: str, tab: str) -> None:
+    page.goto(f"{address.split('/?')[0]}/settings?tab={tab}")
+    page.wait_for_selector(".save-bar button", timeout=_WAIT_MS)
+
+
+def _chips(page: playwright.Page) -> list[str]:
+    return list(
+        page.eval_on_selector_all(
+            ".order-chip", "chips => chips.map(chip => chip.dataset.value)"
+        )
+    )
+
+
+def _order_field(page: playwright.Page) -> str:
+    return str(
+        page.eval_on_selector(f'input[name="{_ORDER_KEY}"]', "field => field.value")
+    )
+
+
+def test_an_ordered_setting_is_drawn_as_chips_in_place_of_its_field(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "searching")
+
+    assert page.locator(".order-chips").is_visible()
+    assert not page.locator(f'input[name="{_ORDER_KEY}"]').is_visible()
+    assert page.locator(".order-hint").is_visible()
+    assert _chips(page) == ["context", "literature", "docs", "notes"]
+    # Four chips on one line or two, each a box of some size: the layout's
+    # field rule did not stretch a tick box across the row.
+    tops: list[int] = []
+    for chip in page.locator(".order-chip").all():
+        box = chip.bounding_box()
+        assert box is not None and 60 < box["width"] < 260, box
+        tops.append(round(box["y"]))
+    # Side by side, on a line or two: in the narrow column beside the name
+    # they stacked one to a line and read as a list of rows.
+    assert len(set(tops)) <= 2 and tops.count(tops[0]) >= 2, tops
+    tab_tops: set[int] = set()
+    for tab in page.locator(".settings-tab").all():
+        box = tab.bounding_box()
+        assert box is not None
+        tab_tops.add(round(box["y"]))
+    assert len(tab_tops) == 1, "the five tabs wrapped onto a second line"
+
+
+def test_a_chip_s_button_moves_it_and_the_field_follows(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "searching")
+
+    page.click('.order-chip[data-value="context"] [data-move="later"]')
+
+    assert _chips(page) == ["literature", "context", "docs", "notes"]
+    assert _order_field(page) == "literature context docs notes"
+    # The keyboard's place is kept, so the chip can be moved again.
+    assert (
+        page.evaluate("document.activeElement.closest('.order-chip').dataset.value")
+        == "context"
+    )
+    page.keyboard.press("Enter")
+    assert _chips(page) == ["literature", "docs", "context", "notes"]
+
+
+def test_a_chip_is_moved_earlier_again_and_again_from_the_keyboard(
+    page: playwright.Page, address: str
+) -> None:
+    """The button pressed keeps the focus, so Enter moves the chip once
+    more. Moving the chip itself, not its neighbour, took the focus away
+    after one step in this direction."""
+    _open_settings(page, address, "searching")
+
+    page.focus('.order-chip[data-value="notes"] [data-move="earlier"]')
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+
+    assert _chips(page) == ["notes", "context", "literature", "docs"]
+    assert _order_field(page) == "notes context literature docs"
+
+
+def test_a_chip_at_the_end_does_not_move_past_it(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "searching")
+
+    page.click('.order-chip[data-value="notes"] [data-move="later"]')
+    page.click('.order-chip[data-value="context"] [data-move="earlier"]')
+
+    assert _chips(page) == ["context", "literature", "docs", "notes"]
+
+
+def test_unticking_a_chip_leaves_it_out_of_the_field(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "searching")
+
+    page.uncheck('.order-chip[data-value="docs"] input[type=checkbox]')
+
+    assert _order_field(page) == "context literature notes"
+    assert page.locator('.order-chip[data-value="docs"][data-left-out]').count() == 1
+    page.check('.order-chip[data-value="docs"] input[type=checkbox]')
+    assert _order_field(page) == "context literature docs notes"
+
+
+def test_a_chip_is_dragged_to_another_place(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "searching")
+
+    page.drag_and_drop(
+        '.order-chip[data-value="notes"] .grip',
+        '.order-chip[data-value="context"]',
+        target_position={"x": 3, "y": 6},
+    )
+
+    assert _chips(page) == ["notes", "context", "literature", "docs"]
+    assert _order_field(page) == "notes context literature docs"
+
+
+def test_saving_the_chips_writes_the_setting_and_draws_the_chips_again(
+    page: playwright.Page, address: str
+) -> None:
+    from kennis.engine.settings import load_settings
+
+    _open_settings(page, address, "searching")
+    page.click('.order-chip[data-value="notes"] [data-move="earlier"]')
+    page.uncheck('.order-chip[data-value="context"] input[type=checkbox]')
+
+    page.click(".save-bar button[type=submit]")
+    page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
+
+    assert page.inner_text(".save-bar .outcome") == words.KENNIS_SAVED
+    assert load_settings().retrieval.default_collections == "literature notes docs"
+    # The section was replaced by the save, and the script drew it again:
+    # the listed ones first, in the order saved, then the one left out.
+    assert page.locator(".order-chips").is_visible()
+    assert not page.locator(f'input[name="{_ORDER_KEY}"]').is_visible()
+    assert _chips(page) == ["literature", "notes", "docs", "context"]
+
+
+def test_the_save_button_is_in_view_before_any_scrolling(
+    page: playwright.Page, address: str
+) -> None:
+    """The reason for the bar: on a long tab the button was below the fold
+    and what a save came to was said above it (Brian, 2026-11-13)."""
+    page.set_viewport_size({"width": 1100, "height": 520})
+    _open_settings(page, address, "documents")
+
+    assert page.evaluate("document.querySelector('main').scrollHeight") > 520, (
+        "the tab fits the window, so this shows nothing"
+    )
+    box = page.locator(".save-bar button[type=submit]").bounding_box()
+    assert box is not None
+    # At the pane's foot, with no row showing under it: a sticky offset is
+    # measured inside the pane's own padding, and at 0 the bar floated.
+    bar_foot, pane_foot = page.evaluate(
+        "[document.querySelector('.save-bar').getBoundingClientRect().bottom,"
+        " document.querySelector('main').getBoundingClientRect().bottom]"
+    )
+    assert abs(bar_foot - pane_foot) <= 2, (bar_foot, pane_foot)
+    assert box["y"] >= 0 and box["y"] + box["height"] <= 520, box
+    filled = page.eval_on_selector(
+        ".save-bar button[type=submit]",
+        "button => getComputedStyle(button).backgroundColor",
+    )
+    ground = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    assert filled != ground
+
+
+def test_the_current_tab_is_the_filled_one(page: playwright.Page, address: str) -> None:
+    _open_settings(page, address, "system")
+
+    filled = page.eval_on_selector_all(
+        ".settings-tab",
+        "tabs => tabs.filter(tab => getComputedStyle(tab).backgroundColor === "
+        "getComputedStyle(document.querySelector('.save-bar .primary'))"
+        ".backgroundColor).map(tab => tab.textContent.trim())",
+    )
+    assert filled == ["System"]

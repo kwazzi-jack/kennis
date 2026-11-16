@@ -116,7 +116,7 @@ def test_the_keywords_only_notices_way_forward_is_a_button(client: TestClient):
 
     assert isinstance(way, Tag)
     assert "button" in (way.get("class") or [])
-    assert way["href"] == "/settings#setting-embedding.backend"
+    assert way["href"] == "/settings?tab=searching#setting-embedding.backend"
 
 
 def test_with_a_model_the_way_forward_opens_the_index_dialog(
@@ -164,7 +164,7 @@ def test_every_outside_link_on_the_window_opens_a_new_tab(client: TestClient):
     assert isinstance(hit, Tag)
     pages = [
         soup_of(client, str(hit["href"]).split("?")[0]),
-        soup_of(client, "/settings"),
+        soup_of(client, "/settings", tab="backup"),
     ]
     outside = [
         link

@@ -316,7 +316,7 @@ def test_a_search_that_ran_lexically_is_said_once_with_its_way_forward(
 
     assert page.count('class="notice quiet"') == 1
     assert words.KEYWORDS_ONLY_CHOOSE in page
-    assert 'href="/settings#setting-embedding.backend"' in page
+    assert 'href="/settings?tab=searching#setting-embedding.backend"' in page
 
 
 def test_the_keywords_only_sentence_names_every_collection_once():

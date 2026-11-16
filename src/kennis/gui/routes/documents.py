@@ -31,6 +31,7 @@ from kennis.gui.figures import (
     trusted_figure_hosts,
 )
 from kennis.gui.pages import (
+    DOCUMENT_TAGS,
     ShownDocument,
     document_link,
     shown_bundle_document,
@@ -108,6 +109,7 @@ def _document_context(
         "document_tags": tags,
         "document_link": document_link(document.collection, document.document_id),
         "tags_back": back,
+        "document_tags_id": DOCUMENT_TAGS,
         # The document's full reference, by the person's citation style,
         # for the inspector's Copy reference; None for a project's file,
         # which is cited by its path.

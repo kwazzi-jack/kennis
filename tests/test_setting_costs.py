@@ -52,6 +52,7 @@ EXPECTED = {
     "literature.request_delay": ("next_add",),
     "literature.citation_style": ("next_cite",),
     "retrieval.scores": ("next_search",),
+    "retrieval.default_collections": ("next_search",),
     "terminal.messages": ("next_command",),
     # Read once, when kennis starts and opens the log.
     "logging.level": ("next_start",),

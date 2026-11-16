@@ -810,6 +810,94 @@ main {
 /* kennis's configuration: the control in the right column beside
    everything said about it, which reads down the left. */
 .kennis-settings { max-width: 46rem; }
+
+/* The settings page's tabs (#670): one page each, so links, drawn as
+   buttons with an icon. The current one is filled, and says so to a
+   screen reader by `aria-current`. */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0 0 1.2rem;
+}
+.settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.8125rem;
+}
+.settings-tab:hover { border-color: var(--role-muted); background: var(--raised); }
+.settings-tab .icon { width: 0.95rem; height: 0.95rem; flex: none; }
+.settings-tab[aria-current="page"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ground);
+  font-weight: 600;
+}
+
+/* A form's one action and what it came to, kept in view at the foot of
+   the pane however long the tab is. `main` pads its foot by 4rem and a
+   sticky offset is measured from inside that padding, so the bar is
+   lowered by as much: at 0 it floated with rows showing beneath it. */
+.save-bar {
+  position: sticky;
+  bottom: -4rem;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  margin-top: 1rem;
+  padding: 0.7rem 0;
+  background: var(--ground);
+  border-top: 1px solid var(--rule);
+}
+.save-bar .outcome { margin: 0; font-weight: 600; }
+.save-bar .icon, .prefs-save .icon, .backup-now .primary .icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+}
+
+/* A setting that is an ordered list, as chips to drag (#670). Each
+   icon wears its collection's colour; one left out of
+   the list is dashed and pale, and stays where it can be put back. */
+/* The row of a setting drawn as chips: its control takes the row under
+   the name, where four chips fit on a line; beside it they stacked. */
+.setting-wide .setting-head { grid-column: 1 / -1; }
+.setting-wide .setting-control { grid-column: 1 / -1; grid-row: auto; margin-top: 0.3rem; }
+.order-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+}
+.order-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--raised);
+  cursor: grab;
+}
+.chip-name .icon { color: var(--collection, currentColor); }
+.order-chip[data-left-out] { border-style: dashed; opacity: 0.6; }
+.order-chip[data-dragging] { opacity: 0.35; }
+.order-chip .icon { width: 0.95rem; height: 0.95rem; flex: none; }
+.grip { display: inline-flex; color: var(--role-muted); }
+.chip-name { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+.setting-control .chip-name input { width: 1rem; }
+.chip-move { display: inline-flex; padding: 0.15rem; border-color: transparent; }
+.order-hint { margin: 0.3rem 0 0; font-size: 0.75rem; }
 .setting-group { margin-bottom: 0.4rem; }
 .kennis .setting > p { grid-column: 1; margin: 0; font-size: 0.8125rem; }
 .setting-control { grid-column: 2; grid-row: 1 / span 6; }
@@ -3036,6 +3124,19 @@ html:not(.can-copy) .copy-citation { display: none; }
 /* A document's Copy reference, under its details. */
 .copy-reference-row { margin: 0.4rem 0 0; }
 .copy-reference { padding-inline: 0; }
+
+/* What a default search left out by the reader's setting, each name a
+   button to the search that covers it (#669). */
+.left-out {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--gutter);
+  font-size: 0.875rem;
+  color: var(--role-muted);
+  margin: 0.4rem 0 0;
+}
 
 /* What the results are kept to, above them, with the way back. */
 .kept-tags {
