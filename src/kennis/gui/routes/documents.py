@@ -30,7 +30,9 @@ from kennis.gui.figures import (
     trusted_figure_hosts,
 )
 from kennis.gui.pages import (
+    DOCUMENT_ANNOTATIONS,
     DOCUMENT_TAGS,
+    DOCUMENT_TEXT,
     ShownDocument,
     document_link,
     shown_bundle_document,
@@ -38,7 +40,12 @@ from kennis.gui.pages import (
     shown_matches,
 )
 from kennis.gui.responses import TEMPLATES, problem_page
-from kennis.gui.tagged import ShownDocumentTag, annotation_bands, document_tags
+from kennis.gui.tagged import (
+    DocumentAnnotations,
+    ShownDocumentTag,
+    document_annotations,
+    document_tags,
+)
 from kennis.holdings import (
     document_marks,
     freshness_of,
@@ -62,6 +69,8 @@ def _document_context(
     chunks: Callable[[], list[Chunk]],
     tags: Sequence[ShownDocumentTag],
     back: str,
+    annotations: DocumentAnnotations,
+    annotating: dict[str, str],
     reference: str | None = None,
 ) -> dict[str, object]:
     """What a document page needs, from either store.
@@ -109,6 +118,24 @@ def _document_context(
         "document_link": document_link(document.collection, document.document_id),
         "tags_back": back,
         "document_tags_id": DOCUMENT_TAGS,
+        # Its annotations (#50): the inspector's rows, and what the page's
+        # script draws over the text; `annotating` names the document to
+        # the routes a selection is posted to.
+        "annotations": annotations.shown,
+        "highlights": [
+            {
+                "id": each.id,
+                "project": each.project,
+                "start": each.start,
+                "end": each.end,
+                "words": list(each.words),
+                "href": each.edit_href,
+            }
+            for each in annotations.highlights
+        ],
+        "annotating": annotating,
+        "document_annotations_id": DOCUMENT_ANNOTATIONS,
+        "document_text_id": DOCUMENT_TEXT,
         # The document's full reference, by the person's citation style,
         # for the inspector's Copy reference; None for a project's file,
         # which is cited by its path.
@@ -232,6 +259,11 @@ def serve_document(
     tags = _tags_or_none(
         lambda: document_tags(context, document=document_id, project=None, bundle=None)
     )
+    drawn = _Drawn(
+        lambda body: document_annotations(
+            context, document=document_id, body=body, bundle=None, project=None
+        )
+    )
     try:
         document = shown_document(
             context.corpus_root,
@@ -241,12 +273,7 @@ def serve_document(
             marked=marked,
             marks=document_marks(context, collection),
             question=q,
-            bands=_bands_of(
-                tags,
-                lambda body: annotation_bands(
-                    context, document=document_id, body=body, bundle=None
-                ),
-            ),
+            bands=drawn.bands,
             run=_tag_run(tags),
             trusted_hosts=trusted_figure_hosts(),
         )
@@ -271,6 +298,8 @@ def serve_document(
             ),
             tags=tags,
             back=_this_page(request),
+            annotations=drawn.found,
+            annotating={"collection": collection, "document": document.document_id},
             reference=_reference_of(context, document.document_id),
         ),
     )
@@ -288,22 +317,22 @@ def _reference_of(context: Context, document_id: str) -> str | None:
     return cited.citations[0].reference if cited.citations else None
 
 
-def _bands_of(
-    tags: Sequence[ShownDocumentTag], read: Callable[[str], list[Band]]
-) -> Callable[[str], list[Band]] | None:
-    """What finds the tagged selections in the body a page draws (#50):
-    nothing is read when no tag is on a passage, and a store that cannot be
-    read draws none, as `_tags_or_none` shows none."""
-    if not any(tagged.quote is not None for tagged in tags):
-        return None
+class _Drawn:
+    """The annotations of the body a page draws, found when the page reads
+    it (#50): the margin's runs are asked for while rendering, and the
+    inspector and the highlights read what was found afterwards. A store
+    that cannot be read draws none, as `_tags_or_none` shows no tags."""
 
-    def bands(body: str) -> list[Band]:
+    def __init__(self, read: Callable[[str], DocumentAnnotations]) -> None:
+        self._read = read
+        self.found = DocumentAnnotations()
+
+    def bands(self, body: str) -> list[Band]:
         try:
-            return read(body)
+            self.found = self._read(body)
         except KennisError:
-            return []
-
-    return bands
+            self.found = DocumentAnnotations()
+        return list(self.found.bands)
 
 
 def _tag_run(tags: Sequence[ShownDocumentTag]) -> RunOf:
@@ -381,6 +410,15 @@ def serve_bundle_document(
             existing_corpus(), document=relative_path, project=project, bundle=bundle
         )
     )
+    drawn = _Drawn(
+        lambda body: document_annotations(
+            resolve_context(),
+            document=relative_path,
+            body=body,
+            bundle=bundle,
+            project=project,
+        )
+    )
     try:
         document = shown_bundle_document(
             bundle,
@@ -389,12 +427,7 @@ def serve_bundle_document(
             load_remote_images=load_remote,
             marked=marked,
             question=q,
-            bands=_bands_of(
-                tags,
-                lambda body: annotation_bands(
-                    resolve_context(), document=relative_path, body=body, bundle=bundle
-                ),
-            ),
+            bands=drawn.bands,
             run=_tag_run(tags),
             trusted_hosts=trusted_figure_hosts(),
         )
@@ -415,5 +448,7 @@ def serve_bundle_document(
             ),
             tags=tags,
             back=_this_page(request),
+            annotations=drawn.found,
+            annotating={"project": project, "document": relative_path},
         ),
     )

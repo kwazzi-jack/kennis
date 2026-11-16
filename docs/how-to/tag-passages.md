@@ -36,6 +36,34 @@ document at that passage, then its documents, then anything that needs
 attention, such as a detached passage. **Search within this tag** runs the
 search box kept to the tag until you choose **Show everything**.
 
+## Annotate a selection in a document
+
+In a document's page, select any words of the text: a phrase, a sentence,
+or a stretch running into the next paragraph. An **Annotate** button
+appears under the selection. It opens a dialog quoting what you selected,
+where you give it tags, a comment, or both, and **Save**.
+
+The words you annotated are underlined and shaded in the text, and the
+document's details list every annotation in the order of the text, with its
+tags and comment. Click the shaded words, or an annotation's **Edit** in the
+details, to change its tags or comment or to **Delete** it. Emptying both
+the tags and the comment removes the annotation too.
+
+A selection can cross emphasis, links and maths. kennis keeps what you
+selected as the document's own text, with the maths as its TeX, and finds
+it again by its words if the document changes, as it finds a tagged passage.
+When the words are no longer in the document, the details list the
+annotation with a warning, and it is drawn nowhere in the text. Its
+**Edit** still opens it, so you can delete it or keep its comment.
+
+An annotation in a project's file is kept in that project's
+`.context/annotations.json`, and one in the corpus in the corpus's. A tag
+on an annotation is a tag like any other: it is listed on the tag's page,
+and a search kept to the tag finds the passages it covers.
+
+Annotating needs the browser's scripts. Changing or deleting an annotation
+from its **Edit** works without them.
+
 ## Colours
 
 Every tag is drawn in one of eight colours: red, orange, yellow, green,
@@ -172,7 +200,7 @@ there is nothing to compare the words with. `kennis corpus index` (or
   tags.
 
 Each file is a list of annotations: a selection of a document's text, or
-the whole document, with the tags on it. A selection is kept as its words
+the whole document, with the tags on it and a comment if it has one. A selection is kept as its words
 (`exact`), a few dozen characters either side of it (`prefix` and
 `suffix`), and where it was last found (`start` and `end`). The words are
 what find it again; the positions are rewritten to where the words are now

@@ -227,6 +227,7 @@ REMOVING = {
     "forms/uninstall-pack.html",
     "forms/clear-history.html",
     "forms/reset-project.html",
+    "forms/annotation-delete.html",
 }
 
 

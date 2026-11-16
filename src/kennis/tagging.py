@@ -46,12 +46,16 @@ from kennis.engine.annotations import (
     Placed,
     Selector,
     Unchecked,
+    annotated,
+    annotation_named,
     indexed_text,
     links,
     own_end,
     placed,
     read_annotations,
     rehinted,
+    removed,
+    revised,
     selector_of,
     with_tags,
     without_tags,
@@ -267,6 +271,163 @@ def _write_store(
         place_corpus_annotations(context, text, counts=counts)
     else:
         _place_bundle_tags(store, text)
+
+
+@dataclass(frozen=True, slots=True)
+class Shown:
+    """The document a page shows: a corpus document by its collection and
+    handle, or a file of a project's bundle by its path in the bundle."""
+
+    document: str
+    collection: str | None = None
+    bundle: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ShownBody:
+    """A shown document's identity as a store names it, and its body - the
+    text a page draws and an annotation's offsets address."""
+
+    document: str
+    body: str
+
+
+def shown_body(context: Context, shown: Shown) -> ShownBody:
+    """The body of the document a page shows, read as the page reads it."""
+    if shown.bundle is not None:
+        import yaml
+
+        from kennis.engine.context.notes import bundle_documents
+        from kennis.engine.frontmatter import split_frontmatter
+
+        held = {
+            path.relative_to(shown.bundle).as_posix(): path
+            for path in bundle_documents(shown.bundle)
+        }
+        path = held.get(shown.document)
+        if path is None:
+            raise DocumentNotFound(
+                f"'{shown.document}' is not in this project's bundle",
+                resolution="kennis context status",
+            )
+        text = path.read_text(encoding="utf-8")
+        try:
+            _, body = split_frontmatter(text)
+        except yaml.YAMLError:
+            # As the page does: a bundle file's identity is its path, so
+            # an unreadable header costs its metadata, not its text.
+            body = text
+        return ShownBody(shown.document, body)
+    from kennis.engine.corpus.collection import Collection
+
+    if shown.collection is None:
+        raise DocumentNotFound(
+            f"'{shown.document}' names no collection",
+            resolution="kennis corpus list",
+        )
+    document = Collection(root=context.corpus_root, name=shown.collection).resolve(
+        shown.document
+    )
+    return ShownBody(document.id, document.body)
+
+
+def annotate(
+    context: Context,
+    shown: Shown,
+    *,
+    start: int,
+    end: int,
+    exact: str,
+    tags: Sequence[str],
+    comment: str | None,
+) -> Annotation:
+    """Annotate `body[start:end]` of the shown document with `tags` and
+    `comment` (#50), in the project's store or the corpus's.
+
+    `exact` is the text the selection was found as when the reader made
+    it; if the document no longer holds it there, nothing is written and
+    the reader is asked to select again.
+    """
+    folded = tuple(dict.fromkeys(tag_name(name) for name in tags))
+    found = shown_body(context, shown)
+    if not 0 <= start < end <= len(found.body) or found.body[start:end] != exact:
+        raise KennisError(
+            "the document changed since the text was selected",
+            resolution="select the text again",
+        )
+    store = _store_of(context, shown.bundle)
+    with WRITING_TAGS:
+        held, made = annotated(
+            read_annotations(store),
+            found.document,
+            selector_of(found.body, start, end),
+            folded,
+            comment,
+        )
+        _write_store(context, store, held, counts={"annotated": 1})
+    return made
+
+
+def revise_annotation(
+    context: Context,
+    annotation_id: str,
+    *,
+    bundle: Path | None,
+    tags: Sequence[str],
+    comment: str | None,
+) -> None:
+    """Give the annotation `annotation_id` exactly `tags` and `comment`;
+    left with neither, it is removed. Looked for in the project's store
+    when one is named, then in the corpus's."""
+    folded = tuple(dict.fromkeys(tag_name(name) for name in tags))
+    with WRITING_TAGS:
+        store, held = _store_holding(context, annotation_id, bundle)
+        _write_store(
+            context,
+            store,
+            revised(held, annotation_id, folded, comment),
+            counts={"revised": 1},
+        )
+
+
+def delete_annotation(
+    context: Context, annotation_id: str, *, bundle: Path | None
+) -> None:
+    """Remove the annotation `annotation_id`, looked for as
+    `revise_annotation` looks."""
+    with WRITING_TAGS:
+        store, held = _store_holding(context, annotation_id, bundle)
+        _write_store(
+            context, store, removed(held, annotation_id), counts={"removed": 1}
+        )
+
+
+def find_annotation(
+    context: Context, annotation_id: str, *, bundle: Path | None
+) -> Annotation:
+    """The annotation `annotation_id`, looked for as `revise_annotation`
+    looks."""
+    _, held = _store_holding(context, annotation_id, bundle)
+    return annotation_named(held, annotation_id)
+
+
+def _store_of(context: Context, bundle: Path | None) -> Path:
+    return _corpus_store(context) if bundle is None else bundle / ANNOTATIONS_FILENAME
+
+
+def _store_holding(
+    context: Context, annotation_id: str, bundle: Path | None
+) -> tuple[Path, AnnotationStore]:
+    stores = [_corpus_store(context)]
+    if bundle is not None:
+        stores.insert(0, bundle / ANNOTATIONS_FILENAME)
+    for store in stores:
+        held = read_annotations(store)
+        if any(annotation.id == annotation_id for annotation in held.annotations):
+            return store, held
+    raise KennisError(
+        f"no annotation has the id '{annotation_id}'", resolution="kennis tags"
+    )
 
 
 def colour_tags(
@@ -776,15 +937,22 @@ __all__ = [
     "PLACED",
     "UNCHECKED",
     "WRITING_TAGS",
+    "Shown",
+    "ShownBody",
     "TagChange",
     "TagColoured",
     "TagListing",
     "TagRefusal",
     "Tagged",
     "TaggedTarget",
+    "annotate",
     "bundle_title",
     "change_tags",
     "colour_tags",
     "corpus_chunks",
+    "delete_annotation",
+    "find_annotation",
+    "revise_annotation",
+    "shown_body",
     "tags_held",
 ]

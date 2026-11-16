@@ -6,6 +6,7 @@ import shlex
 from typing import Final
 
 from kennis.citing import passage_words
+from kennis.render.html import drawn_text
 from kennis.tagging import DETACHED, MISSING, UNCHECKED, TaggedTarget
 
 # Long enough to tell two tagged passages apart on a line, short enough
@@ -45,10 +46,10 @@ def target_state(target: TaggedTarget) -> str | None:
 
 
 def opening_words(quote: str) -> str:
-    """A selection's opening words for a line: leading heading lines
-    passed over, whitespace collapsed, cut at a word near
-    `OPENING_LENGTH` characters."""
-    words = passage_words(quote)
+    """A selection's opening words for a line, as the page draws them
+    (`html.drawn_text`): leading heading lines passed over, whitespace
+    collapsed, cut at a word near `OPENING_LENGTH` characters."""
+    words = drawn_text(passage_words(quote))
     if len(words) <= OPENING_LENGTH:
         return words
     cut = words.rfind(" ", 0, OPENING_LENGTH + 1)

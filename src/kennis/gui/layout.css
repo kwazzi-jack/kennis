@@ -3394,3 +3394,40 @@ html:not(.can-copy) .copy-citation { display: none; }
 }
 .tag-run-head:hover > .tag-run-chips,
 .tag-run-head:focus-within > .tag-run-chips { display: flex; }
+
+/* Annotations (#50). Each one's words are painted by the Custom Highlight
+   API, which adds no element, so a highlight moves no line; a wash under
+   the words, as a query's mark is, with a rule beneath that says it is the
+   reader's own. A click on it opens the annotation. */
+::highlight(annotation) {
+  background-color: color-mix(in srgb, var(--brand) 16%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--brand) 70%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+/* Beside a selection of the text, placed by `annotate.js` under its last
+   line; fixed, so it never takes room in the column. */
+.annotate-selection {
+  position: fixed;
+  z-index: 20;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 18%, transparent);
+  background: var(--ground);
+}
+/* The layout of a button holding an icon sets its `display`, which would
+   otherwise draw it with no selection to offer it for. */
+.annotate-selection[hidden] { display: none; }
+.annotations .tag-quote { font-size: 0.95em; }
+.annotation-rows { list-style: none; margin: 0; padding: 0 0.9rem 0.5rem; }
+.annotation-row {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.annotation-row:last-child { border-bottom: 0; }
+.annotation-row > p { margin: 0.3rem 0 0; }
+.annotation-row[data-detached] .tag-quote { color: var(--role-muted); }
+.annotation-comment {
+  font-family: var(--column);
+  white-space: pre-wrap;
+}
+form.annotation-delete { margin-top: 0.75rem; }

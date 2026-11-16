@@ -281,6 +281,19 @@ TEMPLATES.env.globals.update(
         "copy_reference": words.COPY_REFERENCE,
         "copied_citation": words.COPIED_CITATION,
         "close_label": words.CLOSE,
+        # Annotations (#50): the inspector's section, the dialogs, the button
+        # a selection offers.
+        "annotations_heading": words.ANNOTATIONS_HEADING,
+        "annotate_selection": words.ANNOTATE_SELECTION,
+        "no_annotations": words.NO_ANNOTATIONS,
+        "comment_label": words.COMMENT_LABEL,
+        "comment_hint": words.COMMENT_HINT,
+        "save_annotation": words.SAVE_ANNOTATION,
+        "delete_annotation": words.DELETE_ANNOTATION,
+        "edit_annotation": words.EDIT_ANNOTATION,
+        "annotation_on_document": words.ANNOTATION_ON_DOCUMENT,
+        "annotation_detached": words.ANNOTATION_DETACHED,
+        "annotation_tags_help": words.ANNOTATION_TAGS_HELP,
         "collection_icons": words.COLLECTION_ICONS,
         "corpus_heading": words.CORPUS_HEADING,
         "context_heading": words.CONTEXT_HEADING,
@@ -454,6 +467,21 @@ def problem_page(request: Request, error: KennisError) -> HTMLResponse:
         {"problem": str(error), "resolution": error.resolution},
         status_code=404,
     )
+
+
+def current_page(request: Request) -> str | None:
+    """The window page an htmx request was sent from, as a path and query
+    to ask it for again (#49): htmx's `HX-Current-URL`, and None when that
+    is not a path in this window."""
+    from urllib.parse import urlsplit
+
+    current = urlsplit(request.headers.get("HX-Current-URL", ""))
+    path = current.path
+    if current.scheme not in ("http", "https") or not path.startswith("/"):
+        return None
+    if path.startswith("//"):
+        return None
+    return f"{path}?{current.query}" if current.query else path
 
 
 def from_htmx(request: Request) -> bool:

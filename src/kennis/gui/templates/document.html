@@ -30,7 +30,11 @@
    link had no stop inside it at all. #}
 <div class="reading" tabindex="0" role="region" aria-label="{{ document.title }}">
 <div class="column">
-<article>
+{# The text, with what `annotate.js` needs to annotate a selection of it
+   and to draw each annotation over it (#50): the document as the routes
+   name it, and each annotation found in the text drawn. Redrawn whole
+   after an annotation is written. #}
+<article id="{{ document_text_id }}" data-annotate-document="{{ annotating.document }}"{% if annotating.collection %} data-annotate-collection="{{ annotating.collection }}"{% endif %}{% if annotating.project %} data-annotate-project="{{ annotating.project }}"{% endif %}>
   <h1>{{ document.title }}</h1>
   {% if document.byline %}<p class="byline">{{ document.byline }}</p>{% endif %}
   {% if document.has_blocked_images and not load_remote_images %}
@@ -42,7 +46,11 @@
   <p class="notice quiet">{{ icon("info") }}<span>{{ mark_withheld }}</span></p>
   {% endif %}
   {{ document.body_html | safe }}
+  <script type="application/json" data-annotations>{{ highlights | tojson }}</script>
 </article>
+{# Offered beside a selection of the text, placed and shown by
+   `annotate.js`; its words are the server's. #}
+<button type="button" class="annotate-selection" hidden>{{ icon("pencil") }}<span>{{ annotate_selection }}</span></button>
 </div>
 </div>
 {% from "resize.html" import handle %}
@@ -75,6 +83,27 @@
     {% endif %}
   </details>
   {% endif %}
+  {# The document's annotations (#50), in the order of the text: what each
+     is on, its tags and comment, and Edit - the keyboard's way to every
+     annotation, and the only one without a script. #}
+  <details class="annotations" id="{{ document_annotations_id }}" open>
+    <summary>{{ icon("chevron-right") }}{{ annotations_heading }}</summary>
+    {% if annotations %}
+    <ul class="annotation-rows">
+      {% for annotation in annotations %}
+      <li class="annotation-row"{% if annotation.detached %} data-detached{% endif %}>
+        {% if annotation.quote %}<blockquote class="tag-quote">{{ annotation.quote }}</blockquote>{% else %}<p class="role-muted">{{ annotation_on_document }}</p>{% endif %}
+        {% if annotation.chips %}<p class="tag-chips">{% for chip in annotation.chips %}<a class="tag-chip" href="{{ chip.href }}" {{ tag_paint(chip.colour) }}>{{ chip.name }}</a>{% endfor %}</p>{% endif %}
+        {% if annotation.comment %}<p class="annotation-comment">{{ annotation.comment }}</p>{% endif %}
+        {% if annotation.detached %}<p class="role-warning">{{ icon("triangle-alert") }}<span>{{ annotation_detached }}</span></p>{% endif %}
+        <p><a class="button" href="{{ annotation.edit_href }}" hx-get="{{ annotation.edit_href }}" hx-target="#dialog" hx-swap="innerHTML" aria-label="{{ annotation.edit_label }}">{{ icon("pencil") }}<span>{{ edit_annotation }}</span></a></p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="role-muted">{{ no_annotations }}</p>
+    {% endif %}
+  </details>
   {# The document's tags, whole or by passage, each with Remove, and the
      dialog that tags it whole (#625). #}
   <details class="tags" id="{{ document_tags_id }}" open>

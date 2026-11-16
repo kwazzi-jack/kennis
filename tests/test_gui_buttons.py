@@ -117,6 +117,8 @@ EXPECTED_PRIMARY: dict[str, list[str]] = {
     "forms/sync-project.html": ["{{ sync_project_action }}"],
     "forms/sync.html": ["{{ sync_corpus_action }}"],
     "forms/tag.html": ["{{ tag_action }}"],
+    "forms/annotate.html": ["{{ save_annotation }}"],
+    "forms/annotation.html": ["{{ save_annotation }}"],
     "forms/uninstall-pack.html": ["{{ uninstall_pack_action }}"],
     "job-outcome.html": ["{{ index_now_label }}", "{{ sync_corpus_label }}"],
     "outcome.html": ["{{ index_now_label }}"],

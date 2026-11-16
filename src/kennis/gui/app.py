@@ -58,6 +58,7 @@ from kennis.gui.routes import (
     supply,
     tags,
 )
+from kennis.gui.routes import annotations as annotation_routes
 from kennis.gui.theme import stylesheet
 from kennis.service.jobs import Jobs
 
@@ -379,6 +380,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
         settings,
         supply,
         tags,
+        annotation_routes,
         cite,
     ):
         app.include_router(routes.router)

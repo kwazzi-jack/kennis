@@ -652,8 +652,10 @@ def test_the_window_is_sized_by_the_viewport_and_not_by_arithmetic():
 # (Brian, 2026-11-01); 61st: GET /packs/{id}, what an installed pack contains;
 # 62nd to 66th: GET /packs, GET and POST /packs/{id}/uninstall, GET and POST
 # /projects/forget (Brian, 2026-11-04); and GET /figure/{path}, an image a
-# document's markdown links (#642)
-EXPECTED_ROUTES = 84
+# document's markdown links (#642); 85th to 89th: POST /annotate/located, a
+# selection found in the document's markdown, POST /annotations, GET and POST
+# /annotations/{id}, and POST /annotations/{id}/delete (#50)
+EXPECTED_ROUTES = 89
 
 
 def every_route(routes: Sequence[BaseRoute]) -> Iterator[APIRoute]:

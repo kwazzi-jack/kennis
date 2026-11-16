@@ -43,6 +43,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from kennis.engine.errors import (
     AnnotationsUnreadable,
+    KennisError,
     TagColourRefused,
     TagNameRefused,
 )
@@ -396,6 +397,155 @@ def without_tags(
     )
 
 
+def annotated(
+    store: AnnotationStore,
+    document: str,
+    selector: Selector | None,
+    tags: Sequence[str],
+    comment: str | None,
+) -> tuple[AnnotationStore, Annotation]:
+    """`store` with `tags` and `comment` on the selection, and the
+    annotation that carries them.
+
+    The annotation already on that selection gains the tags, and the
+    comment when one is given; otherwise one is made. Neither a tag nor a
+    comment is refused: an annotation holding nothing is not kept.
+    """
+    said = _comment(comment)
+    if not tags and said is None:
+        raise KennisError(
+            "an annotation needs a tag or a comment",
+            resolution="give it a tag, a comment, or both",
+        )
+    annotations = list(store.annotations)
+    for position, annotation in enumerate(annotations):
+        if annotation.document == document and same_selection(
+            annotation.selector, selector
+        ):
+            changed = replace(
+                annotation,
+                tags=tuple(sorted({*annotation.tags, *tags})),
+                comment=annotation.comment if said is None else said,
+            )
+            annotations[position] = changed
+            return replace(store, annotations=tuple(annotations)), changed
+    made = Annotation(
+        id=new_id(each.id for each in annotations),
+        document=document,
+        selector=selector,
+        tags=tuple(sorted(set(tags))),
+        comment=said,
+        created=now(),
+    )
+    return replace(store, annotations=(*annotations, made)), made
+
+
+def revised(
+    store: AnnotationStore,
+    annotation_id: str,
+    tags: Sequence[str],
+    comment: str | None,
+) -> AnnotationStore:
+    """`store` with the annotation `annotation_id` carrying exactly `tags`
+    and `comment`; left with neither, it is dropped."""
+    found = annotation_named(store, annotation_id)
+    changed = replace(found, tags=tuple(sorted(set(tags))), comment=_comment(comment))
+    return replace(
+        store,
+        annotations=tuple(
+            changed if each is found else each
+            for each in store.annotations
+            if each is not found or not changed.is_empty()
+        ),
+    )
+
+
+def removed(store: AnnotationStore, annotation_id: str) -> AnnotationStore:
+    """`store` without the annotation `annotation_id`."""
+    found = annotation_named(store, annotation_id)
+    return replace(
+        store,
+        annotations=tuple(each for each in store.annotations if each is not found),
+    )
+
+
+def annotation_named(store: AnnotationStore, annotation_id: str) -> Annotation:
+    """The annotation whose id is `annotation_id`, or a refusal naming it."""
+    for annotation in store.annotations:
+        if annotation.id == annotation_id:
+            return annotation
+    raise KennisError(
+        f"no annotation has the id '{annotation_id}'", resolution="kennis tags"
+    )
+
+
+def _comment(comment: str | None) -> str | None:
+    """A comment as kept: None when it says nothing."""
+    if comment is None or not comment.strip():
+        return None
+    return comment.strip()
+
+
+# ---------------------------------------------------------------------------
+# A selection made on a page
+
+# Between two words drawn on a page, the markdown may hold a link's
+# address, an ordered list's number, or any run of characters that are not
+# word characters (spaces, emphasis marks, brackets, a maths delimiter).
+# Measured on 70,939 selections of a held corpus: 99.73% found (sketch
+# 2026-11-16-annotate-selection).
+_LINK_ADDRESS: Final = r"\]\([^)]*\)"
+_BETWEEN_WORDS: Final = rf"(?:{_LINK_ADDRESS}|\n[ \t]*\d+[.)][ \t]|\W)+?"
+_WORD: Final = re.compile(r"\w+")
+_HIDDEN: Final = re.compile(rf"{_LINK_ADDRESS}|\$")
+
+
+def visible_words(markdown: str) -> tuple[str, ...]:
+    """The words a page draws for `markdown`: without a link's address,
+    and with maths as its TeX's words."""
+    return tuple(_WORD.findall(_HIDDEN.sub(" ", markdown)))
+
+
+def selection_in(
+    body: str, first: Span, last: Span, text: str, before: str
+) -> Span | None:
+    """Where the words of `text`, selected on a page that drew `body`, are
+    in `body`, or None.
+
+    `first` and `last` are the blocks the selection begins and ends in,
+    as the page gives them; the selection is looked for from the first
+    block's start to the last block's end, and must begin in the first.
+    Where it occurs more than once, the occurrence whose preceding words
+    in the block agree longest with `before` - the text drawn before the
+    selection - and then the earliest.
+    """
+    words = _WORD.findall(text)
+    if not words:
+        return None
+    pattern = re.compile(_BETWEEN_WORDS.join(re.escape(word) for word in words))
+    reach = body[first.start : max(first.end, last.end)]
+    candidates = [
+        Span(first.start + match.start(), first.start + match.end())
+        for match in pattern.finditer(reach)
+        if first.start + match.start() < first.end
+    ]
+    if not candidates:
+        return None
+    wanted = visible_words(before)
+
+    def agreement(span: Span) -> int:
+        preceding = visible_words(body[first.start : span.start])
+        agreed = 0
+        while (
+            agreed < min(len(preceding), len(wanted))
+            and preceding[-1 - agreed] == wanted[-1 - agreed]
+        ):
+            agreed += 1
+        return agreed
+
+    return max(candidates, key=lambda span: (agreement(span), -span.start))
+
+
 # ---------------------------------------------------------------------------
 # Finding a selection again
 
@@ -720,6 +870,8 @@ __all__ = [
     "Span",
     "Unchecked",
     "admitting",
+    "annotated",
+    "annotation_named",
     "annotations_of",
     "by_document",
     "colours_kept",
@@ -734,10 +886,14 @@ __all__ = [
     "placed",
     "read_annotations",
     "rehinted",
+    "removed",
+    "revised",
     "same_selection",
+    "selection_in",
     "selector_of",
     "store_digest",
     "tags_on",
+    "visible_words",
     "with_tags",
     "without_tags",
     "written",

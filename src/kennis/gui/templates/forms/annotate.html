@@ -1,0 +1,32 @@
+{# Annotating a selection made on a document's page (#50). The page found
+   the selection's words in the document's markdown; the range and the
+   words found are carried back, and the write refuses if the document no
+   longer holds them there. `data-closes-dialog`: once written, the page
+   draws its text and inspector again and the dialog has nothing left to
+   show. #}
+{% if found %}
+<blockquote class="tag-quote">{{ quote }}</blockquote>
+<form class="annotate" action="/annotations" method="post" data-closes-dialog hx-disabled-elt="find button[type=submit]" hx-post="/annotations" hx-target="#annotate-outcome" hx-swap="innerHTML">
+  <input type="hidden" name="document" value="{{ document }}">
+  {% if collection %}<input type="hidden" name="collection" value="{{ collection }}">{% endif %}
+  {% if project %}<input type="hidden" name="project" value="{{ project }}">{% endif %}
+  <input type="hidden" name="start" value="{{ start }}">
+  <input type="hidden" name="end" value="{{ end }}">
+  <input type="hidden" name="exact" value="{{ exact }}">
+  <input type="hidden" name="back" value="{{ back }}">
+  <label class="labelled"><span class="name">{{ tag_names_label }}</span><input type="text" name="tags" list="tags-in-use" placeholder="{{ tag_names_hint }}" aria-describedby="annotation-tags-help" autofocus></label>
+  <p class="role-muted" id="annotation-tags-help">{{ annotation_tags_help }}</p>
+  <datalist id="tags-in-use">{% for name in suggestions %}<option value="{{ name }}">{% endfor %}</datalist>
+  <label class="labelled"><span class="name">{{ comment_label }}</span><textarea name="comment" rows="4" placeholder="{{ comment_hint }}"></textarea></label>
+  <div id="annotate-outcome" role="status">{% include "outcome.html" %}</div>
+  <div class="form-foot">
+    <a class="button" href="{{ back or '/' }}" data-close>{{ close_label }}</a>
+    <button type="submit" class="primary">{{ icon("pencil") }}{{ save_annotation }}</button>
+  </div>
+</form>
+{% else %}
+<p class="role-warning">{{ not_found }}</p>
+<div class="form-foot">
+  <a class="button" href="{{ back or '/' }}" data-close>{{ close_label }}</a>
+</div>
+{% endif %}

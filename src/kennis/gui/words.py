@@ -737,6 +737,8 @@ ACTION_TITLES: Final[dict[str, str]] = {
     "/projects/sync": "Sync a project's context",
     "/history/clear": "Clear recent searches",
     "/tags/add": "Tag",
+    "/annotate": "Annotate",
+    "/annotations": "Annotation",
 }
 
 # The palette (11g). Its actions are the bar's, opened on a tab or a
@@ -1982,6 +1984,39 @@ def remove_tag_from(name: str, title: str) -> str:
     return f"Remove the tag {name} from {title}"
 
 
+# ---------------------------------------------------------------------------
+# Annotations: a selection of a document's text with tags and a comment (#50)
+
+ANNOTATE_SELECTION = "Annotate"
+ANNOTATIONS_HEADING = "Annotations"
+NO_ANNOTATIONS = (
+    "Select text in the document to annotate it with tags, a comment or both."
+)
+COMMENT_LABEL = "Comment"
+COMMENT_HINT = "Why this matters, what to check, where it leads"
+SAVE_ANNOTATION = "Save"
+DELETE_ANNOTATION = "Delete"
+EDIT_ANNOTATION = "Edit"
+ANNOTATION_ON_DOCUMENT = "The whole document"
+ANNOTATION_DETACHED = "Its words are no longer in the document."
+ANNOTATION_TAGS_HELP = (
+    "Optional. One word each, separated by commas; join words with a hyphen."
+)
+SELECTION_NOT_FOUND = (
+    "The selection could not be matched to the document's text. Select "
+    "words within one paragraph or block, away from a figure's notice, and "
+    "try again."
+)
+SELECTION_TOO_LONG = "Select less text: an annotation is a passage, not a section."
+ANNOTATION_SAVED = "Saved."
+ANNOTATION_DELETED = "Deleted."
+
+
+def edit_annotation_of(quote: str) -> str:
+    """The label of an annotation's Edit button, for a screen reader."""
+    return f"Edit the annotation on {quote}"
+
+
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
@@ -1994,6 +2029,13 @@ __all__ = [
     "ADD_TAB_ICONS",
     "ADD_TIPS",
     "ALSO_HELD",
+    "ANNOTATE_SELECTION",
+    "ANNOTATIONS_HEADING",
+    "ANNOTATION_DELETED",
+    "ANNOTATION_DETACHED",
+    "ANNOTATION_ON_DOCUMENT",
+    "ANNOTATION_SAVED",
+    "ANNOTATION_TAGS_HELP",
     "ANOTHER_GROUP",
     "APPEARANCE_HEADING",
     "ARXIV_SILENT",
@@ -2034,6 +2076,8 @@ __all__ = [
     "CLOSE",
     "COLLECTIONS_HEADING",
     "COLLECTION_ICONS",
+    "COMMENT_HINT",
+    "COMMENT_LABEL",
     "CONTEXT_HEADING",
     "CONVERTER_MISSING",
     "CONVERTER_NAMES",
@@ -2055,11 +2099,13 @@ __all__ = [
     "CREDENTIAL_UNSET",
     "CRUMBS_LABEL",
     "CURRENT_VERSION",
+    "DELETE_ANNOTATION",
     "DELETE_PROJECT",
     "DELETE_PROJECT_ACTION",
     "DETAILS_HEADING",
     "DETAIL_LABELS",
     "DISCOVERY_WORDS",
+    "EDIT_ANNOTATION",
     "EMPTY_MEANS",
     "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",
@@ -2155,6 +2201,7 @@ __all__ = [
     "NOT_FOUND_HEADING",
     "NOT_INSTALLED_HERE",
     "NOT_SEARCHABLE_YET",
+    "NO_ANNOTATIONS",
     "NO_CHANGES",
     "NO_CONTEXT",
     "NO_CONTEXT_TIP",
@@ -2243,12 +2290,15 @@ __all__ = [
     "RETURN_EXPLAINED",
     "RETURN_HERE",
     "SAVE",
+    "SAVE_ANNOTATION",
     "SCOPE_LABEL",
     "SEARCHABLE",
     "SEARCHING",
     "SEARCH_ACTION",
     "SEARCH_KEY_TITLE",
     "SEARCH_WITHIN_TAG",
+    "SELECTION_NOT_FOUND",
+    "SELECTION_TOO_LONG",
     "SERVICE_GONE",
     "SERVICE_GONE_COMMAND",
     "SERVICE_GONE_HEADING",
@@ -2344,6 +2394,7 @@ __all__ = [
     "docs_input_refused",
     "documents_held",
     "documents_waiting",
+    "edit_annotation_of",
     "found_on_arxiv",
     "group_empty_means",
     "index_collection",
