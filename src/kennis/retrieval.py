@@ -38,6 +38,7 @@ from kennis.engine.errors import (
 )
 from kennis.engine.rag.models import Chunk, ChunkPredicate, Filter
 from kennis.engine.rag.modes import Mode
+from kennis.engine.settings import default_scopes
 from kennis.render.hits import Hit
 from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
 
@@ -273,8 +274,10 @@ class Unembedded:
 class Sweep:
     """What searching several scopes at once came to.
 
-    `groups` is keyed in `SCOPE_NAMES` order and **never sorted by
-    best hit**. Ranking collections against each other would put the
+    `groups` is keyed in the reader's order - the scopes
+    `retrieval.default_collections` lists, then any others in
+    `SCOPE_NAMES` order (#669) - and **never sorted by best hit**. Ranking
+    collections against each other would put the
     cross-collection comparison back in through the layout, and it is
     the comparison the labelled bands exist to prevent: an absolute
     cosine and a position relative to this query's best lexical hit
@@ -285,6 +288,10 @@ class Sweep:
     asked of them. Carried rather than printed, because `retrieval`
     may not import a front end - which is the whole reason the sweep
     could not simply be moved as it stood.
+
+    `left_out` names the scopes a default search did not cover because
+    the reader's setting leaves them out. Not `skipped`: nothing is wrong
+    with them and no command mends it; naming one searches it.
 
     `other_models` and `unembedded` name the scopes searched with a model
     other than the configured one, and those whose model could not be used
@@ -297,12 +304,13 @@ class Sweep:
     degraded: tuple[str, ...]
     other_models: tuple[OtherModel, ...] = ()
     unembedded: tuple[Unembedded, ...] = ()
+    left_out: tuple[str, ...] = ()
 
 
 def sweep(
     question: str,
     *,
-    scopes: Sequence[str],
+    scopes: Sequence[str] | None,
     named: bool,
     top_k: int | None = None,
     filters: list[Filter] | None = None,
@@ -319,6 +327,11 @@ def sweep(
     missing index is fatal for the first and ordinary for the second.
     Answering a reader who asked for `docs` with hits from elsewhere
     answers a different question than the one they put.
+
+    `scopes=None` is the default search: the scopes the setting
+    `retrieval.default_collections` lists and no others, the rest named
+    in `left_out` (#669). Scopes given are searched as given. Either way
+    the groups come in the setting's order.
 
     Raises when nothing at all could be searched, rather than
     returning an empty sweep. "No passages matched" for a corpus that
@@ -341,7 +354,11 @@ def sweep(
     context (#625). A tag no store holds is refused rather than answered
     with nothing, which would read as "no passage matched".
     """
-    wants_corpus = any(scope != CONTEXT_COLLECTION for scope in scopes)
+    if scopes is None and named:
+        raise ValueError("a search given no scopes cannot be named: it names none")
+    wants_corpus = scopes is None or any(
+        scope != CONTEXT_COLLECTION for scope in scopes
+    )
     # Required only when a corpus scope was *named*. Under a sweep a
     # missing corpus is the same kind of absence as a missing index,
     # which is what lets a search work inside a project on a machine
@@ -353,15 +370,25 @@ def sweep(
     skipped: list[Skipped] = []
     degraded: list[str] = []
     groups: dict[str, list[Hit]] = {}
+    listed = default_scopes(context.settings.retrieval.default_collections)
+    asked = listed if scopes is None else tuple(scopes)
+    left_out = (
+        tuple(scope for scope in SCOPE_NAMES if scope not in listed)
+        if scopes is None
+        else ()
+    )
+    # The reader's order for every search, named or not, so that two
+    # collections are never shown one way by default and another by name.
+    in_order = (*listed, *(scope for scope in SCOPE_NAMES if scope not in listed))
     choice = (
         versions_left_out(context, versions)
-        if "docs" in scopes
+        if "docs" in asked
         else VersionChoice(left_out=(), breadth=1)
     )
 
     tagged = _tags_asked(context, tags, [bundle, *others])
     found = _Gathered(groups, searched, skipped, degraded, [], [])
-    for name in [scope for scope in SCOPE_NAMES if scope in scopes]:
+    for name in [scope for scope in in_order if scope in asked]:
         if name == CONTEXT_COLLECTION:
             _sweep_context(
                 context,
@@ -410,6 +437,7 @@ def sweep(
         degraded=tuple(degraded),
         other_models=tuple(found.other_models),
         unembedded=tuple(found.unembedded),
+        left_out=left_out,
     )
 
 
@@ -426,7 +454,7 @@ class _Searched:
 
 @dataclass(frozen=True, slots=True)
 class _Gathered:
-    """What a sweep has found so far, appended to in `SCOPE_NAMES` order."""
+    """What a sweep has found so far, appended to in the reader's order."""
 
     groups: dict[str, list[Hit]]
     searched: list[str]

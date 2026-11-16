@@ -391,6 +391,97 @@ def text_files() -> list[Path]:
     return sorted(found)
 
 
+def is_type_checking_block(node: ast.stmt) -> bool:
+    return isinstance(node, ast.If) and "TYPE_CHECKING" in ast.unparse(node.test)
+
+
+def statements_run_on_import(body: list[ast.stmt]) -> list[ast.stmt]:
+    """The statements of `body` that run when the module loads.
+
+    A function's body runs when it is called, so an import inside one is
+    the usual way to break a cycle and must not count as one. A
+    module-level `if` or `try` runs, except `if TYPE_CHECKING:`.
+    """
+    statements: list[ast.stmt] = []
+    for node in body:
+        if is_type_checking_block(node):
+            continue
+        statements.append(node)
+        if isinstance(node, ast.If):
+            statements += statements_run_on_import(node.body + node.orelse)
+        elif isinstance(node, ast.Try):
+            handlers = [line for handler in node.handlers for line in handler.body]
+            statements += statements_run_on_import(
+                node.body + handlers + node.orelse + node.finalbody
+            )
+    return statements
+
+
+def modules_imported_on_load(path: Path, known: set[str]) -> set[str]:
+    """The kennis modules `path` imports when it is itself imported."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    package = package_of(path)
+    names: set[str] = set()
+    for node in statements_run_on_import(tree.body):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0:
+                base = node.module or ""
+            else:
+                ancestry = package.split(".")
+                base = ".".join(ancestry[: len(ancestry) - node.level + 1])
+                if node.module:
+                    base = f"{base}.{node.module}" if base else node.module
+            names.add(base)
+            names.update(f"{base}.{alias.name}" for alias in node.names)
+    return {name for name in names if name in known} - {module_name_of(path)}
+
+
+def import_cycle(graph: dict[str, set[str]]) -> list[str] | None:
+    """One cycle in `graph` as the path round it, or None if there is none."""
+    finished: set[str] = set()
+    for start in sorted(graph):
+        if start in finished:
+            continue
+        trail: list[str] = [start]
+        pending: list[list[str]] = [sorted(graph[start])]
+        while trail:
+            if not pending[-1]:
+                finished.add(trail.pop())
+                pending.pop()
+                continue
+            following = pending[-1].pop()
+            if following in trail:
+                return [*trail[trail.index(following) :], following]
+            if following in finished:
+                continue
+            trail.append(following)
+            pending.append(sorted(graph[following]))
+    return None
+
+
+def test_the_cycle_finder_finds_a_cycle_and_passes_a_tree() -> None:
+    """The finder is the whole of the test below, so it is tested itself."""
+    assert import_cycle({"a": {"b"}, "b": {"c"}, "c": {"a"}}) == ["a", "b", "c", "a"]
+    assert import_cycle({"a": {"b", "c"}, "b": {"c"}, "c": set()}) is None
+
+
+def test_no_module_imports_itself_through_another() -> None:
+    """A cycle loads only in one order: whichever module is imported first
+    sees the other half-initialised, and a name moved between them later
+    fails at import with no change to either import line. Found by a
+    graph of the package (2026-11-16): `gui/pages.py` and `gui/words.py`."""
+    paths = sorted((SOURCE_ROOT / "kennis").rglob("*.py"))
+    assert len(paths) > 100, "the walk found too few modules to mean anything"
+    known = {module_name_of(path) for path in paths}
+    graph = {
+        module_name_of(path): modules_imported_on_load(path, known) for path in paths
+    }
+    cycle = import_cycle(graph)
+    assert cycle is None, "import cycle: " + " -> ".join(cycle or [])
+
+
 @pytest.mark.parametrize(
     "path", text_files(), ids=lambda path: str(path.relative_to(PROJECT_ROOT))
 )

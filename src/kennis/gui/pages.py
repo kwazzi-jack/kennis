@@ -12,6 +12,7 @@ change a word and a change of wording cannot need a template edit.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -237,6 +238,11 @@ class ShownHit:
     tags: tuple[ShownChip, ...] = ()
 
     @property
+    def tags_id(self) -> str:
+        """The id of the card's tags, which a tag added to it redraws."""
+        return tags_anchor(self.link)
+
+    @property
     def opens(self) -> bool:
         """Whether the passage is too long or too tall to show whole. A
         passage that fits is drawn whole, its lead included."""
@@ -341,6 +347,17 @@ def _link(collection: str, document_id: str, chunk: int | None) -> str:
     if project is not None:
         return context_link(project, document_id, chunk)
     return link_to(document_id, chunk)
+
+
+def tags_anchor(link: str) -> str:
+    """The id of the element that shows the tags on what `link` names, so
+    an answer that changed them can ask for that element again (#49). From
+    the link's digest: a link holds characters an id may not."""
+    return f"tags-{hashlib.sha256(link.encode('utf-8')).hexdigest()[:16]}"
+
+
+# The id of a document page's tag section, which a tag added there redraws.
+DOCUMENT_TAGS: Final = "document-tags"
 
 
 def document_link(collection: str, document_id: str) -> str:
@@ -540,6 +557,30 @@ def shown_skips(found: Sweep) -> list[ShownSkip]:
     return [
         ShownSkip(names=entry.name, resolution=entry.resolution)
         for entry in found.skipped
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class ShownLeftOut:
+    """A scope the reader's setting leaves out of a default search, and
+    the address of this search in it."""
+
+    name: str
+    icon: str
+    href: str
+
+
+def shown_left_out(found: Sweep, question: str, mode: str) -> list[ShownLeftOut]:
+    """The scopes a default search did not cover, each with the search
+    that does (#669)."""
+    asked_mode = f"&mode={quote(mode)}" if mode else ""
+    return [
+        ShownLeftOut(
+            name=name,
+            icon=words.COLLECTION_ICONS.get(name, "folder"),
+            href=f"/?q={quote(question)}&scope={quote(name)}{asked_mode}",
+        )
+        for name in found.left_out
     ]
 
 
@@ -1156,7 +1197,6 @@ __all__ = [
     "ShownMeasure",
     "ShownModelNotice",
     "ShownOrder",
-    "ShownOutcome",
     "ShownPaletteEntry",
     "ShownRecent",
     "ShownRow",
@@ -1628,33 +1668,6 @@ def _branch(
         version=version if is_version else "",
         current=is_version and versions is not None and versions.current == version,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class ShownOutcome:
-    """What became of a write, in the pieces a page arranges.
-
-    `role` is a semantic role name from `render/theme.py`, so the
-    template applies a class and decides nothing: whether a repeated
-    note is good news or a warning is a judgement, and judgements do
-    not belong in markup.
-    """
-
-    message: str
-    role: str
-    where: str | None = None
-    resolution: str | None = None
-    # Whether the form that produced this should empty itself.
-    # A write that happened leaves stale text behind, and pressing
-    # the button again writes it twice; a write that was refused
-    # leaves text the reader would otherwise have to type again.
-    clears: bool = False
-    # What else the write did that the reader should know of: documents
-    # deleted by hand that it put back.
-    notes: tuple[str, ...] = ()
-    # The collection to offer an Index now button for, when what was
-    # written cannot be found until it is indexed.
-    index_after: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

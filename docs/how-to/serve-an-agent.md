@@ -72,7 +72,7 @@ Install a pack, restart the agent, and the description changes. See
 
 | argument | what it does |
 |---|---|
-| `collections` | required: `["all"]`, or any of `notes`, `literature`, `docs` and `context`. Under `all`, every one that has an index is searched, and one that has none is named with the command that builds it. A collection named here that has no index is an error. |
+| `collections` | required: `["all"]`, or any of `notes`, `literature`, `docs` and `context`. `all` is the collections the setting `retrieval.default_collections` lists, which is all four unless you narrowed it: each that has an index is searched, one that has none is named with the command that builds it, and one the setting leaves out is named so that the agent can ask for it. A collection named here that has no index is an error. |
 | `top_k` | how many hits each collection gives, 5 unless given |
 | `version` | for `docs`: each project's current version is searched unless this names others, as `kennis search --version` does |
 | `projects` | for `context`: `"all"` for every project on this machine, or a list of project names |
