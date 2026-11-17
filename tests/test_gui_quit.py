@@ -51,6 +51,9 @@ def corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("KENNIS_LOG_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("KENNIS_CORPUS_ROOT", str(tmp_path / "corpus"))
     monkeypatch.setenv("KENNIS_EMBEDDING_BACKEND", "none")
+    # Set up as `kennis setup` leaves a machine: with neither file nor
+    # corpus, `kennis gui` serves the setup wizard instead (#682).
+    assert CliRunner().invoke(main, ["config", "init", "--defaults"]).exit_code == 0
     assert CliRunner().invoke(main, ["corpus", "init"]).exit_code == 0
     return tmp_path
 

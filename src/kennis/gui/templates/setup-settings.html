@@ -1,0 +1,19 @@
+{# The wizard's settings: the walk `config init` asks, `corpus.root`
+   included, laid out by the settings page's own rows. The section htmx
+   redraws whole when a choice changes. #}
+<section data-section="setup-settings">
+<p class="role-muted">{{ settings_note }}</p>
+{% set redraw_address = "/setup/settings" %}{% set form_class = "setup-settings" %}
+<form class="setup-settings" action="/setup/settings" method="post" hx-disinherit="*">
+{% for group, group_heading in setting_groups %}
+<div class="setting-group" data-group="{{ group }}">
+<h3>{{ group_heading }}</h3>
+{% for setting in settings if setting.group == group %}
+{% include "forms/setting-row.html" %}
+{% endfor %}
+</div>
+{% endfor %}
+{% if outcome %}<p class="role-error" role="status">{{ outcome }}</p>{% endif %}
+<p class="form-foot"><button type="submit" class="primary">{{ icon("save") }}{{ save_label }}</button></p>
+</form>
+</section>

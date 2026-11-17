@@ -1,0 +1,41 @@
+{# One setting's row, for the settings page and the setup wizard (#682).
+   `redraw_address` is the GET a changed choice redraws the section by,
+   and `form_class` the form whose `[data-redraw]` fields it sends. #}
+{% from "tip.html" import tip %}
+<div class="setting{% if setting.order %} setting-wide{% endif %}" data-key="{{ setting.key }}">
+<div class="setting-head"><label class="setting-name" for="setting-{{ setting.key }}">{{ setting.name }}</label> {{ tip("setting-" ~ setting.key, setting.name, setting.tip) }}</div>
+<div class="setting-control">
+{% if setting.kind == "choice" %}
+<select id="setting-{{ setting.key }}" name="{{ setting.key }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw hx-get="{{ redraw_address }}" hx-trigger="change" hx-include=".{{ form_class }} [data-redraw]" hx-target="closest section" hx-swap="outerHTML">
+{% for value, label in setting.choices %}<option value="{{ value }}"{% if value == setting.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+</select>
+{% elif setting.kind == "secret" %}
+<input id="setting-{{ setting.key }}" type="password" name="{{ setting.key }}" autocomplete="off">
+{% elif setting.kind == "integer" or setting.kind == "number" %}
+<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.kind == "number" %} step="any"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}{% if setting.redraws %} hx-get="{{ redraw_address }}" hx-trigger="change" hx-include=".{{ form_class }} [data-redraw]" hx-target="closest section" hx-swap="outerHTML"{% endif %}>
+{% elif setting.kind == "boolean" %}
+{# An unticked box sends nothing, and nothing means "keep": the hidden
+   `false` comes first, so a ticked box's `true` is the later value and
+   the one the server reads. #}
+<input type="hidden" name="{{ setting.key }}" value="false"{% if setting.overridden_by %} disabled{% endif %} data-redraw>
+<input id="setting-{{ setting.key }}" type="checkbox" name="{{ setting.key }}" value="true"{% if setting.value == "true" %} checked{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
+{% else %}
+<input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
+{% if setting.order and not setting.overridden_by %}
+{# An ordered list, as chips (#670). The field above is the setting and
+   all there is without a script; `order.js` shows these, hides it, and
+   writes it. A chip's tick box is no field of the form. #}
+<ol class="order-chips" data-order-for="setting-{{ setting.key }}" aria-label="{{ setting.name }}" hidden>
+{% for chip in setting.order %}<li class="order-chip" data-value="{{ chip.name }}" data-collection="{{ chip.name }}" draggable="true"{% if not chip.included %} data-left-out{% endif %}><span class="grip">{{ icon("grip-vertical") }}</span><label class="chip-name"><input type="checkbox" data-order-include aria-label="{{ chip.include_label }}"{% if chip.included %} checked{% endif %}>{{ icon(chip.icon) }}<span>{{ chip.name }}</span></label><button type="button" class="ghost chip-move" data-move="earlier" aria-label="{{ chip.earlier_label }}">{{ icon("chevron-left") }}</button><button type="button" class="ghost chip-move" data-move="later" aria-label="{{ chip.later_label }}">{{ icon("chevron-right") }}</button></li>
+{% endfor %}</ol>
+<p class="order-hint role-muted" hidden>{{ order_hint }}</p>
+{% endif %}
+{% endif %}
+{% if setting.problem %}<p class="role-error">{{ setting.problem }}</p>{% endif %}
+</div>
+{% if setting.overridden_by %}<p class="notice quiet" id="overridden-{{ setting.key }}">{{ icon("info") }}<span>{{ overridden_by(setting.overridden_by) }}</span></p>{% endif %}
+{% if setting.credential %}<p class="credential"><code class="role-command">{{ setting.credential.variable }}</code> {{ credential_set if setting.credential.is_set else credential_unset }}</p>{% endif %}
+{% if setting.install_hint %}<p class="role-warning">{{ converter_missing }} <code class="role-command">{{ setting.install_hint }}</code></p>{% endif %}
+{% if setting.leaves_machine %}<p class="cost role-warning">{{ setting.leaves_machine }}</p>{% endif %}
+{% if setting.fit %}<p class="fit{% if setting.fit_warns %} role-warning{% else %} role-muted{% endif %}">{{ setting.fit }}</p>{% endif %}
+</div>

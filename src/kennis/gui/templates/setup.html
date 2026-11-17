@@ -1,0 +1,74 @@
+{# The setup wizard (#682), served by `kennis gui` before any corpus
+   exists. One step per page, `/?step=<name>`, so Back and reload need no
+   script; each form posts and is answered with the next step, or with
+   this one marked where it was refused. Only a changed choice among the
+   settings redraws its section by htmx, as the settings page does. #}
+<!doctype html>
+<html lang="en"{% for name, value in preferences(request).items() %} data-{{ name }}="{{ value }}"{% endfor %}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="{{ favicon }}">
+<title>{{ title }} - kennis</title>
+<link rel="stylesheet" href="/static/kennis.css">
+<script defer src="/static/vendor/htmx.min.js"></script>
+<script defer src="/static/tips.js"></script>
+<script defer src="/static/order.js"></script>
+</head>
+<body class="setup" hx-history="false">
+<main><div class="column">
+<h1>{{ title }}</h1>
+<ol class="setup-steps">
+{% for name, label in steps %}<li{% if name == step %} aria-current="step"{% endif %}>{{ label }}</li>{% endfor %}
+</ol>
+
+{% if step == "settings" %}
+{% if kept_at %}
+<p>{{ kept_at }}</p>
+<p class="form-foot"><a class="button" href="/?step=settings&amp;change=yes">{{ icon("settings") }}{{ change_label }}</a> <a class="button primary" href="/?step=corpus">{{ icon("chevron-right") }}{{ next_label }}</a></p>
+{% else %}
+{% include "setup-settings.html" %}
+{% endif %}
+
+{% elif step == "corpus" %}
+<p class="role-muted">{{ corpus_note }}</p>
+{% if corpus_kept %}
+<p>{{ corpus_kept }}</p>
+<p class="form-foot"><a class="button primary" href="/?step=agent">{{ icon("chevron-right") }}{{ next_label }}</a></p>
+{% else %}
+<p>{{ corpus_at }}</p>
+<form class="setup-corpus" action="/setup/corpus" method="post">
+<p class="form-foot"><button type="submit" class="primary">{{ icon("folder-plus") }}{{ create_label }}</button></p>
+</form>
+{% endif %}
+
+{% elif step == "agent" %}
+<p class="role-muted">{{ agent_note }}</p>
+{% if needs_mcp %}
+<p class="notice">{{ icon("info") }}<span>{{ needs_mcp }}</span></p>
+<p class="form-foot"><a class="button primary" href="/?step=done">{{ icon("chevron-right") }}{{ next_label }}</a></p>
+{% elif outcome or paste %}
+{% if outcome %}<p role="status">{{ outcome }}</p>{% endif %}
+{% if paste %}<pre><code>{{ paste }}</code></pre>{% endif %}
+<p class="form-foot"><a class="button primary" href="/?step=done">{{ icon("chevron-right") }}{{ next_label }}</a></p>
+{% else %}
+<form class="setup-agent" action="/setup/agent" method="post">
+<fieldset class="radio-list">
+{% for value, label in agents %}
+<label><input type="radio" name="agent" value="{{ value }}"{% if value == "none" %} checked{% endif %} required> {{ label }}</label>
+{% endfor %}
+</fieldset>
+<p class="form-foot"><button type="submit" class="primary">{{ icon("server") }}{{ connect_label }}</button></p>
+</form>
+{% endif %}
+
+{% else %}
+<p>{{ packs }} <code class="role-command">kennis pack install &lt;source&gt;</code></p>
+<p>{{ context }} <code class="role-command">kennis context init</code></p>
+<form class="setup-open" action="/setup/open" method="post">
+<p class="form-foot"><button type="submit" class="primary">{{ icon("book-open") }}{{ open_label }}</button></p>
+</form>
+{% endif %}
+</div></main>
+</body>
+</html>

@@ -940,6 +940,27 @@ main {
 /* The page Quit answers with: no shell around it, because nothing in
    the shell would work any more. */
 .stopped main { padding-top: 4rem; }
+
+/* The setup wizard (#682): a page of its own, before there is a window,
+   so no bar, pane or strip; the column at the reading measure. */
+.setup main { padding: 3rem 1rem 4rem; }
+.setup .column { max-width: 40rem; margin: 0 auto; }
+.setup-steps {
+  display: flex;
+  gap: 1.25rem;
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0 0 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--gutter);
+  color: var(--role-muted);
+}
+.setup-steps [aria-current="step"] { color: var(--ink); font-weight: 600; }
+.setup-settings .setting-group { margin-top: 1.25rem; }
+.setup-corpus,
+.setup-agent,
+.setup-open { margin-top: 1rem; }
+.setup-agent .radio-list label { display: block; padding: 0.3rem 0; }
 /* A problem page's ways back. */
 .ways-back { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 

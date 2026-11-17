@@ -99,6 +99,19 @@ def kind_of(button: Drawn) -> str:
 # its label is drawn from - written by hand.
 EXPECTED_PRIMARY: dict[str, list[str]] = {
     "base.html": ["{{ corpus_changed_reload }}"],
+    # The setup wizard (#682): one step's branch is drawn at a time, so a
+    # page shows one of these - the settings kept, the corpus kept, Create,
+    # no mcp extra, an agent's outcome, Connect, Open.
+    "setup.html": [
+        "{{ next_label }}",
+        "{{ next_label }}",
+        "{{ create_label }}",
+        "{{ next_label }}",
+        "{{ next_label }}",
+        "{{ connect_label }}",
+        "{{ open_label }}",
+    ],
+    "setup-settings.html": ["{{ save_label }}"],
     "chooser.html": ["{{ choose_folder }}"],
     "forms/add.html": ["{{ add_action }}"],
     "forms/clear-history.html": ["{{ clear_history_action }}"],

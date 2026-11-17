@@ -22,7 +22,7 @@ from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.rag.index import read_binding
 from kennis.engine.rag.limits import chunk_fit
-from kennis.engine.setting_costs import costs_of
+from kennis.engine.setting_costs import COSTLESS, costs_of
 from kennis.engine.settings import (
     CREDENTIALS_KEPT,
     credentials_path,
@@ -140,13 +140,15 @@ class ShownIndex:
     built_with: str
 
 
-def offered(answers: Answers) -> list[Question]:
+def offered(answers: Answers, *, every: bool = True) -> list[Question]:
     """The questions that apply to these answers.
 
     What is not offered - `corpus.root`, `backup.folder` - the engine's
-    `every_question` leaves out, once.
+    `every_question` leaves out, once. With `every` false, the walk
+    `config init` asks instead, `corpus.root` included: the setup wizard's,
+    before any corpus exists to be moved (#682).
     """
-    return questions_for(answers, every=True)
+    return questions_for(answers, every=every)
 
 
 def answers_in(form: Mapping[str, object]) -> dict[str, str]:
@@ -161,11 +163,14 @@ def answers_in(form: Mapping[str, object]) -> dict[str, str]:
 
 
 def shown_settings(
-    answers: Answers, problems: Mapping[str, str] | None = None
+    answers: Answers,
+    problems: Mapping[str, str] | None = None,
+    *,
+    every: bool = True,
 ) -> list[ShownSetting]:
     found = problems or {}
     offers = _offers()
-    questions = offered(answers)
+    questions = offered(answers, every=every)
     values = {
         question.key: _typed(question, answers, offers.get(question.key, set()))
         or question.suggested
@@ -228,7 +233,7 @@ def _typed(question: Question, answers: Answers, offers: set[str]) -> str:
     return "" if value in offers else value
 
 
-def changed_answers(answers: Answers) -> dict[str, str]:
+def changed_answers(answers: Answers, *, every: bool = True) -> dict[str, str]:
     """The answers that differ from what is in force.
 
     An unchanged value is not written, because writing it would pin a
@@ -236,7 +241,7 @@ def changed_answers(answers: Answers) -> dict[str, str]:
     An empty answer means keep, as it does in `config init`.
     """
     changed: dict[str, str] = {}
-    for question in offered(answers):
+    for question in offered(answers, every=every):
         value = answers.get(question.key, "")
         # The environment decides it, so writing the file would say
         # "Saved." and change nothing the reader can see.
@@ -307,7 +312,10 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
     secret = question.kind == "secret"
     value = "" if secret else typed or question.suggested
     labels = words.SETTING_CHOICES.get(question.key, {})
-    costs = costs_of(question.key, value)
+    # A key with no cost recorded is one only the setup wizard offers -
+    # `corpus.root`, before there is a corpus to move (#682) - so there is
+    # no cost to state rather than an unknown one.
+    costs = () if question.key in COSTLESS else costs_of(question.key, value)
     return ShownSetting(
         key=question.key,
         group=_group_of(question.key),

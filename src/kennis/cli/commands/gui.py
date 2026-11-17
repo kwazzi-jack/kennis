@@ -50,7 +50,11 @@ def gui_command(no_browser: bool, replace: bool) -> None:
         TOKEN_IN_THE_ADDRESS,
         waiting_for_another_version,
     )
+    from kennis.setting_up import needs_setup
 
+    if needs_setup():
+        _set_up(open_browser=not no_browser)
+        return
     corpus_root = existing_corpus().corpus_root
     if replace:
         running = find_service(corpus_root)
@@ -72,6 +76,22 @@ def gui_command(no_browser: bool, replace: bool) -> None:
     display.guidance(SERVICE_STOPS_ITSELF)
     if not no_browser:
         open_quietly(address)
+
+
+def _set_up(*, open_browser: bool) -> None:
+    """Serve the setup wizard until it sends the browser to the window
+    (#682): nothing is set up, and the corpus service needs a corpus."""
+    from kennis.gui import setup_app
+    from kennis.render.words import TOKEN_IN_THE_ADDRESS
+
+    def announce(address: str) -> None:
+        display.operation("Serving", "the setup wizard, until it opens kennis")
+        display.detail("+", address)
+        display.guidance(TOKEN_IN_THE_ADDRESS)
+        display.guidance("press Ctrl-C to stop it")
+
+    if setup_app.serve_setup(open_browser=open_browser, announce=announce):
+        display.operation("Opened", "the kennis window")
 
 
 __all__ = ["gui_command"]

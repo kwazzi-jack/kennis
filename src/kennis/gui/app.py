@@ -225,27 +225,13 @@ def _keep_running() -> None:
     """The default `on_quit`, for an application nobody launched."""
 
 
-def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAPI:
-    """The application, guarded by `token`.
+def guard(app: FastAPI, token: str) -> None:
+    """Refuse every request to `app` that does not carry `token`, or that
+    changes something from another site's page, and mark every answer.
 
-    Taken as an argument rather than read from a global, for the reason
-    concern #87 gives about the engine: a value two callers can set
-    differently in one process is a value a test can set at all.
-
-    `on_quit` is how a POST to `/quit` reaches whoever is running the
-    server. The application cannot stop the server itself - uvicorn owns
-    it - so it says it has been asked to and the launcher does the rest.
+    One function for the window and the setup wizard (#682), so a page
+    served before any corpus exists is as private as one served after.
     """
-    app = FastAPI(title="kennis", docs_url=None, redoc_url=None)
-    # On the application rather than in a module-level variable, so a
-    # test builds its own and two applications in one process do not
-    # share a job list.
-    app.state.jobs = Jobs()
-    # Read by `/quit`, which answers and then asks whoever runs the server
-    # to stop: uvicorn owns the server, so the application cannot.
-    app.state.on_quit = on_quit
-    # The windows open on it, each holding one stream (`gui/presence.py`).
-    app.state.presence = Presence()
 
     @app.middleware("http")
     async def require_token(
@@ -289,6 +275,63 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
                 # the first.
             )
         return answer
+
+
+def serve_assets(app: FastAPI) -> None:
+    """The stylesheet, the window's own scripts and the vendored files, for
+    the window and the setup wizard alike."""
+    # Mounted, not routed one file at a time. The guard above is
+    # application middleware, so it runs for a mounted app too - which
+    # is the case a per-route decorator would have missed, and the one
+    # nobody would have thought to check.
+    app.mount(
+        "/static/vendor",
+        StaticFiles(directory=str(_HERE / "static" / "vendor")),
+        name="vendor",
+    )
+
+    @app.get("/static/kennis.css")
+    def serve_stylesheet() -> PlainTextResponse:
+        return PlainTextResponse(stylesheet(), media_type="text/css")
+
+    @app.get("/static/{name}.js")
+    def serve_script(name: str) -> PlainTextResponse:
+        # The interface's own scripts, as opposed to the vendored ones
+        # under `/static/vendor`. `name` is matched against what is
+        # actually there rather than joined into a path, so no request
+        # can walk out of this directory.
+        available = {path.stem: path for path in (_HERE / "static").glob("*.js")}
+        found = available.get(name)
+        if found is None:
+            return PlainTextResponse("", status_code=404)
+        return PlainTextResponse(
+            found.read_text(encoding="utf-8"), media_type="text/javascript"
+        )
+
+
+def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAPI:
+    """The application, guarded by `token`.
+
+    Taken as an argument rather than read from a global, for the reason
+    concern #87 gives about the engine: a value two callers can set
+    differently in one process is a value a test can set at all.
+
+    `on_quit` is how a POST to `/quit` reaches whoever is running the
+    server. The application cannot stop the server itself - uvicorn owns
+    it - so it says it has been asked to and the launcher does the rest.
+    """
+    app = FastAPI(title="kennis", docs_url=None, redoc_url=None)
+    # On the application rather than in a module-level variable, so a
+    # test builds its own and two applications in one process do not
+    # share a job list.
+    app.state.jobs = Jobs()
+    # Read by `/quit`, which answers and then asks whoever runs the server
+    # to stop: uvicorn owns the server, so the application cannot.
+    app.state.on_quit = on_quit
+    # The windows open on it, each holding one stream (`gui/presence.py`).
+    app.state.presence = Presence()
+
+    guard(app, token)
 
     @app.exception_handler(KennisError)
     def drawn_as_a_problem(request: Request, error: Exception) -> Response:
@@ -340,33 +383,7 @@ def build_app(token: str, on_quit: Callable[[], None] = _keep_running) -> FastAP
             status_code=404,
         )
 
-    # Mounted, not routed one file at a time. The guard above is
-    # application middleware, so it runs for a mounted app too - which
-    # is the case a per-route decorator would have missed, and the one
-    # nobody would have thought to check.
-    app.mount(
-        "/static/vendor",
-        StaticFiles(directory=str(_HERE / "static" / "vendor")),
-        name="vendor",
-    )
-
-    @app.get("/static/kennis.css")
-    def serve_stylesheet() -> PlainTextResponse:
-        return PlainTextResponse(stylesheet(), media_type="text/css")
-
-    @app.get("/static/{name}.js")
-    def serve_script(name: str) -> PlainTextResponse:
-        # The interface's own scripts, as opposed to the vendored ones
-        # under `/static/vendor`. `name` is matched against what is
-        # actually there rather than joined into a path, so no request
-        # can walk out of this directory.
-        available = {path.stem: path for path in (_HERE / "static").glob("*.js")}
-        found = available.get(name)
-        if found is None:
-            return PlainTextResponse("", status_code=404)
-        return PlainTextResponse(
-            found.read_text(encoding="utf-8"), media_type="text/javascript"
-        )
+    serve_assets(app)
 
     for routes in (
         shell,
@@ -395,5 +412,7 @@ __all__ = [
     "content_policy",
     "cookie_name",
     "from_elsewhere",
+    "guard",
     "new_token",
+    "serve_assets",
 ]
