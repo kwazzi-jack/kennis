@@ -29,7 +29,15 @@ started before kennis was reinstalled.
 
 ## Point an agent at it
 
-For Claude Code, add it to `~/.claude.json`:
+`kennis setup` does this, as its last step. Answering `claude-code` asks
+Claude Code's own command to add kennis for every project - `claude mcp add
+--scope user kennis -- <this kennis> serve`, with the full path of the
+`kennis` you ran, since an agent starts the server with its own `PATH` -
+and leaves an existing `kennis` server as it is. Answering `other` prints
+the block below with that full path, to paste into another client's
+configuration. kennis writes no other program's configuration file itself.
+
+By hand, for Claude Code, add it to `~/.claude.json`:
 
 ```json
 {

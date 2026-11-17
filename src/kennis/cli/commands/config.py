@@ -186,15 +186,23 @@ def init_command(defaults: bool) -> None:
     is written, every setting included, and an existing one is replaced
     only once you say so.
     """
-    from kennis.engine.settings import config_path, credentials_path
-    from kennis.engine.setup import apply_answers, questions_for
-    from kennis.render.words import count_of, describe_setting
+    from kennis.engine.settings import config_path
 
     if not _may_replace(config_path()):
         return
     if defaults:
         _write_defaults()
         return
+    walk_the_settings()
+    display.next_step("kennis corpus init", note="to create the corpus")
+
+
+def walk_the_settings() -> None:
+    """Ask each setting the walk asks, write every setting, and report what
+    changed. `config init` and `kennis setup` both run it (#682)."""
+    from kennis.engine.settings import config_path, credentials_path
+    from kennis.engine.setup import apply_answers, questions_for
+    from kennis.render.words import count_of, describe_setting
 
     display.using(f"configuration at {config_path()}")
     display.guidance("press return to keep the value shown in brackets")
@@ -241,7 +249,6 @@ def init_command(defaults: bool) -> None:
     display.operation("Wrote", f"every setting to {config_path()}")
     if any(key.endswith(".api_key") for key in changed):
         display.detail(" ", f"credentials written to {credentials_path()}")
-    display.next_step("kennis corpus init", note="to create the corpus")
 
 
 def _ask(question: Question) -> str:

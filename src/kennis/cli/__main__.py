@@ -35,6 +35,7 @@ from kennis.cli.commands import (
     search_command,
     serve_command,
     service_group,
+    setup_command,
     tag_command,
     tags_command,
     untag_command,
@@ -116,6 +117,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
     del ctx
 
 
+main.add_command(setup_command)
 main.add_command(corpus_group)
 main.add_command(config_group)
 main.add_command(backup_group)
