@@ -13,6 +13,7 @@ change a word and a change of wording cannot need a template edit.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -241,6 +242,10 @@ class ShownHit:
     # and citing instead.
     quote: str = ""
     edit_href: str = ""
+    # The words of the annotations a tag filter admitted the passage by, as
+    # JSON - each its words and where it starts, as a fraction of the
+    # passage - for `annotate.js` to draw (#50, unit 3b); empty when none.
+    annotated_words: str = ""
 
     @property
     def tags_id(self) -> str:
@@ -319,7 +324,9 @@ def shown_hits(
                         and hit.collection in COLLECTION_NAMES
                         else None
                     ),
+                    opens_at=hit.annotated[0][0] if hit.annotated else None,
                 ),
+                annotated_words=_annotated_words(hit),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
                 href=(
@@ -389,6 +396,27 @@ def annotation_href(annotation_id: str, project: str | None) -> str:
     address = f"/annotations/{quote(annotation_id, safe='')}"
     return (
         address if project is None else f"{address}?project={quote(project, safe='')}"
+    )
+
+
+def _annotated_words(hit: Hit) -> str:
+    """Each annotated range of `hit` as `annotate.js` finds it in the drawn
+    passage: its words, link addresses and maths delimiters dropped as the
+    document page sends them, and where it starts as a fraction of the
+    passage, so the same words twice are told apart by the nearest."""
+    from kennis.engine.annotations import visible_words
+
+    if not hit.annotated:
+        return ""
+    text = hit.result.chunk.text
+    return json.dumps(
+        [
+            {
+                "words": list(visible_words(text[start:end])),
+                "at": round(start / max(1, len(text)), 4),
+            }
+            for start, end in hit.annotated
+        ]
     )
 
 

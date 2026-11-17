@@ -179,6 +179,12 @@ results, and with several tags only what carries all of them is kept. A
 tag that nothing carries is refused, so a misspelt tag is not mistaken for
 a search with no results.
 
+Each passage it keeps shows the words the tag is on: the command line and
+an agent are given those words as the passage's snippet, and the window
+opens the passage at them and highlights them, as the document's page
+does. A passage kept because its whole document is tagged is shown as any
+other.
+
 ## Remove a tag
 
 ```text

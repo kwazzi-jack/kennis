@@ -291,8 +291,17 @@ def passage_html(
     section: str | None = None,
     title: str | None = None,
     figure_address: FigureAddress | None = None,
+    opens_at: int | None = None,
 ) -> PassageHtml:
     """`markdown` rendered as `to_html` would, in two parts (#454).
+
+    `opens_at` is a character offset into `markdown` - where the words a
+    tag filter admitted the passage by begin (#50, unit 3b) - and the body
+    starts at the top-level block holding it, before or after the reader's
+    marked words: those words are why the passage was admitted, and the
+    command line's snippet is cut from them too. The block is found by its
+    source lines, because the words themselves are drawn by the browser,
+    not marked here.
 
     The part is decided after marking, by where a mark was drawn, so a
     term that occurs only in a link's address - which the reader never
@@ -323,13 +332,25 @@ def passage_html(
     starts = [
         at for at, token in enumerate(tokens) if token.level == 0 and token.nesting >= 0
     ]
-    first = next(
+    marked_at = next(
         (
             start
             for start, end in pairwise([*starts, len(tokens)])
             if any(_holds_a_mark(token) for token in tokens[start:end])
         ),
-        0,
+        None,
+    )
+    annotated_at = (
+        None
+        if opens_at is None
+        else _block_holding(tokens, starts, markdown.count("\n", 0, opens_at))
+    )
+    first = (
+        annotated_at
+        if annotated_at is not None
+        else marked_at
+        if marked_at is not None
+        else 0
     )
     length = sum(len(token.content) for token in tokens if token.type == "inline")
     return PassageHtml(
@@ -398,6 +419,18 @@ def terms_of(question: str) -> tuple[str, ...]:
 # a judgement about which words are worth marking - it is the point
 # at which the mark stops carrying information.
 _SHORTEST_TERM: Final = 2
+
+
+def _block_holding(
+    tokens: Sequence[Token], starts: Sequence[int], line: int
+) -> int | None:
+    """The position of the top-level block whose source lines hold `line`,
+    or None when no block does (a blank line between two)."""
+    for start in starts:
+        lines = tokens[start].map
+        if lines is not None and lines[0] <= line < lines[1]:
+            return start
+    return None
 
 
 def query_pattern(terms: Sequence[str]) -> re.Pattern[str] | None:

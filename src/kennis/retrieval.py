@@ -15,7 +15,7 @@ operation from "search this one and fail if it has no index".
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast, get_args
@@ -44,7 +44,7 @@ from kennis.render.hits import Hit
 from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
 
 if TYPE_CHECKING:
-    from kennis.engine.annotations import AnnotationStore
+    from kennis.engine.annotations import AnnotationStore, Span
     from kennis.engine.rag.index import LoadedIndex
 
 # The most a caller may ask for. A ceiling rather than a validation
@@ -440,6 +440,7 @@ def sweep(
                 choice=choice,
                 rebuild=f"kennis corpus index --collection {name}",
                 within=tagged.within(context.corpus_root, index),
+                marked=tagged.marked(context.corpus_root, index),
             ),
         )
 
@@ -559,6 +560,7 @@ def _sweep_context(
                 else f"kennis context index --project {names[bundle]}"
             ),
             within=tagged.within(bundle, index),
+            marked=tagged.marked(bundle, index),
         )
         # Where the file is, as the reader is told: this project's from
         # its own root, another project's whole. The name is asked after
@@ -698,6 +700,24 @@ class _Tagged:
             index.chunks,
         )
 
+    def marked(self, root: Path, index: LoadedIndex) -> dict[str, tuple[Span, ...]]:
+        """Where, in each chunk, the words the asked tags are on: what a
+        passage this filter admitted shows (#50, unit 3b). Empty when no
+        tag was asked."""
+        from kennis.engine.annotations import (
+            ANNOTATIONS_FILENAME,
+            AnnotationStore,
+            annotated_spans,
+        )
+
+        if not self.names:
+            return {}
+        return annotated_spans(
+            self.stores.get(root / ANNOTATIONS_FILENAME, AnnotationStore()),
+            self.names,
+            index.chunks,
+        )
+
 
 def _tags_asked(
     context: Context, tags: Sequence[str], bundles: Sequence[Path | None]
@@ -733,6 +753,7 @@ def _hits_in(
     choice: VersionChoice,
     rebuild: str,
     within: ChunkPredicate | None = None,
+    marked: Mapping[str, tuple[Span, ...]] | None = None,
 ) -> _Searched:
     """One group's hits, whether it ran lexically although more was asked
     of it, and what it says about its model.
@@ -810,7 +831,19 @@ def _hits_in(
             mode="bm25",
             within=within,
         )
-    found = [Hit(collection=name, result=result, model=model) for result in results]
+    # A passage a tag admitted carries the words the tag is on (#50).
+    words = marked or {}
+    found = [
+        Hit(
+            collection=name,
+            result=result,
+            model=model,
+            annotated=tuple(
+                (span.start, span.end) for span in words.get(result.chunk.id, ())
+            ),
+        )
+        for result in results
+    ]
     if unembedded is None:
         found = with_unrelated_reference(found, index, host=host)
     if name == "docs":

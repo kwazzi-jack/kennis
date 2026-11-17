@@ -1687,6 +1687,40 @@ def test_a_selection_across_an_emphasis_and_a_link_is_annotated_and_highlighted(
     assert "Why slowly?" in page.inner_text("#document-annotations")
 
 
+# Each range the passages' highlight holds, with the text of its passage
+# before it, as the reader sees them.
+_PASSAGE_HIGHLIGHTS = """() => {
+  const drawn = CSS.highlights.get('annotated-passage');
+  if (!drawn) { return []; }
+  return [...drawn].map((range) => {
+    const passage = range.startContainer.parentElement.closest('[data-annotated]');
+    const before = document.createRange();
+    before.setStart(passage, 0);
+    before.setEnd(range.startContainer, range.startOffset);
+    return { text: range.toString(), before: before.toString() };
+  });
+}"""
+
+
+def test_a_passage_kept_to_a_tag_highlights_the_words_the_tag_is_on(
+    page: playwright.Page, address: str, corpus: Path
+) -> None:
+    """The second of two equal phrases is annotated; the search passage
+    draws that one, by its place in the passage (#50, unit 3b)."""
+    _the_annotated_note(page, corpus)
+    _annotate(page, "gains", "slowly", "The second time.", after="Later")
+
+    page.goto(f"{address}&q=phase&scope=notes&tag=calibration")
+    page.wait_for_selector(
+        "#hits [data-annotated][data-highlighted='1']", timeout=_WAIT_MS
+    )
+
+    ((drawn),) = page.evaluate(_PASSAGE_HIGHLIGHTS)
+    # The same three words open the note's first sentence.
+    assert " ".join(drawn["text"].split()) == "gains drift slowly"
+    assert " ".join(drawn["before"].split()).endswith("here. Later the")
+
+
 def test_a_selection_across_maths_is_kept_as_its_tex(
     page: playwright.Page, corpus: Path
 ) -> None:
