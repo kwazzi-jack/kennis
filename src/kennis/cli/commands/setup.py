@@ -31,9 +31,9 @@ def setup_command() -> None:
     as it is.
     """
     _settings_step()
-    corpus_root = _corpus_step()
+    _corpus_step()
     _agent_step()
-    _what_next(corpus_root)
+    _what_next()
 
 
 def _settings_step() -> None:
@@ -43,14 +43,16 @@ def _settings_step() -> None:
     display.heading("Settings")
     path = config_path()
     if path.is_file():
-        display.info(f"already written at {path}")
+        # On its own line: a long path wrapped across two cannot be copied.
+        display.info("already written, at:")
+        display.path(path)
         if not click.confirm(f"{_INDENT}change the settings?", default=False):
             display.operation("Kept", str(path))
             return
     walk_the_settings()
 
 
-def _corpus_step() -> str:
+def _corpus_step() -> None:
     from kennis.context import resolve_context
     from kennis.engine.history.repository import initialise_corpus
 
@@ -59,11 +61,11 @@ def _corpus_step() -> str:
     # Resolved after the settings are written: `corpus.root` is one of them.
     root = resolve_context().corpus_root
     if (root / ".git").is_dir():
-        display.info(f"already a corpus at {root}")
+        display.info("already a corpus, at:")
+        display.path(root)
     else:
         initialise_corpus(root)
         display.operation("Created", f"corpus at {root}")
-    return str(root)
 
 
 def _agent_step() -> None:
@@ -119,18 +121,24 @@ def _connect_claude_code(kennis: Path) -> None:
     display.guidance("a session already open picks it up after `/mcp`")
 
 
-def _what_next(corpus_root: str) -> None:
+def _what_next() -> None:
+    """Each command on a line of its own under what it does, so none is
+    wrapped where it cannot be copied."""
     display.info()
     display.heading("Next")
-    display.info(f"`kennis gui` opens the window onto the corpus at {corpus_root}.")
-    display.info(
-        "A pack brings a field's papers, documentation and notes: "
-        "`kennis pack install <source>`."
-    )
-    display.info(
-        "A project's own notes, committed with it: "
-        "`kennis context init` in its repository."
-    )
+    for said, command in (
+        ("The window, onto the corpus:", "kennis gui"),
+        (
+            "A pack brings a field's papers, documentation and notes:",
+            "kennis pack install <source>",
+        ),
+        (
+            "A project's own notes, committed with it, in its repository:",
+            "kennis context init",
+        ),
+    ):
+        display.info(said)
+        display.info(f"  {display.command(command)}")
 
 
 __all__ = ["setup_command"]
