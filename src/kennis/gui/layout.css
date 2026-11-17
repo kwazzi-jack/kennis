@@ -960,6 +960,7 @@ main {
 .setup-corpus,
 .setup-agent,
 .setup-open { margin-top: 1rem; }
+.setup-agent .radio-list { border: 0; margin: 0; padding: 0; }
 .setup-agent .radio-list label { display: block; padding: 0.3rem 0; }
 /* A problem page's ways back. */
 .ways-back { display: flex; flex-wrap: wrap; gap: 0.5rem; }

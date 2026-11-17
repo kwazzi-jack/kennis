@@ -35,6 +35,14 @@ kennis gui --no-browser
 machine with no display may start a text browser such as `lynx` in the
 terminal instead.
 
+## On a machine not yet set up
+
+With no configuration file, or no corpus where the settings say, `kennis gui`
+serves a setup wizard instead of the window: the settings, the corpus, and
+an agent to serve, as `kennis setup` asks them in the terminal. It stays in
+the foreground meanwhile - Ctrl-C stops it - and its last step, **Open
+kennis**, starts the service and takes the tab to the window.
+
 ## One window, many tabs
 
 Every tab, and every `kennis gui`, opens the same service, so two tabs show
