@@ -36,6 +36,7 @@ from kennis.gui.pages import (
 )
 from kennis.gui.responses import SCOPES, TEMPLATES, action_page, from_htmx
 from kennis.gui.tagged import chips_finder, tag_colours
+from kennis.gui.theme import highlight_css, highlight_name
 from kennis.retrieval import sweep
 from kennis.scopes import EVERY_SCOPE
 
@@ -172,14 +173,20 @@ def _hits_context(
             others=others,
             tags=tags,
         )
+        kept_colours = tag_colours(existing_corpus())
+        # A passage a tag admitted is drawn in that tag's colour; with
+        # several, the first named (#50).
+        kept_colour = kept_colours.get(tags[0], "") if tags else ""
         context["groups"] = shown_groups_of(
             found,
             question,
             order,
             chips_finder(existing_corpus(), others),
             corpus_root=existing_corpus().corpus_root,
+            paint=highlight_name("annotated-passage", kept_colour),
         )
-        context["kept_tag_colours"] = tag_colours(existing_corpus())
+        context["kept_tag_colours"] = kept_colours
+        context["highlight_css"] = highlight_css([kept_colour])
         found_count = sum(len(hits) for hits in found.groups.values())
         # Any scope that filled its quota had more to give, so the
         # total is a floor. `default_top_k` is 3 per scope, which is

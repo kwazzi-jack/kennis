@@ -10,6 +10,8 @@
 {# What the results are kept to, and the way back to everything (#625). #}
 {% if kept_tags %}
 <p class="kept-tags">{{ icon("tag") }}<span>{{ kept_to_tags }}</span>{% for name in kept_tags %}<a class="tag-chip" href="/tags?tag={{ name | urlencode }}" {{ tag_paint((kept_tag_colours | default({})).get(name, "")) }}>{{ name }}</a>{% endfor %}<a class="button" href="{{ show_everything_href }}">{{ icon("x") }}{{ show_everything }}</a></p>
+{# The kept tag's typed colour, as the document page carries it. #}
+{% if highlight_css %}<style data-highlight-colours>{{ highlight_css | safe }}</style>{% endif %}
 {% endif %}
 {% if problem %}
 <div class="notice"><p>{{ problem }}</p>

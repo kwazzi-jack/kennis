@@ -46,6 +46,7 @@ from kennis.gui.tagged import (
     document_annotations,
     document_tags,
 )
+from kennis.gui.theme import highlight_css, highlight_name
 from kennis.holdings import (
     document_marks,
     freshness_of,
@@ -130,9 +131,13 @@ def _document_context(
                 "end": each.end,
                 "words": list(each.words),
                 "href": each.edit_href,
+                "paint": highlight_name("annotation", each.colour),
             }
             for each in annotations.highlights
         ],
+        # A typed colour's rule, which the stylesheet cannot hold for every
+        # colour a person might type.
+        "highlight_css": highlight_css(each.colour for each in annotations.highlights),
         "annotating": annotating,
         "document_annotations_id": DOCUMENT_ANNOTATIONS,
         "document_text_id": DOCUMENT_TEXT,

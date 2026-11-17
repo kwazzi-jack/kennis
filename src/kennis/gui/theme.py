@@ -37,6 +37,7 @@ the reason this file can be edited safely.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Final, Literal
 from urllib.parse import quote
@@ -286,6 +287,93 @@ def custom_tag_css() -> str:
     )
 
 
+# The two kinds of annotation highlight: a document page's own, and the
+# annotated words of a search passage, which `annotate.js` draws and
+# clears separately.
+HIGHLIGHT_PREFIXES: Final = ("annotation", "annotated-passage")
+
+
+def highlight_name(prefix: str, colour: str) -> str:
+    """The name an annotation is highlighted under, given its tag's colour.
+
+    A custom highlight is painted by the rule for its name, and several
+    highlights share the element their text is in, so a colour cannot be
+    a custom property on an element: it is part of the name. `prefix`
+    alone for no colour, which the layout paints in the brand colour.
+    """
+    from kennis.engine.tags import TAG_COLOURS, is_hex_colour
+
+    if not colour:
+        return prefix
+    if colour in TAG_COLOURS:
+        return f"{prefix}-{colour}"
+    if is_hex_colour(colour):
+        return f"{prefix}-{colour[1:]}"
+    raise ValueError(f"not a tag colour: {colour!r}")
+
+
+def _highlight_paint(value: str) -> str:
+    """One highlight's declarations, in `value`: a wash under the words and
+    a rule beneath them, as the brand-coloured one has."""
+    return (
+        f"background-color: color-mix(in srgb, {value} 22%, transparent); "
+        "text-decoration: underline; "
+        f"text-decoration-color: {value}; "
+        "text-decoration-thickness: 2px; text-underline-offset: 0.2em;"
+    )
+
+
+def named_highlight_css() -> str:
+    """A rule for each of the eight named colours, under both prefixes:
+    from the engine's list, so a colour added there is painted here."""
+    from kennis.engine.tags import TAG_COLOURS
+
+    return "\n".join(
+        f"::highlight({highlight_name(prefix, colour)}) "
+        f"{{ {_highlight_paint(f'var(--tag-{colour})')} }}"
+        for colour in TAG_COLOURS
+        for prefix in HIGHLIGHT_PREFIXES
+    )
+
+
+def highlight_css(colours: Iterable[str]) -> str:
+    """The rules a page carries for the typed hex colours among `colours`
+    (#50): each colour's value for either theme as a custom property on
+    `html`, chosen by the guards `custom_tag_css` uses, and a rule under
+    both prefixes painting in it. Empty when none is a hex colour.
+
+    Only a value `is_hex_colour` accepts is written, so nothing a person
+    typed reaches the stylesheet unchecked.
+    """
+    from kennis.engine.tags import is_hex_colour
+
+    typed = sorted({colour for colour in colours if is_hex_colour(colour)})
+    if not typed:
+        return ""
+    light = " ".join(
+        f"--highlight-{colour[1:]}: {tag_colour_on(colour, 'light')};"
+        for colour in typed
+    )
+    dark = " ".join(
+        f"--highlight-{colour[1:]}: {tag_colour_on(colour, 'dark')};"
+        for colour in typed
+    )
+    rules = "\n".join(
+        f"::highlight({highlight_name(prefix, colour)}) "
+        f"{{ {_highlight_paint(f'var(--highlight-{colour[1:]})')} }}"
+        for colour in typed
+        for prefix in HIGHLIGHT_PREFIXES
+    )
+    return (
+        f"html {{ {light} }}\n"
+        "@media (prefers-color-scheme: dark) {\n"
+        f'html:not([data-theme="light"]) {{ {dark} }}\n'
+        "}\n"
+        f'html[data-theme="dark"] {{ {dark} }}\n'
+        f"{rules}"
+    )
+
+
 _BRAND: Final = Path(__file__).parent / "static" / "brand"
 _BRAND_MARKS: Final[dict[str, str]] = {
     scheme: quote((_BRAND / f"mark-{scheme}.svg").read_text(encoding="utf-8"), safe="")
@@ -527,7 +615,7 @@ def stylesheet() -> str:
         f"{scale_css()}\n\n{css_weights()}\n\n{code_css()}\n\n{_LAYOUT}\n\n"
         # After the layout, whose `[data-tag-colour]` rules a typed colour
         # must not lose to.
-        f"{custom_tag_css()}"
+        f"{custom_tag_css()}\n\n{named_highlight_css()}"
     )
 
 

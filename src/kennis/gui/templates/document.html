@@ -47,6 +47,9 @@
   {% endif %}
   {{ document.body_html | safe }}
   <script type="application/json" data-annotations>{{ highlights | tojson }}</script>
+  {# Raw text, so not escaped: written by `theme.highlight_css` from
+     colours `is_hex_colour` accepted, never from anything typed as is. #}
+  {% if highlight_css %}<style data-highlight-colours>{{ highlight_css | safe }}</style>{% endif %}
 </article>
 {# Offered beside a selection of the text, placed and shown by
    `annotate.js`; its words are the server's. #}
