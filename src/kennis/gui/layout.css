@@ -3410,7 +3410,8 @@ html:not(.can-copy) .copy-citation { display: none; }
    API, which adds no element, so a highlight moves no line; a wash under
    the words, as a query's mark is, with a rule beneath that says it is the
    reader's own. A click on it opens the annotation. */
-::highlight(annotation) {
+::highlight(annotation),
+::highlight(annotated-passage) {
   background-color: color-mix(in srgb, var(--brand) 16%, transparent);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--brand) 70%, transparent);

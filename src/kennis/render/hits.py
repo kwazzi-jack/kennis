@@ -315,6 +315,16 @@ def bundle_hit_handle(result: SearchResult, *, bundle_name: str) -> str:
     )
 
 
+def annotated_words(hit: Hit) -> str:
+    """What a hit's snippet is cut from: the annotated words a tag filter
+    admitted it by, joined by an ellipsis when several, or the whole
+    passage when there are none (#50, unit 3b)."""
+    text = hit.result.chunk.text
+    if not hit.annotated:
+        return text
+    return " ... ".join(text[start:end] for start, end in hit.annotated)
+
+
 def annotation_handle(hit: Hit, *, bundle_name: str) -> str:
     """Where a comment hit's annotation is, and the annotation's id.
 
@@ -410,6 +420,11 @@ class Hit:
     # annotated document's id and title, and no more: it is not a chunk of
     # any index, so `chunk_index` is read only through `annotation.chunk`.
     annotation: AnnotationShown | None = None
+    # Where, in this passage's text, the words of the annotations a tag
+    # filter admitted it by are: `(start, end)` offsets into the chunk's
+    # text, in order (#50, unit 3b). Empty for a search kept to no tag, and
+    # for a passage only a whole-document tag admitted.
+    annotated: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -551,7 +566,7 @@ def rendered_hit(
         body=(
             None
             if snippet == "none"
-            else snippet_of(hit.result.chunk.text, full=snippet == "full")
+            else snippet_of(annotated_words(hit), full=snippet == "full")
         ),
         document_title=document_title,
         section=section,

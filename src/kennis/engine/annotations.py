@@ -849,6 +849,47 @@ def admitting(
     return admits
 
 
+def annotated_spans(
+    store: AnnotationStore, names: Sequence[str], chunks: Sequence[Chunk]
+) -> dict[str, tuple[Span, ...]]:
+    """Where, in each chunk's text, the selections carrying any of `names`
+    are: offsets into `chunk.text`, in order, by chunk id (#50, unit 3b).
+
+    The chunks a selection is on are the ones `links` gives it, so a
+    passage a tag admitted always has the words that admitted it; within
+    each the range is clipped to the chunk's whole text, not its own, so a
+    sentence in the overlap of two windows shows in whichever was returned.
+    A whole document has no words to show and gives none, and so does a
+    detached selection.
+    """
+    wanted = set(names)
+    grouped = by_document(chunks)
+    own = own_ranges(chunks)
+    texts: dict[str, str] = {}
+    found: dict[str, list[Span]] = {}
+    for annotation in store.annotations:
+        if annotation.selector is None or not wanted & set(annotation.tags):
+            continue
+        held = grouped.get(annotation.document, [])
+        if not held:
+            continue
+        if annotation.document not in texts:
+            texts[annotation.document] = indexed_text(held)
+        span = located(annotation.selector, texts[annotation.document])
+        if span is None:
+            continue
+        for chunk in held:
+            if not span.overlaps(own[chunk.id].start, own[chunk.id].end):
+                continue
+            start = max(span.start, chunk.char_start) - chunk.char_start
+            end = min(span.end, chunk.char_end) - chunk.char_start
+            found.setdefault(chunk.id, []).append(Span(start, end))
+    return {
+        chunk_id: tuple(sorted(spans, key=lambda span: (span.start, span.end)))
+        for chunk_id, spans in found.items()
+    }
+
+
 def annotations_of(store: AnnotationStore, document: str) -> list[Annotation]:
     return [each for each in store.annotations if each.document == document]
 
@@ -910,6 +951,7 @@ __all__ = [
     "Unchecked",
     "admitting",
     "annotated",
+    "annotated_spans",
     "annotation_named",
     "annotations_of",
     "by_document",

@@ -194,16 +194,8 @@
       if (match[0].length === 0) { pattern.lastIndex += 1; }
     }
     if (!best) { return null; }
-    function at(offset, closing) {
-      for (var index = segments.length - 1; index >= 0; index -= 1) {
-        var segment = segments[index];
-        var inside = closing ? segment.start < offset : segment.start <= offset;
-        if (inside) { return { node: segment.node, offset: Math.min(offset - segment.start, segment.node.data.length) }; }
-      }
-      return null;
-    }
-    var start = at(best.index, false);
-    var end = at(best.end, true);
+    var start = pointIn(segments, best.index, false);
+    var end = pointIn(segments, best.end, true);
     if (!start || !end) { return null; }
     var range = document.createRange();
     range.setStart(start.node, start.offset);
@@ -229,6 +221,64 @@
       CSS.highlights.set("annotation", new Highlight(...drawn.map(function (one) { return one.range; })));
     }
     text.dataset.highlighted = String(drawn.length);
+  }
+
+  // A search passage a tag admitted (#50, unit 3b): the words of each
+  // annotation, found in the passage's text as the document page finds
+  // them - the occurrence nearest where the annotation starts - drawn under
+  // a name of their own so the page's own highlights are not replaced.
+  function drawPassages() {
+    var supported = window.CSS && CSS.highlights && typeof Highlight === "function";
+    if (supported) { CSS.highlights.delete("annotated-passage"); }
+    var ranges = [];
+    document.querySelectorAll("[data-annotated]").forEach(function (passage) {
+      var lists = [];
+      try { lists = JSON.parse(passage.dataset.annotated); } catch (error) { return; }
+      var segments = [];
+      var joined = "";
+      textNodesOf(passage).forEach(function (node) {
+        segments.push({ node: node, start: joined.length });
+        joined += node.data;
+      });
+      var count = 0;
+      lists.forEach(function (found) {
+        if (!found.words || !found.words.length) { return; }
+        var expected = found.at * joined.length;
+        var pattern = wordsPattern(found.words);
+        var best = null;
+        var match;
+        while ((match = pattern.exec(joined)) !== null) {
+          if (!best || Math.abs(match.index - expected) < Math.abs(best.index - expected)) {
+            best = { index: match.index, end: match.index + match[0].length };
+          }
+          if (match[0].length === 0) { pattern.lastIndex += 1; }
+        }
+        if (!best) { return; }
+        var start = pointIn(segments, best.index, false);
+        var end = pointIn(segments, best.end, true);
+        if (!start || !end) { return; }
+        var range = document.createRange();
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        ranges.push(range);
+        count += 1;
+      });
+      passage.dataset.highlighted = String(count);
+    });
+    if (supported && ranges.length) {
+      CSS.highlights.set("annotated-passage", new Highlight(...ranges));
+    }
+  }
+
+  // The text node and offset at `offset` of the joined text of `segments`;
+  // `closing` puts an offset on a boundary at the end of the node before.
+  function pointIn(segments, offset, closing) {
+    for (var index = segments.length - 1; index >= 0; index -= 1) {
+      var segment = segments[index];
+      var inside = closing ? segment.start < offset : segment.start <= offset;
+      if (inside) { return { node: segment.node, offset: Math.min(offset - segment.start, segment.node.data.length) }; }
+    }
+    return null;
   }
 
   // What is drawn, for a test to read: each highlight's text and the text
@@ -271,9 +321,11 @@
   });
 
   document.addEventListener("DOMContentLoaded", draw);
+  document.addEventListener("DOMContentLoaded", drawPassages);
   document.body.addEventListener("htmx:afterSwap", function () {
     var text = article();
     if (text && typeof typeset === "function") { typeset(text); }
     draw();
+    drawPassages();
   });
 })();

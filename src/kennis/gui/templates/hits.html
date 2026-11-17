@@ -132,7 +132,9 @@
        comment (#50). #}
     {% if hit.quote %}<blockquote class="tag-quote hit-quote">{{ hit.quote }}</blockquote>{% endif %}
     <div class="passage{% if hit.opens %} clamped{% endif %}">
-      <div class="full">
+      {# The words a tag admitted the passage by, drawn by `annotate.js`
+         as the document page draws an annotation (#50). #}
+      <div class="full"{% if hit.annotated_words %} data-annotated="{{ hit.annotated_words }}"{% endif %}>
         {% if hit.passage.lead %}<div class="lead">{{ hit.passage.lead | safe }}</div>{% endif %}
         <div class="body">{{ hit.passage.body | safe }}</div>
       </div>
