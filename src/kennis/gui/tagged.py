@@ -24,6 +24,7 @@ from kennis.engine.annotations import (
     located,
     read_annotations,
     tags_on,
+    visible_words,
 )
 from kennis.engine.context.groups import project_group
 from kennis.engine.context.projects import known_projects, project_names
@@ -330,23 +331,131 @@ def document_tags(
     return shown
 
 
-def annotation_bands(
-    context: Context, *, document: str, body: str, bundle: Path | None
-) -> list[Band]:
-    """Each tagged selection of `document`, found in `body` - the text the
-    page draws - carrying its tags (#50). A whole-document annotation has
-    no range, and a selection whose words are gone is not drawn."""
+@dataclass(frozen=True, slots=True)
+class ShownAnnotation:
+    """One annotation of the document a page shows, as its inspector lists
+    it: what it is on, its tags and comment, and the way to edit it."""
+
+    id: str
+    project: str | None
+    # The selection's opening words; None for the whole document.
+    quote: str | None
+    chips: tuple[ShownChip, ...]
+    comment: str | None
+    # Whether a selection's words were found in the text drawn.
+    detached: bool
+    edit_href: str
+    edit_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class PageHighlight:
+    """Where the page's script draws one annotation over the text: the
+    range of the body it was found at, and the words drawn for it, which
+    the script finds among the page's text nodes (#50)."""
+
+    id: str
+    project: str | None
+    start: int
+    end: int
+    words: tuple[str, ...]
+    edit_href: str
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentAnnotations:
+    """Every annotation of one document, found in the body a page draws:
+    the inspector's rows, the highlights and the margin's tagged runs."""
+
+    shown: tuple[ShownAnnotation, ...] = ()
+    highlights: tuple[PageHighlight, ...] = ()
+    bands: tuple[Band, ...] = ()
+
+
+def annotation_href(annotation_id: str, project: str | None) -> str:
+    """The address of an annotation's dialog."""
+    address = f"/annotations/{quote(annotation_id, safe='')}"
+    return (
+        address if project is None else f"{address}?project={quote(project, safe='')}"
+    )
+
+
+def document_annotations(
+    context: Context,
+    *,
+    document: str,
+    body: str,
+    bundle: Path | None,
+    project: str | None,
+) -> DocumentAnnotations:
+    """Each annotation of `document` found in `body` - the text the page
+    draws (#50): a selection whose words are gone is listed, detached, and
+    drawn nowhere. Selections first in the order of the text, then the
+    whole document, then the detached."""
     root = context.corpus_root if bundle is None else bundle
+    stores = _stores(context, [] if bundle is None else [bundle])
+    chosen = chosen_colours(stores)
     store = read_annotations(root / ANNOTATIONS_FILENAME)
+    placed: list[tuple[int, ShownAnnotation]] = []
+    whole: list[ShownAnnotation] = []
+    detached: list[ShownAnnotation] = []
+    highlights: list[PageHighlight] = []
     bands: list[Band] = []
     for annotation in store.annotations:
-        selector = annotation.selector
-        if annotation.document != document or selector is None or not annotation.tags:
+        if annotation.document != document:
             continue
-        span = located(selector, body)
-        if span is not None:
-            bands.append(Band(span.start, span.end, frozenset(annotation.tags)))
-    return bands
+        chips = tuple(
+            ShownChip(
+                name=name,
+                href=tag_href(name),
+                colour=colour_of(name, chosen),
+                whole=annotation.selector is None,
+            )
+            for name in annotation.tags
+        )
+        href = annotation_href(annotation.id, project)
+        selector = annotation.selector
+        quoted = None if selector is None else opening_words(selector.exact)
+        span = None if selector is None else located(selector, body)
+        shown = ShownAnnotation(
+            id=annotation.id,
+            project=project,
+            quote=quoted,
+            chips=chips,
+            comment=annotation.comment,
+            detached=selector is not None and span is None,
+            edit_href=href,
+            edit_label=words.edit_annotation_of(
+                quoted or words.ANNOTATION_ON_DOCUMENT.lower()
+            ),
+        )
+        if selector is None:
+            whole.append(shown)
+        elif span is None:
+            detached.append(shown)
+        else:
+            placed.append((span.start, shown))
+            highlights.append(
+                PageHighlight(
+                    id=annotation.id,
+                    project=project,
+                    start=span.start,
+                    end=span.end,
+                    words=visible_words(body[span.start : span.end]),
+                    edit_href=href,
+                )
+            )
+            if annotation.tags:
+                bands.append(Band(span.start, span.end, frozenset(annotation.tags)))
+    return DocumentAnnotations(
+        shown=(
+            *(shown for _, shown in sorted(placed, key=lambda one: one[0])),
+            *whole,
+            *detached,
+        ),
+        highlights=tuple(highlights),
+        bands=tuple(bands),
+    )
 
 
 def tags_in_use(context: Context) -> list[str]:
@@ -357,13 +466,17 @@ def tags_in_use(context: Context) -> list[str]:
 __all__ = [
     "DOCUMENT",
     "PASSAGE",
+    "DocumentAnnotations",
+    "PageHighlight",
+    "ShownAnnotation",
     "ShownDocumentTag",
     "ShownTag",
     "ShownTagged",
-    "annotation_bands",
+    "annotation_href",
     "chips_finder",
     "chosen_colours",
     "chosen_colours_here",
+    "document_annotations",
     "document_tags",
     "listings",
     "pane_tags",

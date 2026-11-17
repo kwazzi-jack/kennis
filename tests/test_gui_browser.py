@@ -1563,3 +1563,199 @@ def test_the_current_tab_is_the_filled_one(page: playwright.Page, address: str) 
         ".backgroundColor).map(tab => tab.textContent.trim())",
     )
     assert filled == ["System"]
+
+
+# ---------------------------------------------------------------------------
+# Annotating a selection, and its highlight (#50, unit 2)
+
+_ANNOTATED_NOTE = (
+    "# Phase notes\n\n"
+    "Phase *gains* drift slowly, see [the paper](https://example.org/p) for "
+    "details. The model is $\\phi_{pq} = 1$ here. Later the gains drift slowly again.\n"
+)
+
+
+def _the_annotated_note(page: playwright.Page, tmp_path: Path) -> None:
+    """A note with an emphasis, a link and maths, its page opened."""
+    source = tmp_path / "sources" / "phase.md"
+    source.write_text(_ANNOTATED_NOTE, encoding="utf-8")
+    run = CliRunner()
+    assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+    assert run.invoke(main, ["corpus", "index"]).exit_code == 0
+    page.fill("input[name=q]", "phase gains drift")
+    page.wait_for_selector("#hits .hit a.title", timeout=_WAIT_MS)
+    page.click("#hits .hit a.title")
+    page.wait_for_selector("article[data-annotate-document] .katex", timeout=_WAIT_MS)
+
+
+# Selects from the start of one word to the end of another, both in the
+# article's text as the reader sees it.
+_SELECT = """([first, last, after]) => {
+  const article = document.querySelector('article[data-annotate-document]');
+  const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+  let start = null, end = null, seen = !after;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.parentElement.closest('.katex-mathml')) { continue; }
+    const from = seen ? 0 : node.data.indexOf(after);
+    if (from < 0) { continue; }
+    seen = true;
+    if (!start && node.data.includes(first, from)) {
+      start = [node, node.data.indexOf(first, from)];
+    }
+    if (start && node.data.includes(last)) {
+      end = [node, node.data.indexOf(last) + last.length];
+    }
+  }
+  const range = document.createRange();
+  range.setStart(start[0], start[1]);
+  range.setEnd(end[0], end[1]);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}"""
+
+
+_MARK_DIALOG_SETTLED = """() => {
+  delete document.documentElement.dataset.dialogSettled;
+  document.body.addEventListener('htmx:afterSettle', (event) => {
+    if (event.detail.target && event.detail.target.id === 'dialog') {
+      document.documentElement.dataset.dialogSettled = 'yes';
+    }
+  });
+}"""
+
+
+def _annotate(
+    page: playwright.Page, first: str, last: str, comment: str, after: str = ""
+) -> None:
+    # Offered for a selection and for nothing else: a `hidden` the layout
+    # overrode once drew it under the text of every page.
+    assert not page.is_visible(".annotate-selection")
+    page.evaluate(_SELECT, [first, last, after])
+    page.wait_for_selector(".annotate-selection", state="visible", timeout=_WAIT_MS)
+    # htmx gives the `autofocus` field the focus again when the swap settles,
+    # 20 ms after the dialog's own focus; a comment typed between the two
+    # went into the tags (measured: one run in three). A person is not that
+    # quick, so the test waits for the settle, which it marks on the page.
+    page.evaluate(_MARK_DIALOG_SETTLED)
+    page.click(".annotate-selection")
+    page.wait_for_selector(".annotate-selection", state="hidden", timeout=_WAIT_MS)
+    page.wait_for_selector(
+        "html[data-dialog-settled]", state="attached", timeout=_WAIT_MS
+    )
+    assert page.is_visible("dialog form.annotate")
+    page.fill("dialog form.annotate input[name=tags]", "calibration")
+    page.fill("dialog form.annotate textarea[name=comment]", comment)
+    page.click("dialog form.annotate button[type=submit]")
+    page.wait_for_selector(
+        "article[data-annotate-document][data-highlighted='1']",
+        timeout=_WAIT_MS,
+    )
+    # The text and the inspector are asked for again separately.
+    page.wait_for_selector("#document-annotations li.annotation-row", timeout=_WAIT_MS)
+
+
+def _highlighted(page: playwright.Page) -> list[str]:
+    return [
+        " ".join(one["text"].split())
+        for one in page.evaluate("window.kennisAnnotations()")
+    ]
+
+
+def test_a_selection_across_an_emphasis_and_a_link_is_annotated_and_highlighted(
+    page: playwright.Page, corpus: Path
+) -> None:
+    from kennis.engine.annotations import read_annotations
+
+    _the_annotated_note(page, corpus)
+
+    _annotate(page, "gains", "details", "Why slowly?")
+
+    (annotation,) = read_annotations(corpus / "corpus" / "annotations.json").annotations
+    assert annotation.selector is not None
+    assert annotation.selector.exact == (
+        "gains* drift slowly, see [the paper](https://example.org/p) for details"
+    )
+    assert annotation.comment == "Why slowly?"
+    assert _highlighted(page) == ["gains drift slowly, see the paper for details"]
+    assert "Why slowly?" in page.inner_text("#document-annotations")
+
+
+def test_a_selection_across_maths_is_kept_as_its_tex(
+    page: playwright.Page, corpus: Path
+) -> None:
+    from kennis.engine.annotations import read_annotations
+
+    _the_annotated_note(page, corpus)
+
+    _annotate(page, "model", "here", "the model")
+
+    (annotation,) = read_annotations(corpus / "corpus" / "annotations.json").annotations
+    assert annotation.selector is not None
+    # The drawing of this maths ("phi" as a Greek letter run into "pq") has
+    # none of its TeX's words, so only the TeX can be found (#352).
+    assert annotation.selector.exact == "model is $\\phi_{pq} = 1$ here"
+
+
+def test_a_highlight_opens_its_annotation_which_can_be_deleted(
+    page: playwright.Page, corpus: Path
+) -> None:
+    _the_annotated_note(page, corpus)
+    _annotate(page, "gains", "details", "Why slowly?")
+    point = page.evaluate(
+        """() => {
+          const article = document.querySelector('article[data-annotate-document]');
+          const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const at = node.data.indexOf('slowly');
+            if (at < 0) { continue; }
+            const range = document.createRange();
+            range.setStart(node, at + 1);
+            range.setEnd(node, at + 2);
+            const box = range.getBoundingClientRect();
+            return [box.left + box.width / 2, box.top + box.height / 2];
+          }
+        }"""
+    )
+    page.evaluate("window.getSelection().removeAllRanges()")
+
+    page.mouse.click(point[0], point[1])
+    page.wait_for_selector("dialog form.annotation-delete", timeout=_WAIT_MS)
+    page.click("dialog form.annotation-delete button[type=submit]")
+
+    page.wait_for_selector(
+        "article[data-annotate-document][data-highlighted='0']",
+        timeout=_WAIT_MS,
+    )
+    assert _highlighted(page) == []
+
+
+def test_a_highlight_moves_no_line_of_the_document(
+    page: playwright.Page, corpus: Path
+) -> None:
+    _the_annotated_note(page, corpus)
+    _annotate(page, "gains", "details", "Why slowly?")
+    drawn = page.evaluate(_BOXES)
+
+    page.evaluate("CSS.highlights.clear()")
+
+    assert page.evaluate(_BOXES) == drawn
+
+
+def test_the_second_of_two_equal_phrases_is_annotated_and_drawn_there(
+    page: playwright.Page, corpus: Path
+) -> None:
+    from kennis.engine.annotations import read_annotations
+
+    _the_annotated_note(page, corpus)
+
+    _annotate(page, "gains", "slowly", "the later one", after="Later")
+
+    (annotation,) = read_annotations(corpus / "corpus" / "annotations.json").annotations
+    assert annotation.selector is not None
+    assert annotation.selector.prefix.endswith("Later the ")
+    (drawn,) = page.evaluate("window.kennisAnnotations()")
+    assert " ".join(drawn["text"].split()) == "gains drift slowly"
+    assert drawn["before"].endswith("Later the ")

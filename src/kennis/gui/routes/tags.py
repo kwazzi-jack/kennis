@@ -10,7 +10,6 @@ here cannot interleave with one from the command line or an agent.
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -32,6 +31,7 @@ from kennis.gui.responses import (
     TEMPLATES,
     PostedForm,
     action_page,
+    current_page,
     from_htmx,
     problem_page,
     refused_a_post,
@@ -158,13 +158,9 @@ def _redraws(request: Request, link: str) -> list[tuple[str, str, str]]:
     The page is htmx's `HX-Current-URL`, kept to its path and query, and
     nothing when it is not a path in this window.
     """
-    current = urlsplit(request.headers.get("HX-Current-URL", ""))
-    path = current.path
-    if current.scheme not in ("http", "https") or not path.startswith("/"):
+    page = current_page(request)
+    if page is None:
         return []
-    if path.startswith("//"):
-        return []
-    page = f"{path}?{current.query}" if current.query else path
     return [
         (element, page, f"#{element}") for element in (tags_anchor(link), DOCUMENT_TAGS)
     ]

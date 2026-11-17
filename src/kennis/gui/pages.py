@@ -358,6 +358,10 @@ def tags_anchor(link: str) -> str:
 
 # The id of a document page's tag section, which a tag added there redraws.
 DOCUMENT_TAGS: Final = "document-tags"
+# A document page's inspector section of annotations, and its text, which an
+# annotation's answer asks for again (#50).
+DOCUMENT_ANNOTATIONS: Final = "document-annotations"
+DOCUMENT_TEXT: Final = "document-text"
 
 
 def document_link(collection: str, document_id: str) -> str:
@@ -1016,6 +1020,8 @@ def shown_document(
             terms=terms_of(question),
             bands=() if bands is None else bands(document.body),
             run=run,
+            # Where each block is, for a selection made on the page (#50).
+            source_offsets=True,
         ),
         has_blocked_images=_refers_remotely(document.body, trusted_hosts),
         group=group,
@@ -1142,6 +1148,8 @@ def shown_bundle_document(
             terms=terms_of(question),
             bands=() if bands is None else bands(body),
             run=run,
+            # Where each block is, for a selection made on the page (#50).
+            source_offsets=True,
             trusted_hosts=trusted_hosts,
         ),
         has_blocked_images=_refers_remotely(body, trusted_hosts),

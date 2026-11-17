@@ -1,0 +1,7 @@
+{# Deleting one annotation, its tags and comment with it (#50): a form of
+   its own beside the annotation's Save, in the removal colour. #}
+<form class="annotation-delete" action="/annotations/{{ annotation.id }}/delete" method="post" data-closes-dialog hx-disabled-elt="find button[type=submit]" hx-post="/annotations/{{ annotation.id }}/delete" hx-target="#annotate-outcome" hx-swap="innerHTML">
+  {% if project %}<input type="hidden" name="project" value="{{ project }}">{% endif %}
+  <input type="hidden" name="back" value="{{ back }}">
+  <button type="submit" class="danger">{{ icon("trash-2") }}{{ delete_annotation }}</button>
+</form>

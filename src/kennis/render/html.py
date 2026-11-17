@@ -135,8 +135,14 @@ def to_html(
     run: RunOf | None = None,
     figure_address: FigureAddress | None = None,
     trusted_hosts: frozenset[str] = frozenset(),
+    source_offsets: bool = False,
 ) -> str:
     """`markdown` as HTML, safe to place in a page.
+
+    `source_offsets` gives every top-level block `data-source="start
+    end"`: the character offsets of its lines in `markdown`, end
+    exclusive. A selection made on the page is looked for in the
+    markdown between them (#50); an attribute moves nothing on the page.
 
     `trusted_hosts` are hosts the reader named once (#660): a figure held
     at one over HTTPS is loaded as `load_remote_images` loads every one.
@@ -190,9 +196,12 @@ def to_html(
         and pattern is None
         and not heading_anchors
         and not (bands and run is not None)
+        and not source_offsets
     ):
         return str(parser.render(markdown))
     tokens = parser.parse(markdown)
+    if source_offsets:
+        _mark_sources(tokens, markdown)
     if marked is not None:
         tokens = _wrapped(tokens, markdown, marked)
     if without_title is not None:
@@ -345,6 +354,34 @@ def _holds_a_mark(token: Token) -> bool:
         child.type == "html_inline" and "<mark>" in child.content
         for child in token.children or ()
     )
+
+
+# An emphasis mark left unmatched at a word's edge, as a selection that
+# begins or ends inside `*gains*` holds; one inside a word (`snake_case`) is
+# the word's own.
+_LOOSE_EMPHASIS: Final = re.compile(r"(?<=\w)[*_]+(?!\w)|(?<!\w)[*_]+(?=\w)")
+
+
+def drawn_text(markdown: str) -> str:
+    """The text a page draws for a stretch of inline markdown, as a line:
+    a link's words without its address, an image's description, code as it
+    stands, maths as its TeX between dollars, emphasis marks gone, and
+    whitespace collapsed. For quoting a selection the reader made (#50)."""
+    parser = _parser(
+        load_remote_images=False, figure_address=None, trusted_hosts=frozenset()
+    )
+    pieces: list[str] = []
+    for token in parser.parseInline(markdown):
+        for child in token.children or ():
+            if child.type == "text":
+                pieces.append(_LOOSE_EMPHASIS.sub("", child.content))
+            elif child.type in ("code_inline", "image"):
+                pieces.append(child.content)
+            elif child.type == "math_inline":
+                pieces.append(f"${child.content}$")
+            elif child.type in ("softbreak", "hardbreak"):
+                pieces.append(" ")
+    return " ".join("".join(pieces).split())
 
 
 def terms_of(question: str) -> tuple[str, ...]:
@@ -588,6 +625,27 @@ def _with_runs(
     return placed
 
 
+def _mark_sources(tokens: list[Token], markdown: str) -> None:
+    """Each top-level block's `data-source`: where its lines are in
+    `markdown`, by the line rule `_wrapped` reads them back with."""
+    offsets = _line_offsets(markdown)
+    for token in tokens:
+        if token.level != 0 or token.nesting == -1 or token.map is None:
+            continue
+        first, last = token.map
+        token.attrSet(
+            "data-source",
+            f"{offsets[first]} {offsets[min(last, len(offsets) - 1)]}",
+        )
+
+
+def _source_attribute(token: Token) -> str:
+    """` data-source="..."` for a block kennis draws by its own rule, which
+    markdown-it's attribute rendering never reaches."""
+    source = token.attrGet("data-source")
+    return "" if source is None else f' data-source="{_escaped(str(source))}"'
+
+
 def _closes_at(tokens: list[Token], position: int) -> int:
     """One past the token that closes the block opening at `position`.
 
@@ -741,7 +799,8 @@ def _maths_rule(element: str, classes: str) -> RenderRule:
     ) -> str:
         token = tokens[index]
         maths = _without_empty_options(token.content)
-        drawn = f'<{element} class="{classes}">{_escaped(maths)}</{element}>'
+        source = _source_attribute(token) if element == "div" else ""
+        drawn = f'<{element} class="{classes}"{source}>{_escaped(maths)}</{element}>'
         if token.info:
             # `$$ ... $$ (eq1)` - the label is what the document's own
             # cross-references point at, so dropping it loses the only
@@ -768,16 +827,21 @@ def _render_fence(
     and so always answers, and on that corpus it was always wrong.
     """
     token = tokens[index]
+    source = _source_attribute(token)
     language = token.info.strip().split()[0] if token.info.strip() else ""
+    plain = f"<pre{source}><code>{_escaped(token.content)}</code></pre>\n"
     if not language:
-        return f"<pre><code>{_escaped(token.content)}</code></pre>\n"
+        return plain
     try:
         lexer = get_lexer_by_name(language)
     except ClassNotFound:
         # A language kennis has no lexer for is still a declared
         # language, so it is not silently guessed at either.
-        return f"<pre><code>{_escaped(token.content)}</code></pre>\n"
-    return str(highlight(token.content, lexer, HtmlFormatter(nowrap=False)))
+        return plain
+    highlighted = str(highlight(token.content, lexer, HtmlFormatter(nowrap=False)))
+    return highlighted.replace(
+        '<div class="highlight">', f'<div class="highlight"{source}>', 1
+    )
 
 
 def _render_link_open(
@@ -892,6 +956,7 @@ __all__ = [
     "PassageHtml",
     "RunHtml",
     "RunOf",
+    "drawn_text",
     "headings_of",
     "is_trusted",
     "marked_text",
