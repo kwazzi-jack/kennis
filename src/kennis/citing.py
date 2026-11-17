@@ -57,13 +57,16 @@ class CiteRequest:
 
     With `bundle`, `handle` is a path in that project's bundle. With
     `annotation`, `handle` is an annotation's id (`annotation=<id>`), which
-    tagging takes and citing refuses.
+    tagging takes and citing refuses. `quote` is words of the document a
+    tag selects, in `chunk` or anywhere when there is none (#50, unit 4);
+    tagging takes it and citing never sets it.
     """
 
     handle: str
     chunk: int | None = None
     bundle: Path | None = None
     annotation: bool = False
+    quote: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

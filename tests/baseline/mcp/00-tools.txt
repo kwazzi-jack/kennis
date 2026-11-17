@@ -334,7 +334,7 @@
     }
   },
   {
-    "description": "Tag passages or documents, or with `remove=True` take tags off them.\n\nUse it when the person asks to tag, bookmark or gather passages - for\nwriting, or to search within later - never on your own initiative: a tag\nis kept in their corpus or their project, committed, and seen again.\n\nName each passage as a search hit gives it: its `document_id`, or a\ncontext hit's `path`, with its `chunk`; leave out `chunk` to tag the\nwhole document. A tag is one word, folded to lowercase; join words with\na hyphen. If any passage cannot be found, nothing is tagged and each\nproblem is said at its position.",
+    "description": "Tag passages or documents, or with `remove=True` take tags off them.\n\nUse it when the person asks to tag, bookmark or gather passages - for\nwriting, or to search within later - never on your own initiative: a tag\nis kept in their corpus or their project, committed, and seen again.\n\nName each passage as a search hit gives it: its `document_id`, or a\ncontext hit's `path`, with its `chunk`; leave out `chunk` to tag the\nwhole document. To tag a sentence rather than the whole chunk, give its\nwords as `quote`, copied from `read` or the snippet; they must occur\nexactly once in the chunk (or, with no `chunk`, the document), or the\nrequest is refused saying how often they do. A tag is one word, folded\nto lowercase; join words with a hyphen. If any passage cannot be found,\nnothing is tagged and each problem is said at its position.",
     "input": {
       "additionalProperties": false,
       "properties": {
@@ -344,7 +344,7 @@
         },
         "requests": {
           "items": {
-            "description": "One passage to cite, named by exactly one of two handles.\n\n`document_id` for a hit from notes, literature or docs (or from\n`list_corpus`); `path` for a project's context hit, as its `path=`\ngives it. `chunk` is the hit's `chunk`; omitted, the document is cited whole.",
+            "description": "One passage or document to tag, named as a search hit names it.\n\n`document_id` for a hit from notes, literature or docs; `path` for a\nproject's context hit. `chunk` is the hit's `chunk`. `quote` is words\nof the document to tag exactly, as `read` or a snippet showed them: in\n`chunk` when it is given, otherwise anywhere in the document.",
             "properties": {
               "chunk": {
                 "anyOf": [
@@ -369,6 +369,17 @@
                 "default": null
               },
               "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "quote": {
                 "anyOf": [
                   {
                     "type": "string"
