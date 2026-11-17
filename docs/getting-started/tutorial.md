@@ -13,34 +13,27 @@ uses no PDFs and no API keys.
 ## 1. Set kennis up
 
 ```
-kennis config init
+kennis setup
 ```
 
-The wizard asks only what depends on you, and every question offers what is
-already in effect, so pressing return throughout is a valid run. Accept the
-defaults: `fastembed` for embedding, which runs locally and needs no key.
-Every setting is then written to the file, including those you left at their
-default.
+The wizard does three things, each skipped when it is already done, so it
+is safe to run again:
 
-To skip the questions and take every default:
+- **The settings.** It asks only what depends on you, and every question
+  offers what is already in effect, so pressing return throughout is a valid
+  run. Accept the defaults: `fastembed` for embedding, which runs locally and
+  needs no key. Every setting is then written to the file, including those
+  you left at their default.
+- **The corpus**, at the folder the settings name:
 
-```
-kennis config init --defaults
-```
+  ```
+  Created corpus at ~/.local/share/kennis
+  ```
 
-```
-Wrote every setting at its default to ~/.config/kennis/config.toml
-```
+- **An agent.** Answer `none` for now; step 10 comes back to it.
 
-## 2. Create the corpus
-
-```
-kennis corpus init
-```
-
-```
-Created corpus at ~/.local/share/kennis
-```
+The same steps one at a time are `kennis config init` (or `kennis config
+init --defaults`, which asks nothing) and `kennis corpus init`.
 
 That folder holds three collections - `literature`, `docs` and `notes` - and
 is a git repository. Every change from here is a commit.
@@ -335,8 +328,10 @@ itself after 30 minutes. See
 ## 10. Hand it to an agent
 
 This step needs the `mcp` extra: `uv tool install "kennis[mcp]"`. An agent
-that speaks MCP starts `kennis serve` itself. For Claude Code, add this to
-`~/.claude.json`:
+that speaks MCP starts `kennis serve` itself. Run `kennis setup` again and
+answer `claude-code`: it asks Claude Code to start kennis for every project
+(`claude mcp add --scope user`). For another agent, answer `other` for the
+block to paste, which is, by hand:
 
 ```json
 {

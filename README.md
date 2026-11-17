@@ -47,13 +47,15 @@ megabytes.
 
 ## A first corpus
 
-Create the corpus, which is a folder of markdown files and a git repository
-at `~/.local/share/kennis`:
+Set kennis up: the settings, the corpus - a folder of markdown files and a
+git repository at `~/.local/share/kennis` - and, if you want one, an agent
+to serve. Pressing return throughout takes every default:
 
 ```
-kennis config init --defaults
-kennis corpus init
+kennis setup
 ```
+
+Or, asking nothing, `kennis config init --defaults` then `kennis corpus init`.
 
 Put something in. `remember` writes a note; `corpus add` brings in a file
 (`-n` notes), a paper by arXiv identifier or DOI (`-l` literature) or a
