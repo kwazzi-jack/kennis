@@ -16,10 +16,9 @@ from annotating import ANNOTATIONS, Target, tagged
 from kennis.engine.context.bundle import init_bundle
 from kennis.engine.errors import KennisError
 from kennis.mcp.instructions import instructions_for
-from kennis.mcp.tools.cite import CiteRequest
 from kennis.mcp.tools.corpus import list_corpus
 from kennis.mcp.tools.search import search
-from kennis.mcp.tools.tags import tag
+from kennis.mcp.tools.tags import TagRequest, tag
 from test_cli_tags import PAPER_ID, SOLVING, chunk_holding, indexed_paper, run
 
 
@@ -55,7 +54,7 @@ def project(corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pa
 def test_the_tool_tags_a_passage_as_a_hit_gives_it(corpus: Path):
     chunk = chunk_holding(corpus, SOLVING)
 
-    said = tag([CiteRequest(document_id=PAPER_ID, chunk=chunk)], ["Calibration"])
+    said = tag([TagRequest(document_id=PAPER_ID, chunk=chunk)], ["Calibration"])
 
     (anchor,) = tagged(corpus)["calibration"]
     assert (anchor.document, anchor.chunk) == (PAPER_ID, chunk)
@@ -64,31 +63,31 @@ def test_the_tool_tags_a_passage_as_a_hit_gives_it(corpus: Path):
 
 
 def test_the_tool_tags_a_whole_document(corpus: Path):
-    tag([CiteRequest(document_id=PAPER_ID)], ["to-read"])
+    tag([TagRequest(document_id=PAPER_ID)], ["to-read"])
 
     assert tagged(corpus) == {"to-read": (Target(PAPER_ID),)}
 
 
 def test_the_tool_tags_a_context_hit_by_its_path(project: Path, corpus: Path):
-    tag([CiteRequest(path=".context/ours.md", chunk=0)], ["mine"])
+    tag([TagRequest(path=".context/ours.md", chunk=0)], ["mine"])
 
     assert tagged(project)["mine"][0].document == "ours.md"
     assert not (corpus / ANNOTATIONS).exists()
 
 
 def test_the_tool_removes_a_tag(corpus: Path):
-    tag([CiteRequest(document_id=PAPER_ID)], ["to-read"])
+    tag([TagRequest(document_id=PAPER_ID)], ["to-read"])
 
-    said = tag([CiteRequest(document_id=PAPER_ID)], ["to-read"], remove=True)
+    said = tag([TagRequest(document_id=PAPER_ID)], ["to-read"], remove=True)
 
     assert tagged(corpus) == {}
     assert "untagged" in said
 
 
 def test_tagging_again_says_so(corpus: Path):
-    tag([CiteRequest(document_id=PAPER_ID)], ["to-read"])
+    tag([TagRequest(document_id=PAPER_ID)], ["to-read"])
 
-    said = tag([CiteRequest(document_id=PAPER_ID)], ["to-read"])
+    said = tag([TagRequest(document_id=PAPER_ID)], ["to-read"])
 
     assert "already" in said
 
@@ -96,8 +95,8 @@ def test_tagging_again_says_so(corpus: Path):
 def test_one_refused_request_writes_none_and_says_which(corpus: Path):
     said = tag(
         [
-            CiteRequest(document_id=PAPER_ID),
-            CiteRequest(document_id=PAPER_ID, chunk=999),
+            TagRequest(document_id=PAPER_ID),
+            TagRequest(document_id=PAPER_ID, chunk=999),
         ],
         ["calibration"],
     )
@@ -112,18 +111,18 @@ def test_one_refused_request_writes_none_and_says_which(corpus: Path):
     ("requests", "names", "refusal"),
     [
         ([], ["a"], "no requests"),
-        ([CiteRequest(document_id=PAPER_ID)], [], "no tags"),
+        ([TagRequest(document_id=PAPER_ID)], [], "no tags"),
         (
-            [CiteRequest(document_id=PAPER_ID, path=".context/ours.md")],
+            [TagRequest(document_id=PAPER_ID, path=".context/ours.md")],
             ["a"],
             "exactly one",
         ),
-        ([CiteRequest(document_id=PAPER_ID)], ["phase calibration"], "not a tag"),
-        ([CiteRequest(document_id=PAPER_ID)] * 13, ["a"], "at most"),
+        ([TagRequest(document_id=PAPER_ID)], ["phase calibration"], "not a tag"),
+        ([TagRequest(document_id=PAPER_ID)] * 13, ["a"], "at most"),
     ],
 )
 def test_the_tool_refuses_what_it_cannot_tag_and_writes_nothing(
-    corpus: Path, requests: list[CiteRequest], names: list[str], refusal: str
+    corpus: Path, requests: list[TagRequest], names: list[str], refusal: str
 ):
     said = tag(requests, names)
 
@@ -136,7 +135,7 @@ def test_the_tool_refuses_what_it_cannot_tag_and_writes_nothing(
 
 
 def test_a_search_tool_is_kept_to_its_tags(corpus: Path):
-    tag([CiteRequest(document_id=PAPER_ID)], ["calibration"])
+    tag([TagRequest(document_id=PAPER_ID)], ["calibration"])
 
     assert "Drift" in search("gains", ["notes"])
     assert search("gains", ["notes"], tags=["calibration"]) == "no matching passages"
@@ -144,7 +143,7 @@ def test_a_search_tool_is_kept_to_its_tags(corpus: Path):
 
 
 def test_a_context_search_is_kept_to_the_project_s_tags(project: Path):
-    tag([CiteRequest(path=".context/ours.md")], ["mine"])
+    tag([TagRequest(path=".context/ours.md")], ["mine"])
 
     said = search("gains", ["context"], tags=["mine"])
 
@@ -160,7 +159,7 @@ def test_a_tag_nothing_carries_is_refused_naming_the_listing(corpus: Path):
 
 
 def test_list_corpus_names_the_tags_in_use(corpus: Path):
-    tag([CiteRequest(document_id=PAPER_ID)], ["calibration", "to-read"])
+    tag([TagRequest(document_id=PAPER_ID)], ["calibration", "to-read"])
 
     said = list_corpus()
 
@@ -179,7 +178,7 @@ def test_a_path_the_server_cannot_place_writes_none_of_the_batch(corpus: Path):
     """Refused before the service is asked - the path is in no `.context` -
     and still nothing of the batch is written."""
     said = tag(
-        [CiteRequest(document_id=PAPER_ID), CiteRequest(path="notes/x.md")],
+        [TagRequest(document_id=PAPER_ID), TagRequest(path="notes/x.md")],
         ["calibration"],
     )
 

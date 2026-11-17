@@ -50,6 +50,8 @@ from kennis.engine.annotations import (
     annotation_named,
     indexed_text,
     links,
+    located,
+    occurrences,
     own_end,
     placed,
     read_annotations,
@@ -181,6 +183,9 @@ class _Named:
     # The annotation named by its id (`annotation=<id>`), which needs no
     # chunk: how a detached selection is untagged.
     annotation: str | None = None
+    # Whether `selector` is a quotation's words (#50, unit 4): an untag then
+    # takes names from the annotation selecting those words alone.
+    quoted: bool = False
 
 
 def change_tags(
@@ -500,6 +505,17 @@ def _untagged_by(store: AnnotationStore, one: _Named) -> list[str]:
     """
     if one.annotation is not None:
         return [one.annotation]
+    if one.quoted and one.selector is not None:
+        # The annotation selecting the quoted words, wherever it now is.
+        text = indexed_text(one.chunks)
+        quoted = located(one.selector, text)
+        return [
+            annotation.id
+            for annotation in store.annotations
+            if annotation.document == one.document
+            and annotation.selector is not None
+            and located(annotation.selector, text) == quoted
+        ]
     if one.chunk is None:
         return [
             annotation.id
@@ -599,7 +615,7 @@ def _named(
         raise
     title = _text(document.frontmatter.title)
     link = link_to(document.id, request.chunk)
-    if request.chunk is None:
+    if request.chunk is None and request.quote is None:
         return _Named(store, document.id, None, None, title, link, ())
     try:
         chunks = tuple(
@@ -608,9 +624,27 @@ def _named(
             if chunk.document_id == document.id
         )
     except KennisError:
-        if not remove:
+        if not remove or request.quote is not None:
             raise
         chunks = ()
+    if request.quote is not None:
+        return _Named(
+            store,
+            document.id,
+            request.chunk,
+            _quoted_selector(
+                request.quote,
+                chunks,
+                request.chunk,
+                handle=request.handle,
+                resolution="kennis corpus index",
+            ),
+            title,
+            link,
+            chunks,
+            quoted=True,
+        )
+    assert request.chunk is not None, "neither a quote nor a chunk is whole, above"
     return _Named(
         store,
         document.id,
@@ -693,7 +727,7 @@ def _named_in_bundle(
         raise
     title = bundle_title(file)
     link = context_link(project, request.handle, request.chunk)
-    if request.chunk is None:
+    if request.chunk is None and request.quote is None:
         return _Named(store, request.handle, None, None, title, link, ())
     try:
         chunks = tuple(
@@ -702,9 +736,27 @@ def _named_in_bundle(
             if chunk.document_id == request.handle
         )
     except KennisError:
-        if not remove:
+        if not remove or request.quote is not None:
             raise
         chunks = ()
+    if request.quote is not None:
+        return _Named(
+            store,
+            request.handle,
+            request.chunk,
+            _quoted_selector(
+                request.quote,
+                chunks,
+                request.chunk,
+                handle=request.handle,
+                resolution="kennis context index",
+            ),
+            title,
+            link,
+            chunks,
+            quoted=True,
+        )
+    assert request.chunk is not None, "neither a quote nor a chunk is whole, above"
     return _Named(
         store,
         request.handle,
@@ -738,6 +790,55 @@ def _passage_selector(
     if chunk is None:
         raise SearchUnavailable(unindexed, resolution=resolution)
     return selector_of(indexed_text(chunks), chunk.char_start, own_end(chunks, chunk))
+
+
+def _quoted_selector(
+    quote: str,
+    chunks: Sequence[Chunk],
+    number: int | None,
+    *,
+    handle: str,
+    resolution: str,
+) -> Selector:
+    """The selection of `quote`'s words: in chunk `number` of the document's
+    indexed text, or anywhere in it when there is none (#50, unit 4).
+
+    **Exactly once, or refused**: tagging the first of several would be a
+    guess the agent cannot see, and the remedy - its chunk, or more of the
+    words - is the agent's to give. The selector is made from the indexed
+    text, which is what `located` finds it in again.
+    """
+    if not chunks:
+        raise SearchUnavailable(
+            f"'{handle}' is not in the index, so its words cannot be found",
+            resolution=resolution,
+        )
+    text = indexed_text(chunks)
+    where = f"'{handle}'"
+    start, end = 0, len(text)
+    if number is not None:
+        chunk = next((one for one in chunks if one.chunk_index == number), None)
+        if chunk is None:
+            raise SearchUnavailable(
+                f"'{handle}' has no chunk {number} in the index",
+                resolution=resolution,
+            )
+        start, end = chunk.char_start, chunk.char_end
+        where = f"chunk {number} of '{handle}'"
+    found = occurrences(quote, text, start, end)
+    if not found:
+        beyond = (
+            "; leave out `chunk` to look in the whole document"
+            if number is not None
+            else ""
+        )
+        raise KennisError(f"the words quoted are not in {where}{beyond}")
+    if len(found) > 1:
+        raise KennisError(
+            f"the words quoted appear {len(found)} times in {where}; "
+            "give the chunk or quote more of the passage"
+        )
+    return selector_of(text, found[0].start, found[0].end)
 
 
 def _held(store: Path, held: dict[Path, AnnotationStore]) -> AnnotationStore:

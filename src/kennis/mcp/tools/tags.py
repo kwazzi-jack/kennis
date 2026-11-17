@@ -9,6 +9,7 @@ batch, as `kennis tag` does, so nothing is half tagged.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from typing import Final
 
 from kennis.client import api
@@ -22,7 +23,23 @@ from kennis.tagging import Tagged
 _MAX_REQUESTS: Final = 12
 
 
-def tag(requests: list[CiteRequest], tags: list[str], remove: bool = False) -> str:
+@dataclass(frozen=True)
+class TagRequest:
+    """One passage or document to tag, named as a search hit names it.
+
+    `document_id` for a hit from notes, literature or docs; `path` for a
+    project's context hit. `chunk` is the hit's `chunk`. `quote` is words
+    of the document to tag exactly, as `read` or a snippet showed them: in
+    `chunk` when it is given, otherwise anywhere in the document.
+    """
+
+    document_id: str | None = None
+    chunk: int | None = None
+    path: str | None = None
+    quote: str | None = None
+
+
+def tag(requests: list[TagRequest], tags: list[str], remove: bool = False) -> str:
     """Tag passages or documents, or with `remove=True` take tags off them.
 
     Use it when the person asks to tag, bookmark or gather passages - for
@@ -31,9 +48,12 @@ def tag(requests: list[CiteRequest], tags: list[str], remove: bool = False) -> s
 
     Name each passage as a search hit gives it: its `document_id`, or a
     context hit's `path`, with its `chunk`; leave out `chunk` to tag the
-    whole document. A tag is one word, folded to lowercase; join words with
-    a hyphen. If any passage cannot be found, nothing is tagged and each
-    problem is said at its position.
+    whole document. To tag a sentence rather than the whole chunk, give its
+    words as `quote`, copied from `read` or the snippet; they must occur
+    exactly once in the chunk (or, with no `chunk`, the document), or the
+    request is refused saying how often they do. A tag is one word, folded
+    to lowercase; join words with a hyphen. If any passage cannot be found,
+    nothing is tagged and each problem is said at its position.
     """
     if not requests:
         return "no requests"
@@ -61,7 +81,10 @@ def tag(requests: list[CiteRequest], tags: list[str], remove: bool = False) -> s
     asked = []
     for position, request in enumerate(requests, start=1):
         try:
-            asked.append(requested(request))
+            cited = CiteRequest(
+                document_id=request.document_id, chunk=request.chunk, path=request.path
+            )
+            asked.append(replace(requested(cited), quote=request.quote))
         except KennisError as error:
             refused.append(_refusal(position, str(error), error.resolution))
     if refused:
@@ -106,4 +129,4 @@ def _nothing_done(refused: list[str], *, remove: bool) -> str:
     return "\n".join([*refused, f"Nothing was {what}."])
 
 
-__all__ = ["tag"]
+__all__ = ["TagRequest", "tag"]

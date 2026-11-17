@@ -134,8 +134,11 @@ neither, because that repository is yours.
 
 `tag` names each passage as a search hit gives it - a `document_id`, or a
 context hit's `path`, with its `chunk` - exactly as `cite` does, so it can
-only tag what kennis holds. The agent is told to tag only when you ask it
-to tag, bookmark or gather passages. If any passage in a call cannot be
+only tag what kennis holds. To tag one sentence rather than the whole
+chunk, it gives the sentence's words as `quote`; they must occur exactly
+once in that chunk (or, with no chunk, in the document), or the request is
+refused with how often they do, so a tag never lands on a guess. The agent
+is told to tag only when you ask it to tag, bookmark or gather passages. If any passage in a call cannot be
 found, nothing is tagged, and each problem is named at its position. Tags
 are kept where `kennis tag` keeps them; see
 [Tag passages and documents](tag-passages.md).

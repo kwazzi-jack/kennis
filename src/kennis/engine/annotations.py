@@ -571,6 +571,23 @@ def located(selector: Selector, text: str) -> Span | None:
     )
 
 
+def occurrences(
+    words: str, text: str, start: int = 0, end: int | None = None
+) -> list[Span]:
+    """Every place in `text[start:end]` holding `words`, any run of
+    whitespace between two of them matching any other: a quotation copied
+    from a snippet, whose line breaks are spaces, is found where the text
+    breaks the line (#50, unit 4). None for words that are only
+    whitespace."""
+    if not words.split():
+        return []
+    stop = len(text) if end is None else end
+    return [
+        Span(match.start(), match.end())
+        for match in _words_pattern(words).finditer(text, start, stop)
+    ]
+
+
 def _words_pattern(exact: str) -> re.Pattern[str]:
     return re.compile(r"\s+".join(re.escape(word) for word in exact.split()))
 
@@ -963,6 +980,7 @@ __all__ = [
     "located",
     "new_id",
     "now",
+    "occurrences",
     "own_end",
     "own_ranges",
     "placed",
