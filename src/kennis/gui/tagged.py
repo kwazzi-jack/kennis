@@ -32,7 +32,8 @@ from kennis.engine.errors import KennisError
 from kennis.engine.rag.models import Chunk
 from kennis.engine.tags import colour_of
 from kennis.gui import words
-from kennis.gui.pages import ChipsOf, ShownChip, passage_href
+from kennis.gui.pages import ChipsOf, ShownChip, annotation_href, passage_href
+from kennis.render.hits import Hit
 from kennis.render.html import Band
 from kennis.render.tags import opening_words, target_state
 from kennis.tagging import (
@@ -226,7 +227,19 @@ def chips_finder(context: Context, bundles: Sequence[Path]) -> ChipsOf:
         linked[collection] = found
         return found
 
-    def chips_of(collection: str, chunk: Chunk) -> tuple[ShownChip, ...]:
+    def chips_of(hit: Hit) -> tuple[ShownChip, ...]:
+        # A comment hit is one annotation, and its chips are its own tags.
+        if hit.annotation is not None:
+            return tuple(
+                ShownChip(
+                    name=name,
+                    href=tag_href(name),
+                    colour=colour_of(name, chosen),
+                    whole=hit.annotation.quote is None,
+                )
+                for name in hit.annotation.tags
+            )
+        collection, chunk = hit.collection, hit.result.chunk
         project = project_of_group(collection)
         held = corpus if project is None else by_project.get(project, (None, None))[1]
         if held is None or not held.annotations:
@@ -370,14 +383,6 @@ class DocumentAnnotations:
     shown: tuple[ShownAnnotation, ...] = ()
     highlights: tuple[PageHighlight, ...] = ()
     bands: tuple[Band, ...] = ()
-
-
-def annotation_href(annotation_id: str, project: str | None) -> str:
-    """The address of an annotation's dialog."""
-    address = f"/annotations/{quote(annotation_id, safe='')}"
-    return (
-        address if project is None else f"{address}?project={quote(project, safe='')}"
-    )
 
 
 def document_annotations(

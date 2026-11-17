@@ -42,6 +42,7 @@ has no link, because its handle is already the file's path.
 |---|---|
 | `literature`, `docs`, `notes` | the corpus, which is machine-global |
 | `context` | this project's `.context/` bundle, found by walking up from where you are |
+| `annotations` | the comments you wrote on passages of the others ([Tag passages](tag-passages.md#search-your-comments)) |
 | `all` | the default: every one of them that has an index, unless you have narrowed it (below) |
 
 ```

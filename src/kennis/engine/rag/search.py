@@ -38,7 +38,7 @@ from kennis.engine.rag.modes import Mode
 # `score = sum 1 / (RRF_K + rank)`. The constant from the original paper; it
 # flattens the difference between adjacent high ranks, so being first in one
 # list is worth less than appearing in both.
-_RRF_K: Final = 60
+RRF_K: Final = 60
 
 # How many each leg retrieves before fusion. Retrieving only `top_k` from
 # each would give at most `top_k` distinct chunks and waste the fusion: the
@@ -334,7 +334,7 @@ def _fuse(*rank_lists: list[int]) -> list[tuple[int, float]]:
     scores: dict[int, float] = {}
     for ranks in rank_lists:
         for offset, position in enumerate(ranks):
-            scores[position] = scores.get(position, 0.0) + 1.0 / (_RRF_K + offset + 1)
+            scores[position] = scores.get(position, 0.0) + 1.0 / (RRF_K + offset + 1)
     return sorted(scores.items(), key=lambda pair: pair[1], reverse=True)
 
 

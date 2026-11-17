@@ -857,6 +857,45 @@ def colours_kept(store: AnnotationStore, colours: Mapping[str, str]) -> Annotati
     return replace(store, colours=dict(colours))
 
 
+# ---------------------------------------------------------------------------
+# Searching the comments
+
+
+def comments_ranked(
+    annotations: Sequence[Annotation], question: str, top_k: int
+) -> list[tuple[int, float]]:
+    """Up to `top_k` `(position in annotations, score)` pairs, best first:
+    the annotations whose comment shares a word with `question`.
+
+    One `Bm25Index` over the comments, built for this question and never
+    kept: a comment is written one at a time and read back at once, and an
+    index on disk would hide the comment just written until it was built
+    again. 500 comments take about 4 ms. An annotation with no comment is
+    never a candidate - the scope is the reader's words, not the tags,
+    which `--tag` already filters by.
+    """
+    from kennis.engine.errors import NothingToIndex
+    from kennis.engine.rag.bm25 import Bm25Index
+
+    commented = [
+        position
+        for position, annotation in enumerate(annotations)
+        if annotation.comment
+    ]
+    if not commented or top_k < 1:
+        return []
+    try:
+        index = Bm25Index.build(
+            [annotations[position].comment or "" for position in commented]
+        )
+    except NothingToIndex:
+        return []
+    return [
+        (commented[position], score)
+        for position, score in index.retrieve(question, top_k)
+    ]
+
+
 __all__ = [
     "ANNOTATIONS_FILENAME",
     "CONTEXT_CHARACTERS",
@@ -875,6 +914,7 @@ __all__ = [
     "annotations_of",
     "by_document",
     "colours_kept",
+    "comments_ranked",
     "indexed_text",
     "links",
     "links_for",

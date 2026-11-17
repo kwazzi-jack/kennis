@@ -113,6 +113,7 @@
 [data-collection="docs"] { --collection: var(--collection-docs); }
 [data-collection="notes"] { --collection: var(--collection-notes); }
 [data-collection="context"] { --collection: var(--collection-context); }
+[data-collection="annotations"] { --collection: var(--collection-annotations); }
 /* Every project's notes, and a pack's context, which is advice for a
    project as its own notes are (14g). */
 [data-collection^="context:"],
@@ -1576,6 +1577,16 @@ main.document {
    cannot. Everything is in ink: an opened passage is one text. */
 .passage { color: var(--ink); }
 .passage .full { padding: 0.75rem 1rem 0.8rem; }
+/* A comment hit (#50): the words it is about, quoted above the comment,
+   which is the card's passage, on a wash of the scope's colour, as the
+   document page draws an annotated selection. */
+.hit .hit-quote {
+  margin: 0.75rem 1rem 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--collection) 10%, transparent);
+}
+.hit .hit-quote + .passage .full { padding-top: 0.4rem; }
 .passage .full > * > :first-child { margin-top: 0; }
 /* Which section of the document the passage is from. */
 .passage-section {

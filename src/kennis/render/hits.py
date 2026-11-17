@@ -315,6 +315,22 @@ def bundle_hit_handle(result: SearchResult, *, bundle_name: str) -> str:
     )
 
 
+def annotation_handle(hit: Hit, *, bundle_name: str) -> str:
+    """Where a comment hit's annotation is, and the annotation's id.
+
+    The document as any hit names it - an identifier, or a project's path -
+    then the chunk it is placed at, left out when there is none (a whole
+    document, or a selection whose words are gone), then `annotation=<id>`,
+    which `kennis untag` takes and the window opens it by.
+    """
+    shown = hit.annotation
+    assert shown is not None, "only a comment hit has an annotation handle"
+    document = hit.result.chunk.document_id
+    where = f"path={bundle_name}/{document}" if hit.project else f"id={document}"
+    at = "" if shown.chunk is None else f" chunk={shown.chunk}"
+    return f"{where}{at} annotation={shown.id}"
+
+
 def raw_scores(result: SearchResult) -> str:
     """Every leg that ran, at the precision that distinguishes hits.
 
@@ -389,6 +405,29 @@ class Hit:
     # The collection's unrelated reference, for a model with no measured
     # cuts (#599); None where the model is measured or had no vectors.
     unrelated: float | None = None
+    # What an `annotations` hit is about (#50, unit 3); None for every other
+    # hit. Its result's chunk carries the comment as its text and the
+    # annotated document's id and title, and no more: it is not a chunk of
+    # any index, so `chunk_index` is read only through `annotation.chunk`.
+    annotation: AnnotationShown | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AnnotationShown:
+    """The annotation a comment hit is: its id, the words it selects
+    (None for a whole document), its tags, where it stands now - placed,
+    detached, unchecked or missing, as the tag listing says - the chunk it
+    is placed at, and the `kennis://` link that opens it there."""
+
+    id: str
+    quote: str | None
+    tags: tuple[str, ...]
+    state: str
+    chunk: int | None
+    link: str
+    # The corpus collection holding the document; None for a project's
+    # file and for a document no longer held.
+    collection: str | None = None
 
 
 def docs_versions_of(hit: Hit) -> str | None:
@@ -438,6 +477,10 @@ class RenderedHit:
     document_title: str
     section: str | None
     measures: tuple[tuple[Leg, Relevance], ...]
+    # An annotation's selected words as a line, for a comment hit whose
+    # body is the comment; None for a whole document and for every other
+    # hit (#50).
+    quote: str | None = None
 
 
 _DETAIL_GAP: Final = "  "
@@ -459,11 +502,12 @@ def hit_detail_parts(hit: Hit, *, style: ScoreStyle, best: float) -> tuple[str, 
     """
     from kennis.engine.context.bundle import BUNDLE_DIRNAME
 
-    handle = (
-        bundle_hit_handle(hit.result, bundle_name=hit.place or BUNDLE_DIRNAME)
-        if is_bundle_group(hit.collection)
-        else hit_handle(hit.result)
-    )
+    if hit.annotation is not None:
+        handle = annotation_handle(hit, bundle_name=hit.place or BUNDLE_DIRNAME)
+    elif is_bundle_group(hit.collection):
+        handle = bundle_hit_handle(hit.result, bundle_name=hit.place or BUNDLE_DIRNAME)
+    else:
+        handle = hit_handle(hit.result)
     # Which version a docs passage is from travels with its handle, so the
     # command line, an agent and the window all say it (#489).
     where = docs_versions_of(hit)
@@ -497,6 +541,8 @@ def rendered_hit(
     sees, so a person debugging a retrieval problem at the terminal is
     looking at the thing the model looked at.
     """
+    from kennis.render.tags import opening_words
+
     document_title, section = hit_title_parts(hit.result)
     return RenderedHit(
         headline=hit_headline(rank, hit.result),
@@ -513,6 +559,11 @@ def rendered_hit(
             relevances(hit.result, model=hit.model, best=best, unrelated=hit.unrelated)
             if style == "human"
             else ()
+        ),
+        quote=(
+            None
+            if hit.annotation is None or hit.annotation.quote is None
+            else opening_words(hit.annotation.quote)
         ),
     )
 

@@ -300,6 +300,9 @@ def _report(found: Sweep, snippet: str, scores: str) -> None:
             link = _link_of(hit)
             if link is not None:
                 display.hit_link(link)
+            # A comment hit quotes the words it is about, then its comment.
+            if shown.quote is not None:
+                display.body(f'"{shown.quote}"', indent="      ")
             if shown.body is not None:
                 display.body(shown.body, indent="      ")
     _read_hint(everything)
@@ -314,6 +317,8 @@ def _link_of(hit: Hit) -> str | None:
     from kennis.links import context_link, link_to
 
     chunk = hit.result.chunk
+    if hit.annotation is not None:
+        return hit.annotation.link
     if hit.collection in COLLECTION_NAMES:
         return link_to(chunk.document_id, chunk.chunk_index)
     if is_bundle_group(hit.collection) and hit.project:

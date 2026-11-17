@@ -85,10 +85,16 @@
       <button type="button" class="bookmark-tab" aria-label="{{ passage_actions }}" title="{{ passage_actions }}"{% if hit.tags %} data-tagged{% endif %}>{{ icon("bookmark") }}</button>
       <div class="menu-items bookmark-items">
         <a class="item" href="{{ hit.href }}">{{ icon("arrow-up-right") }}<span>{{ open_at_passage }}</span></a>
+        {% if hit.edit_href %}
+        {# A comment hit is an annotation already: it is edited, not tagged
+           or cited (#50). #}
+        <a class="item" href="{{ hit.edit_href }}" hx-get="{{ hit.edit_href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("pencil") }}<span>{{ edit_this_annotation }}</span></a>
+        {% else %}
         <a class="item" href="{{ tag_this }}" hx-get="{{ tag_this }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("tag") }}<span>{{ tag_passage }}</span></a>
         {# No preview and no page (Brian): a click copies, the label says
            so; drawn only where the clipboard can be reached. #}
         <button type="button" class="item copy-citation" data-text="/cite/text?link={{ cite_this }}" data-copied="{{ copied_citation }}">{{ icon("quote") }}<span>{{ copy_passage }}</span></button>
+        {% endif %}
       </div>
     </div>
     {# The card's head (Brian, 2026-10-12): the document and the section,
@@ -122,6 +128,9 @@
        stylesheet reads, `name` closes the others, and no script is
        involved. `safe`: `passage_html` escaped the corpus's text and
        emitted only the tags it chose. #}
+    {# A comment hit quotes the words it is about; its passage is the
+       comment (#50). #}
+    {% if hit.quote %}<blockquote class="tag-quote hit-quote">{{ hit.quote }}</blockquote>{% endif %}
     <div class="passage{% if hit.opens %} clamped{% endif %}">
       <div class="full">
         {% if hit.passage.lead %}<div class="lead">{{ hit.passage.lead | safe }}</div>{% endif %}

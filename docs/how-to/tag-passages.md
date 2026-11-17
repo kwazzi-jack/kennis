@@ -64,6 +64,30 @@ and a search kept to the tag finds the passages it covers.
 Annotating needs the browser's scripts. Changing or deleting an annotation
 from its **Edit** works without them.
 
+## Search your comments
+
+Comments are searched as a scope of their own, `annotations`, apart from
+the documents they are written on, so a comment never changes how a
+document ranks:
+
+```text
+kennis search "solver interval" --collection annotations
+```
+
+Each hit names the document, quotes the words the annotation selects, and
+gives the comment, with a link that opens the document at those words. Its
+handle ends `annotation=<id>`, which `kennis untag` takes. In the window,
+choose **annotations** beside the search box; a hit's menu offers to edit
+the annotation. An agent searches them by naming `annotations`.
+
+Comments are matched by their words alone, never by meaning, and only an
+annotation with a comment is found this way; `--tag` finds the rest. A
+default search covers your comments when `retrieval.default_collections`
+lists `annotations`, which it does unless your configuration file was
+written before kennis offered it: then the search says it left them out,
+and `kennis config set retrieval.default_collections "context literature
+docs notes annotations"` adds them.
+
 ## Colours
 
 Every tag is drawn in one of eight colours: red, orange, yellow, green,

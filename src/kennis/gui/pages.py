@@ -197,7 +197,7 @@ class ShownChip:
 
 # The tags a hit's chunk carries, given its group: the window's tags are
 # read once per page by `gui/tagged.py`, which hands this in.
-type ChipsOf = Callable[[str, Chunk], tuple[ShownChip, ...]]
+type ChipsOf = Callable[[Hit], tuple[ShownChip, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +236,11 @@ class ShownHit:
     link: str = ""
     # The tags on this passage or its document (#627).
     tags: tuple[ShownChip, ...] = ()
+    # A comment hit's quoted words and the address of its annotation's
+    # dialog (#50); empty for every other hit, whose card offers tagging
+    # and citing instead.
+    quote: str = ""
+    edit_href: str = ""
 
     @property
     def tags_id(self) -> str:
@@ -317,23 +322,33 @@ def shown_hits(
                 ),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
-                href=_href(
-                    hit.collection,
-                    hit.result.chunk.document_id,
-                    hit.result.chunk.chunk_index,
-                    question,
+                href=(
+                    _href(
+                        hit.collection,
+                        hit.result.chunk.document_id,
+                        hit.result.chunk.chunk_index,
+                        question,
+                    )
+                    if hit.annotation is None
+                    else _annotation_way_in(hit)
                 ),
                 version=docs_versions_of(hit) or "",
-                link=_link(
-                    hit.collection,
-                    hit.result.chunk.document_id,
-                    hit.result.chunk.chunk_index,
+                link=(
+                    _link(
+                        hit.collection,
+                        hit.result.chunk.document_id,
+                        hit.result.chunk.chunk_index,
+                    )
+                    if hit.annotation is None
+                    else hit.annotation.link
                 ),
-                tags=(
-                    ()
-                    if chips_of is None
-                    else chips_of(hit.collection, hit.result.chunk)
+                quote=rendered.quote or "",
+                edit_href=(
+                    ""
+                    if hit.annotation is None
+                    else annotation_href(hit.annotation.id, hit.project or None)
                 ),
+                tags=(() if chips_of is None else chips_of(hit)),
             )
         )
     return shown
@@ -367,6 +382,28 @@ DOCUMENT_TEXT: Final = "document-text"
 def document_link(collection: str, document_id: str) -> str:
     """The link that names a whole document, for its inspector's tags."""
     return _link(collection, document_id, None)
+
+
+def annotation_href(annotation_id: str, project: str | None) -> str:
+    """The address of an annotation's dialog."""
+    address = f"/annotations/{quote(annotation_id, safe='')}"
+    return (
+        address if project is None else f"{address}?project={quote(project, safe='')}"
+    )
+
+
+def _annotation_way_in(hit: Hit) -> str:
+    """Where a comment hit's title leads: its document at the chunk the
+    annotation is placed at, or the annotation's own dialog when the
+    document is not one the window can open (no longer held)."""
+    shown = hit.annotation
+    assert shown is not None, "only a comment hit has an annotation"
+    document = hit.result.chunk.document_id
+    if hit.project:
+        return passage_href(project_group(hit.project), document, shown.chunk)
+    if shown.collection is not None:
+        return passage_href(shown.collection, document, shown.chunk)
+    return annotation_href(shown.id, None)
 
 
 def passage_href(collection: str, document_id: str, chunk: int | None) -> str:

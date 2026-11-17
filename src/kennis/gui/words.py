@@ -1058,6 +1058,7 @@ COLLECTION_ICONS: Final[dict[str, str]] = {
     "literature": "book-open",
     "docs": "globe",
     "notes": "sticky-note",
+    "annotations": "quote",
 }
 
 # What each collection's dot says, keyed by the pane's state. Four
@@ -1997,6 +1998,8 @@ COMMENT_HINT = "Why this matters, what to check, where it leads"
 SAVE_ANNOTATION = "Save"
 DELETE_ANNOTATION = "Delete"
 EDIT_ANNOTATION = "Edit"
+# A comment hit's menu entry, where another hit's offers tagging (#50).
+EDIT_THIS_ANNOTATION = "Edit the annotation"
 ANNOTATION_ON_DOCUMENT = "The whole document"
 ANNOTATION_DETACHED = "Its words are no longer in the document."
 ANNOTATION_TAGS_HELP = (
@@ -2106,6 +2109,7 @@ __all__ = [
     "DETAIL_LABELS",
     "DISCOVERY_WORDS",
     "EDIT_ANNOTATION",
+    "EDIT_THIS_ANNOTATION",
     "EMPTY_MEANS",
     "EMPTY_PREFIX",
     "EVERYWHERE_LABEL",

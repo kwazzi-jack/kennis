@@ -85,6 +85,7 @@ def test_the_default_is_every_scope_in_the_order_kennis_always_had():
         "literature",
         "docs",
         "notes",
+        "annotations",
     )
 
 
@@ -148,7 +149,7 @@ def test_a_default_search_does_not_search_a_collection_left_out(corpus: Path):
 
     assert list(found.groups) == ["notes"]
     assert found.searched == ("notes",)
-    assert found.left_out == ("context", "literature", "docs")
+    assert found.left_out == ("context", "literature", "docs", "annotations")
 
 
 def test_nothing_is_left_out_until_the_reader_leaves_something_out(corpus: Path):
@@ -342,7 +343,7 @@ def test_the_window_says_what_was_left_out_with_a_way_to_search_it(corpus: Path)
     offered = {
         link.get_text(strip=True): str(link["href"]) for link in said.select("a.button")
     }
-    assert set(offered) == {"context", "literature", "docs"}
+    assert set(offered) == {"context", "literature", "docs", "annotations"}
     assert "scope=docs" in offered["docs"]
     assert "q=gains" in offered["docs"]
     # The address it offers answers, with the collection that was left out.

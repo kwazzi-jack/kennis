@@ -164,6 +164,9 @@ COLLECTION_COLOURS: Final[dict[str, dict[str, str]]] = {
     "docs": {"light": "#0A7B4C", "dark": "#7FE0A8"},
     "notes": {"light": "#8A2F6B", "dark": "#DA6A9A"},
     "context": {"light": "#B14A12", "dark": "#EE8A57"},
+    # A highlighter's gold, for the reader's own comments (#50); dark in the
+    # light theme, because a yellow cannot reach 4.5:1 on a white ground.
+    "annotations": {"light": "#624D18", "dark": "#EBCF47"},
 }
 
 

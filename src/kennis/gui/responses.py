@@ -34,6 +34,7 @@ from kennis.engine.errors import (
     TaskStopped,
 )
 from kennis.engine.history.history import HistoryEntry
+from kennis.engine.tags import ANNOTATIONS_SCOPE
 from kennis.gui import words
 from kennis.gui.icons import icon
 from kennis.gui.layout import SIZES, sizes_of
@@ -168,8 +169,9 @@ TEMPLATES.env.globals["favicon"] = "data:image/svg+xml;base64," + base64.b64enco
 
 
 # The scopes a person may search, in the order they are offered. The
-# bundle last because it is the one that is not always there.
-SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION)
+# bundle after the corpus because it is the one that is not always there,
+# and the comments last, being notes on the others rather than documents.
+SCOPES: Final = (*COLLECTION_NAMES, CONTEXT_COLLECTION, ANNOTATIONS_SCOPE)
 
 
 def for_the_window(resolution: str | None) -> bool:
@@ -291,6 +293,7 @@ TEMPLATES.env.globals.update(
         "save_annotation": words.SAVE_ANNOTATION,
         "delete_annotation": words.DELETE_ANNOTATION,
         "edit_annotation": words.EDIT_ANNOTATION,
+        "edit_this_annotation": words.EDIT_THIS_ANNOTATION,
         "annotation_on_document": words.ANNOTATION_ON_DOCUMENT,
         "annotation_detached": words.ANNOTATION_DETACHED,
         "annotation_tags_help": words.ANNOTATION_TAGS_HELP,

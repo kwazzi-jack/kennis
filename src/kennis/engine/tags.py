@@ -19,6 +19,11 @@ from kennis.engine.errors import TagColourRefused, TagNameRefused
 # A tag's colour is one of these names (#627), whose value each theme of
 # the window draws from its own measured table, or a hex colour a person
 # typed (#629).
+# The search scope over the comments annotations carry (#50, unit 3):
+# here, beside the names, because `kennis/scopes.py` is loaded by a client
+# and must not load the store to name it.
+ANNOTATIONS_SCOPE: Final = "annotations"
+
 TAG_COLOURS: Final = (
     "red",
     "orange",
@@ -89,6 +94,7 @@ def colour_of(name: str, chosen: Mapping[str, str]) -> str:
 
 
 __all__ = [
+    "ANNOTATIONS_SCOPE",
     "TAG_COLOURS",
     "TagColourRefused",
     "TagNameRefused",
