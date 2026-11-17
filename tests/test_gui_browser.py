@@ -32,6 +32,7 @@ from fastapi import FastAPI
 from kennis.cli.__main__ import main
 from kennis.context import existing_corpus
 from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.tags import colour_of
 from kennis.gui import words
 from kennis.gui.app import new_token
 from kennis.render.words import JOB_KINDS
@@ -1690,15 +1691,18 @@ def test_a_selection_across_an_emphasis_and_a_link_is_annotated_and_highlighted(
 # Each range the passages' highlight holds, with the text of its passage
 # before it, as the reader sees them.
 _PASSAGE_HIGHLIGHTS = """() => {
-  const drawn = CSS.highlights.get('annotated-passage');
-  if (!drawn) { return []; }
-  return [...drawn].map((range) => {
-    const passage = range.startContainer.parentElement.closest('[data-annotated]');
-    const before = document.createRange();
-    before.setStart(passage, 0);
-    before.setEnd(range.startContainer, range.startOffset);
-    return { text: range.toString(), before: before.toString() };
-  });
+  const found = [];
+  for (const [name, drawn] of CSS.highlights) {
+    if (!name.startsWith('annotated-passage')) { continue; }
+    for (const range of drawn) {
+      const passage = range.startContainer.parentElement.closest('[data-annotated]');
+      const before = document.createRange();
+      before.setStart(passage, 0);
+      before.setEnd(range.startContainer, range.startOffset);
+      found.push({ name, text: range.toString(), before: before.toString() });
+    }
+  }
+  return found;
 }"""
 
 
@@ -1719,6 +1723,83 @@ def test_a_passage_kept_to_a_tag_highlights_the_words_the_tag_is_on(
     # The same three words open the note's first sentence.
     assert " ".join(drawn["text"].split()) == "gains drift slowly"
     assert " ".join(drawn["before"].split()).endswith("here. Later the")
+    # In the colour of the tag the search was kept to.
+    assert drawn["name"] == f"annotated-passage-{colour_of('calibration', {})}"
+
+
+# A highlight's paint, as the browser resolved it on the article's text.
+_HIGHLIGHT_STYLE = """(name) => {
+  const text = document.querySelector('article[data-annotate-document] p');
+  const style = getComputedStyle(text, `::highlight(${name})`);
+  return { wash: style.backgroundColor, rule: style.textDecorationColor };
+}"""
+
+
+def _rgb(colour: str) -> str:
+    red, green, blue = (int(colour[at : at + 2], 16) for at in (1, 3, 5))
+    return f"rgb({red}, {green}, {blue})"
+
+
+def test_an_annotation_is_highlighted_in_its_tag_s_colour(
+    page: playwright.Page, corpus: Path
+) -> None:
+    _the_annotated_note(page, corpus)
+    _annotate(page, "gains", "details", "Why slowly?")
+
+    (drawn,) = page.evaluate("window.kennisAnnotations()")
+
+    assert drawn["paint"] == f"annotation-{colour_of('calibration', {})}"
+    # Drawn under that name: the computed paint below is the rule's,
+    # whether or not a range is drawn under it.
+    assert (
+        page.evaluate(
+            "(name) => CSS.highlights.has(name) ? CSS.highlights.get(name).size : 0",
+            drawn["paint"],
+        )
+        == 1
+    )
+    assert not page.evaluate("CSS.highlights.has('annotation')")
+    tagged = page.evaluate(_HIGHLIGHT_STYLE, drawn["paint"])
+    # The tag's own colour, as the page resolves it: not merely other than
+    # the brand's, which a name with no rule at all would also be.
+    colour = page.evaluate(
+        """(name) => {
+          const probe = document.createElement('span');
+          probe.style.color = `var(--tag-${name})`;
+          document.body.appendChild(probe);
+          const resolved = getComputedStyle(probe).color;
+          probe.remove();
+          return resolved;
+        }""",
+        colour_of("calibration", {}),
+    )
+    assert tagged["rule"] == colour
+    assert tagged["wash"] != page.evaluate(_HIGHLIGHT_STYLE, "annotation")["wash"]
+
+
+def test_a_typed_colour_is_highlighted_in_each_theme_s_own_value(
+    page: playwright.Page, corpus: Path
+) -> None:
+    from kennis.gui.theme import tag_colour_on
+
+    _the_annotated_note(page, corpus)
+    _annotate(page, "gains", "details", "Why slowly?")
+    typed = "#8a5a00"
+    answered = CliRunner().invoke(main, ["tag", "--colour", typed, "calibration"])
+    assert answered.exit_code == 0, answered.output
+    light, dark = tag_colour_on(typed, "light"), tag_colour_on(typed, "dark")
+    assert light != dark, "the fixture no longer exercises the themes"
+
+    page.reload()
+    page.wait_for_selector(
+        "article[data-annotate-document][data-highlighted='1']", timeout=_WAIT_MS
+    )
+    (drawn,) = page.evaluate("window.kennisAnnotations()")
+    assert drawn["paint"] == "annotation-8a5a00"
+    page.evaluate("document.documentElement.dataset.theme = 'light'")
+    assert page.evaluate(_HIGHLIGHT_STYLE, drawn["paint"])["rule"] == _rgb(light)
+    page.evaluate("document.documentElement.dataset.theme = 'dark'")
+    assert page.evaluate(_HIGHLIGHT_STYLE, drawn["paint"])["rule"] == _rgb(dark)
 
 
 def test_a_selection_across_maths_is_kept_as_its_tex(

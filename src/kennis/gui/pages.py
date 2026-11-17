@@ -285,12 +285,14 @@ def shown_hits(
     question: str = "",
     chips_of: ChipsOf | None = None,
     corpus_root: Path | None = None,
+    paint: str = "annotated-passage",
 ) -> list[ShownHit]:
     """Every hit, rendered once, in rank order.
 
     With `corpus_root`, a passage of a corpus document draws the figures
     that document holds; a bundle's note is the user's repository and has
-    none kennis kept.
+    none kennis kept. `paint` is the highlight a passage's annotated words
+    are drawn under: the colour of the tag the search was kept to.
     """
     if not hits:
         return []
@@ -326,7 +328,7 @@ def shown_hits(
                     ),
                     opens_at=hit.annotated[0][0] if hit.annotated else None,
                 ),
-                annotated_words=_annotated_words(hit),
+                annotated_words=_annotated_words(hit, paint),
                 collection=hit.collection,
                 document_id=hit.result.chunk.document_id,
                 href=(
@@ -399,7 +401,7 @@ def annotation_href(annotation_id: str, project: str | None) -> str:
     )
 
 
-def _annotated_words(hit: Hit) -> str:
+def _annotated_words(hit: Hit, paint: str) -> str:
     """Each annotated range of `hit` as `annotate.js` finds it in the drawn
     passage: its words, link addresses and maths delimiters dropped as the
     document page sends them, and where it starts as a fraction of the
@@ -414,6 +416,7 @@ def _annotated_words(hit: Hit) -> str:
             {
                 "words": list(visible_words(text[start:end])),
                 "at": round(start / max(1, len(text)), 4),
+                "paint": paint,
             }
             for start, end in hit.annotated
         ]
@@ -537,6 +540,7 @@ def shown_groups_of(
     order: str = "",
     chips_of: ChipsOf | None = None,
     corpus_root: Path | None = None,
+    paint: str = "annotated-passage",
 ) -> list[ShownGroup]:
     """A sweep, in the pieces a page arranges."""
     return [
@@ -550,6 +554,7 @@ def shown_groups_of(
                 question=question,
                 chips_of=chips_of,
                 corpus_root=corpus_root,
+                paint=paint,
             ),
         )
         for name, hits in found.groups.items()
