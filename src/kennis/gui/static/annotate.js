@@ -158,6 +158,28 @@
 
   var drawn = [];
 
+  // Each highlight is painted by the rule for its name, and a name is a
+  // colour (`theme.highlight_name`), so the ranges are grouped by name.
+  // `names` is what was set last time under each kind, which the next
+  // draw clears; the two kinds are cleared apart, so a page drawing both
+  // keeps both.
+  var names = { annotation: [], "annotated-passage": [] };
+
+  function paintAll(kind, ranges) {
+    var supported = window.CSS && CSS.highlights && typeof Highlight === "function";
+    if (!supported) { return; }
+    names[kind].forEach(function (name) { CSS.highlights.delete(name); });
+    var grouped = {};
+    ranges.forEach(function (one) {
+      var name = one.paint || kind;
+      (grouped[name] = grouped[name] || []).push(one.range);
+    });
+    names[kind] = Object.keys(grouped);
+    names[kind].forEach(function (name) {
+      CSS.highlights.set(name, new Highlight(...grouped[name]));
+    });
+  }
+
   function wordsPattern(words) {
     var escaped = words.map(function (word) {
       return word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -207,19 +229,15 @@
     drawn = [];
     var text = article();
     var data = text && text.querySelector("script[data-annotations]");
-    var supported = window.CSS && CSS.highlights && typeof Highlight === "function";
-    if (supported) { CSS.highlights.delete("annotation"); }
-    if (!data) { return; }
+    if (!data) { paintAll("annotation", []); return; }
     var annotations = [];
     try { annotations = JSON.parse(data.textContent); } catch (error) { return; }
     var blocks = Array.prototype.slice.call(text.querySelectorAll("[data-source]"));
     annotations.forEach(function (found) {
       var range = rangeOf(found, blocks);
-      if (range) { drawn.push({ range: range, href: found.href, id: found.id }); }
+      if (range) { drawn.push({ range: range, href: found.href, id: found.id, paint: found.paint }); }
     });
-    if (supported && drawn.length) {
-      CSS.highlights.set("annotation", new Highlight(...drawn.map(function (one) { return one.range; })));
-    }
+    paintAll("annotation", drawn);
     text.dataset.highlighted = String(drawn.length);
   }
 
@@ -228,8 +246,6 @@
   // them - the occurrence nearest where the annotation starts - drawn under
   // a name of their own so the page's own highlights are not replaced.
   function drawPassages() {
-    var supported = window.CSS && CSS.highlights && typeof Highlight === "function";
-    if (supported) { CSS.highlights.delete("annotated-passage"); }
     var ranges = [];
     document.querySelectorAll("[data-annotated]").forEach(function (passage) {
       var lists = [];
@@ -260,14 +276,12 @@
         var range = document.createRange();
         range.setStart(start.node, start.offset);
         range.setEnd(end.node, end.offset);
-        ranges.push(range);
+        ranges.push({ range: range, paint: found.paint });
         count += 1;
       });
       passage.dataset.highlighted = String(count);
     });
-    if (supported && ranges.length) {
-      CSS.highlights.set("annotated-passage", new Highlight(...ranges));
-    }
+    paintAll("annotated-passage", ranges);
   }
 
   // The text node and offset at `offset` of the joined text of `segments`;
@@ -288,7 +302,7 @@
       var before = document.createRange();
       before.setStart(blockOf(one.range.startContainer), 0);
       before.setEnd(one.range.startContainer, one.range.startOffset);
-      return { id: one.id, text: one.range.toString(), before: before.toString() };
+      return { id: one.id, paint: one.paint, text: one.range.toString(), before: before.toString() };
     });
   };
 

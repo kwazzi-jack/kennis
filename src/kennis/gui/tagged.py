@@ -373,6 +373,9 @@ class PageHighlight:
     end: int
     words: tuple[str, ...]
     edit_href: str
+    # The colour of its first tag, or "" for an annotation with none; the
+    # page paints it under `theme.highlight_name` of this.
+    colour: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -448,6 +451,7 @@ def document_annotations(
                     end=span.end,
                     words=visible_words(body[span.start : span.end]),
                     edit_href=href,
+                    colour=chips[0].colour if chips else "",
                 )
             )
             if annotation.tags:
