@@ -453,6 +453,8 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "retrieval.default_top_k": "Results per collection",
     "chunking.size": "Passage size",
     "literature.unpaywall_email": "Email for Unpaywall",
+    # Offered only by the setup wizard, before there is a corpus to move.
+    "corpus.root": "Corpus folder",
     "embedding.normalise": "Unit-length vectors",
     "embedding.batch_size": "Passages per request",
     "embedding.api_key_env": "Variable holding the OpenAI key",
@@ -2020,6 +2022,67 @@ def edit_annotation_of(quote: str) -> str:
     return f"Edit the annotation on {quote}"
 
 
+# The setup wizard (#682): served by `kennis gui` before any corpus exists.
+SETUP_TITLE = "Set kennis up"
+SETUP_STEPS: Final[tuple[tuple[str, str], ...]] = (
+    ("settings", "Settings"),
+    ("corpus", "Corpus"),
+    ("agent", "Agent"),
+    ("done", "Done"),
+)
+SETUP_SETTINGS_NOTE = (
+    "What depends on you. Each field offers what is in effect; leaving every "
+    "one as it is takes the defaults."
+)
+SETUP_SAVE = "Save and continue"
+SETUP_NEXT = "Continue"
+SETUP_CHANGE = "Change the settings"
+SETUP_CREATE = "Create the corpus"
+SETUP_CORPUS_NOTE = (
+    "A folder of markdown files and a git repository: every change kennis "
+    "makes to it is a commit."
+)
+SETUP_AGENT_NOTE = (
+    "An agent - Claude Code, or any client that speaks MCP - can search, read "
+    "and cite what kennis holds."
+)
+SETUP_AGENT_CHOICES: Final[dict[str, str]] = {
+    "claude-code": "Claude Code, for every project",
+    "other": "Another agent: show what to paste",
+    "none": "None for now",
+}
+SETUP_CONNECT = "Connect"
+SETUP_CONNECTED = "Claude Code starts kennis for every project now."
+SETUP_ALREADY_CONNECTED = "Claude Code already serves kennis; it is left as it is."
+SETUP_PASTE = "Add this to the agent's MCP configuration:"
+SETUP_OPEN = "Open kennis"
+SETUP_PACKS = "A pack brings a field's papers, documentation and notes:"
+SETUP_CONTEXT = "A project's own notes, committed with it, in its repository:"
+
+
+def setup_settings_kept(path: str) -> str:
+    return f"The settings are already written, at {path}."
+
+
+def setup_corpus_at(root: str) -> str:
+    return f"The corpus will be at {root}."
+
+
+def setup_corpus_kept(root: str) -> str:
+    return f"There is already a corpus at {root}."
+
+
+def setup_needs_mcp(command: str) -> str:
+    return (
+        f"Serving an agent needs the mcp extra, which is not installed: "
+        f"{command}, then set kennis up again."
+    )
+
+
+def setup_not_connected(reason: str) -> str:
+    return f"Claude Code did not add kennis: {reason}. Add this to ~/.claude.json:"
+
+
 __all__ = [
     "ACTIONS",
     "ACTION_TITLES",
@@ -2313,6 +2376,23 @@ __all__ = [
     "SETTING_CHOICES",
     "SETTING_NAMES",
     "SETTING_TIPS",
+    "SETUP_AGENT_CHOICES",
+    "SETUP_AGENT_NOTE",
+    "SETUP_ALREADY_CONNECTED",
+    "SETUP_CHANGE",
+    "SETUP_CONNECT",
+    "SETUP_CONNECTED",
+    "SETUP_CONTEXT",
+    "SETUP_CORPUS_NOTE",
+    "SETUP_CREATE",
+    "SETUP_NEXT",
+    "SETUP_OPEN",
+    "SETUP_PACKS",
+    "SETUP_PASTE",
+    "SETUP_SAVE",
+    "SETUP_SETTINGS_NOTE",
+    "SETUP_STEPS",
+    "SETUP_TITLE",
     "SHOW_EVERYTHING",
     "SHOW_PASSAGE",
     "SITE_UNREACHABLE",
@@ -2434,6 +2514,11 @@ __all__ = [
     "searchable_short",
     "searchable_summary",
     "setting_tip",
+    "setup_corpus_at",
+    "setup_corpus_kept",
+    "setup_needs_mcp",
+    "setup_not_connected",
+    "setup_settings_kept",
     "shortened_authors",
     "syncing_project",
     "tagged_with",

@@ -32,6 +32,18 @@ SERVER_NAME: Final = "kennis"
 MCP_INSTALL: Final = 'uv tool install "kennis[mcp]"'
 
 
+def needs_setup() -> bool:
+    """Whether `kennis gui` opens the setup wizard rather than the window:
+    there is no configuration file, or no corpus where the settings say
+    (Brian, 2026-11-17)."""
+    from kennis.context import resolve_context
+    from kennis.engine.settings import config_path
+
+    if not config_path().is_file():
+        return True
+    return not (resolve_context().corpus_root / ".git").is_dir()
+
+
 def mcp_installed() -> bool:
     """Whether `kennis serve` can run: the `mcp` extra's server library is
     importable. Looked for, not imported, which would cost a second."""
@@ -108,6 +120,7 @@ __all__ = [
     "claude_on_path",
     "claude_serves_kennis",
     "mcp_installed",
+    "needs_setup",
     "server_block",
     "this_kennis",
 ]
