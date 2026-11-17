@@ -355,7 +355,7 @@ def test_the_field_is_what_posts_and_the_chips_wait_for_a_script(
 
     (field,) = row.select(f'input[name="{ORDER_KEY}"]')
     assert field.get("type") == "text"
-    assert field.get("value") == "context literature docs notes"
+    assert field.get("value") == "context literature docs notes annotations"
     assert not field.has_attr("hidden")
     (chips,) = row.select("ol.order-chips")
     assert chips.has_attr("hidden")
@@ -374,14 +374,16 @@ def test_the_chips_are_every_collection_listed_first_in_the_order_set(
         "docs",
         "context",
         "literature",
+        "annotations",
     ]
     ticked = [
         chip.select_one("input[type=checkbox]").has_attr("checked") for chip in chips
     ]
-    assert ticked == [True, True, False, False]
+    assert ticked == [True, True, False, False, False]
     assert [chip.has_attr("data-left-out") for chip in chips] == [
         False,
         False,
+        True,
         True,
         True,
     ]

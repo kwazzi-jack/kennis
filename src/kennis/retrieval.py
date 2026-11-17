@@ -36,9 +36,10 @@ from kennis.engine.errors import (
     NothingToIndex,
     SettingsError,
 )
-from kennis.engine.rag.models import Chunk, ChunkPredicate, Filter
+from kennis.engine.rag.models import Chunk, ChunkPredicate, Filter, SearchResult
 from kennis.engine.rag.modes import Mode
 from kennis.engine.settings import default_scopes
+from kennis.engine.tags import ANNOTATIONS_SCOPE
 from kennis.render.hits import Hit
 from kennis.scopes import MAX_TOP_K, SCOPE_NAMES
 
@@ -389,6 +390,20 @@ def sweep(
     tagged = _tags_asked(context, tags, [bundle, *others])
     found = _Gathered(groups, searched, skipped, degraded, [], [])
     for name in [scope for scope in in_order if scope in asked]:
+        if name == ANNOTATIONS_SCOPE:
+            _sweep_annotations(
+                context,
+                question,
+                bundles=[one for one in (bundle, *others) if one is not None],
+                home=bundle,
+                into=found,
+                wanted=wanted,
+                filters=filters,
+                mode=mode,
+                tagged=tagged,
+                named=named,
+            )
+            continue
         if name == CONTEXT_COLLECTION:
             _sweep_context(
                 context,
@@ -560,6 +575,104 @@ def _sweep_context(
                 ],
             ),
         )
+
+
+def _sweep_annotations(
+    context: Context,
+    question: str,
+    *,
+    bundles: Sequence[Path],
+    home: Path | None,
+    into: _Gathered,
+    wanted: int,
+    filters: list[Filter] | None,
+    mode: str | None,
+    tagged: _Tagged,
+    named: bool,
+) -> None:
+    """The comments on annotations, as one group of hits (#50, unit 3).
+
+    **Swept into only where a store exists**, so a machine with no index
+    and no annotation is still told there is nothing to search, rather
+    than that nothing matched; named, it is searched and finds nothing,
+    because "the corpus is empty" is false of a corpus with no comment
+    yet. Lexical always: a mode asking for meaning by name
+    is reported as having fallen back, as a bundle's is, and no mode asks
+    nothing of it.
+    """
+    from kennis.engine.annotations import ANNOTATIONS_FILENAME
+    from kennis.engine.context.bundle import BUNDLE_DIRNAME
+    from kennis.engine.rag.search import RRF_K
+    from kennis.render.hits import AnnotationShown
+    from kennis.tagging import comments_matching
+
+    stores = [context.corpus_root, *bundles]
+    if not named and not any(
+        (root / ANNOTATIONS_FILENAME).is_file() for root in stores
+    ):
+        return
+    found = comments_matching(
+        context,
+        bundles,
+        question,
+        top_k=wanted,
+        tags=tagged.names,
+        filters=filters,
+    )
+    hits: list[Hit] = []
+    for comment in found:
+        target = comment.target
+        hits.append(
+            Hit(
+                collection=ANNOTATIONS_SCOPE,
+                result=SearchResult(
+                    chunk=Chunk(
+                        id=f"{ANNOTATIONS_SCOPE}:{target.annotation}",
+                        collection=ANNOTATIONS_SCOPE,
+                        document_id=target.document,
+                        chunk_index=target.chunk or 0,
+                        text=comment.comment,
+                        source_path="",
+                        char_start=0,
+                        char_end=len(comment.comment),
+                        metadata=(
+                            {} if target.title is None else {"title": target.title}
+                        ),
+                    ),
+                    # The fused score a one-legged search gives its hits.
+                    score=1.0 / (RRF_K + comment.rank),
+                    bm25_rank=comment.rank,
+                    bm25_score=comment.score,
+                ),
+                model=None,
+                place=(
+                    ""
+                    if comment.bundle is None
+                    else BUNDLE_DIRNAME
+                    if comment.bundle == home
+                    else str(comment.bundle)
+                ),
+                project=target.project or "",
+                annotation=AnnotationShown(
+                    id=target.annotation,
+                    quote=target.quote,
+                    tags=comment.tags,
+                    state=target.state,
+                    chunk=target.chunk,
+                    link=target.link,
+                    collection=target.collection,
+                ),
+            )
+        )
+    into.add(
+        ANNOTATIONS_SCOPE,
+        _Searched(
+            hits=hits,
+            fell_back=mode is not None and mode != "bm25",
+            other_model=None,
+            unembedded=None,
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)

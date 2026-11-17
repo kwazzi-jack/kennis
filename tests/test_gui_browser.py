@@ -1410,17 +1410,19 @@ def test_an_ordered_setting_is_drawn_as_chips_in_place_of_its_field(
     assert page.locator(".order-chips").is_visible()
     assert not page.locator(f'input[name="{_ORDER_KEY}"]').is_visible()
     assert page.locator(".order-hint").is_visible()
-    assert _chips(page) == ["context", "literature", "docs", "notes"]
-    # Four chips on one line or two, each a box of some size: the layout's
+    assert _chips(page) == ["context", "literature", "docs", "notes", "annotations"]
+    # Five chips on one line or two, each a box of some size: the layout's
     # field rule did not stretch a tick box across the row.
     tops: list[int] = []
     for chip in page.locator(".order-chip").all():
         box = chip.bounding_box()
         assert box is not None and 60 < box["width"] < 260, box
         tops.append(round(box["y"]))
-    # Side by side, on a line or two: in the narrow column beside the name
-    # they stacked one to a line and read as a list of rows.
-    assert len(set(tops)) <= 2 and tops.count(tops[0]) >= 2, tops
+    # Side by side, at least two to a line: in the narrow column beside the
+    # name they stacked one to a line and read as a list of rows. Five
+    # chips take three lines at this width.
+    lines = len(set(tops))
+    assert lines <= (len(tops) + 1) // 2 and tops.count(tops[0]) >= 2, tops
     tab_tops: set[int] = set()
     for tab in page.locator(".settings-tab").all():
         box = tab.bounding_box()
@@ -1436,15 +1438,15 @@ def test_a_chip_s_button_moves_it_and_the_field_follows(
 
     page.click('.order-chip[data-value="context"] [data-move="later"]')
 
-    assert _chips(page) == ["literature", "context", "docs", "notes"]
-    assert _order_field(page) == "literature context docs notes"
+    assert _chips(page) == ["literature", "context", "docs", "notes", "annotations"]
+    assert _order_field(page) == "literature context docs notes annotations"
     # The keyboard's place is kept, so the chip can be moved again.
     assert (
         page.evaluate("document.activeElement.closest('.order-chip').dataset.value")
         == "context"
     )
     page.keyboard.press("Enter")
-    assert _chips(page) == ["literature", "docs", "context", "notes"]
+    assert _chips(page) == ["literature", "docs", "context", "notes", "annotations"]
 
 
 def test_a_chip_is_moved_earlier_again_and_again_from_the_keyboard(
@@ -1460,8 +1462,8 @@ def test_a_chip_is_moved_earlier_again_and_again_from_the_keyboard(
     page.keyboard.press("Enter")
     page.keyboard.press("Enter")
 
-    assert _chips(page) == ["notes", "context", "literature", "docs"]
-    assert _order_field(page) == "notes context literature docs"
+    assert _chips(page) == ["notes", "context", "literature", "docs", "annotations"]
+    assert _order_field(page) == "notes context literature docs annotations"
 
 
 def test_a_chip_at_the_end_does_not_move_past_it(
@@ -1469,10 +1471,10 @@ def test_a_chip_at_the_end_does_not_move_past_it(
 ) -> None:
     _open_settings(page, address, "searching")
 
-    page.click('.order-chip[data-value="notes"] [data-move="later"]')
+    page.click('.order-chip[data-value="annotations"] [data-move="later"]')
     page.click('.order-chip[data-value="context"] [data-move="earlier"]')
 
-    assert _chips(page) == ["context", "literature", "docs", "notes"]
+    assert _chips(page) == ["context", "literature", "docs", "notes", "annotations"]
 
 
 def test_unticking_a_chip_leaves_it_out_of_the_field(
@@ -1482,10 +1484,10 @@ def test_unticking_a_chip_leaves_it_out_of_the_field(
 
     page.uncheck('.order-chip[data-value="docs"] input[type=checkbox]')
 
-    assert _order_field(page) == "context literature notes"
+    assert _order_field(page) == "context literature notes annotations"
     assert page.locator('.order-chip[data-value="docs"][data-left-out]').count() == 1
     page.check('.order-chip[data-value="docs"] input[type=checkbox]')
-    assert _order_field(page) == "context literature docs notes"
+    assert _order_field(page) == "context literature docs notes annotations"
 
 
 def test_a_chip_is_dragged_to_another_place(
@@ -1499,8 +1501,8 @@ def test_a_chip_is_dragged_to_another_place(
         target_position={"x": 3, "y": 6},
     )
 
-    assert _chips(page) == ["notes", "context", "literature", "docs"]
-    assert _order_field(page) == "notes context literature docs"
+    assert _chips(page) == ["notes", "context", "literature", "docs", "annotations"]
+    assert _order_field(page) == "notes context literature docs annotations"
 
 
 def test_saving_the_chips_writes_the_setting_and_draws_the_chips_again(
@@ -1516,12 +1518,15 @@ def test_saving_the_chips_writes_the_setting_and_draws_the_chips_again(
     page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
 
     assert page.inner_text(".save-bar .outcome") == words.KENNIS_SAVED
-    assert load_settings().retrieval.default_collections == "literature notes docs"
+    assert (
+        load_settings().retrieval.default_collections
+        == "literature notes docs annotations"
+    )
     # The section was replaced by the save, and the script drew it again:
     # the listed ones first, in the order saved, then the one left out.
     assert page.locator(".order-chips").is_visible()
     assert not page.locator(f'input[name="{_ORDER_KEY}"]').is_visible()
-    assert _chips(page) == ["literature", "notes", "docs", "context"]
+    assert _chips(page) == ["literature", "notes", "docs", "annotations", "context"]
 
 
 def test_the_save_button_is_in_view_before_any_scrolling(

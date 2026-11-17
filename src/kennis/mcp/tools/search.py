@@ -59,8 +59,8 @@ from kennis.scopes import EVERY_SCOPE, MAX_TOP_K, SCOPE_NAMES
 _NOTHING = "no matching passages"
 
 
-# What `collections` may name: the four scopes, or every one of them.
-type Searched = Literal["all", "context", "literature", "docs", "notes"]
+# What `collections` may name: the five scopes, or every one of them.
+type Searched = Literal["all", "context", "literature", "docs", "notes", "annotations"]
 
 
 def search(
@@ -84,10 +84,12 @@ def search(
       syntax.
     - `context` - this project's `.context/` bundle: decisions and
       conventions specific to the repository you are working in.
+    - `annotations` - the user's comments on passages of documents, each
+      hit quoting the words it is about. Matched by keywords only.
 
     Name the ones you want when you know where the answer is, which
     costs less to read; `["all"]` searches the ones the user's settings
-    list for a default search - all four unless they left one out, which
+    list for a default search - all five unless they left one out, which
     the answer then says, and which you search by naming it. A named collection
     that has no index is an error, while under `all` one is skipped and
     the answer says so.
@@ -194,6 +196,9 @@ def _group(name: str, hits: list[Hit], style: ScoreStyle) -> str:
         snippet = "none" if hit.collection == CONTEXT_COLLECTION else "short"
         shown = rendered_hit(hit, rank=rank, style=style, best=best, snippet=snippet)
         lines.extend([shown.headline, f"  {shown.detail}"])
+        # A comment hit quotes the words it is about, then its comment.
+        if shown.quote is not None:
+            lines.append(f'  "{shown.quote}"')
         if shown.body is not None:
             lines.append(f"  {shown.body}")
     return "\n".join(lines)

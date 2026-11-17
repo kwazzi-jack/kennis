@@ -30,7 +30,7 @@ serves it over search and read. It knows nothing about any subject on its
 own: what it holds arrives as packs, and the list below is what this
 installation actually has.
 
-## The four collections
+## The collections
 
 - `notes` - machine-global, entirely the user's own. Their conventions,
   their decisions, anything they asked kennis to remember. Prefer it when
@@ -42,16 +42,19 @@ installation actually has.
   `list_corpus` says which versions are held.
 - `context` - the current project's `.context/` bundle, committed with
   the repository. Project-specific conventions and decisions.
+- `annotations` - the user's comments on passages of documents in the
+  others: each hit quotes the passage and gives the comment, and its
+  handle names the document and chunk for `read`.
 
 ## Search locates; read expands
 
-`search` searches the collections you name in `collections`, or all four
-for `["all"]`, and returns ranked hits grouped by collection, each with a
-score, a source and a bounded snippet. It is a coordinate, not an answer. When a snippet
-is on-topic but cut off, follow up with `read`, which takes a list of
-requests, so follow up several hits in one call rather than one at a
-time. Relevance is ranked within a collection and is not comparable
-between two.
+`search` searches the collections you name in `collections`, or those the
+user's settings list for `["all"]`, and returns ranked hits grouped by
+collection, each with a score, a source and a bounded snippet. It is a
+coordinate, not an answer. When a snippet is on-topic but cut off, follow
+up with `read`, which takes a list of requests, so follow up several hits
+in one call rather than one at a time. Relevance is ranked within a
+collection and is not comparable between two.
 
 A `context` hit is the exception: it is a file location in the user's
 own repository, which you open with your native file tools.

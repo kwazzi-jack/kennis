@@ -10,14 +10,21 @@ from typing import Final
 
 from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.engine.tags import ANNOTATIONS_SCOPE
 
-# The four scopes a search may cover, in the order a report lists
+# The five scopes a search may cover, in the order a report lists
 # them. Fixed rather than ranked: ordering groups by their best hit
 # would state a comparison across collections that kennis cannot
-# make. `context` leads because a bundle is the nearest knowledge.
-SCOPE_NAMES: Final[tuple[str, ...]] = (CONTEXT_COLLECTION, *COLLECTION_NAMES)
+# make. `context` leads because a bundle is the nearest knowledge;
+# `annotations`, the reader's comments, is last because it is not a
+# collection of documents but notes on them (#50).
+SCOPE_NAMES: Final[tuple[str, ...]] = (
+    CONTEXT_COLLECTION,
+    *COLLECTION_NAMES,
+    ANNOTATIONS_SCOPE,
+)
 
-# What the reader types, or picks, to mean all four.
+# What the reader types, or picks, to mean all of them.
 EVERY_SCOPE: Final = "all"
 
 # The most hits one scope gives a caller that names its own number. Here

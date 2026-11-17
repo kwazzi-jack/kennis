@@ -62,7 +62,7 @@ from kennis.engine.annotations import (
     written,
 )
 from kennis.engine.errors import DocumentNotFound, KennisError, SearchUnavailable
-from kennis.engine.rag.models import Chunk
+from kennis.engine.rag.models import Chunk, Filter
 from kennis.engine.tags import colour_of, tag_colour, tag_name
 from kennis.links import context_link, link_to
 
@@ -789,41 +789,107 @@ def tags_held(context: Context, bundles: Sequence[Path]) -> list[TagListing]:
     return [TagListing(name, listed[name]) for name in sorted(listed)]
 
 
+@dataclass(frozen=True, slots=True)
+class FoundComment:
+    """An annotation whose comment matched a question, as it stands now.
+
+    `rank` is its place among every comment that matched, from one, and
+    `score` its BM25 score: lexical alone, because comments are ranked per
+    search and never embedded (sketch 2026-11-17-search-comments).
+    """
+
+    target: TaggedTarget
+    comment: str
+    tags: tuple[str, ...]
+    rank: int
+    score: float
+    # The project's bundle the annotation is in; None for the corpus's.
+    bundle: Path | None
+
+
+def comments_matching(
+    context: Context,
+    bundles: Sequence[Path],
+    question: str,
+    *,
+    top_k: int,
+    tags: Sequence[str] = (),
+    filters: list[Filter] | None = None,
+) -> list[FoundComment]:
+    """The `top_k` annotations whose comment best matches `question`, from
+    the corpus's store and each bundle's, ranked together.
+
+    `tags` keeps only annotations carrying every one; `filters` test the
+    annotated document's chunks as they test any chunk, so an annotation
+    whose document no index holds is kept only when nothing filters.
+
+    **Ranked first, resolved after, in rank order and only until `top_k`
+    are kept**: resolving reads a collection's index, which a search over
+    the comments of one collection should not pay for every collection.
+    """
+    from contextlib import ExitStack
+
+    from kennis.engine.annotations import comments_ranked
+    from kennis.engine.rag.models import combine_filters
+    from kennis.publishing import shared
+
+    wanted = set(tags)
+    candidates: list[tuple[Annotation, _CorpusTargets | _BundleTargets]] = []
+    corpus_store = _corpus_store(context)
+    holds_corpus = corpus_store.is_file()
+    if holds_corpus:
+        store = read_annotations(corpus_store)
+        corpus_targets = _CorpusTargets(context, store)
+        candidates.extend((each, corpus_targets) for each in store.annotations)
+    for bundle in bundles:
+        if (bundle / ANNOTATIONS_FILENAME).is_file():
+            store = read_annotations(bundle / ANNOTATIONS_FILENAME)
+            bundle_targets = _BundleTargets(bundle, store)
+            candidates.extend((each, bundle_targets) for each in store.annotations)
+    candidates = [
+        (annotation, resolver)
+        for annotation, resolver in candidates
+        if wanted <= set(annotation.tags)
+    ]
+    ranked = comments_ranked(
+        [annotation for annotation, _ in candidates], question, len(candidates)
+    )
+    admits = combine_filters(filters)
+    found: list[FoundComment] = []
+    with ExitStack() as holding:
+        if holds_corpus:
+            holding.enter_context(shared(context.corpus_root))
+        for rank, (position, score) in enumerate(ranked, start=1):
+            if len(found) == top_k:
+                break
+            annotation, resolver = candidates[position]
+            target, chunks = resolver.target(annotation)
+            if admits is not None and not any(admits(chunk) for chunk in chunks):
+                continue
+            found.append(
+                FoundComment(
+                    target=target,
+                    comment=annotation.comment or "",
+                    tags=annotation.tags,
+                    rank=rank,
+                    score=score,
+                    bundle=resolver.bundle,
+                )
+            )
+    return found
+
+
 def _listed_corpus(
     context: Context, store: AnnotationStore, listed: dict[str, list[TaggedTarget]]
 ) -> None:
-    from kennis.engine.corpus.layout import index_root
-    from kennis.engine.rag.index import load_chunks
-    from kennis.finding import resolve_document
     from kennis.publishing import shared
 
-    indexes: dict[str, _Placing | None] = {}
+    resolver = _CorpusTargets(context, store)
     with shared(context.corpus_root):
         for annotation in store.annotations:
             if not annotation.tags:
                 continue
-            try:
-                where, document = resolve_document(context, annotation.document, None)
-            except DocumentNotFound:
-                target = _target(None, annotation, None, None, MISSING, link_to)
-                for name in annotation.tags:
-                    listed.setdefault(name, []).append(target)
-                continue
-            if where.name not in indexes:
-                try:
-                    indexes[where.name] = _Placing.of(
-                        store, load_chunks(index_root(context.corpus_root), where.name)
-                    )
-                except KennisError:
-                    indexes[where.name] = None
-            target = _placed_target(
-                None,
-                annotation,
-                _text(document.frontmatter.title),
-                indexes[where.name],
-                link_to,
-                where.name,
-            )
+            target, _ = resolver.target(annotation)
             for name in annotation.tags:
                 listed.setdefault(name, []).append(target)
 
@@ -831,31 +897,94 @@ def _listed_corpus(
 def _listed_bundle(
     bundle: Path, store: AnnotationStore, listed: dict[str, list[TaggedTarget]]
 ) -> None:
-    from kennis.engine.context.index import load_bundle_index
-    from kennis.engine.context.projects import project_names
-
-    project = project_names([bundle])[bundle]
-
-    def linked(path: str, chunk: int | None) -> str:
-        return context_link(project, path, chunk)
-
-    try:
-        placing: _Placing | None = _Placing.of(store, load_bundle_index(bundle).chunks)
-    except KennisError:
-        placing = None
+    resolver = _BundleTargets(bundle, store)
     for annotation in store.annotations:
         if not annotation.tags:
             continue
-        try:
-            _, file = bundle_member(bundle, annotation.document)
-        except DocumentNotFound:
-            target = _target(project, annotation, None, None, MISSING, linked)
-        else:
-            target = _placed_target(
-                project, annotation, bundle_title(file), placing, linked
-            )
+        target, _ = resolver.target(annotation)
         for name in annotation.tags:
             listed.setdefault(name, []).append(target)
+
+
+class _CorpusTargets:
+    """The corpus's annotations as they stand now, each collection's index
+    read once, when the first annotation of a document in it is asked for.
+    The caller holds the corpus shared."""
+
+    def __init__(self, context: Context, store: AnnotationStore) -> None:
+        self._context = context
+        self._store = store
+        self._indexes: dict[str, _Placing | None] = {}
+        self.bundle: Path | None = None
+
+    def target(self, annotation: Annotation) -> tuple[TaggedTarget, tuple[Chunk, ...]]:
+        """The annotation's target, and its document's chunks in the index
+        (none when no index holds it)."""
+        from kennis.engine.corpus.layout import index_root
+        from kennis.engine.rag.index import load_chunks
+        from kennis.finding import resolve_document
+
+        try:
+            where, document = resolve_document(self._context, annotation.document, None)
+        except DocumentNotFound:
+            return _target(None, annotation, None, None, MISSING, link_to), ()
+        if where.name not in self._indexes:
+            try:
+                self._indexes[where.name] = _Placing.of(
+                    self._store,
+                    load_chunks(index_root(self._context.corpus_root), where.name),
+                )
+            except KennisError:
+                self._indexes[where.name] = None
+        placing = self._indexes[where.name]
+        return (
+            _placed_target(
+                None,
+                annotation,
+                _text(document.frontmatter.title),
+                placing,
+                link_to,
+                where.name,
+            ),
+            () if placing is None else placing.of_document(annotation.document),
+        )
+
+
+class _BundleTargets:
+    """A project's annotations as they stand now, its index read once."""
+
+    def __init__(self, bundle: Path, store: AnnotationStore) -> None:
+        from kennis.engine.context.index import load_bundle_index
+        from kennis.engine.context.projects import project_names
+
+        self._bundle = bundle
+        self.bundle: Path | None = bundle
+        self.project = project_names([bundle])[bundle]
+        try:
+            self._placing: _Placing | None = _Placing.of(
+                store, load_bundle_index(bundle).chunks
+            )
+        except KennisError:
+            self._placing = None
+
+    def _linked(self, path: str, chunk: int | None) -> str:
+        return context_link(self.project, path, chunk)
+
+    def target(self, annotation: Annotation) -> tuple[TaggedTarget, tuple[Chunk, ...]]:
+        try:
+            _, file = bundle_member(self._bundle, annotation.document)
+        except DocumentNotFound:
+            return (
+                _target(self.project, annotation, None, None, MISSING, self._linked),
+                (),
+            )
+        placing = self._placing
+        return (
+            _placed_target(
+                self.project, annotation, bundle_title(file), placing, self._linked
+            ),
+            () if placing is None else placing.of_document(annotation.document),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -874,6 +1003,9 @@ class _Placing:
             links(store, chunks),
             {chunk.id: chunk.chunk_index for chunk in chunks},
         )
+
+    def of_document(self, document: str) -> tuple[Chunk, ...]:
+        return tuple(chunk for chunk in self.chunks if chunk.document_id == document)
 
 
 def _placed_target(
@@ -937,6 +1069,7 @@ __all__ = [
     "PLACED",
     "UNCHECKED",
     "WRITING_TAGS",
+    "FoundComment",
     "Shown",
     "ShownBody",
     "TagChange",
@@ -949,6 +1082,7 @@ __all__ = [
     "bundle_title",
     "change_tags",
     "colour_tags",
+    "comments_matching",
     "corpus_chunks",
     "delete_annotation",
     "find_annotation",

@@ -615,7 +615,7 @@ def test_an_icon_is_inlined_so_it_takes_the_text_colour(
 
 
 def test_each_collection_has_an_icon_for_its_kind():
-    assert set(words.COLLECTION_ICONS) == {"literature", "docs", "notes"}
+    assert set(words.COLLECTION_ICONS) == {"literature", "docs", "notes", "annotations"}
 
 
 # ---------------------------------------------------------------------------

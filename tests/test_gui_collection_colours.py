@@ -37,7 +37,7 @@ TOKEN = "a-test-token"
 HTMX = {"HX-Request": "true"}
 
 # Written by hand (#373): the collections that wear a colour.
-EXPECTED = {"literature", "docs", "notes", "context"}
+EXPECTED = {"literature", "docs", "notes", "context", "annotations"}
 THEMES = {
     "light": (LIGHT_GROUND, CSS_COLOURS),
     "dark": (DARK_GROUND, CSS_COLOURS_DARK),

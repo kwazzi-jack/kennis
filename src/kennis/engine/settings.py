@@ -52,6 +52,7 @@ from kennis.engine.context.groups import CONTEXT_COLLECTION
 from kennis.engine.corpus.layout import published_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import SettingsError
+from kennis.engine.tags import ANNOTATIONS_SCOPE
 
 _ENVIRONMENT_PREFIX: Final = "KENNIS"
 _CONFIG_DIR_VARIABLE: Final = "KENNIS_CONFIG_DIR"
@@ -136,9 +137,10 @@ class ChunkingSettings(BaseModel):
 
 
 # What a search may cover, in the order kennis lists them unasked: the
-# project's bundle, then the corpus's collections. `kennis/scopes.py` says
+# project's bundle, the corpus's collections, then the comments on
+# annotations. `kennis/scopes.py` says
 # the same for a client, which must not load this module to offer them.
-_SEARCHABLE: Final = (CONTEXT_COLLECTION, *COLLECTION_NAMES)
+_SEARCHABLE: Final = (CONTEXT_COLLECTION, *COLLECTION_NAMES, ANNOTATIONS_SCOPE)
 _NAME_SEPARATORS: Final = re.compile(r"[\s,]+")
 
 
@@ -173,9 +175,9 @@ class RetrievalSettings(BaseModel):
         default=" ".join(_SEARCHABLE),
         description=(
             "What a search covers when no collection is named, and the order "
-            "its groups are shown in: any of context, literature, docs and "
-            "notes, separated by spaces. One left out is still searched when "
-            "it is named."
+            "its groups are shown in: any of context, literature, docs, "
+            "notes and annotations, separated by spaces. One left out is still "
+            "searched when it is named."
         ),
         examples=['"literature notes"'],
     )
