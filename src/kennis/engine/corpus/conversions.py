@@ -81,6 +81,7 @@ class KeptConversions:
                     {
                         "markdown": markdown,
                         "front_page": batch.front_page.get(path, ""),
+                        "stamps": batch.stamps.get(path, ""),
                         "repairs": batch.repairs.get(path, 0),
                         "images": {
                             name: base64.b64encode(content).decode("ascii")
@@ -97,6 +98,12 @@ class KeptConversions:
             front_page={
                 **{path: str(entry["front_page"]) for path, entry in kept.items()},
                 **batch.front_page,
+            },
+            # An entry kept before stamps were has none, which is "no
+            # stamps": the page then decides, as it did when it was kept.
+            stamps={
+                **{path: str(entry.get("stamps", "")) for path, entry in kept.items()},
+                **batch.stamps,
             },
             failure_reason=batch.failure_reason,
             cost_cents=batch.cost_cents,

@@ -194,6 +194,21 @@ def test_page_one_text_is_carried_out_of_the_temporary_directory(
     assert batch.front_page[path].startswith("arXiv:1101.1764v2")
 
 
+def test_a_footnote_is_page_text_but_not_a_stamp(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A footnote is where a paper cites another (#689): its identifier is
+    page text to search when the stamps hold none, never a stamp."""
+    monkeypatch.setenv("MINERU_FAKE_FOOTNOTE", "https://arxiv.org/abs/2501.09488")
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    batch = MineruConverter().convert([path])
+
+    assert "2501.09488" in batch.front_page[path]
+    assert "2501.09488" not in batch.stamps[path]
+    assert batch.stamps[path].startswith("arXiv:1101.1764v2")
+
+
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
