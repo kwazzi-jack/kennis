@@ -10,11 +10,17 @@ from __future__ import annotations
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
+from kennis.telemetry import refuse_library_telemetry
+
 # The library logs; the application configures. Without this, a caller who
 # never installed a handler gets Python's "no handlers could be found"
 # complaint on stderr - which under `kennis serve` is noise in someone else's
 # stream. The entry points install the real handlers.
 logging.getLogger("kennis").addHandler(logging.NullHandler())
+
+# Before any module of the package can import a library that reports to
+# its maker: each reads its switch from the environment as it loads (#687).
+refuse_library_telemetry()
 
 try:
     # One version, read from the installed distribution rather than written in

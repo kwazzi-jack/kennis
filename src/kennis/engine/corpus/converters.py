@@ -60,6 +60,7 @@ from kennis.engine.errors import (
     TaskCancelled,
 )
 from kennis.engine.settings import credential, load_settings
+from kennis.telemetry import LIBRARY_TELEMETRY_OFF
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,7 +404,9 @@ class MineruConverter:
 
     def _environment(self) -> dict[str, str]:
         """The child environment for one run."""
-        environment = dict(os.environ)
+        # Explicitly, rather than trusting that the `kennis` package was
+        # imported before whatever started this run (#687).
+        environment = dict(os.environ) | LIBRARY_TELEMETRY_OFF
         for setting, variable in _ENVIRONMENT_VARIABLES.items():
             value = getattr(self.options, setting)
             if value == _AUTO:

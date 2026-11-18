@@ -46,6 +46,8 @@ figure=38a2f261a5eb2daa06e47cb49e72b197349af48cfa480a96e9b2356bffda6610.jpg
 echo "backend=$backend" >> "$MINERU_FAKE_LOG"
 echo "device=${MINERU_DEVICE_MODE-unset} source=${MINERU_MODEL_SOURCE-unset}" \
     >> "$MINERU_FAKE_LOG"
+echo "onnx-telemetry=${ORT_DISABLE_TELEMETRY-unset}" >> "$MINERU_FAKE_LOG"
+echo "mineru-telemetry=${MINERU_TELEMETRY_DISABLED-unset}" >> "$MINERU_FAKE_LOG"
 for staged in "$input_dir"/*; do
     stem=$(basename "$staged")
     stem=${stem%.*}
