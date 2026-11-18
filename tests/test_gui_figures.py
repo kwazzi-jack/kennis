@@ -45,6 +45,7 @@ class FigureConverter:
     """Converts every document to markdown that links one image."""
 
     name = "figures"
+    variant = ""
     formats = frozenset({"pdf"})
 
     def is_available(self) -> bool:

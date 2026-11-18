@@ -260,6 +260,40 @@ class ConversionSettings(BaseModel):
             "and sends the document to a third party."
         ),
     )
+    # MinerU's tiers flash, basic and standard, by what a person gets. Its
+    # fourth, advanced, is not offered: it adds tables of values estimated
+    # from a paper's charts, which the paper never states (sketch
+    # 2026-11-18-mineru-4-trial).
+    quality: Literal["text-only", "fast", "best"] = Field(
+        default="best",
+        description=(
+            "How carefully mineru reads a PDF. best reads equations, tables "
+            "and scanned pages with its models and is the most faithful. "
+            "fast uses smaller models: about twice as fast on a computer "
+            "without a graphics card, with equations read less well. "
+            "text-only copies the PDF's own text and reads no images or "
+            "equations. datalab ignores this."
+        ),
+    )
+    device: Literal["auto", "cpu", "gpu"] = Field(
+        default="auto",
+        description=(
+            "Where mineru runs its models: auto lets it choose, cpu keeps "
+            "it off the graphics card, gpu asks for the graphics card."
+        ),
+    )
+    threads: int = Field(
+        default=0,
+        ge=0,
+        le=1024,
+        # No count of this computer's threads here: a description is
+        # schema metadata, written into config.toml and the generated
+        # reference, which must read the same on every machine. The window
+        # says the count (`gui/words.py`).
+        description=(
+            "Processor threads mineru may use for its models. 0 lets it choose."
+        ),
+    )
     mode: Literal["fast", "balanced", "accurate"] = Field(
         default="balanced",
         description=(

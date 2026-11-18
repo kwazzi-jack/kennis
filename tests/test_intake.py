@@ -33,6 +33,7 @@ class StubConverter:
     """A converter that answers from a fixed table, so intake can be tested
     without a subprocess."""
 
+    variant = ""
     formats = frozenset({"pdf", "docx", "pptx", "xlsx"})
     name = "stub"
 

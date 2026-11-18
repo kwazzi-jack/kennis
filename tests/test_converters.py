@@ -25,8 +25,10 @@ import pytest
 from kennis.engine.corpus import converters
 from kennis.engine.corpus.converters import (
     ConversionBatch,
+    Device,
     MineruConverter,
     MineruOptions,
+    Quality,
     _stage,
     default_converter,
 )
@@ -102,6 +104,34 @@ def test_the_default_converter_is_the_only_one_v0_1_has():
     assert isinstance(default_converter(), MineruConverter)
 
 
+def test_the_settings_choose_the_tier_device_and_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KENNIS_CONVERSION_QUALITY", "fast")
+    monkeypatch.setenv("KENNIS_CONVERSION_DEVICE", "cpu")
+    monkeypatch.setenv("KENNIS_CONVERSION_THREADS", "3")
+
+    converter = default_converter()
+
+    assert isinstance(converter, MineruConverter)
+    assert converter.options == MineruOptions(quality="fast", device="cpu", threads=3)
+    assert converter.variant == "basic"
+
+
+def test_every_quality_a_person_can_choose_has_a_tier() -> None:
+    """The setting's values are written in two places, the settings model
+    and the converter's table; a value only one of them knows would be
+    accepted by `config set` and then fail at the first conversion."""
+    from typing import get_args
+
+    from kennis.engine.settings import ConversionSettings
+
+    offered = get_args(ConversionSettings.model_fields["quality"].annotation)
+
+    assert set(offered) == set(converters.TIERS)
+    assert set(offered) == set(get_args(Quality.__value__))
+
+
 # ---------------------------------------------------------------------------
 # Conversion
 # ---------------------------------------------------------------------------
@@ -140,18 +170,12 @@ def test_the_whole_batch_is_one_process(fake_mineru: Path, tmp_path: Path):
 
     MineruConverter().convert(paths)
 
-    assert fake_mineru.read_text(encoding="utf-8").count("backend=") == 1
-
-
-def test_the_largest_markdown_output_is_the_one_taken(
-    fake_mineru: Path, tmp_path: Path
-):
-    """The nesting depth varies by version and backend, so the markdown is
-    found by searching rather than by a hardcoded path - and a run can leave
-    more than one file."""
-    batch = MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
-
-    assert "Converted body." in batch.markdown[tmp_path / "paper.pdf"]
+    runs = [
+        line
+        for line in fake_mineru.read_text(encoding="utf-8").splitlines()
+        if line.startswith("run ")
+    ]
+    assert runs == ["run inputs=4"]
 
 
 def test_page_one_text_is_carried_out_of_the_temporary_directory(
@@ -159,12 +183,15 @@ def test_page_one_text_is_carried_out_of_the_temporary_directory(
 ):
     """A paper's own identifier is systematically absent from the converted
     markdown - MinerU classifies the `arXiv:` stamp as page furniture - and it
-    survives only in the content list, which is discarded with the run."""
+    survives only in `structured_content.json`, which is discarded with
+    the run."""
     path = a_pdf(tmp_path / "paper.pdf")
 
     batch = MineruConverter().convert([path])
 
-    assert "arXiv:1101.1764v2" in batch.front_page[path]
+    # Margin text first, although the title comes first on the page: a
+    # paper's own stamp is furniture, and what it cites is not.
+    assert batch.front_page[path].startswith("arXiv:1101.1764v2")
 
 
 # ---------------------------------------------------------------------------
@@ -294,11 +321,11 @@ def test_a_converter_that_cannot_be_started_is_reported_not_raised_raw(
     the caller must see a domain exception rather than an `OSError`."""
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
-    (binary_dir / "mineru").write_text("not executable", encoding="utf-8")
+    (binary_dir / "mineru-kit").write_text("not executable", encoding="utf-8")
     monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(
         "kennis.engine.corpus.converters.shutil.which",
-        lambda name: str(binary_dir / "mineru"),
+        lambda name: str(binary_dir / "mineru-kit"),
     )
 
     with pytest.raises(ConversionFailed):
@@ -310,28 +337,105 @@ def test_a_converter_that_cannot_be_started_is_reported_not_raised_raw(
 # ---------------------------------------------------------------------------
 
 
-def test_the_backend_is_passed_as_a_flag(fake_mineru: Path, tmp_path: Path):
-    MineruConverter(MineruOptions(backend="vlm-transformers")).convert(
+def logged(log: Path) -> dict[str, str]:
+    """The fake's log as `name=value` pairs, the last run's values."""
+    pairs: dict[str, str] = {}
+    for line in log.read_text(encoding="utf-8").splitlines():
+        name, separator, value = line.partition("=")
+        if separator and " " not in name:
+            pairs[name] = value
+    return pairs
+
+
+@pytest.mark.parametrize(
+    ("quality", "tier"),
+    [("text-only", "flash"), ("fast", "basic"), ("best", "standard")],
+)
+def test_each_quality_runs_its_tier_and_asks_for_files(
+    fake_mineru: Path, tmp_path: Path, quality: Quality, tier: str
+) -> None:
+    """`--format zip`, because plain markdown embeds every image as base64
+    inside the text kennis would index."""
+    MineruConverter(MineruOptions(quality=quality)).convert(
         [a_pdf(tmp_path / "paper.pdf")]
     )
 
-    assert "backend=vlm-transformers" in fake_mineru.read_text(encoding="utf-8")
+    run = logged(fake_mineru)
+    assert run["tier"] == tier
+    assert run["format"] == "zip"
+
+
+def test_the_default_quality_is_the_best(fake_mineru: Path, tmp_path: Path) -> None:
+    MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+
+    assert logged(fake_mineru)["tier"] == "standard"
+
+
+@pytest.mark.parametrize(
+    ("device", "small_models", "reading_model"),
+    [("cpu", "cpu", "cpu"), ("gpu", "gpu", "vulkan")],
+)
+def test_a_chosen_device_reaches_both_kinds_of_model(
+    fake_mineru: Path,
+    tmp_path: Path,
+    device: Device,
+    small_models: str,
+    reading_model: str,
+) -> None:
+    MineruConverter(MineruOptions(device=device)).convert(
+        [a_pdf(tmp_path / "paper.pdf")]
+    )
+
+    run = logged(fake_mineru)
+    assert run["MINERU_MODEL_ONNX_DEVICE"] == small_models
+    assert run["MINERU_LLAMA_CPP_BACKEND"] == reading_model
+
+
+def test_auto_and_no_thread_count_leave_mineru_to_choose(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Removed, not merely left unset, so a value exported in the person's
+    shell cannot decide for them either."""
+    for name in (
+        "MINERU_MODEL_ONNX_DEVICE",
+        "MINERU_LLAMA_CPP_BACKEND",
+        "MINERU_INTRA_OP_NUM_THREADS",
+        "MINERU_CPU_NUM_THREADS",
+    ):
+        monkeypatch.setenv(name, "2")
+
+    MineruConverter(MineruOptions(device="auto", threads=0)).convert(
+        [a_pdf(tmp_path / "paper.pdf")]
+    )
+
+    run = logged(fake_mineru)
+    assert run["MINERU_MODEL_ONNX_DEVICE"] == "unset"
+    assert run["MINERU_LLAMA_CPP_BACKEND"] == "unset"
+    assert run["MINERU_INTRA_OP_NUM_THREADS"] == "unset"
+    assert run["MINERU_CPU_NUM_THREADS"] == "unset"
+
+
+def test_a_thread_count_reaches_the_models(fake_mineru: Path, tmp_path: Path) -> None:
+    MineruConverter(MineruOptions(threads=6)).convert([a_pdf(tmp_path / "paper.pdf")])
+
+    run = logged(fake_mineru)
+    assert run["MINERU_INTRA_OP_NUM_THREADS"] == "6"
+    assert run["MINERU_CPU_NUM_THREADS"] == "6"
 
 
 def test_a_setting_of_auto_is_expressed_by_the_variable_being_absent(
     fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """MinerU rejects the literal string: "MINERU_MODEL_SOURCE=auto is not
-    supported. Unset it to use auto detection." The variable is actively
-    removed, so an `auto` already exported in the user's shell cannot reach
-    it either."""
+    """MinerU rejects the literal string for its model source. The variable
+    is actively removed, so an `auto` already exported in the user's shell
+    cannot reach it either."""
     monkeypatch.setenv("MINERU_MODEL_SOURCE", "auto")
 
     MineruConverter(MineruOptions(model_source="auto")).convert(
         [a_pdf(tmp_path / "paper.pdf")]
     )
 
-    assert "source=unset" in fake_mineru.read_text(encoding="utf-8")
+    assert logged(fake_mineru)["MINERU_MODEL_SOURCE"] == "unset"
 
 
 def test_an_explicit_setting_reaches_the_process(fake_mineru: Path, tmp_path: Path):
@@ -339,7 +443,52 @@ def test_an_explicit_setting_reaches_the_process(fake_mineru: Path, tmp_path: Pa
         [a_pdf(tmp_path / "paper.pdf")]
     )
 
-    assert "source=huggingface" in fake_mineru.read_text(encoding="utf-8")
+    assert logged(fake_mineru)["MINERU_MODEL_SOURCE"] == "huggingface"
+
+
+def test_the_conversion_never_asks_for_the_hosted_service(
+    fake_mineru: Path, tmp_path: Path
+) -> None:
+    """`--remote` uploads the document to mineru.net."""
+    MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+
+    assert "--remote" not in logged(fake_mineru)["flags"]
+
+
+def test_mineru_4_markup_is_reduced_to_the_text_it_wraps(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A footnote arrives wrapped in a styled span, and the fastest tier
+    writes a placeholder after every figure whose only sentence is a stock
+    one: the footnote's words are kept, the wrapper and the placeholder are
+    not."""
+    monkeypatch.setenv("MINERU_FAKE_MARKUP", "1")
+    path = a_pdf(tmp_path / "paper.pdf")
+
+    markdown = MineruConverter().convert([path]).markdown[path]
+
+    assert "E-mail: someone@example.org" in markdown
+    assert "docvortex" not in markdown
+    assert "<span" not in markdown
+    assert "<small>" not in markdown
+    assert "please refer to the figure legend" not in markdown
+    assert "<details>" not in markdown
+
+
+def test_a_failed_document_is_named_in_the_reason(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MinerU 4 says which file failed on an `Error:` line, and ends its
+    output with a summary that says only how many; the reason is the first."""
+    good = a_pdf(tmp_path / "good.pdf")
+    bad = a_pdf(tmp_path / "doomed.pdf")
+    monkeypatch.setenv("MINERU_FAKE_SKIP", "doomed")
+
+    batch = MineruConverter().convert([good, bad])
+
+    assert batch.failure_reason is not None
+    assert "doomed" in batch.failure_reason
+    assert "file_corrupted" in batch.failure_reason
 
 
 @needs_a_posix_shell
@@ -350,7 +499,7 @@ def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_writt
     conversion hung the whole command with nothing to interrupt but Ctrl-C."""
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
-    script = binary_dir / "mineru"
+    script = binary_dir / "mineru-kit"
     script.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")
@@ -373,7 +522,7 @@ def test_a_cancelled_run_ends_what_it_started_as_well(
     marker = tmp_path / "still-running"
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
-    script = binary_dir / "mineru"
+    script = binary_dir / "mineru-kit"
     script.write_text(
         f"#!/bin/sh\n(sleep 2; touch '{marker}') &\nsleep 30\n", encoding="utf-8"
     )
@@ -458,7 +607,7 @@ def test_mineru_converts_a_real_pdf(tmp_path: Path):
     `slow` rather than `network`: the models are cached after the first run,
     and what this costs afterwards is patience rather than a host being up.
     """
-    if shutil.which("mineru") is None:
+    if shutil.which("mineru-kit") is None:
         pytest.skip("mineru is not installed; uv sync")
 
     path = a_real_pdf(tmp_path / "paper.pdf")
@@ -662,7 +811,7 @@ def test_mineru_is_found_beside_the_interpreter_when_it_is_not_on_path(
     The interpreter running kennis is inside that same environment, so its
     directory is where to look first.
     """
-    interpreter = an_interpreter_with(tmp_path / "toolvenv" / "bin", "mineru")
+    interpreter = an_interpreter_with(tmp_path / "toolvenv" / "bin", "mineru-kit")
     monkeypatch.setattr(sys, "executable", str(interpreter))
 
     assert MineruConverter().is_available()
@@ -691,7 +840,7 @@ def test_the_run_invokes_the_mineru_it_found(
     """Finding it is not enough: the subprocess must be given the path, or it
     resolves the bare name against PATH again and fails there."""
     beside = tmp_path / "toolvenv" / "bin"
-    interpreter = an_interpreter_with(beside, "mineru")
+    interpreter = an_interpreter_with(beside, "mineru-kit")
     monkeypatch.setattr(sys, "executable", str(interpreter))
 
     invoked: list[list[str]] = []
@@ -706,7 +855,7 @@ def test_the_run_invokes_the_mineru_it_found(
     assert invoked, "mineru was never run"
     # The file, not the spelling: on Windows `shutil.which` returns the name
     # with PATHEXT's case, `mineru.EXE`, for the `mineru.exe` it found.
-    found = next(path for path in beside.iterdir() if path.stem == "mineru")
+    found = next(path for path in beside.iterdir() if path.stem == "mineru-kit")
     assert Path(invoked[0][0]).samefile(found)
 
 
@@ -746,11 +895,11 @@ def test_a_mineru_on_path_wins_over_the_one_beside_the_interpreter(
     no answer, which is the tool-install case and nothing wider.
     """
     beside = tmp_path / "toolvenv" / "bin"
-    interpreter = an_interpreter_with(beside, "mineru")
+    interpreter = an_interpreter_with(beside, "mineru-kit")
     monkeypatch.setattr(sys, "executable", str(interpreter))
 
-    assert converters._executable("mineru") != str(beside / "mineru")
-    assert converters._executable("mineru") == shutil.which("mineru")
+    assert converters._executable("mineru-kit") != str(beside / "mineru-kit")
+    assert converters._executable("mineru-kit") == shutil.which("mineru-kit")
 
 
 def test_an_installed_copy_is_not_taken_for_a_checkout(tmp_path: Path):

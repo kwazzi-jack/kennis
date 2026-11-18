@@ -8,6 +8,7 @@ not a fact about a document - it is a control on a page.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 from typing import Final
@@ -466,6 +467,9 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "corpus.default_group": "Default group",
     "conversion.repair_ligatures": "Repair ff, fi and fl",
     "conversion.batch_size": "Documents per converter run",
+    "conversion.quality": "Conversion quality",
+    "conversion.device": "Conversion device",
+    "conversion.threads": "Conversion threads",
     "literature.request_delay": "Seconds between arXiv requests",
     "literature.citation_style": "Citation style (.csl file)",
     "terminal.messages": "Messages shown",
@@ -551,6 +555,20 @@ SETTING_TIPS: Final[dict[str, str]] = {
         "How many documents the converter takes in one run. 0 converts "
         "everything in one run."
     ),
+    "conversion.quality": (
+        "Best reads equations, tables and scanned pages most faithfully. "
+        "Fast is about twice as quick on a computer without a graphics "
+        "card, and reads equations less well. Text only copies the PDF's "
+        "own text, with no images or equations."
+    ),
+    "conversion.device": (
+        "Where MinerU runs its models. Auto lets it choose; CPU keeps it "
+        "off the graphics card; GPU asks for the graphics card."
+    ),
+    "conversion.threads": (
+        "How many processor threads MinerU may use. 0 lets it choose. "
+        f"This computer has {os.cpu_count() or 1}."
+    ),
     "literature.request_delay": "arXiv asks for three seconds between requests.",
     "literature.citation_style": (
         "How `kennis cite` and an agent's citations are written. Empty uses "
@@ -621,6 +639,12 @@ SETTING_CHOICES: Final[dict[str, dict[str, str]]] = {
         "balanced": "Balanced",
         "accurate": "Accurate",
     },
+    "conversion.quality": {
+        "best": "Best",
+        "fast": "Fast",
+        "text-only": "Text only",
+    },
+    "conversion.device": {"auto": "Auto", "cpu": "CPU", "gpu": "GPU"},
     "retrieval.corpus_method": {value: label for value, label in MODE_CHOICES if value},
     "retrieval.context_method": {
         value: label for value, label in MODE_CHOICES if value

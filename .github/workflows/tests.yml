@@ -108,36 +108,19 @@ jobs:
       # for a user: `test_engine_imports_without_the_interface_libraries`
       # proves `import kennis.engine` works without it.
       #
-      # **torch, triton and the CUDA libraries are left out by name.**
-      # mineru is a base dependency (#423) and brings them, about 5 GB on
-      # Linux, for a converter this suite drives through a fake and never
-      # imports. Measured 2026-10-10: 6.0 GB with them, 805 MB without,
-      # and the whole suite passes either way. What is covered is kennis's
-      # handling of a converter - the staging, the timeout, the failure
-      # reporting, the output parse - which is where kennis's defects
-      # would be. What is not covered is MinerU itself: the extended
-      # workflow's slow job installs everything. A name absent on a
-      # platform (macOS and Windows get no CUDA wheels) is ignored.
-      # Concerns #392, #395, #423.
+      # **torch is left out by name.** mineru is a base dependency (#423);
+      # MinerU 4 runs on ONNX Runtime and llama.cpp and brings torch on
+      # Apple Silicon alone, for a converter this suite drives through a
+      # fake and never imports. (MinerU 3 brought torch and the CUDA
+      # libraries everywhere: 6.0 GB against 805 MB, measured 2026-10-10.)
+      # What is covered is kennis's handling of a converter - the staging,
+      # the timeout, the failure reporting, the output parse - which is
+      # where kennis's defects would be. What is not covered is MinerU
+      # itself: the extended workflow's slow job runs it. A name absent on
+      # a platform is ignored. Concerns #392, #395, #423, #685.
       - run: >-
           uv sync --frozen --extra mcp --python ${{ matrix.python }}
           --no-install-package torch
-          --no-install-package triton
-          --no-install-package nvidia-cublas
-          --no-install-package nvidia-cuda-cupti
-          --no-install-package nvidia-cuda-nvrtc
-          --no-install-package nvidia-cuda-runtime
-          --no-install-package nvidia-cudnn-cu13
-          --no-install-package nvidia-cufft
-          --no-install-package nvidia-cufile
-          --no-install-package nvidia-cuda-cccl
-          --no-install-package nvidia-cusolver
-          --no-install-package nvidia-cusparse
-          --no-install-package nvidia-cusparselt-cu13
-          --no-install-package nvidia-nccl-cu13
-          --no-install-package nvidia-nvjitlink
-          --no-install-package nvidia-nvshmem-cu13
-          --no-install-package nvidia-nvtx
 
       # `--python` on each run as well as on the sync: without it `uv run`
       # reads `.python-version`, which says 3.12, and warns that the
@@ -213,22 +196,6 @@ jobs:
       - run: >-
           uv sync --frozen --group browser --extra mcp --python 3.12
           --no-install-package torch
-          --no-install-package triton
-          --no-install-package nvidia-cublas
-          --no-install-package nvidia-cuda-cupti
-          --no-install-package nvidia-cuda-nvrtc
-          --no-install-package nvidia-cuda-runtime
-          --no-install-package nvidia-cudnn-cu13
-          --no-install-package nvidia-cufft
-          --no-install-package nvidia-cufile
-          --no-install-package nvidia-cuda-cccl
-          --no-install-package nvidia-cusolver
-          --no-install-package nvidia-cusparse
-          --no-install-package nvidia-cusparselt-cu13
-          --no-install-package nvidia-nccl-cu13
-          --no-install-package nvidia-nvjitlink
-          --no-install-package nvidia-nvshmem-cu13
-          --no-install-package nvidia-nvtx
 
       - name: chromium
         run: uv run --no-sync --python 3.12 playwright install --with-deps chromium

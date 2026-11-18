@@ -136,17 +136,12 @@ jobs:
           print(f"{target}: OK")
           EOF
 
-      # Every dependency from PyPI, and torch from PyTorch's CPU index so
-      # MinerU's torch is a few hundred megabytes rather than the CUDA
-      # build's several gigabytes. The best match across those two is
-      # asked for because PyTorch's index also carries old copies of
-      # ordinary packages (#461); both are trusted with the install.
+      # Every dependency from PyPI. MinerU 4 needs no torch on Linux or
+      # Windows, so PyTorch's CPU index (#461) is no longer asked.
       - name: Install it with its dependencies from PyPI
         run: >-
           uv pip install wheel/*.whl
           --index-url https://pypi.org/simple/
-          --extra-index-url https://download.pytorch.org/whl/cpu
-          --index-strategy unsafe-best-match
 
       # `uv run --no-project` uses `.venv` here, whose scripts are in
       # `bin` on Linux and macOS and in `Scripts` on Windows.

@@ -52,6 +52,9 @@ How binary documents become markdown.
 | key | type | default | what it does |
 |---|---|---|---|
 | `backend` | `mineru` / `datalab` | `mineru` | Converter for PDF, DOCX, PPTX and XLSX. mineru runs locally and is installed with kennis; datalab is hosted, needs an API key, and sends the document to a third party. |
+| `quality` | `text-only` / `fast` / `best` | `best` | How carefully mineru reads a PDF. best reads equations, tables and scanned pages with its models and is the most faithful. fast uses smaller models: about twice as fast on a computer without a graphics card, with equations read less well. text-only copies the PDF's own text and reads no images or equations. datalab ignores this. |
+| `device` | `auto` / `cpu` / `gpu` | `auto` | Where mineru runs its models: auto lets it choose, cpu keeps it off the graphics card, gpu asks for the graphics card. |
+| `threads` | `int` | `0` | Processor threads mineru may use for its models. 0 lets it choose. |
 | `mode` | `fast` / `balanced` / `accurate` | `balanced` | How hard the datalab backend works, and what it charges. Measured per page: fast 0.4c, balanced 0.4c, accurate 1.0c. The server only reuses a conversion when the mode matches, so changing this and re-adding a document pays for it again. mineru ignores this - it runs locally and costs nothing. |
 | `repair_ligatures` | `bool` | `True` | Repair ligature damage against the PDF's own text layer, read with pypdfium2. mineru drops a letter from ff, fi and fl on some documents, which no reindex can undo. Costs 0.7ms a page and applies to mineru only - datalab showed no such damage. |
 | `batch_size` | `int` | `8` | Documents per converter run. 0 is one run. |
