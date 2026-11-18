@@ -14,6 +14,13 @@ imported, before any of its modules can import either library, and every
 process kennis starts inherits them. They overwrite whatever the
 environment held: the person asked kennis for no telemetry, not each
 library separately (Brian, 2026-11-18).
+
+Sources: ONNX Runtime's privacy notice, which says telemetry is on by
+default in the official builds (https://github.com/microsoft/onnxruntime/blob/v1.30.0/docs/Privacy.md),
+and an independent measurement of it on Linux, which found the variable
+works and the Python call does not there
+(https://research.strata2signal.com/onnx-runtime-telemetry-on-linux/).
+Both agree with kennis's own traces (#687).
 """
 
 from __future__ import annotations

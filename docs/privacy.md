@@ -111,6 +111,12 @@ converting a PDF sent those events. If you used one, the folder above may
 still hold a queue that any program using ONNX Runtime without the switch
 will send; deleting the folder removes the queue and the identifier.
 
+Microsoft describes this telemetry in ONNX Runtime's
+[privacy notice](https://github.com/microsoft/onnxruntime/blob/v1.30.0/docs/Privacy.md), which
+says it is on by default in the official builds.
+[An independent measurement of it on Linux](https://research.strata2signal.com/onnx-runtime-telemetry-on-linux/)
+lists what the events contain and how each way of turning it off behaves.
+
 ### Things you share yourself
 
 - **A context bundle is committed with its project.** `.context/` holds
