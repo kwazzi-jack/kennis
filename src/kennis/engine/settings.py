@@ -286,9 +286,12 @@ class ConversionSettings(BaseModel):
         default=0,
         ge=0,
         le=1024,
+        # No count of this computer's threads here: a description is
+        # schema metadata, written into config.toml and the generated
+        # reference, which must read the same on every machine. The window
+        # says the count (`gui/words.py`).
         description=(
-            "Processor threads mineru may use for its models. 0 lets it "
-            f"choose. This computer has {os.cpu_count() or 1}."
+            "Processor threads mineru may use for its models. 0 lets it choose."
         ),
     )
     mode: Literal["fast", "balanced", "accurate"] = Field(
