@@ -12,6 +12,7 @@ import os
 import signal
 import stat
 import sys
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -24,6 +25,42 @@ from kennis.engine.courtesy import forget_hosts
 from kennis.engine.settings import state_dir
 from kennis.protocol.record import find_service
 from platforms import NO_POSIX_SHELL
+
+
+def repository_above(folder: Path) -> Path | None:
+    """The nearest of `folder` and its parents holding `.git`, or None.
+
+    A file counts as well as a directory: a worktree's `.git` is a file.
+    """
+    for candidate in (folder, *folder.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Refuse to run where every test folder would be inside a repository.
+
+    kennis takes a folder holding `.git` as a repository's root, and the
+    tests assume nothing above `tmp_path` is one. Another agent's sandbox
+    left an empty `/tmp/.git` and sixteen tests failed without naming it
+    (#672). Checked once, on the controller: an xdist worker has
+    `workerinput` and the same answer.
+    """
+    if hasattr(config, "workerinput"):
+        return
+    given = config.getoption("basetemp")
+    base = Path(given) if given else Path(tempfile.gettempdir())
+    repository = repository_above(base.resolve())
+    if repository is None:
+        return
+    raise pytest.UsageError(
+        f"{repository} holds a .git, so every test folder under {base} would "
+        "be inside a repository, and the tests that look for one would find "
+        "it. Remove it if it is left over, or give the tests a folder "
+        "elsewhere: --basetemp=/var/tmp/pytest-kennis (concern #672)."
+    )
+
 
 # A fake MinerU 4. `mineru-kit` is a /bin/sh wrapper that runs this script
 # with the interpreter running the tests. It parses the arguments the

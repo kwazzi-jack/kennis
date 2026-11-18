@@ -780,3 +780,57 @@ def test_a_client_asks_the_service_rather_than_acting(path: Path):
 def test_client_is_not_taken_for_cli():
     assert not is_client(SOURCE_ROOT / "kennis" / "client" / "api.py")
     assert is_client(SOURCE_ROOT / "kennis" / "cli" / "group.py")
+
+
+def test_a_repository_above_a_folder_is_found(tmp_path: Path) -> None:
+    from conftest import repository_above
+
+    outer = tmp_path / "outer"
+    (outer / ".git").mkdir(parents=True)
+    inner = outer / "a" / "b"
+    inner.mkdir(parents=True)
+    plain = tmp_path / "plain" / "c"
+    plain.mkdir(parents=True)
+
+    assert repository_above(inner) == outer
+    assert repository_above(plain) is None
+
+
+def test_the_suite_refuses_to_run_under_a_repository(tmp_path: Path) -> None:
+    """Another agent's sandbox left an empty `/tmp/.git`, and sixteen tests
+    failed for a reason none of them named: every `tmp_path` was inside a
+    repository, so `context init` wrote to `/tmp/.context` (#672). The
+    suite stops before collecting anything instead, saying why.
+
+    The child runs from the checkout, because that is where `conftest.py`
+    is, and collects only, because the refusal comes before collection."""
+    repository = tmp_path / "repository"
+    (repository / ".git").mkdir(parents=True)
+    base = repository / "base"
+
+    finished = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:xdist",
+            "--collect-only",
+            "-q",
+            f"--basetemp={base}",
+            "tests/test_platforms.py",
+        ],
+        cwd=PROJECT_ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+
+    assert finished.returncode == pytest.ExitCode.USAGE_ERROR, finished.stdout
+    assert str(repository) in finished.stderr
+    assert not base.exists()
