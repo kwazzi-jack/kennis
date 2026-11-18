@@ -121,6 +121,12 @@ for given in inputs:
                                     "type": "aside_text",
                                     "content": "arXiv:1101.1764v2 [astro-ph.IM]",
                                 },
+                                {
+                                    "type": "page_footnote",
+                                    "content": environment.get(
+                                        "MINERU_FAKE_FOOTNOTE", ""
+                                    ),
+                                },
                             ],
                         }
                     ],

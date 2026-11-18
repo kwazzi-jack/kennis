@@ -359,6 +359,9 @@ class _Plan:
     # Page-one text per document, page furniture included. Unused by notes;
     # literature is what reads it.
     front_page: dict[Path, str] = field(default_factory=dict)
+    # Page one's header, footer, margin and page number: where a paper
+    # stamps its own identity (#689).
+    stamps: dict[Path, str] = field(default_factory=dict)
     # What the conversions cost in cents, summed across the runs, when the
     # converter reported anything. `None` means no run reported a cost -
     # which is every local conversion. Concern #146.
@@ -758,6 +761,7 @@ def _plan_binaries(
                 prepared_images=batch.images.get(path),
             )
             plan.front_page[path] = batch.front_page.get(path, "")
+            plan.stamps[path] = batch.stamps.get(path, "")
         if batch.cost_cents is not None:
             plan.cost_cents = (plan.cost_cents or 0.0) + batch.cost_cents
         plan.repairs += sum(batch.repairs.values())
@@ -1101,7 +1105,8 @@ def _add_paper(
         else paper.stated
     )
     front_page = plan.front_page.get(paper.path, "") if paper.path is not None else ""
-    chosen, ambiguous = _choose_identity(stated, front_page)
+    stamps = plan.stamps.get(paper.path, "") if paper.path is not None else ""
+    chosen, ambiguous = _choose_identity(stated, stamps, front_page)
     if chosen is None:
         return AddOutcome(
             identifier=paper.identifier,
@@ -1184,7 +1189,7 @@ def _add_paper(
 
 
 def _choose_identity(
-    stated: PaperIdentifier | None, front_page: str
+    stated: PaperIdentifier | None, stamps: str, front_page: str
 ) -> tuple[PaperIdentifier | None, list[PaperIdentifier]]:
     """The one identifier that names this paper, or why there is none.
 
@@ -1198,10 +1203,16 @@ def _choose_identity(
     a guess, because one of them is likely something the paper cites and no
     pattern work distinguishes them, so both are handed back for the caller to
     report.
+
+    **Where comes before what kind** (#689). A paper stamps its own identity
+    in the page's header, footer, margin and page number, and cites others
+    in its footnotes and body: TRON II's header DOI lost to a footnote's
+    arXiv link to TRON I. So the stamps are searched first, by the rules
+    above, and the whole page only when they hold no identifier at all.
     """
     if stated is not None:
         return stated, []
-    candidates = find_paper_identifiers(front_page)
+    candidates = find_paper_identifiers(stamps) or find_paper_identifiers(front_page)
     if not candidates:
         return None, []
     best = candidates[0].kind

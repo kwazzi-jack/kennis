@@ -74,6 +74,11 @@ class ConversionBatch:
     # run's temporary directory because that is the only place it exists: the
     # content list is discarded with the run, and the markdown never had it.
     front_page: dict[Path, str] = field(default_factory=dict)
+    # Page one's header, footer, margin and page number alone: where a paper
+    # stamps its own identity, and so where an identifier is looked for
+    # first. A footnote is not one - it is where a paper cites another
+    # (#689).
+    stamps: dict[Path, str] = field(default_factory=dict)
     # The process's own wording when it exited non-zero, whether or not it
     # still produced output for some documents.
     failure_reason: str | None = None
@@ -278,13 +283,13 @@ _SECONDS_PER_DOCUMENT: Final = 300
 # At 40 the whole path stays under 200.
 _STAGED_STEM_LIMIT: Final = 40
 
-# Block kinds MinerU classifies as page furniture rather than body text. These
-# are where a paper stamps its own identity: `arXiv:1805.03410v2
+# Block kinds where a paper stamps its own identity: `arXiv:1805.03410v2
 # [astro-ph.IM]` arrives as `aside_text`, a journal DOI as a `header`, an ADS
 # bibcode on a scanned paper as a `header` too. MinerU 4's names.
-_FURNITURE_TYPES: Final = frozenset(
-    {"header", "footer", "page_footnote", "aside_text", "page_number"}
-)
+_STAMP_TYPES: Final = frozenset({"header", "footer", "aside_text", "page_number"})
+# Page furniture: the stamps, and the footnotes - furniture to MinerU, which
+# leaves them out of the body, but where a paper cites others (#689).
+_FURNITURE_TYPES: Final = _STAMP_TYPES | {"page_footnote"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -352,7 +357,7 @@ class MineruConverter:
             staged = _stage(paths, staged_dir)
 
             completed = self._run(sorted(staged_dir.iterdir()), output_dir)
-            markdown, front_page, images = _collect(
+            markdown, front_page, stamps, images = _collect(
                 staged, output_dir, Path(temporary) / "unpacked"
             )
 
@@ -364,6 +369,7 @@ class MineruConverter:
         return ConversionBatch(
             markdown=markdown,
             front_page=front_page,
+            stamps=stamps,
             failure_reason=reason,
             repairs=repairs,
             images=images,
@@ -795,9 +801,11 @@ def _stage(paths: Sequence[Path], staged_dir: Path) -> dict[str, Path]:
 
 def _collect(
     staged: dict[str, Path], output_dir: Path, unpacked: Path
-) -> tuple[dict[Path, str], dict[Path, str], dict[Path, dict[str, bytes]]]:
-    """The markdown, page-one text and linked images MinerU produced, keyed
-    by original path.
+) -> tuple[
+    dict[Path, str], dict[Path, str], dict[Path, str], dict[Path, dict[str, bytes]]
+]:
+    """The markdown, page-one text, page-one stamps and linked images MinerU
+    produced, keyed by original path.
 
     One `<stem>.zip` per document that converted; a document with none
     failed, and its absence is its failure alone. Each is unpacked into a
@@ -808,6 +816,7 @@ def _collect(
     """
     markdown: dict[Path, str] = {}
     front_page: dict[Path, str] = {}
+    stamps: dict[Path, str] = {}
     images: dict[Path, dict[str, bytes]] = {}
     for stem, original in staged.items():
         archive = output_dir / f"{stem}.zip"
@@ -828,8 +837,12 @@ def _collect(
         markdown[original], linked = kept_images(text, folder)
         if linked:
             images[original] = linked
-        front_page[original] = _front_page_text(folder / "structured_content.json")
-    return markdown, front_page, images
+        blocks = _page_one_blocks(folder / "structured_content.json")
+        front_page[original] = _front_page_text(blocks)
+        stamps[original] = "\n".join(
+            content for kind, content in blocks if kind in _STAMP_TYPES
+        )
+    return markdown, front_page, stamps, images
 
 
 # MinerU 4's wrapper around a footnote or a margin note in its markdown:
@@ -965,35 +978,37 @@ def _failure_reason(completed: subprocess.CompletedProcess[str]) -> str:
     return lines[-1].strip() if lines else f"exit code {completed.returncode}"
 
 
-def _front_page_text(structured: Path) -> str:
-    """Everything MinerU read off page one, including what it did not render.
+def _page_one_blocks(structured: Path) -> list[tuple[str, str]]:
+    """Page one's blocks from `structured_content.json`, as (kind, text),
+    in page order; empty when the file cannot be read.
 
     A paper's own identifier is often *absent* from the converted markdown,
     because MinerU classifies the `arXiv:...` stamp as page furniture, and
-    furniture is not body text. It survives in `structured_content.json`
-    beside the markdown, which is the only reason a local PDF can be
-    identified at all. Furniture first, then the page's other blocks.
-
-    Only page one. A bibliography offers dozens of other people's identifiers
-    and every one of them is a wrong answer, so the search is confined to the
-    page where a paper states its own.
+    furniture is not body text. It survives here, which is the only reason
+    a local PDF can be identified at all. Only page one: a bibliography
+    offers dozens of other people's identifiers and every one of them is a
+    wrong answer.
     """
     try:
         parsed = json.loads(structured.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return ""
+        return []
     pages = parsed.get("pages") if isinstance(parsed, dict) else None
     if not isinstance(pages, list) or not pages or not isinstance(pages[0], dict):
-        return ""
+        return []
     blocks = pages[0].get("blocks")
-    furniture: list[str] = []
-    body: list[str] = []
+    found: list[tuple[str, str]] = []
     for block in blocks if isinstance(blocks, list) else []:
         if not isinstance(block, dict):
             continue
         content = block.get("content")
-        if not isinstance(content, str) or not content.strip():
-            continue
-        target = furniture if block.get("type") in _FURNITURE_TYPES else body
-        target.append(content)
+        if isinstance(content, str) and content.strip():
+            found.append((str(block.get("type", "")), content))
+    return found
+
+
+def _front_page_text(blocks: list[tuple[str, str]]) -> str:
+    """Everything on page one, the furniture first, then the rest."""
+    furniture = [content for kind, content in blocks if kind in _FURNITURE_TYPES]
+    body = [content for kind, content in blocks if kind not in _FURNITURE_TYPES]
     return "\n".join(furniture + body)

@@ -56,6 +56,7 @@ class CountingConverter:
         return ConversionBatch(
             markdown={path: f"# {path.stem}\n\nConverted.\n" for path in paths},
             front_page={path: f"front of {path.stem}" for path in paths},
+            stamps={path: f"stamp of {path.stem}" for path in paths},
             repairs={path: 2 for path in paths},
         )
 
@@ -87,6 +88,7 @@ def test_the_same_content_is_converted_once(tmp_path: Path):
     assert inner.converted == [first]
     assert batch.markdown == {again: "# paper\n\nConverted.\n"}
     assert batch.front_page == {again: "front of paper"}
+    assert batch.stamps == {again: "stamp of paper"}
     assert batch.repairs == {again: 2}
 
 

@@ -135,8 +135,13 @@ class FrontPageConverter:
     variant = ""
     formats = frozenset({"pdf", "docx", "pptx", "xlsx"})
 
-    def __init__(self, front_pages: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        front_pages: dict[str, str] | None = None,
+        stamps: dict[str, str] | None = None,
+    ) -> None:
         self.front_pages = front_pages or {}
+        self.stamps = stamps or {}
         self.runs: list[tuple[Path, ...]] = []
 
     def is_available(self) -> bool:
@@ -150,6 +155,7 @@ class FrontPageConverter:
         return ConversionBatch(
             markdown={path: f"# {path.stem}\n\nBody.\n" for path in paths},
             front_page={path: self.front_pages.get(path.name, "") for path in paths},
+            stamps={path: self.stamps.get(path.name, "") for path in paths},
         )
 
 
@@ -523,6 +529,39 @@ def test_precedence_decides_between_kinds_and_that_is_not_a_guess(
     converter = FrontPageConverter(
         {"paper.pdf": "arXiv:2409.19750 and doi:10.1088/0004-637X/1"}
     )
+
+    add_literature(papers, [str(path)], converter=converter, arxiv=arxiv_client())
+
+    assert only(papers).id_from == "arxiv:2409.19750"
+
+
+def test_the_paper_s_own_stamp_beats_what_its_first_page_cites(
+    papers: Collection, tmp_path: Path
+) -> None:
+    """TRON II carries its DOI in the page header and a footnote linking TRON
+    I on arXiv; ranked by kind alone, the footnote won and the paper was
+    filed as TRON I (#689). Where an identifier stands comes before what
+    kind it is."""
+    path = a_pdf(tmp_path / "paper.pdf")
+    stamp = "https://doi.org/10.1088/0004-637X/1"
+    converter = FrontPageConverter(
+        {"paper.pdf": f"{stamp}\n1 https://arxiv.org/abs/2409.19750"},
+        stamps={"paper.pdf": stamp},
+    )
+
+    add_literature(papers, [str(path)], converter=converter, arxiv=arxiv_client())
+
+    assert only(papers).id_from == "doi:10.1088/0004-637X/1"
+
+
+def test_within_the_stamps_the_kinds_keep_their_order(
+    papers: Collection, tmp_path: Path
+) -> None:
+    """A preprint's margin and a journal's header on one page: arXiv first,
+    as everywhere, because it resolves to the most."""
+    path = a_pdf(tmp_path / "paper.pdf")
+    stamps = "arXiv:2409.19750v2 [astro-ph.IM]\nhttps://doi.org/10.1088/0004-637X/1"
+    converter = FrontPageConverter({"paper.pdf": stamps}, stamps={"paper.pdf": stamps})
 
     add_literature(papers, [str(path)], converter=converter, arxiv=arxiv_client())
 

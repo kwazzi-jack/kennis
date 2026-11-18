@@ -370,6 +370,18 @@ def test_any_doi_resolver_address_is_the_same_doi(given: str):
     assert found is not None and found.value == "10.1000/abc"
 
 
+def test_a_doi_written_as_a_markdown_link_is_the_doi_alone() -> None:
+    """MinerU 4 writes TRON III's header DOI as a link whose text is the DOI;
+    read to the next space, the DOI ran on through `](https://doi.org/...`
+    and could not be resolved. A DOI never contains `](`."""
+    page = "[10.1093/mnras/stag1704](https://doi.org/10.1093/mnras/stag1704)"
+
+    assert find_paper_identifiers(page) == [
+        PaperIdentifier(kind="doi", value="10.1093/mnras/stag1704")
+    ]
+    assert normalize_doi(page) == "10.1093/mnras/stag1704"
+
+
 def test_a_parenthesised_doi_loses_its_bracket():
     assert normalize_doi("(doi:10.1000/abc).") == "10.1000/abc"
     assert normalize_doi("10.1002/(SICI)1097-0258") == "10.1002/(SICI)1097-0258"

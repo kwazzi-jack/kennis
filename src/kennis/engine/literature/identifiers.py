@@ -53,8 +53,11 @@ _LEGACY_ARXIV: Final = re.compile(
 )
 
 # A DOI is "10." followed by a registrant code, a slash, and a suffix that
-# runs to the end of the token.
-_DOI: Final = re.compile(r"(10\.\d{4,9}/[^\s\"'<>]+)")
+# runs to the end of the token - or to `](`, where a markdown link's text
+# ends and its address begins: MinerU 4 writes a header DOI as
+# `[10.x/y](https://doi.org/10.x/y)`, and no DOI contains those two
+# characters together.
+_DOI: Final = re.compile(r"(10\.\d{4,9}/(?:(?!\]\()[^\s\"'<>])+)")
 
 # An ADS bibcode: 19 characters, fixed-width, dot-padded. It is the
 # astronomy-native identifier and the answer for anything older than arXiv - a
@@ -462,8 +465,12 @@ def find_paper_identifiers(text: str) -> list[PaperIdentifier]:
     found: list[PaperIdentifier] = []
     for value in _all_matches(_MODERN_ARXIV, text) + _all_matches(_LEGACY_ARXIV, text):
         found.append(PaperIdentifier(kind="arxiv", value=value))
-    for value in _all_matches(_DOI, text):
-        found.append(PaperIdentifier(kind="doi", value=value.rstrip(".,;)")))
+    # Distinct after the trailing punctuation goes, not before: a DOI and
+    # the same DOI closing a link's address, `10.x/y)`, are one candidate,
+    # and two of one kind would be refused as ambiguous.
+    dois = dict.fromkeys(value.rstrip(".,;)") for value in _all_matches(_DOI, text))
+    for value in dois:
+        found.append(PaperIdentifier(kind="doi", value=value))
     for value in _all_matches(_ADS_BIBCODE, text):
         found.append(PaperIdentifier(kind="bibcode", value=value))
     return found
