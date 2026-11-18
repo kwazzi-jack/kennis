@@ -32,12 +32,14 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,6 +105,10 @@ class Converter(Protocol):
     """
 
     name: str
+    # What else, beside the converter, decides the text it writes for one
+    # document: MinerU's tier, Datalab's mode. A kept conversion is keyed by
+    # it, so one made at another quality is not handed back (#526).
+    variant: str
     formats: frozenset[SourceFormat]
 
     def is_available(self) -> bool:
@@ -123,10 +129,16 @@ class Converter(Protocol):
 # ---------------------------------------------------------------------------
 #
 # Driven through its command line rather than its Python interface. MinerU
-# imports torch and its model stack at import time, which would make every
-# kennis invocation pay for a dependency almost no command uses; a subprocess
-# also keeps a model crash from taking the process down with it, and makes the
+# loads its model stack at import time, which would make every kennis
+# invocation pay for a dependency almost no command uses; a subprocess also
+# keeps a model crash from taking the process down with it, and makes the
 # tool's absence a fact to report rather than an ImportError.
+#
+# MinerU 4 (#683, #685): `mineru-kit parse <files> -o <dir> --format zip
+# --tier <tier>` is a one-shot conversion that starts no server, and writes
+# one `<stem>.zip` per input holding `markdown.md`, `images/` and
+# `structured_content.json`. Plain markdown output embeds every image as
+# base64 in the text, which is why the zip is asked for.
 
 _MINERU_FORMATS: Final[dict[str, SourceFormat]] = {
     ".pdf": "pdf",
@@ -205,10 +217,37 @@ def _executable(name: str) -> str | None:
 # already exported in the user's shell cannot reach MinerU either.
 _AUTO: Final = "auto"
 
-_ENVIRONMENT_VARIABLES: Final[dict[str, str]] = {
-    "device_mode": "MINERU_DEVICE_MODE",
-    "model_source": "MINERU_MODEL_SOURCE",
+# The executable. The converter's name stays `mineru`: it is what a
+# document's `source.via` records and what a kept conversion is filed by.
+_EXECUTABLE: Final = "mineru-kit"
+
+type Quality = Literal["text-only", "fast", "best"]
+type Device = Literal["auto", "cpu", "gpu"]
+
+# `conversion.quality` to MinerU's tier. `advanced` is not offered: it adds
+# tables of values estimated from charts, which a paper never states.
+TIERS: Final[dict[str, str]] = {
+    "text-only": "flash",
+    "fast": "basic",
+    "best": "standard",
 }
+
+# `conversion.device` to MinerU's two switches: its small models run on
+# ONNX Runtime (`model.onnx_device`, set through the environment) and its
+# reading model on llama.cpp. Vulkan is llama.cpp's graphics backend on
+# Linux and Windows; MinerU ignores the variable on macOS, where Metal is
+# native. `auto` removes both and lets MinerU choose.
+_DEVICE_VARIABLES: Final[dict[str, dict[str, str]]] = {
+    "cpu": {"MINERU_MODEL_ONNX_DEVICE": "cpu", "MINERU_LLAMA_CPP_BACKEND": "cpu"},
+    "gpu": {"MINERU_MODEL_ONNX_DEVICE": "gpu", "MINERU_LLAMA_CPP_BACKEND": "vulkan"},
+}
+_THREAD_VARIABLES: Final = ("MINERU_INTRA_OP_NUM_THREADS", "MINERU_CPU_NUM_THREADS")
+_MODEL_SOURCE_VARIABLE: Final = "MINERU_MODEL_SOURCE"
+
+# MinerU 4 reports through a terminal library that wraps lines at the
+# width it is told, eighty when it has no terminal; a failure's `Error:`
+# line then arrives in pieces. Wide enough that it never wraps.
+_REPORT_COLUMNS: Final = "1000"
 
 # How long a run gets before kennis cancels it. Two terms, because the cost
 # has two: the model stack loads once per run, then each document is
@@ -240,12 +279,11 @@ _SECONDS_PER_DOCUMENT: Final = 300
 _STAGED_STEM_LIMIT: Final = 40
 
 # Block kinds MinerU classifies as page furniture rather than body text. These
-# are exactly what the rendered markdown throws away, and exactly where a
-# paper stamps its own identity: `arXiv:1805.03410v2 [astro-ph.IM]` arrives as
-# `page_aside_text`, a journal DOI as a `page_footer`, an ADS bibcode on a
-# scanned paper as a `page_header`.
+# are where a paper stamps its own identity: `arXiv:1805.03410v2
+# [astro-ph.IM]` arrives as `aside_text`, a journal DOI as a `header`, an ADS
+# bibcode on a scanned paper as a `header` too. MinerU 4's names.
 _FURNITURE_TYPES: Final = frozenset(
-    {"page_header", "page_footer", "page_footnote", "page_aside_text", "page_number"}
+    {"header", "footer", "page_footnote", "aside_text", "page_number"}
 )
 
 
@@ -257,9 +295,15 @@ class MineruOptions:
     passes them or takes the defaults.
     """
 
-    device_mode: str = _AUTO
-    backend: str = "pipeline"
+    quality: Quality = "best"
+    device: Device = "auto"
+    # 0 lets MinerU choose.
+    threads: int = 0
     model_source: str = _AUTO
+
+    @property
+    def tier(self) -> str:
+        return TIERS[self.quality]
 
 
 class MineruConverter:
@@ -276,9 +320,10 @@ class MineruConverter:
     ) -> None:
         self.options = options or MineruOptions()
         self.repair_ligatures = repair_ligatures
+        self.variant = self.options.tier
 
     def is_available(self) -> bool:
-        return _executable(self.name) is not None
+        return _executable(_EXECUTABLE) is not None
 
     def install_hint(self) -> str:
         return _SOURCE_INSTALL_HINT if _from_source_checkout() else _TOOL_INSTALL_HINT
@@ -306,8 +351,10 @@ class MineruConverter:
             output_dir.mkdir()
             staged = _stage(paths, staged_dir)
 
-            completed = self._run(staged_dir, output_dir, len(paths))
-            markdown, front_page, images = _collect(staged, output_dir)
+            completed = self._run(sorted(staged_dir.iterdir()), output_dir)
+            markdown, front_page, images = _collect(
+                staged, output_dir, Path(temporary) / "unpacked"
+            )
 
         reason = _failure_reason(completed) if completed.returncode != 0 else None
         if not markdown and reason is not None:
@@ -327,10 +374,14 @@ class MineruConverter:
     ) -> tuple[dict[Path, str], dict[Path, int]]:
         """Everything done to MinerU's markdown before it is stored.
 
-        Normalisation first, because the repair must not walk into an HTML
-        attribute, and because a table cell's words should be repaired too.
+        MinerU 4's own markup goes first, then normalisation, because the
+        repair must not walk into an HTML attribute, and because a table
+        cell's words should be repaired too.
         """
-        normalised = {path: normalise_markdown(text) for path, text in markdown.items()}
+        normalised = {
+            path: normalise_markdown(without_mineru_markup(text))
+            for path, text in markdown.items()
+        }
         return normalised, self._repair(normalised)
 
     def _repair(self, markdown: dict[Path, str]) -> dict[Path, int]:
@@ -359,20 +410,23 @@ class MineruConverter:
 
     def _run(
         self,
-        staged_dir: Path,
+        staged: list[Path],
         output_dir: Path,
-        document_count: int,
     ) -> subprocess.CompletedProcess[str]:
+        document_count = len(staged)
         # The resolved path, not the bare name: a subprocess given the name
         # resolves it against PATH again, which is exactly where it is not.
+        # Never `--remote`, which uploads the document to mineru.net.
         command = [
-            _executable(self.name) or self.name,
-            "-p",
-            str(staged_dir),
+            _executable(_EXECUTABLE) or _EXECUTABLE,
+            "parse",
+            *(str(path) for path in staged),
             "-o",
             str(output_dir),
-            "-b",
-            self.options.backend,
+            "--format",
+            "zip",
+            "--tier",
+            self.options.tier,
         ]
         timeout_seconds = _STARTUP_GRACE_SECONDS + (
             _SECONDS_PER_DOCUMENT * document_count
@@ -407,12 +461,20 @@ class MineruConverter:
         # Explicitly, rather than trusting that the `kennis` package was
         # imported before whatever started this run (#687).
         environment = dict(os.environ) | LIBRARY_TELEMETRY_OFF
-        for setting, variable in _ENVIRONMENT_VARIABLES.items():
-            value = getattr(self.options, setting)
-            if value == _AUTO:
+        environment["COLUMNS"] = _REPORT_COLUMNS
+        for variables in _DEVICE_VARIABLES.values():
+            for variable in variables:
                 environment.pop(variable, None)
+        environment |= _DEVICE_VARIABLES.get(self.options.device, {})
+        for variable in _THREAD_VARIABLES:
+            if self.options.threads:
+                environment[variable] = str(self.options.threads)
             else:
-                environment[variable] = value
+                environment.pop(variable, None)
+        if self.options.model_source == _AUTO:
+            environment.pop(_MODEL_SOURCE_VARIABLE, None)
+        else:
+            environment[_MODEL_SOURCE_VARIABLE] = self.options.model_source
         return environment
 
 
@@ -484,6 +546,7 @@ class DatalabConverter:
         self._poll_seconds = poll_seconds
         self._max_polls = max_polls
         self._mode = mode
+        self.variant: str = mode
 
     def is_available(self) -> bool:
         """A key is the whole requirement. There is nothing to install."""
@@ -695,15 +758,21 @@ def default_converter() -> Converter:
     conversion = load_settings().conversion
     if conversion.backend == "datalab":
         return DatalabConverter(mode=conversion.mode)
-    return MineruConverter(repair_ligatures=conversion.repair_ligatures)
+    return MineruConverter(
+        MineruOptions(
+            quality=conversion.quality,
+            device=conversion.device,
+            threads=conversion.threads,
+        ),
+        repair_ligatures=conversion.repair_ligatures,
+    )
 
 
 def _stage(paths: Sequence[Path], staged_dir: Path) -> dict[str, Path]:
     """Present a batch as one directory, and map the output back.
 
-    `-p` takes a single path, so several documents can only be handed over as
-    a directory. They are renamed on the way in because MinerU names its
-    output directory after the input's stem: two `README.pdf` from different
+    They are renamed on the way in because MinerU names its output after
+    the input's stem: two `README.pdf` from different
     folders would otherwise write to the same place and one would silently
     win. Hard-linked where the filesystem allows it, since the alternative is
     copying every source into the temporary directory.
@@ -725,35 +794,67 @@ def _stage(paths: Sequence[Path], staged_dir: Path) -> dict[str, Path]:
 
 
 def _collect(
-    staged: dict[str, Path], output_dir: Path
+    staged: dict[str, Path], output_dir: Path, unpacked: Path
 ) -> tuple[dict[Path, str], dict[Path, str], dict[Path, dict[str, bytes]]]:
     """The markdown, page-one text and linked images MinerU produced, keyed
     by original path.
 
-    MinerU nests each document's output under a directory named after its
-    input stem, at a depth that varies by version and backend, so the markdown
-    is found by searching that directory rather than at a fixed path. A run
-    can leave more than one markdown file there; the largest is the document.
-
-    The images are read relative to **that file's own directory**, which is
-    what its links are relative to: MinerU names a figure the same in two
-    documents' directories when it likes, so a name alone does not say whose
-    it is.
+    One `<stem>.zip` per document that converted; a document with none
+    failed, and its absence is its failure alone. Each is unpacked into a
+    directory of its own, because the images are read relative to **that
+    document's** markdown, which is what its links are relative to: MinerU
+    names a figure the same in two documents when it likes, so a name alone
+    does not say whose it is.
     """
     markdown: dict[Path, str] = {}
     front_page: dict[Path, str] = {}
     images: dict[Path, dict[str, bytes]] = {}
     for stem, original in staged.items():
-        produced = sorted((output_dir / stem).rglob("*.md"))
-        if not produced:
+        archive = output_dir / f"{stem}.zip"
+        if not archive.is_file():
             continue
-        largest = max(produced, key=lambda candidate: candidate.stat().st_size)
-        text = largest.read_text(encoding="utf-8", errors="replace")
-        markdown[original], linked = kept_images(text, largest.parent)
+        folder = unpacked / stem
+        try:
+            with zipfile.ZipFile(archive) as opened:
+                # `extractall` drops a member's leading `/` and its `..`
+                # parts, so nothing is written outside `folder`.
+                opened.extractall(folder)
+        except (zipfile.BadZipFile, OSError):
+            continue
+        produced = folder / "markdown.md"
+        if not produced.is_file():
+            continue
+        text = produced.read_text(encoding="utf-8", errors="replace")
+        markdown[original], linked = kept_images(text, folder)
         if linked:
             images[original] = linked
-        front_page[original] = _front_page_text(largest)
+        front_page[original] = _front_page_text(folder / "structured_content.json")
     return markdown, front_page, images
+
+
+# MinerU 4's wrapper around a footnote or a margin note in its markdown:
+# `<small><span class="docvortex-page-footnote" data-block-type=...
+# style="color:...">text</span></small>`. The text is the document's; the
+# wrapper is presentation, and an inline style a page would refuse to draw.
+_WRAPPED_NOTE: Final = re.compile(
+    r"(?:<small>)?<span class=\"docvortex-[^\"]*\"[^>]*>(.*?)</span>(?:</small>)?",
+    re.DOTALL,
+)
+
+# What the fastest tier writes after every figure instead of reading it:
+# a block whose only sentence is a stock one. Removed only when it says
+# exactly that, so a block that holds anything else is left alone.
+_FIGURE_PLACEHOLDER: Final = re.compile(
+    r"<details>\s*<summary>image content</summary>\s*"
+    r"(?:Figure \S+\s+)?For image description, please refer to the figure "
+    r"legend and surrounding text\.\s*</details>\n?",
+)
+
+
+def without_mineru_markup(text: str) -> str:
+    """MinerU 4's markdown with its note wrappers unwrapped and the fastest
+    tier's figure placeholders removed; nothing else changed."""
+    return _FIGURE_PLACEHOLDER.sub("", _WRAPPED_NOTE.sub(r"\1", text))
 
 
 # How often a converter's wait looks for a cancellation.
@@ -835,12 +936,19 @@ def _end_group(process: subprocess.Popen[str]) -> None:
 def _failure_reason(completed: subprocess.CompletedProcess[str]) -> str:
     """The human-readable reason out of a failed run.
 
-    MinerU reports task failures as a JSON blob on one line, far too noisy to
-    hand a user verbatim; its `error` field is the part that says what went
-    wrong. Falls back to the last line of output when the blob is not JSON,
-    and to the exit code when there is no output at all.
+    MinerU 4 names each document it could not convert on an `Error:` line
+    and ends with a summary that says only how many, so those lines are the
+    reason. Otherwise a JSON blob's `error` field, then the last line of
+    output, then the exit code when there is no output at all.
     """
     output = (completed.stderr or "") + "\n" + (completed.stdout or "")
+    errors = [
+        line.strip().removeprefix("Error:").strip()
+        for line in output.splitlines()
+        if line.strip().startswith("Error:")
+    ]
+    if errors:
+        return "; ".join(errors)
     for line in reversed(output.strip().splitlines()):
         start = line.find("{")
         if start == -1:
@@ -857,82 +965,35 @@ def _failure_reason(completed: subprocess.CompletedProcess[str]) -> str:
     return lines[-1].strip() if lines else f"exit code {completed.returncode}"
 
 
-def _front_page_text(markdown_path: Path) -> str:
+def _front_page_text(structured: Path) -> str:
     """Everything MinerU read off page one, including what it did not render.
 
-    A paper's own identifier is systematically *absent* from the converted
-    markdown, because MinerU classifies the `arXiv:...` stamp as page
-    furniture and furniture is not body text. It survives in the content list
+    A paper's own identifier is often *absent* from the converted markdown,
+    because MinerU classifies the `arXiv:...` stamp as page furniture, and
+    furniture is not body text. It survives in `structured_content.json`
     beside the markdown, which is the only reason a local PDF can be
-    identified at all.
+    identified at all. Furniture first, then the page's other blocks.
 
     Only page one. A bibliography offers dozens of other people's identifiers
     and every one of them is a wrong answer, so the search is confined to the
     page where a paper states its own.
     """
-    for suffix in ("_content_list_v2.json", "_content_list.json"):
-        path = markdown_path.with_name(f"{markdown_path.stem}{suffix}")
-        if not path.is_file():
-            continue
-        try:
-            parsed = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(parsed, list):
-            continue
-        return (
-            _front_page_of_v2(parsed)
-            if suffix.endswith("_v2.json")
-            else _front_page_of_v1(parsed)
-        )
-    return ""
-
-
-def _front_page_of_v2(pages: list[Any]) -> str:
-    """First-page text from a `_content_list_v2.json`, furniture first."""
+    try:
+        parsed = json.loads(structured.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    pages = parsed.get("pages") if isinstance(parsed, dict) else None
+    if not isinstance(pages, list) or not pages or not isinstance(pages[0], dict):
+        return ""
+    blocks = pages[0].get("blocks")
     furniture: list[str] = []
     body: list[str] = []
-    for block in pages[0] if pages and isinstance(pages[0], list) else []:
+    for block in blocks if isinstance(blocks, list) else []:
         if not isinstance(block, dict):
             continue
-        text = _v2_block_text(block)
-        if not text:
+        content = block.get("content")
+        if not isinstance(content, str) or not content.strip():
             continue
         target = furniture if block.get("type") in _FURNITURE_TYPES else body
-        target.append(text)
+        target.append(content)
     return "\n".join(furniture + body)
-
-
-def _v2_block_text(block: dict[str, Any]) -> str:
-    """The plain text of one v2 content block, whatever kind it is.
-
-    v2 nests a block's pieces under a key named after the block's own type
-    (`{"type": "page_header", "content": {"page_header_content": [...]}}`), so
-    the key has to be built from the type rather than looked up by name.
-    """
-    kind = str(block.get("type", ""))
-    content = block.get("content")
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, dict):
-        return ""
-    pieces = content.get(f"{kind}_content")
-    if not isinstance(pieces, list):
-        return ""
-    return " ".join(
-        str(piece.get("content", "")) for piece in pieces if isinstance(piece, dict)
-    )
-
-
-def _front_page_of_v1(blocks: list[Any]) -> str:
-    """First-page text from the older flat `_content_list.json`.
-
-    v1 has no notion of furniture - every block is `text` or `image` with a
-    `page_idx` - so the ordering v2 allows is not available here. It still
-    carries the aside the markdown drops, which is the part that matters.
-    """
-    return "\n".join(
-        str(block.get("text", ""))
-        for block in blocks
-        if isinstance(block, dict) and block.get("page_idx") == 0 and block.get("text")
-    )

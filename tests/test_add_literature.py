@@ -132,6 +132,7 @@ class FrontPageConverter:
     """
 
     name = "front-page"
+    variant = ""
     formats = frozenset({"pdf", "docx", "pptx", "xlsx"})
 
     def __init__(self, front_pages: dict[str, str] | None = None) -> None:

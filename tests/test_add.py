@@ -39,6 +39,7 @@ class CountingConverter:
     """
 
     name = "counting"
+    variant = ""
     formats = frozenset({"pdf", "docx", "pptx", "xlsx"})
 
     def __init__(self, failing: frozenset[str] = frozenset()) -> None:

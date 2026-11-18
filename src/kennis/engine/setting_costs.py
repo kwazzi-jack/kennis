@@ -64,6 +64,9 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "corpus.default_group": ("next_add",),
     "conversion.repair_ligatures": ("next_add",),
     "conversion.batch_size": ("next_add",),
+    "conversion.quality": ("next_add",),
+    "conversion.device": ("next_add",),
+    "conversion.threads": ("next_add",),
     "literature.request_delay": ("next_add",),
     "literature.citation_style": ("next_cite",),
     # Read by each command as it starts; the window prints no hints.

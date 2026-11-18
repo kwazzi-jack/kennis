@@ -30,24 +30,21 @@ uv tool install "kennis[mcp]"         # and the MCP server for agents
 Install the `mcp` extra if you mean to connect an AI agent; without it,
 `kennis serve` refuses and names the command above.
 
-### On a machine with no NVIDIA GPU
+### PDF conversion
 
 kennis converts PDFs, DOCX, PPTX and XLSX locally with MinerU, which is part
-of the install. It is the large part: MinerU brings PyTorch, and on Linux the
-CUDA libraries with it, a download of several gigabytes. PyTorch's CPU build
-is a few hundred megabytes instead:
+of the install. It runs its models on ONNX Runtime and llama.cpp, so on
+Linux and Windows it needs no PyTorch; on a Mac with Apple Silicon MinerU
+brings PyTorch itself. MinerU has no build for an Intel Mac, so kennis
+cannot convert PDFs there.
 
-```
-uv tool install kennis \
-  --index https://download.pytorch.org/whl/cpu \
-  --index-strategy unsafe-best-match
-```
-
-The second flag is needed because PyTorch's index also carries old copies of
-ordinary packages such as `packaging`, and uv otherwise takes every version
-of a package from the first index that lists it. With it, uv chooses the
-best version from both indexes, which is safe only because both are run by
-parties you already trust with the install.
+The first conversion downloads MinerU's models, about 2 GB, from Hugging
+Face, and later conversions use the copy kept in `~/.mineru`. A graphics
+card is used where MinerU finds one (Vulkan on Linux and Windows, Metal on
+a Mac); nothing else is needed for it. Three settings, `conversion.quality`,
+`conversion.device` and `conversion.threads`, choose how carefully it reads,
+whether it uses the graphics card, and how many processor threads it may
+take: see the [configuration reference](../reference/configuration.md).
 
 ## Check it
 

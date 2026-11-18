@@ -61,6 +61,7 @@ BODY = "\n\n".join(
 
 class FigureConverter:
     name = "figures"
+    variant = ""
     formats = frozenset({"pdf"})
 
     def is_available(self) -> bool:

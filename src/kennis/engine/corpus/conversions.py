@@ -6,8 +6,10 @@ An add is prepared in a mirror that is discarded when it fails
 again for minutes of MinerU, or for money with a hosted converter.
 `KeptConversions` wraps the converter an add uses and keeps each result
 under `.git/kennis-conversions/` - inside `.git` so no commit stages it -
-named by the converter and the source's sha256, since two converters write
-different markdown for one PDF and a renamed file is the same document.
+named by the converter, its variant (MinerU's tier, Datalab's mode) and
+the source's sha256, since two converters - or one at two qualities -
+write different markdown for one PDF, and a renamed file is the same
+document (#526).
 An entry holds the images the markdown links as well, as base64 in the same
 JSON document, because markdown answered without them is a paper whose
 figures point at nothing (#134).
@@ -46,6 +48,7 @@ class KeptConversions:
 
     def __init__(self, inner: Converter, folder: Path) -> None:
         self.name: str = inner.name
+        self.variant: str = inner.variant
         self.formats: frozenset[SourceFormat] = inner.formats
         self._inner = inner
         self._folder = folder
@@ -115,7 +118,8 @@ class KeptConversions:
         )
 
     def _entry_for(self, path: Path) -> Path:
-        return self._folder / f"{self.name}-{sha256_of(path.read_bytes())}.json"
+        digest = sha256_of(path.read_bytes())
+        return self._folder / f"{self.name}-{self.variant}-{digest}.json"
 
 
 def forget_old_conversions(corpus_root: Path, *, now: float | None = None) -> int:

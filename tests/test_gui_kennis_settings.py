@@ -49,6 +49,9 @@ EXPECTED_GROUPS = {
     ],
     "Converting documents": [
         "conversion.backend",
+        "conversion.quality",
+        "conversion.device",
+        "conversion.threads",
         "conversion.repair_ligatures",
         "conversion.batch_size",
     ],

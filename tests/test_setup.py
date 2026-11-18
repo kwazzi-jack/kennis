@@ -631,6 +631,8 @@ WALK = [
     "embedding.model",
     "embedding.api_key",
     "conversion.backend",
+    "conversion.quality",
+    "conversion.device",
     "conversion.mode",
     "conversion.api_key",
     "retrieval.corpus_method",

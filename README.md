@@ -39,11 +39,10 @@ uv tool install kennis                # the command line, the window and PDF con
 uv tool install "kennis[mcp]"         # and the MCP server for agents
 ```
 
-PDF conversion is the large part of the install: MinerU brings PyTorch, and
-on Linux the CUDA libraries, several gigabytes. The
+PDF conversion runs locally with MinerU, which downloads its models (about
+2 GB) the first time it converts. The
 [install guide](https://kwazzi-jack.github.io/kennis/getting-started/install/)
-says how to take PyTorch's CPU build instead, which is a few hundred
-megabytes.
+says what it needs and which settings choose its quality and device.
 
 ## A first corpus
 

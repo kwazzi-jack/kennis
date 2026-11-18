@@ -25,52 +25,111 @@ from kennis.engine.settings import state_dir
 from kennis.protocol.record import find_service
 from platforms import NO_POSIX_SHELL
 
-# A fake MinerU. It parses the flags the converter passes, writes one markdown
-# file per staged input in the nested layout the real tool produces, and can
-# be told to fail one document or all of them. With `MINERU_FAKE_IMAGES` set
-# it also writes what the real tool writes for a paper with a figure: an
-# `images/` directory holding one file the markdown links and one it does
-# not, the first bytes of each those of a JPEG, which are not valid UTF-8.
-FAKE_MINERU = r"""#!/bin/sh
-set -e
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -p) input_dir="$2"; shift 2 ;;
-        -o) output_dir="$2"; shift 2 ;;
-        -b) backend="$2"; shift 2 ;;
-        -s|-e) shift 2 ;;
-        *) shift ;;
-    esac
-done
-figure=38a2f261a5eb2daa06e47cb49e72b197349af48cfa480a96e9b2356bffda6610.jpg
-echo "backend=$backend" >> "$MINERU_FAKE_LOG"
-echo "device=${MINERU_DEVICE_MODE-unset} source=${MINERU_MODEL_SOURCE-unset}" \
-    >> "$MINERU_FAKE_LOG"
-echo "onnx-telemetry=${ORT_DISABLE_TELEMETRY-unset}" >> "$MINERU_FAKE_LOG"
-echo "mineru-telemetry=${MINERU_TELEMETRY_DISABLED-unset}" >> "$MINERU_FAKE_LOG"
-for staged in "$input_dir"/*; do
-    stem=$(basename "$staged")
-    stem=${stem%.*}
-    case "$stem" in
-        *$MINERU_FAKE_SKIP*) continue ;;
-    esac
-    mkdir -p "$output_dir/$stem/auto"
-    printf '# %s\n\nConverted body.\n' "$stem" > "$output_dir/$stem/auto/$stem.md"
-    printf 'tiny\n' > "$output_dir/$stem/auto/${stem}_small.md"
-    printf '[{"type":"page_aside_text","page_idx":0,' > "$tmp_json"
-    printf '"text":"arXiv:1101.1764v2 [astro-ph.IM]"}]' >> "$tmp_json"
-    cp "$tmp_json" "$output_dir/$stem/auto/${stem}_content_list.json"
-    if [ -n "${MINERU_FAKE_IMAGES-}" ]; then
-        mkdir -p "$output_dir/$stem/auto/images"
-        printf '\377\330\377\340 figure of %s' "$stem" \
-            > "$output_dir/$stem/auto/images/$figure"
-        printf '\377\330\377\340 a crop nothing links' \
-            > "$output_dir/$stem/auto/images/crop.jpg"
-        printf '\n![](images/%s)  \nFigure 1. A caption.\n' "$figure" \
-            >> "$output_dir/$stem/auto/$stem.md"
-    fi
-done
-exit "${MINERU_FAKE_EXIT-0}"
+# A fake MinerU 4. `mineru-kit` is a /bin/sh wrapper that runs this script
+# with the interpreter running the tests. It parses the arguments the
+# converter passes, writes one `<stem>.zip` per input as the real tool does
+# with `--format zip` - `markdown.md` and `structured_content.json`, whose
+# page one carries an `aside_text` arXiv stamp - and can be told to fail one
+# document or all of them. With `MINERU_FAKE_IMAGES` set the zip also holds
+# what the real tool writes for a paper with a figure: an `images/` file the
+# markdown links and one it does not, each starting with a JPEG's first
+# bytes, which are not valid UTF-8. With `MINERU_FAKE_MARKUP` the markdown
+# carries MinerU 4's footnote wrapper and flash's figure placeholder.
+FAKE_MINERU = r"""
+import json
+import os
+import sys
+import zipfile
+from pathlib import Path
+
+arguments = sys.argv[1:]
+assert arguments[0] == "parse", arguments
+inputs: list[str] = []
+options: dict[str, str] = {}
+flags: list[str] = []
+index = 1
+while index < len(arguments):
+    argument = arguments[index]
+    if argument in ("-o", "--output", "--format", "-f", "--tier", "--ocr-mode", "-p"):
+        options[argument] = arguments[index + 1]
+        index += 2
+    elif argument.startswith("--"):
+        flags.append(argument)
+        index += 1
+    else:
+        inputs.append(argument)
+        index += 1
+output = Path(options.get("-o") or options["--output"])
+output.mkdir(parents=True, exist_ok=True)
+environment = os.environ
+with open(environment["MINERU_FAKE_LOG"], "a", encoding="utf-8") as log:
+    log.write(f"run inputs={len(inputs)}\n")
+    log.write(f"tier={options.get('--tier', 'unset')}\n")
+    log.write(f"format={options.get('--format', options.get('-f', 'unset'))}\n")
+    log.write(f"flags={' '.join(flags)}\n")
+    for name in (
+        "MINERU_MODEL_ONNX_DEVICE",
+        "MINERU_LLAMA_CPP_BACKEND",
+        "MINERU_INTRA_OP_NUM_THREADS",
+        "MINERU_CPU_NUM_THREADS",
+        "MINERU_MODEL_SOURCE",
+    ):
+        log.write(f"{name}={environment.get(name, 'unset')}\n")
+    onnx = environment.get("ORT_DISABLE_TELEMETRY", "unset")
+    mineru = environment.get("MINERU_TELEMETRY_DISABLED", "unset")
+    log.write(f"onnx-telemetry={onnx}\n")
+    log.write(f"mineru-telemetry={mineru}\n")
+figure = "page_1_image_2.jpg"
+failed = 0
+for given in inputs:
+    stem = Path(given).stem
+    if environment.get("MINERU_FAKE_SKIP", "\0") in stem:
+        failed += 1
+        print(
+            f"Error: Failed to parse {given}: [file_corrupted] Failed to load",
+            file=sys.stderr,
+        )
+        continue
+    markdown = f"# {stem}\n\nConverted body.\n"
+    with zipfile.ZipFile(output / f"{stem}.zip", "w") as archive:
+        if environment.get("MINERU_FAKE_IMAGES"):
+            jpeg = b"\xff\xd8\xff\xe0"
+            archive.writestr(f"images/{figure}", jpeg + b" figure of " + stem.encode())
+            unlinked = jpeg + b" a crop nothing links"
+            archive.writestr("images/page_2_chart_1.jpg", unlinked)
+            markdown += f"\n![](images/{figure})  \nFigure 1. A caption.\n"
+        if environment.get("MINERU_FAKE_MARKUP"):
+            markdown += (
+                '\n<small><span class="docvortex-page-footnote"'
+                ' data-block-type="page_footnote" style="color:#6b7280">'
+                "E-mail: someone@example.org</span></small>\n"
+                "\n<details>\n<summary>image content</summary>\n\nFigure 2. For image "
+                "description, please refer to the figure legend and surrounding text.\n"
+                "</details>\n"
+            )
+        archive.writestr("markdown.md", markdown)
+        archive.writestr(
+            "structured_content.json",
+            json.dumps(
+                {
+                    "pages": [
+                        {
+                            "page_idx": 0,
+                            "blocks": [
+                                {"type": "doc_title", "content": stem},
+                                {
+                                    "type": "aside_text",
+                                    "content": "arXiv:1101.1764v2 [astro-ph.IM]",
+                                },
+                            ],
+                        }
+                    ],
+                    "metadata": {},
+                }
+            ),
+        )
+print(f"Batch finished: succeeded={len(inputs) - failed}, failed={failed}.")
+sys.exit(int(environment.get("MINERU_FAKE_EXIT", "1" if failed else "0")))
 """
 
 
@@ -308,7 +367,7 @@ def no_real_network(
 
 @pytest.fixture
 def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Put a fake `mineru` first on PATH and return the log it writes.
+    """Put a fake `mineru-kit` first on PATH and return the log it writes.
 
     Skipped rather than marked, so every test that takes this fixture is
     covered and so is the next one somebody writes. The reason is in
@@ -318,11 +377,12 @@ def fake_mineru(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         pytest.skip(NO_POSIX_SHELL)
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
-    script = binary_dir / "mineru"
+    script = binary_dir / "mineru-kit"
+    body = tmp_path / "fake_mineru.py"
     log = tmp_path / "mineru.log"
+    body.write_text(FAKE_MINERU, encoding="utf-8")
     script.write_text(
-        FAKE_MINERU.replace("$tmp_json", str(tmp_path / "content.json")),
-        encoding="utf-8",
+        f'#!/bin/sh\nexec "{sys.executable}" "{body}" "$@"\n', encoding="utf-8"
     )
     script.chmod(script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")

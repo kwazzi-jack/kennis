@@ -98,6 +98,10 @@ _ASKED: Final[tuple[tuple[str, QuestionKind, tuple[tuple[str, str], ...]], ...]]
     ("embedding.model", "text", (("embedding.backend", "openai"),)),
     ("embedding.api_key", "secret", (("embedding.backend", "openai"),)),
     ("conversion.backend", "choice", ()),
+    # What MinerU gives and where it runs: a laptop without a graphics card
+    # is where `fast` is worth asking about (#685).
+    ("conversion.quality", "choice", (("conversion.backend", "mineru"),)),
+    ("conversion.device", "choice", (("conversion.backend", "mineru"),)),
     # Before the key: the mode is a price, and nobody wants to retype a key
     # because a cheap question came after it.
     ("conversion.mode", "choice", (("conversion.backend", "datalab"),)),
@@ -130,6 +134,7 @@ _ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     ("corpus.keep_original", ()),
     ("corpus.default_group", ()),
     ("conversion.repair_ligatures", (("conversion.backend", "mineru"),)),
+    ("conversion.threads", (("conversion.backend", "mineru"),)),
     ("conversion.batch_size", ()),
     ("literature.request_delay", ()),
     ("literature.citation_style", ()),

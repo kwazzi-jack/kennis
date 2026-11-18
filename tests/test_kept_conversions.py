@@ -40,8 +40,9 @@ class CountingConverter:
 
     formats = frozenset({"pdf"})
 
-    def __init__(self, name: str = "counting") -> None:
+    def __init__(self, name: str = "counting", variant: str = "") -> None:
         self.name = name
+        self.variant = variant
         self.converted: list[Path] = []
 
     def is_available(self) -> bool:
@@ -112,6 +113,27 @@ def test_another_converter_does_not_reuse_a_conversion(tmp_path: Path):
     KeptConversions(other, tmp_path / "kept").convert([source])
 
     assert other.converted == [source]
+
+
+def test_a_conversion_kept_at_one_quality_is_not_answered_at_another(
+    tmp_path: Path,
+) -> None:
+    """`conversion.quality` changes what MinerU writes, and Datalab's mode
+    what it writes and charges, so the variant is part of what is kept
+    (#526): a person who asked for better text after a fast conversion must
+    not be handed the fast one again."""
+    source = a_pdf(tmp_path / "paper.pdf", b"%PDF one\n")
+    KeptConversions(CountingConverter("mineru", "basic"), tmp_path / "kept").convert(
+        [source]
+    )
+    better = CountingConverter("mineru", "standard")
+    same = CountingConverter("mineru", "basic")
+
+    KeptConversions(better, tmp_path / "kept").convert([source])
+    KeptConversions(same, tmp_path / "kept").convert([source])
+
+    assert better.converted == [source]
+    assert same.converted == []
 
 
 def test_a_kept_conversion_costs_nothing_again(tmp_path: Path):
