@@ -158,11 +158,12 @@ tool that changes anything. See
 
 ## Your data
 
-kennis keeps everything on your machine, has no telemetry, and sends a
-document to a third party only when you set a hosted backend and supply its
-key. Adding a paper or a site fetches from the host you name, and an agent
-connected through `kennis serve` passes what it reads to whatever its model
-runs on. The full list, with every host, is
+kennis keeps everything on your machine, has no telemetry and turns off the
+telemetry of the libraries it runs, and sends a document to a third party
+only when you set a hosted backend and supply its key. Adding a paper or a
+site fetches from the host you name, and an agent connected through
+`kennis serve` passes what it reads to whatever its model runs on. The full
+list, with every host, is
 [Your data: where it is kept and where it goes](https://kwazzi-jack.github.io/kennis/privacy/).
 
 ## Contributing

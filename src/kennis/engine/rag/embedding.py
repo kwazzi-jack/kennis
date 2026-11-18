@@ -42,6 +42,7 @@ from platformdirs import user_cache_dir
 from kennis.engine.errors import EmbeddingUnavailable, SettingsError
 from kennis.engine.events import FETCH_MODEL, EventSink, ItemStarted
 from kennis.engine.settings import credential, load_settings
+from kennis.telemetry import refuse_onnx_runtime_telemetry
 
 if TYPE_CHECKING:
     # Imported for the type only. The runtime import stays inside the
@@ -538,6 +539,10 @@ class _FastembedEmbedder:
         # Before the import, not after it: see `_quieten_downloads`.
         _quieten_downloads()
         from fastembed import TextEmbedding
+
+        # The environment variable is the switch on Linux and macOS; on
+        # Windows ONNX Runtime ignores it and this call is the switch (#687).
+        refuse_onnx_runtime_telemetry()
 
         with self._loading:
             if self._binding.model not in self._loaded:

@@ -77,6 +77,17 @@ NO_FILE_LIMIT = (
     "files, nor a /dev/fd to count them by (#11)"
 )
 
+# ONNX Runtime keeps its telemetry queue as files under the cache folder on
+# Linux and macOS, which is what the test looks for. On Windows it reports
+# through Windows' own event tracing and ignores `ORT_DISABLE_TELEMETRY`, so
+# there is no file to find; kennis calls `disable_telemetry_events()` there
+# instead, and that is checked by hand on a Windows machine (#687).
+NO_TELEMETRY_QUEUE = (
+    "on Windows ONNX Runtime reports through event tracing rather than a "
+    "queue of files, so the test has nothing to look for; checked by hand "
+    "on a Windows machine (#687)"
+)
+
 _WINDOWS = os.name == "nt"
 
 needs_a_posix_shell = pytest.mark.skipif(_WINDOWS, reason=NO_POSIX_SHELL)
@@ -84,6 +95,7 @@ needs_arrow_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_ARROW_IN_A_FILENA
 needs_file_modes = pytest.mark.skipif(_WINDOWS, reason=NO_FILE_MODES)
 needs_a_file_limit = pytest.mark.skipif(_WINDOWS, reason=NO_FILE_LIMIT)
 needs_unportable_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_UNPORTABLE_FILENAME)
+needs_a_telemetry_queue = pytest.mark.skipif(_WINDOWS, reason=NO_TELEMETRY_QUEUE)
 
 # What `test_platforms.py` iterates. A marker missing from here is one
 # nothing checks, so the guard asserts this names every marker the module
@@ -91,6 +103,7 @@ needs_unportable_filenames = pytest.mark.skipif(_WINDOWS, reason=NO_UNPORTABLE_F
 MARKERS = (
     needs_a_file_limit,
     needs_a_posix_shell,
+    needs_a_telemetry_queue,
     needs_arrow_filenames,
     needs_file_modes,
     needs_unportable_filenames,
@@ -102,9 +115,11 @@ __all__ = [
     "NO_FILE_LIMIT",
     "NO_FILE_MODES",
     "NO_POSIX_SHELL",
+    "NO_TELEMETRY_QUEUE",
     "NO_UNPORTABLE_FILENAME",
     "needs_a_file_limit",
     "needs_a_posix_shell",
+    "needs_a_telemetry_queue",
     "needs_arrow_filenames",
     "needs_file_modes",
     "needs_unportable_filenames",

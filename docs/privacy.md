@@ -1,8 +1,10 @@
 # Your data: where it is kept and where it goes
 
 kennis keeps everything it holds on your own machine, in folders you can
-open, and it has no account, no server of its own and no telemetry. Its
-author receives nothing from your use of it. Material leaves the machine in
+open, and it has no account, no server of its own and no telemetry of its
+own, and it turns off the telemetry of the libraries it runs (see
+[Libraries that report to their makers](#libraries-that-report-to-their-makers)).
+Its author receives nothing from your use of it. Material leaves the machine in
 exactly the ways listed on this page, and most of them happen only after
 you ask for them.
 
@@ -82,6 +84,38 @@ if the agent uses a hosted model, the provider receives every passage the
 agent reads. That is a property of the agent you connect, not of kennis,
 and it applies to any document kennis holds. The agent's `remember` tool
 writes notes into the corpus or the bundle.
+
+### Libraries that report to their makers
+
+kennis runs two libraries that collect telemetry unless told not to, and
+from v0.15.0 it tells them not to, whatever your environment says.
+
+- **ONNX Runtime**, Microsoft's engine for running models, which kennis
+  uses through `fastembed` (the default embedding backend) and which
+  MinerU uses in every conversion. From its version 1.29 it writes a
+  device identifier and a queue of events under your cache folder
+  (`~/.cache/Microsoft/DeveloperTools/.onnxruntime/` on Linux) as soon as
+  it is loaded, and posts them to `mobile.events.data.microsoft.com`:
+  your operating system and processor, your network type, the names of
+  the models it runs, and the full path of the Python that ran it, which
+  usually contains your account name. kennis sets
+  `ORT_DISABLE_TELEMETRY=1` in its own process and in every converter it
+  starts, which stops all of it on Linux and macOS, and calls ONNX
+  Runtime's own off switch on Windows, where the variable is ignored.
+- **MinerU** keeps a telemetry of its own from its version 4; kennis
+  sets `MINERU_TELEMETRY_DISABLED=1` for it.
+
+**kennis v0.14.0 and earlier did not do this**, and every one of those
+releases installed an ONNX Runtime that reports, so using `fastembed` or
+converting a PDF sent those events. If you used one, the folder above may
+still hold a queue that any program using ONNX Runtime without the switch
+will send; deleting the folder removes the queue and the identifier.
+
+Microsoft describes this telemetry in ONNX Runtime's
+[privacy notice](https://github.com/microsoft/onnxruntime/blob/v1.30.0/docs/Privacy.md), which
+says it is on by default in the official builds.
+[An independent measurement of it on Linux](https://research.strata2signal.com/onnx-runtime-telemetry-on-linux/)
+lists what the events contain and how each way of turning it off behaves.
 
 ### Things you share yourself
 
