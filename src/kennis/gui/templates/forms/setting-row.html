@@ -3,7 +3,11 @@
    and `form_class` the form whose `[data-redraw]` fields it sends. #}
 {% from "tip.html" import tip %}
 <div class="setting{% if setting.order %} setting-wide{% endif %}" data-key="{{ setting.key }}">
-<div class="setting-head"><label class="setting-name" for="setting-{{ setting.key }}">{{ setting.name }}</label> {{ tip("setting-" ~ setting.key, setting.name, setting.tip) }}</div>
+<div class="setting-head"><label class="setting-name" for="setting-{{ setting.key }}">{{ setting.name }}</label> {{ tip("setting-" ~ setting.key, setting.name, setting.tip) }}{% if setting.reset_label %}
+{# Back to the default (#666): the server redraws the section with this
+   setting at its default, and nothing is written until Save. It needs
+   htmx, so it is hidden until `reset.js` shows it. #}
+<button type="button" class="ghost setting-reset" name="reset" value="{{ setting.key }}" aria-label="{{ setting.reset_label }}" title="{{ setting.reset_label }}" hidden hx-get="{{ redraw_address }}" hx-include=".{{ form_class }} [data-redraw]" hx-target="closest section" hx-swap="outerHTML">{{ icon("history") }}</button>{% endif %}</div>
 <div class="setting-control">
 {% if setting.kind == "choice" %}
 <select id="setting-{{ setting.key }}" name="{{ setting.key }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw hx-get="{{ redraw_address }}" hx-trigger="change" hx-include=".{{ form_class }} [data-redraw]" hx-target="closest section" hx-swap="outerHTML">
@@ -12,7 +16,7 @@
 {% elif setting.kind == "secret" %}
 <input id="setting-{{ setting.key }}" type="password" name="{{ setting.key }}" autocomplete="off">
 {% elif setting.kind == "integer" or setting.kind == "number" %}
-<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.kind == "number" %} step="any"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}{% if setting.redraws %} hx-get="{{ redraw_address }}" hx-trigger="change" hx-include=".{{ form_class }} [data-redraw]" hx-target="closest section" hx-swap="outerHTML"{% endif %}>
+<input id="setting-{{ setting.key }}" type="number" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.placeholder %} placeholder="{{ setting.placeholder }}"{% endif %}{% if setting.kind == "number" %} step="any"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw{% if setting.minimum is not none %} min="{{ setting.minimum }}"{% endif %}{% if setting.maximum is not none %} max="{{ setting.maximum }}"{% endif %}{% if setting.redraws %} hx-get="{{ redraw_address }}" hx-trigger="change" hx-include=".{{ form_class }} [data-redraw]" hx-target="closest section" hx-swap="outerHTML"{% endif %}>
 {% elif setting.kind == "boolean" %}
 {# An unticked box sends nothing, and nothing means "keep": the hidden
    `false` comes first, so a ticked box's `true` is the later value and
@@ -20,7 +24,7 @@
 <input type="hidden" name="{{ setting.key }}" value="false"{% if setting.overridden_by %} disabled{% endif %} data-redraw>
 <input id="setting-{{ setting.key }}" type="checkbox" name="{{ setting.key }}" value="true"{% if setting.value == "true" %} checked{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
 {% else %}
-<input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
+<input id="setting-{{ setting.key }}" type="text" name="{{ setting.key }}" value="{{ setting.value }}"{% if setting.placeholder %} placeholder="{{ setting.placeholder }}"{% endif %}{% if setting.overridden_by %} disabled aria-describedby="overridden-{{ setting.key }}"{% endif %} data-redraw>
 {% if setting.order and not setting.overridden_by %}
 {# An ordered list, as chips (#670). The field above is the setting and
    all there is without a script; `order.js` shows these, hides it, and

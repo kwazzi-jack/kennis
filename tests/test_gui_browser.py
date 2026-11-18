@@ -1879,3 +1879,83 @@ def test_the_second_of_two_equal_phrases_is_annotated_and_drawn_there(
     (drawn,) = page.evaluate("window.kennisAnnotations()")
     assert " ".join(drawn["text"].split()) == "gains drift slowly"
     assert drawn["before"].endswith("Later the ")
+
+
+# ---------------------------------------------------------------------------
+# A setting back to its default (#666)
+# ---------------------------------------------------------------------------
+
+
+def _reset_of(page: playwright.Page, key: str) -> playwright.Locator:
+    return page.locator(f'.setting[data-key="{key}"] .setting-reset')
+
+
+def test_a_reset_button_puts_a_choice_back_and_save_writes_it(
+    page: playwright.Page, address: str
+) -> None:
+    from kennis.engine.settings import load_settings
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({"conversion.quality": "fast"})
+    _open_settings(page, address, "documents")
+    quality = page.locator('select[name="conversion.quality"]')
+    assert quality.input_value() == "fast"
+    assert not _reset_of(page, "conversion.device").count()
+
+    _reset_of(page, "conversion.quality").click()
+    page.wait_for_function(
+        "() => document.querySelector('select[name=\"conversion.quality\"]')"
+        ".value === 'best'",
+        timeout=_WAIT_MS,
+    )
+
+    assert load_settings().conversion.quality == "fast", "a reset writes nothing"
+    assert not _reset_of(page, "conversion.quality").count()
+    page.click(".save-bar button[type=submit]")
+    page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
+    assert load_settings().conversion.quality == "best"
+    assert page.locator(".save-bar .outcome").inner_text() == words.back_to_default(
+        [words.SETTING_NAMES["conversion.quality"]]
+    )
+
+
+def test_a_reset_button_puts_the_chips_back(
+    page: playwright.Page, address: str
+) -> None:
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({_ORDER_KEY: "notes docs"})
+    _open_settings(page, address, "searching")
+    assert _order_field(page) == "notes docs"
+
+    _reset_of(page, _ORDER_KEY).click()
+    page.wait_for_function(
+        f"() => document.querySelector('input[name=\"{_ORDER_KEY}\"]').value"
+        " === 'context literature docs notes annotations'",
+        timeout=_WAIT_MS,
+    )
+
+    assert page.locator(".order-chips").is_visible()
+    assert _chips(page) == ["context", "literature", "docs", "notes", "annotations"]
+    assert page.locator(".order-chip[data-left-out]").count() == 0
+
+
+def test_an_emptied_field_is_saved_as_its_default(
+    page: playwright.Page, address: str
+) -> None:
+    from kennis.engine.settings import load_settings
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({"literature.request_delay": "15"})
+    _open_settings(page, address, "documents")
+    field = page.locator('input[name="literature.request_delay"]')
+    assert field.get_attribute("placeholder") == words.default_placeholder("3.0")
+
+    field.fill("")
+    page.click(".save-bar button[type=submit]")
+    page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
+
+    assert load_settings().literature.request_delay == 3.0
+    assert page.locator(".save-bar .outcome").inner_text() == words.back_to_default(
+        [words.SETTING_NAMES["literature.request_delay"]]
+    )
