@@ -132,6 +132,12 @@ class ShownSetting:
     # For a setting that is an ordered list: every name it may hold, as
     # chips a script lets the reader drag. Empty for every other setting.
     order: tuple[ShownChip, ...] = ()
+    # What an emptied field is saved as, said in it (#666); and whether a
+    # reset button is drawn beside it - only when the value differs from
+    # the default and the reader may change it - with its label.
+    placeholder: str = ""
+    default: str = ""
+    reset_label: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,22 +177,36 @@ def shown_settings(
     found = problems or {}
     offers = _offers()
     questions = offered(answers, every=every)
+    # A field sent back empty stays empty, on a redraw and on a refused
+    # save: refilled with the value in force, it would undo what the reader
+    # did (#666). Only a field that can be emptied; a key is never drawn.
+    emptied = {
+        question.key
+        for question in questions
+        if question.kind in _EMPTIABLE and answers.get(question.key) == ""
+    }
     values = {
         question.key: _typed(question, answers, offers.get(question.key, set()))
         or question.suggested
         for question in questions
     }
-    return [
+    shown = [
         _with_fit(
             _shown(
                 question,
                 _typed(question, answers, offers.get(question.key, set())),
                 found.get(question.key, ""),
+                emptied=question.key in emptied,
             ),
             values,
         )
         for question in questions
     ]
+    if every:
+        return shown
+    # The setup walk reads an empty field as keep, so it says no default
+    # and offers no reset: either would promise what its save does not do.
+    return [replace(setting, placeholder="", reset_label="") for setting in shown]
 
 
 def _with_fit(setting: ShownSetting, values: Mapping[str, str]) -> ShownSetting:
@@ -233,12 +253,17 @@ def _typed(question: Question, answers: Answers, offers: set[str]) -> str:
     return "" if value in offers else value
 
 
-def changed_answers(answers: Answers, *, every: bool = True) -> dict[str, str]:
+def changed_answers(
+    answers: Answers, *, every: bool = True, empty_is_default: bool = False
+) -> dict[str, str]:
     """The answers that differ from what is in force.
 
-    An unchanged value is not written, because writing it would pin a
-    default into the file and a later change of default would not reach it.
-    An empty answer means keep, as it does in `config init`.
+    An empty answer means keep, as it does in `config init` - unless
+    `empty_is_default`, which the settings page asks for: there every field
+    is drawn holding its value, so one sent back empty was emptied, and
+    means the setting's default (#666). Only a field sent: a tab posts its
+    own, and the others' absence still means keep. Never a key, whose field
+    is always drawn empty.
     """
     changed: dict[str, str] = {}
     for question in offered(answers, every=every):
@@ -246,6 +271,16 @@ def changed_answers(answers: Answers, *, every: bool = True) -> dict[str, str]:
         # The environment decides it, so writing the file would say
         # "Saved." and change nothing the reader can see.
         if question.kind != "secret" and overriding_variable(question.key):
+            continue
+        if (
+            empty_is_default
+            and not value
+            and question.key in answers
+            and question.kind != "secret"
+        ):
+            value = question.default
+            if value != question.current:
+                changed[question.key] = value
             continue
         if value and value != question.current:
             changed[question.key] = value
@@ -308,9 +343,18 @@ def setting_address(key: str) -> str:
     return f"/settings?tab={tab}#setting-{key}"
 
 
-def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
+# The kinds whose field a reader can empty: a choice always holds one of
+# its options, a box sends `false` beneath it, and a key is never drawn.
+_EMPTIABLE: Final = frozenset({"text", "integer", "number"})
+
+
+def _shown(
+    question: Question, typed: str, problem: str, *, emptied: bool = False
+) -> ShownSetting:
     secret = question.kind == "secret"
-    value = "" if secret else typed or question.suggested
+    value = "" if secret or emptied else typed or question.suggested
+    # What the row will be saved as: an emptied field is the default.
+    effective = question.default if emptied else value
     labels = words.SETTING_CHOICES.get(question.key, {})
     # A key with no cost recorded is one only the setup wizard offers -
     # `corpus.root`, before there is a corpus to move (#682) - so there is
@@ -338,7 +382,28 @@ def _shown(question: Question, typed: str, problem: str) -> ShownSetting:
         install_hint=_missing_converter(question.key, value),
         overridden_by="" if secret else overriding_variable(question.key) or "",
         order=_chips(question.key, value),
+        placeholder=(
+            words.default_placeholder(question.default)
+            if question.kind in _EMPTIABLE
+            else ""
+        ),
+        default=question.default,
+        reset_label=(
+            words.reset_label(
+                words.SETTING_NAMES[question.key],
+                _choice_label(question, question.default),
+            )
+            if not secret
+            and not overriding_variable(question.key)
+            and effective != question.default
+            else ""
+        ),
     )
+
+
+def _choice_label(question: Question, value: str) -> str:
+    """A value as the row names it: a choice by its label, else as is."""
+    return words.SETTING_CHOICES.get(question.key, {}).get(value, value)
 
 
 def _sentence(question: Question) -> str:

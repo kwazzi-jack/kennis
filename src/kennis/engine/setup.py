@@ -66,6 +66,11 @@ class Question:
     differ only for the model asked under a backend not in force (#441). A
     front end offers `suggested`, and compares an answer with `current` to
     say what changed; every setting is written either way (#445).
+
+    `default` is what kennis holds when the file says nothing: the model's
+    own default, or for the model asked under a backend that backend's own
+    (`EMBEDDING_DEFAULTS`). What a front end puts back when the reader asks
+    for the default (#666). Empty for a key, which has none.
     """
 
     key: str
@@ -73,6 +78,7 @@ class Question:
     description: str
     current: str = ""
     suggested: str = ""
+    default: str = ""
     options: tuple[str, ...] = ()
     minimum: int | None = None
     maximum: int | None = None
@@ -334,6 +340,7 @@ def _question(
         description=field.description or key,
         current=_current(key, settings),
         suggested=_suggested(key, when, settings),
+        default=_default(key, when, field),
         options=_options_of(field.annotation),
         minimum=lower,
         maximum=upper,
@@ -349,12 +356,30 @@ def _field_of(key: str) -> FieldInfo:
     return annotation.model_fields[name]
 
 
-def _current(key: str, settings: Settings) -> str:
-    section, _, name = key.partition(".")
-    value = getattr(getattr(settings, section), name)
+def _as_text(value: object) -> str:
+    """A setting's value as a front end writes and compares it."""
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _current(key: str, settings: Settings) -> str:
+    section, _, name = key.partition(".")
+    return _as_text(getattr(getattr(settings, section), name))
+
+
+def _default(key: str, when: tuple[tuple[str, str], ...], field: FieldInfo) -> str:
+    """What `key` holds when the file says nothing about it.
+
+    The model asked under a backend defaults to that backend's own model:
+    the field's single default is fastembed's, and putting it back under
+    OpenAI would name a model OpenAI does not serve.
+    """
+    backend = dict(when).get("embedding.backend")
+    model = EMBEDDING_DEFAULTS.get(backend or "")
+    if key == "embedding.model" and model:
+        return model
+    return _as_text(field.get_default(call_default_factory=True))
 
 
 def _suggested(key: str, when: tuple[tuple[str, str], ...], settings: Settings) -> str:

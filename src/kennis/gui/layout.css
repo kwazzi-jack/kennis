@@ -786,6 +786,11 @@ main {
 .setting-sentence { grid-column: 1; margin: 0; font-size: 0.8125rem; }
 /* A setting's name and the info tip beside it, as one item of the row. */
 .setting-head { grid-column: 1; display: flex; align-items: center; gap: 0.3rem; }
+/* Back to the default (#666), beside the name it is for. The layout of a
+   button holding an icon sets its `display`, which would draw it before a
+   script can make it work. */
+.setting-reset { padding: 0.15rem; }
+.setting-reset[hidden] { display: none; }
 /* A list of radios, one to a line, for options carrying more than a
    word: the bar colours' swatches. */
 .radio-list {

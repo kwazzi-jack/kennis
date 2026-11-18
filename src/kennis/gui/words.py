@@ -602,6 +602,25 @@ def credential_tip(backend: str, file_name: str, kept: str) -> str:
     )
 
 
+def default_placeholder(default: str) -> str:
+    """What an empty field says it will be saved as (#666): on the
+    settings page an emptied field is the setting's default."""
+    return f"Default: {default}" if default else "Empty by default"
+
+
+def reset_label(name: str, default: str) -> str:
+    """The reset button beside a setting, named for a screen reader and
+    shown as its tip: the button is an icon alone."""
+    shown = default if default else "empty"
+    return f"Reset {name} to its default ({shown})"
+
+
+def back_to_default(names: list[str]) -> str:
+    """The outcome of a save that put settings back to their defaults: the
+    page cannot show a change before it is saved, so it says it after."""
+    return f"Saved. Back to the default: {', '.join(names)}."
+
+
 def chip_included(name: str) -> str:
     """A chip's tick box, named for a screen reader."""
     return f"Include {name}"
@@ -2485,6 +2504,7 @@ __all__ = [
     "WINDOW_SETTINGS_TIP",
     "already_tagged_with",
     "attention_count",
+    "back_to_default",
     "built_with",
     "cancelled",
     "change_line",
@@ -2494,6 +2514,7 @@ __all__ = [
     "chooser_truncated",
     "corpus_at",
     "credential_tip",
+    "default_placeholder",
     "describe_count",
     "describe_holding",
     "describe_recent",
@@ -2531,6 +2552,7 @@ __all__ = [
     "remove_tag_from",
     "removing_document",
     "removing_version",
+    "reset_label",
     "results_for",
     "returned",
     "search_crumb",

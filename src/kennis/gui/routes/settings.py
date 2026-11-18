@@ -256,7 +256,15 @@ def redraw_kennis_settings(request: Request) -> HTMLResponse:
     is saved. Nothing is written.
     """
     tab = _configuration_tab(request.query_params.get("tab"))
-    section = _kennis_section(answers_in(request.query_params), tab=tab)
+    answers = answers_in(request.query_params)
+    # A reset button asks for its setting at the default: drawn by the
+    # server, so the row - an ordered setting's chips too - is what the
+    # save will write (#666). A key has no default to put back.
+    reset = answers.pop("reset", "")
+    for question in offered(answers):
+        if question.key == reset and question.kind != "secret":
+            answers[reset] = question.default
+    section = _kennis_section(answers, tab=tab)
     if from_htmx(request):
         return TEMPLATES.TemplateResponse(request, "settings-kennis.html", section)
     return _settings_page(request, section, tab=tab)
@@ -279,7 +287,7 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
         for question in offered(answers)
         if (problem := validate_answer(question, answers.get(question.key, "")))
     }
-    changed = {} if problems else changed_answers(answers)
+    changed = {} if problems else changed_answers(answers, empty_is_default=True)
     previous: dict[str, str] = {}
     if not problems:
         previous = {
@@ -289,9 +297,9 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
         }
         # Written even when nothing changed: saving is choosing what the
         # page shows, and the file holds every setting (Brian,
-        # 2026-10-12).
+        # 2026-10-12). `clearing`, because a default may be empty (#666).
         try:
-            apply_answers(changed)
+            apply_answers(changed, clearing=True)
         except SettingsError as error:
             problems = {"": str(error)}
     if problems:
@@ -303,10 +311,16 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
             outcome_is_problem=True,
         )
     elif changed:
+        defaults = {question.key: question.default for question in offered({})}
+        restored = [
+            words.SETTING_NAMES[key]
+            for key, value in changed.items()
+            if key in defaults and value == defaults[key]
+        ]
         section = _kennis_section(
             {},
             tab=tab,
-            outcome=words.KENNIS_SAVED,
+            outcome=words.back_to_default(restored) if restored else words.KENNIS_SAVED,
             rebuild=needs_rebuild(changed),
             previous=previous,
         )
