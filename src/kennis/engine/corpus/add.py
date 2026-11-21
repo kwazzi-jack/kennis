@@ -140,6 +140,7 @@ from kennis.engine.literature.identifiers import (
     parse_bibtex_file,
 )
 from kennis.engine.literature.metadata import (
+    PaperMetadata,
     lookup_arxiv_metadata,
     lookup_doi_metadata,
 )
@@ -232,6 +233,12 @@ class AddOptions:
     # file being added (Brian, 2026-10-26). The one place inside kennis's
     # own files an add may read from. Set only by `corpus sync`.
     pack_store: Path | None = None
+    # The title, authors and year the declaring pack gives the paper. Each
+    # fills only what arXiv or the DOI's registry did not answer, as
+    # `_rewrote_bibliography` does for a paper already held: a paper
+    # written while neither answered was filed with no authors and no
+    # year, and a sync keeps it so. Set only by `corpus sync`.
+    declared: PaperMetadata | None = None
 
     def __post_init__(self) -> None:
         # Both name a directory beneath the collection. Here as well as at
@@ -1164,6 +1171,7 @@ def _add_paper(
             refusal=SameContent(document_id=by_checksum),
         )
 
+    identity = _with_declared_gaps(identity, options.declared)
     title = (
         options.title or identity.title or converted.suggested_title or paper.identifier
     )
@@ -1185,6 +1193,21 @@ def _add_paper(
         document_id=document_id,
         title=title,
         path=path,
+    )
+
+
+def _with_declared_gaps(
+    identity: _Identity, declared: PaperMetadata | None
+) -> _Identity:
+    """The identity, each empty title, authors or year taken from what
+    the pack declares; what the fetch found is kept."""
+    if declared is None:
+        return identity
+    return replace(
+        identity,
+        title=identity.title or declared.title,
+        authors=identity.authors or declared.authors,
+        year=identity.year or declared.year,
     )
 
 

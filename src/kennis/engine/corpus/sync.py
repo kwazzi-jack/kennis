@@ -75,6 +75,7 @@ from kennis.engine.events import (
 )
 from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.groups import group_directory
+from kennis.engine.literature.metadata import PaperMetadata
 from kennis.engine.pack.content import content_digest
 from kennis.engine.pack.installed import (
     InstalledPack,
@@ -260,6 +261,7 @@ def supply_paper(
             group=_paper_group(declaration, entry),
             owner=f"pack:{declaration.pack_id}",
             pack_sha256=declaration.digest,
+            declared=_declared_bibliography(entry),
         ),
         arxiv=arxiv,
         client=client,
@@ -681,6 +683,7 @@ def _fetched_literature(
                 owner=f"pack:{declaration.pack_id}",
                 pack_sha256=declaration.digest,
                 pack_store=pack_root(store, declaration.pack_id),
+                declared=_declared_bibliography(entry),
                 request_delay_seconds=request_delay_seconds,
                 unpaywall_email=unpaywall_email,
             ),
@@ -842,6 +845,15 @@ def _removed(collection: Collection, document: Document) -> None:
     folder = holding(document)
     collection.remove(document)
     remove_empty_groups(folder, collection=collection.path)
+
+
+def _declared_bibliography(entry: LiteratureEntry) -> PaperMetadata:
+    """What a pack says a paper is, for a write to fill its gaps with."""
+    return PaperMetadata(
+        title=entry.title or "",
+        authors=entry.author_line or "",
+        year=str(entry.year) if entry.year else "",
+    )
 
 
 def _rewrote_bibliography(
