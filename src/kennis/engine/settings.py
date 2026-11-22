@@ -58,6 +58,8 @@ _ENVIRONMENT_PREFIX: Final = "KENNIS"
 _CONFIG_DIR_VARIABLE: Final = "KENNIS_CONFIG_DIR"
 _STATE_DIR_VARIABLE: Final = "KENNIS_STATE_DIR"
 _LOG_DIR_VARIABLE: Final = "KENNIS_LOG_DIR"
+# The longest `conversion.timeout_minutes` accepts: a week.
+LONGEST_CONVERSION_MINUTES: Final = 7 * 24 * 60
 _CONFIG_FILE: Final = "config.toml"
 _CREDENTIALS_FILE: Final = "credentials.toml"
 
@@ -292,6 +294,20 @@ class ConversionSettings(BaseModel):
         # says the count (`gui/words.py`).
         description=(
             "Processor threads mineru may use for its models. 0 lets it choose."
+        ),
+    )
+    # Large on purpose (Brian, 2026-11-22, #695): the limit stops a
+    # conversion that will never finish, not a slow one, and a 910-page
+    # textbook takes about four hours on a CPU (#139's 16 s a page). One
+    # number for every device rather than a rule per device.
+    timeout_minutes: int = Field(
+        default=240,
+        ge=1,
+        le=LONGEST_CONVERSION_MINUTES,
+        description=(
+            "Minutes mineru may spend on one document before it is stopped "
+            "and nothing is written. A run of several documents gets this "
+            "for each. datalab ignores this."
         ),
     )
     mode: Literal["fast", "balanced", "accurate"] = Field(
