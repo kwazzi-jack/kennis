@@ -63,6 +63,9 @@ def load_script() -> ModuleType:
 upgrade = load_script()
 
 
+type Ran = tuple[int, str]
+
+
 def through_the_command_line(
     arguments: Sequence[str], capture: bool = False
 ) -> tuple[int, str]:
@@ -488,3 +491,81 @@ def test_the_plan_warns_of_a_tag_on_a_paper_converted_again(
     said = "\n".join(upgrade.described(upgrade.plan_upgrade(corpus)))
 
     assert "on a paper converted again" in said
+
+
+# ---------------------------------------------------------------------------
+# A paper removed and not written again (#694)
+# ---------------------------------------------------------------------------
+
+
+def test_a_pack_s_paper_that_could_not_be_converted_again_is_put_back(
+    corpus: Path, pack_paper: Document, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Brian's corpus, 2026-11-22: the sync could not convert two textbooks,
+    exited 0 with a warning, and the script said the corpus was upgraded
+    with both removed. A paper no longer held links nothing, so planning
+    again never saw them."""
+    monkeypatch.setenv("MINERU_FAKE_SKIP", "rime")
+
+    remaining = applied(corpus)
+
+    [paper] = papers_in(corpus)
+    assert paper.id == pack_paper.id
+    assert "images/0123abcd.jpg" in paper.body, "not the text it had"
+    assert [held.document_id for held in remaining.put_back] == [pack_paper.id]
+    assert [held.document_id for held in remaining.from_packs] == [pack_paper.id]
+    assert not remaining.is_empty()
+    report = "\n".join(upgrade.described(remaining))
+    assert f"{pack_paper.id}" in report and "put back as it was" in report
+
+
+def test_the_user_s_paper_that_could_not_be_converted_again_is_put_back(
+    corpus: Path, own_paper: Document, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`corpus add` reports a paper it could not convert and exits 0, as a
+    sync does: the script looks rather than trusting the exit status."""
+    monkeypatch.setenv("MINERU_FAKE_SKIP", "rime")
+
+    remaining = applied(corpus)
+
+    [paper] = papers_in(corpus)
+    assert paper.id == own_paper.id
+    assert [held.document_id for held in remaining.put_back] == [own_paper.id]
+    assert not remaining.is_empty()
+
+
+def test_a_step_that_fails_outright_still_puts_back_what_was_removed(
+    corpus: Path, pack_paper: Document
+) -> None:
+    def failing_sync(arguments: Sequence[str], capture: bool = False) -> Ran:
+        if list(arguments[:2]) == ["corpus", "sync"]:
+            return 1, "failed"
+        return through_the_command_line(arguments, capture)
+
+    with pytest.raises(upgrade.StepFailed) as raised:
+        upgrade.upgrade_corpus(corpus, run=failing_sync, apply=True, backup=False)
+
+    [paper] = papers_in(corpus)
+    assert paper.id == pack_paper.id
+    assert [held.document_id for held in raised.value.put_back] == [pack_paper.id]
+
+
+def test_a_paper_that_could_not_be_put_back_is_named_with_its_command(
+    corpus: Path, pack_paper: Document, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MINERU_FAKE_SKIP", "rime")
+
+    def refusing_restore(arguments: Sequence[str], capture: bool = False) -> Ran:
+        if list(arguments[:2]) == ["corpus", "restore"]:
+            return 1, "refused"
+        return through_the_command_line(arguments, capture)
+
+    remaining = upgrade.upgrade_corpus(
+        corpus, run=refusing_restore, apply=True, backup=False
+    )
+
+    assert papers_in(corpus) == []
+    assert [held.document_id for held in remaining.lost] == [pack_paper.id]
+    assert not remaining.is_empty()
+    report = "\n".join(upgrade.described(remaining))
+    assert f"kennis corpus restore {pack_paper.id}" in report

@@ -121,6 +121,10 @@ class Plan:
     lines: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     # Tags that could not be placed, kept for the report after an apply.
     unplaced: tuple[TagGroup, ...] = ()
+    # Removed, not written again, and restored as they were (#694).
+    put_back: tuple[Paper, ...] = ()
+    # Removed, not written again, and the restore failed too.
+    lost: tuple[Paper, ...] = ()
 
     def has_work(self) -> bool:
         """Whether an apply would change anything: a paper left is only
@@ -135,6 +139,8 @@ class Plan:
             or self.tags_file
             or self.lines
             or self.unplaced
+            or self.put_back
+            or self.lost
         )
 
 
@@ -240,6 +246,22 @@ def papers_to_convert(
         else:
             own.append(paper)
     return from_packs, own, left
+
+
+def held_identifiers(corpus: Path) -> frozenset[str]:
+    """Every literature document's identifier, as the corpus has it now."""
+    literature = corpus / "literature"
+    if not literature.is_dir():
+        return frozenset()
+    held: set[str] = set()
+    for markdown in literature.rglob("*.md"):
+        relative = markdown.relative_to(literature)
+        if any(part.startswith(".") for part in relative.parts):
+            continue
+        front = frontmatter_of(markdown)
+        if front is not None and text_field(front, "id"):
+            held.add(text_field(front, "id"))
+    return frozenset(held)
 
 
 def in_the_store(paper: Paper, corpus: Path) -> Path | None:
@@ -356,6 +378,9 @@ def plan_upgrade(corpus: Path, only: frozenset[str] = frozenset()) -> Plan:
 class StepFailed(Exception):
     """A kennis command the upgrade ran did not succeed."""
 
+    put_back: tuple[Paper, ...] = ()
+    lost: tuple[Paper, ...] = ()
+
 
 def required(run: Runner, arguments: Sequence[str], *, capture: bool = False) -> str:
     code, output = run(arguments, capture)
@@ -412,7 +437,46 @@ def added_lines(plan: Plan, corpus: Path) -> None:
         path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def converted_papers(plan: Plan, run: Runner) -> None:
+def converted_papers(
+    plan: Plan, run: Runner, corpus: Path
+) -> tuple[tuple[Paper, ...], tuple[Paper, ...]]:
+    """Each paper removed and written again; returns those put back as they
+    were, and those that could not be.
+
+    A sync and an add both report a paper they could not convert and exit
+    0 (#694), so whether a paper came back is looked at, never inferred
+    from an exit status; and it is looked at when a step fails outright as
+    well, because by then every paper has been removed.
+    """
+    removed: list[Paper] = []
+    try:
+        _removed_and_written_again(plan, run, removed)
+    except StepFailed as failure:
+        failure.put_back, failure.lost = put_back(removed, run, corpus)
+        raise
+    return put_back(removed, run, corpus)
+
+
+def put_back(
+    removed: Sequence[Paper], run: Runner, corpus: Path
+) -> tuple[tuple[Paper, ...], tuple[Paper, ...]]:
+    held = held_identifiers(corpus)
+    restored: list[Paper] = []
+    lost: list[Paper] = []
+    for paper in removed:
+        if paper.document_id in held:
+            continue
+        # Recorded rather than raised: a failure here must not hide the
+        # step that failed first.
+        code, _ = run(["corpus", "restore", paper.document_id], False)
+        if code == 0 and paper.document_id in held_identifiers(corpus):
+            restored.append(paper)
+        else:
+            lost.append(paper)
+    return tuple(restored), tuple(lost)
+
+
+def _removed_and_written_again(plan: Plan, run: Runner, removed: list[Paper]) -> None:
     for paper in (*plan.from_packs, *plan.own):
         required(
             run,
@@ -425,6 +489,7 @@ def converted_papers(plan: Plan, run: Runner) -> None:
                 "--yes",
             ],
         )
+        removed.append(paper)
     if plan.from_packs:
         required(run, ["corpus", "sync"])
     for paper in plan.own:
@@ -466,8 +531,10 @@ def upgrade_corpus(
     unplaced = converted_tags(plan, run, corpus) if plan.tags_file else []
     if plan.lines:
         added_lines(plan, corpus)
+    restored: tuple[Paper, ...] = ()
+    lost: tuple[Paper, ...] = ()
     if plan.from_packs or plan.own:
-        converted_papers(plan, run)
+        restored, lost = converted_papers(plan, run, corpus)
     required(run, ["corpus", "index"])
     after = plan_upgrade(corpus, only)
     return Plan(
@@ -479,6 +546,8 @@ def upgrade_corpus(
         tags_file=after.tags_file,
         lines=after.lines,
         unplaced=tuple(unplaced),
+        put_back=restored,
+        lost=lost,
     )
 
 
@@ -582,6 +651,22 @@ def described(plan: Plan) -> list[str]:
             )
     for name, lacking in plan.lines.items():
         lines.append(f"Lines to add to {name}: " + ", ".join(lacking))
+    if plan.put_back:
+        lines.append(
+            "Could not be converted again, so put back as it was; run this "
+            f"script again to try again: {len(plan.put_back)}"
+        )
+        lines += [f"  {paper.document_id}  {paper.title}" for paper in plan.put_back]
+    if plan.lost:
+        lines.append(
+            "Removed, not converted again and not put back; put each back with "
+            f"the command beside it: {len(plan.lost)}"
+        )
+        lines += [
+            f"  {paper.document_id}  {paper.title}: "
+            f"kennis corpus restore {paper.document_id}"
+            for paper in plan.lost
+        ]
     return lines
 
 
@@ -630,6 +715,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             only=only,
         )
     except StepFailed as failure:
+        undone = described(Plan(put_back=failure.put_back, lost=failure.lost))
+        if undone:
+            print("\n" + "\n".join(undone), file=sys.stderr)
         print(
             f"\nStopped: {failure}. Run this script again to carry on.", file=sys.stderr
         )
