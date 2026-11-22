@@ -61,7 +61,11 @@ from kennis.engine.errors import (
     ConverterUnavailable,
     TaskCancelled,
 )
-from kennis.engine.settings import credential, load_settings
+from kennis.engine.settings import (
+    LONGEST_CONVERSION_MINUTES,
+    credential,
+    load_settings,
+)
 from kennis.telemetry import LIBRARY_TELEMETRY_OFF
 
 
@@ -256,21 +260,14 @@ _REPORT_COLUMNS: Final = "1000"
 
 # How long a run gets before kennis cancels it. Two terms, because the cost
 # has two: the model stack loads once per run, then each document is
-# converted. Without a timeout, one wedged conversion hangs the whole command
-# with no output and nothing to interrupt but Ctrl-C.
-#
-# The point is to catch a converter that has stopped making progress, not to
-# police a slow machine - and the margin here is much thinner than it looks,
-# because the device changes the second term by an order of magnitude. A
-# 19-page paper takes 34s on a GPU and 311s on a CPU (#137), so the
-# per-document term is **below** one real measurement rather than a generous
-# multiple of it. What saves a CPU-only machine today is the startup grace,
-# which a single document also gets: 900 + 300 is 1200s against that 311s.
-# A batch of long papers on a CPU is where this would first be too tight.
-# Raising the per-document term is open (#138) rather than done, because it
-# is a behaviour change and the measurements are one paper old.
+# converted (`MineruOptions.seconds_per_document`, the reader's
+# `conversion.timeout_minutes`). Without a timeout, one wedged conversion
+# hangs the whole command with no output and nothing to interrupt but
+# Ctrl-C. The point is to catch a converter that will never finish, not to
+# police a slow machine: 300 s a document cancelled two textbooks on a GPU
+# (#695), so the default is four hours.
 _STARTUP_GRACE_SECONDS: Final = 900
-_SECONDS_PER_DOCUMENT: Final = 300
+_DEFAULT_SECONDS_PER_DOCUMENT: Final = 4 * 60 * 60
 
 # How much of the original filename a staged copy keeps. The index prefix is
 # what makes the name unique; the rest is there only so MinerU's own error
@@ -305,6 +302,9 @@ class MineruOptions:
     # 0 lets MinerU choose.
     threads: int = 0
     model_source: str = _AUTO
+    # Seconds rather than the setting's minutes, so a test can give a
+    # document one second.
+    seconds_per_document: float = _DEFAULT_SECONDS_PER_DOCUMENT
 
     @property
     def tier(self) -> str:
@@ -435,28 +435,24 @@ class MineruConverter:
             self.options.tier,
         ]
         timeout_seconds = _STARTUP_GRACE_SECONDS + (
-            _SECONDS_PER_DOCUMENT * document_count
+            self.options.seconds_per_document * document_count
         )
         try:
             return _run_as_group(
                 command, env=self._environment(), timeout=timeout_seconds
             )
         except subprocess.TimeoutExpired as expired:
-            # The remedy is the setting that sizes a run: "convert them in
-            # smaller batches" named an option no command has. A single
-            # document has no smaller run to suggest.
-            if document_count == 1:
-                raise ConversionFailed(
-                    f"mineru did not finish converting 1 document within "
-                    f"{timeout_seconds}s and was cancelled. Nothing was written.",
-                    resolution=None,
-                ) from expired
+            # The remedy is a longer limit, for a batch too: the limit is per
+            # document, so a smaller batch gets proportionally less time.
+            minutes = max(1, round(self.options.seconds_per_document / 60))
+            noun = "document" if document_count == 1 else "documents"
             raise ConversionFailed(
-                f"mineru did not finish converting {document_count} documents "
-                f"within {timeout_seconds}s and was cancelled. Nothing was "
-                f"written.",
+                f"mineru did not finish converting {document_count} {noun} "
+                f"within {minutes} minutes a document and was cancelled. "
+                f"Nothing was written.",
                 resolution=(
-                    f"kennis config set conversion.batch_size {document_count // 2}"
+                    "kennis config set conversion.timeout_minutes "
+                    f"{min(2 * minutes, LONGEST_CONVERSION_MINUTES)}"
                 ),
             ) from expired
         except OSError as error:
@@ -769,6 +765,7 @@ def default_converter() -> Converter:
             quality=conversion.quality,
             device=conversion.device,
             threads=conversion.threads,
+            seconds_per_document=conversion.timeout_minutes * 60,
         ),
         repair_ligatures=conversion.repair_ligatures,
     )

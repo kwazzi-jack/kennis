@@ -67,6 +67,7 @@ _COSTS: Final[dict[str, tuple[SettingCost, ...]]] = {
     "conversion.quality": ("next_add",),
     "conversion.device": ("next_add",),
     "conversion.threads": ("next_add",),
+    "conversion.timeout_minutes": ("next_add",),
     "literature.request_delay": ("next_add",),
     "literature.citation_style": ("next_cite",),
     # Read by each command as it starts; the window prints no hints.

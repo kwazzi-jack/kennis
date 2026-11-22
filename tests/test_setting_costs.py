@@ -52,6 +52,7 @@ EXPECTED = {
     "conversion.quality": ("next_add",),
     "conversion.device": ("next_add",),
     "conversion.threads": ("next_add",),
+    "conversion.timeout_minutes": ("next_add",),
     "literature.request_delay": ("next_add",),
     "literature.citation_style": ("next_cite",),
     "retrieval.scores": ("next_search",),

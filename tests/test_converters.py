@@ -110,11 +110,14 @@ def test_the_settings_choose_the_tier_device_and_threads(
     monkeypatch.setenv("KENNIS_CONVERSION_QUALITY", "fast")
     monkeypatch.setenv("KENNIS_CONVERSION_DEVICE", "cpu")
     monkeypatch.setenv("KENNIS_CONVERSION_THREADS", "3")
+    monkeypatch.setenv("KENNIS_CONVERSION_TIMEOUT_MINUTES", "5")
 
     converter = default_converter()
 
     assert isinstance(converter, MineruConverter)
-    assert converter.options == MineruOptions(quality="fast", device="cpu", threads=3)
+    assert converter.options == MineruOptions(
+        quality="fast", device="cpu", threads=3, seconds_per_document=300
+    )
     assert converter.variant == "basic"
 
 
@@ -519,10 +522,11 @@ def test_a_run_that_overruns_its_timeout_is_cancelled_and_says_nothing_was_writt
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr("kennis.engine.corpus.converters._STARTUP_GRACE_SECONDS", 0)
-    monkeypatch.setattr("kennis.engine.corpus.converters._SECONDS_PER_DOCUMENT", 1)
 
     with pytest.raises(ConversionFailed) as raised:
-        MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+        MineruConverter(MineruOptions(seconds_per_document=1)).convert(
+            [a_pdf(tmp_path / "paper.pdf")]
+        )
 
     assert "Nothing was written" in str(raised.value)
 
@@ -544,31 +548,79 @@ def test_a_cancelled_run_ends_what_it_started_as_well(
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr("kennis.engine.corpus.converters._STARTUP_GRACE_SECONDS", 0)
-    monkeypatch.setattr("kennis.engine.corpus.converters._SECONDS_PER_DOCUMENT", 1)
 
     with pytest.raises(ConversionFailed):
-        MineruConverter().convert([a_pdf(tmp_path / "paper.pdf")])
+        MineruConverter(MineruOptions(seconds_per_document=1)).convert(
+            [a_pdf(tmp_path / "paper.pdf")]
+        )
     time.sleep(2.5)
 
     assert not marker.exists()
 
 
-def test_a_run_that_times_out_names_the_setting_that_shortens_it(
-    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("count", [1, 4])
+def test_a_run_that_times_out_names_the_setting_that_lengthens_it(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, count: int
 ):
-    """ "Convert the documents in smaller batches" named an option no command
-    has; the size of a run is `conversion.batch_size`."""
+    """The limit is per document, so half a batch gets half the time and a
+    smaller batch is no remedy (#695): the remedy is a longer limit, for one
+    document as for several."""
 
     def expire(*args: object, **kwargs: object) -> object:
         raise subprocess.TimeoutExpired(cmd="mineru", timeout=1)
 
     monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", expire)
-    pdfs = [a_pdf(tmp_path / f"{name}.pdf") for name in ("a", "b", "c", "d")]
+    pdfs = [a_pdf(tmp_path / f"paper-{index}.pdf") for index in range(count)]
 
     with pytest.raises(ConversionFailed) as raised:
-        MineruConverter().convert(pdfs)
+        MineruConverter(MineruOptions(seconds_per_document=90 * 60)).convert(pdfs)
 
-    assert raised.value.resolution == "kennis config set conversion.batch_size 2"
+    assert raised.value.resolution == "kennis config set conversion.timeout_minutes 180"
+    assert "90 minutes a document" in str(raised.value)
+
+
+def test_the_longer_limit_it_suggests_is_one_the_setting_accepts(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Twice a week is a value `config set` refuses."""
+
+    def expire(*args: object, **kwargs: object) -> object:
+        raise subprocess.TimeoutExpired(cmd="mineru", timeout=1)
+
+    monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", expire)
+    a_week = 7 * 24 * 60
+
+    with pytest.raises(ConversionFailed) as raised:
+        MineruConverter(MineruOptions(seconds_per_document=a_week * 60)).convert(
+            [a_pdf(tmp_path / "paper.pdf")]
+        )
+
+    assert raised.value.resolution == (
+        f"kennis config set conversion.timeout_minutes {a_week}"
+    )
+
+
+def test_a_document_gets_four_hours_by_default(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Measured 2026-11-22: a 910-page textbook was cancelled at 1200 s on a
+    laptop GPU, and a CPU reads about 16 s a page (#139), so four hours for
+    the book there. The limit catches a conversion that will never finish,
+    not a slow one (Brian, 2026-11-22, #695)."""
+    given: list[float] = []
+    real_run = converters._run_as_group
+
+    def run(command: list[str], *, env: dict[str, str], timeout: float) -> object:
+        given.append(timeout)
+        return real_run(command, env=env, timeout=timeout)
+
+    monkeypatch.setattr("kennis.engine.corpus.converters._run_as_group", run)
+
+    default_converter().convert(
+        [a_pdf(tmp_path / "one.pdf"), a_pdf(tmp_path / "two.pdf")]
+    )
+
+    assert given == [900 + 2 * 4 * 60 * 60]
 
 
 # ---------------------------------------------------------------------------

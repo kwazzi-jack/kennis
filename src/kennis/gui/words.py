@@ -470,6 +470,7 @@ SETTING_NAMES: Final[dict[str, str]] = {
     "conversion.quality": "Conversion quality",
     "conversion.device": "Conversion device",
     "conversion.threads": "Conversion threads",
+    "conversion.timeout_minutes": "Time limit per document (minutes)",
     "literature.request_delay": "Seconds between arXiv requests",
     "literature.citation_style": "Citation style (.csl file)",
     "terminal.messages": "Messages shown",
@@ -568,6 +569,11 @@ SETTING_TIPS: Final[dict[str, str]] = {
     "conversion.threads": (
         "How many processor threads MinerU may use. 0 lets it choose. "
         f"This computer has {os.cpu_count() or 1}."
+    ),
+    "conversion.timeout_minutes": (
+        "How long MinerU may work on one document before it is stopped and "
+        "nothing is written. A long book can take hours without a graphics "
+        "card; 240 is four hours."
     ),
     "literature.request_delay": "arXiv asks for three seconds between requests.",
     "literature.citation_style": (

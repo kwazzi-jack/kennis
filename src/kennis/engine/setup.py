@@ -141,6 +141,7 @@ _ALSO_OFFERED: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     ("corpus.default_group", ()),
     ("conversion.repair_ligatures", (("conversion.backend", "mineru"),)),
     ("conversion.threads", (("conversion.backend", "mineru"),)),
+    ("conversion.timeout_minutes", (("conversion.backend", "mineru"),)),
     ("conversion.batch_size", ()),
     ("literature.request_delay", ()),
     ("literature.citation_style", ()),

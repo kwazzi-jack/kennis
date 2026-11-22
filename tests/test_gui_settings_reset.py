@@ -35,6 +35,7 @@ from test_gui_kennis_settings import (
 EXPECTED_DEFAULTS = {
     "conversion.quality": "best",
     "conversion.threads": "0",
+    "conversion.timeout_minutes": "240",
     "conversion.repair_ligatures": "true",
     "literature.request_delay": "3.0",
     "figures.trusted_hosts": "",

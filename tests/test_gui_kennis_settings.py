@@ -52,6 +52,7 @@ EXPECTED_GROUPS = {
         "conversion.quality",
         "conversion.device",
         "conversion.threads",
+        "conversion.timeout_minutes",
         "conversion.repair_ligatures",
         "conversion.batch_size",
     ],
