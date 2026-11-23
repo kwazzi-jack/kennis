@@ -319,6 +319,9 @@ def test_a_page_of_the_person_s_keeps_a_dropped_version_and_stays_theirs(
     finally:
         FILES["files/docs/guide-2.md"] = b"# Guide two\n\nHow to use version two.\n"
     report = synced(corpus)
+    # A crawl whose pages were updated worked, and is not "tried again"
+    # (#697).
+    assert report.failed == ()
     assert report.counts.get("rewrite") == 1, report.counts
     assert versions_of(corpus) == {
         "2.0:A page of mine": "user",

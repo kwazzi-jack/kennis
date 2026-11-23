@@ -205,10 +205,15 @@ def sync_corpus(
         copied=copied,
     )
 
-    actions = notes.actions + papers.actions + projects.actions
+    # Counted from what was carried out, not from what was planned: a
+    # declaration that failed wrote nothing, and was once reported as
+    # added beside the warning that it would be tried again (#693).
+    planned = notes.actions + papers.actions + projects.actions
+    actions = tuple(action for action in planned if action.address not in failed)
+    unfinished = tuple(action for action in planned if action.address in failed)
     counts = Counter(action.verdict for action in actions)
     places = _places(corpus_root, notes, papers, projects)
-    _reported(events, actions, places, started)
+    _reported(events, actions, unfinished, places, why, started)
     return CorpusSync(
         actions=actions,
         counts=dict(counts),
@@ -774,8 +779,11 @@ def _crawled_docs(
         _stamped_version(
             collection, entry.project, _declared_version(entry), declaration
         )
+        # A page updated is a crawl that worked: without CHANGED a rewrite
+        # whose pages had all moved on was reported as failed (#697).
         if not any(
-            one.outcome in (Outcome.ADDED, Outcome.UNCHANGED) for one in report.outcomes
+            one.outcome in (Outcome.ADDED, Outcome.CHANGED, Outcome.UNCHANGED)
+            for one in report.outcomes
         ):
             failed.append(action.address)
     return failed
@@ -1334,7 +1342,9 @@ def _rewritten(
 def _reported(
     events: EventSink | None,
     actions: tuple[Action, ...],
+    unfinished: tuple[Action, ...],
     places: dict[str, str],
+    why: dict[str, Refusal],
     started: float,
 ) -> None:
     if events is None:
@@ -1349,6 +1359,16 @@ def _reported(
                 item=places.get(action.address, action.address),
                 outcome=outcome,
                 refusal=Quoted(action.verdict),
+            )
+        )
+    for action in unfinished:
+        counts[Outcome.FAILED] += 1
+        events.emit(
+            ItemFinished(
+                operation=OPERATION,
+                item=action.address,
+                outcome=Outcome.FAILED,
+                refusal=why.get(action.address, Quoted(action.verdict)),
             )
         )
     events.emit(

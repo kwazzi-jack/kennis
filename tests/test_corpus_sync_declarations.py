@@ -29,7 +29,13 @@ from kennis.engine.corpus.sync import (
     sync_corpus,
 )
 from kennis.engine.errors import DocumentInvalid
-from kennis.engine.events import Event, OperationFinished, Progress
+from kennis.engine.events import (
+    Event,
+    ItemFinished,
+    OperationFinished,
+    Outcome,
+    Progress,
+)
 from kennis.engine.history.repository import initialise_corpus
 from kennis.engine.pack.schema import LiteratureEntry
 from kennis.engine.pack.store import install_pack
@@ -784,3 +790,73 @@ def test_a_project_is_reported_as_its_folder(corpus: Path, tmp_path: Path):
 
     (action,) = result.actions
     assert result.places[action.address] == "docs/stimela/latest"
+
+
+# ---------------------------------------------------------------------------
+# What a sync reports for a declaration it could not carry out (#693)
+# ---------------------------------------------------------------------------
+
+
+def outcomes_of(recorded: Recording) -> dict[str, Outcome]:
+    return {
+        event.item: event.outcome
+        for event in recorded.events
+        if isinstance(event, ItemFinished) and event.operation == OPERATION
+    }
+
+
+def finished_counts(recorded: Recording) -> dict[Outcome, int]:
+    (finish,) = [
+        event
+        for event in recorded.events
+        if isinstance(event, OperationFinished) and event.operation == OPERATION
+    ]
+    return finish.counts
+
+
+def test_a_paper_that_was_not_fetched_is_not_counted_as_added(
+    corpus: Path, tmp_path: Path
+):
+    """Brian's sync counted two textbooks MinerU failed on as added
+    ("added=3" for nothing written) and listed each with `+`, beside the
+    warning that the same papers would be tried again. The docs project
+    beside it did arrive, so it alone is counted."""
+    installed(corpus, tmp_path, body=BOTH)
+    recorded = Recording()
+
+    result = sync_corpus(
+        corpus,
+        arxiv=unreachable_client(),
+        client=site_client(),
+        request_delay_seconds=0.0,
+        events=recorded,
+    )
+
+    assert result.failed == ("arxiv:2409.19750",)
+    assert [action.address for action in result.actions] == ["stimela/latest"]
+    assert result.counts == {"write": 1}
+    assert outcomes_of(recorded)["arxiv:2409.19750"] is Outcome.FAILED
+    assert finished_counts(recorded) == {Outcome.ADDED: 1, Outcome.FAILED: 1}
+
+
+def test_a_crawl_that_found_nothing_is_not_counted_as_added(
+    corpus: Path, tmp_path: Path
+):
+    """`docs/vast-pipeline/1.2.0` produced no pages and was reported as
+    `+ ...: added by tron` and counted, though nothing was written."""
+    installed(corpus, tmp_path, body=DOCS)
+    recorded = Recording()
+
+    result = sync_corpus(
+        corpus,
+        arxiv=arxiv_client(),
+        client=unreachable_client(),
+        request_delay_seconds=0.0,
+        events=recorded,
+    )
+
+    assert result.failed == ("stimela/latest",)
+    assert result.actions == ()
+    assert result.counts == {}
+    assert outcomes_of(recorded) == {"stimela/latest": Outcome.FAILED}
+    assert finished_counts(recorded) == {Outcome.FAILED: 1}
