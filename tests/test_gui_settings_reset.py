@@ -293,3 +293,65 @@ def test_the_setup_walk_offers_no_reset() -> None:
 
     assert rows, "the walk drew nothing"
     assert all(row.reset_label == "" for row in rows)
+
+
+# ---------------------------------------------------------------------------
+# What is saved, marked on each field, so Save can be disabled until a
+# field differs from it (Brian, 2026-11-24)
+# ---------------------------------------------------------------------------
+
+
+def saved_mark_of(section: Tag, key: str) -> str | None:
+    field = row_of(section, key).select_one(f'[name="{key}"]:not([type="hidden"])')
+    assert isinstance(field, Tag), f"no field for {key}"
+    mark = field.get("data-saved")
+    return None if mark is None else str(mark)
+
+
+def test_each_field_is_marked_with_the_value_saved(client: TestClient) -> None:
+    apply_answers({"conversion.quality": "fast", "literature.request_delay": "15"})
+    documents = drawn(client, "documents")
+
+    # By hand: the values in force, as the field writes them.
+    assert saved_mark_of(documents, "conversion.quality") == "fast"
+    assert saved_mark_of(documents, "literature.request_delay") == "15.0"
+    assert saved_mark_of(documents, "conversion.timeout_minutes") == "240"
+    assert saved_mark_of(documents, "conversion.repair_ligatures") == "true"
+    assert saved_mark_of(documents, "figures.trusted_hosts") == ""
+
+
+def test_a_redraw_keeps_the_saved_mark_not_the_answer(client: TestClient) -> None:
+    """A redraw draws what was typed; the mark is still what is saved, or
+    Save would be disabled over an unsaved change."""
+    redrawn = section_of(
+        client.get(
+            "/settings/kennis",
+            params={"tab": "documents", "conversion.quality": "fast"},
+            headers=HTMX,
+        ).text
+    )
+
+    chosen = row_of(redrawn, "conversion.quality").find("option", selected=True)
+    assert isinstance(chosen, Tag) and chosen["value"] == "fast"
+    assert saved_mark_of(redrawn, "conversion.quality") == "best"
+
+
+def test_a_key_is_marked_as_nothing_saved(client: TestClient) -> None:
+    """A key's field is always drawn empty, so anything typed is a change."""
+    apply_answers({"embedding.backend": "openai"})
+
+    assert saved_mark_of(drawn(client, "searching"), "embedding.api_key") == ""
+
+
+def test_the_settings_page_loads_the_script_that_disables_save(
+    client: TestClient,
+) -> None:
+    from bs4 import BeautifulSoup
+
+    page = BeautifulSoup(client.get("/settings?tab=documents").text, "html.parser")
+
+    assert page.select('script[src="/static/unsaved.js"]')
+    assert client.get("/static/unsaved.js").status_code == 200
+    save = page.select_one(".kennis-settings .save-bar button[type=submit]")
+    assert isinstance(save, Tag)
+    assert not save.has_attr("disabled"), "without a script Save must still work"

@@ -33,6 +33,8 @@
       }
     });
     field.value = values.join(" ");
+    // A script's write fires no event, and `unsaved.js` listens for one.
+    field.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function show(root) {

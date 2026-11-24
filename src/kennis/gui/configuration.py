@@ -137,6 +137,10 @@ class ShownSetting:
     # label. The one way back to the default on the page (#700).
     default: str = ""
     reset_label: str = ""
+    # The value saved, whatever the field now holds: `unsaved.js` disables
+    # Save while no field differs from it (Brian, 2026-11-24). Empty for a
+    # key, whose field is always drawn empty.
+    saved: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -382,6 +386,7 @@ def _shown(
         overridden_by="" if secret else overriding_variable(question.key) or "",
         order=_chips(question.key, value),
         default=question.default,
+        saved="" if secret else question.current,
         reset_label=(
             words.reset_label(
                 words.SETTING_NAMES[question.key],

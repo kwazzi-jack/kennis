@@ -1959,3 +1959,80 @@ def test_an_emptied_number_is_refused_and_kept(
 
     assert load_settings().literature.request_delay == 15.0
     assert page.locator(".save-bar .outcome").inner_text() == words.KENNIS_NOT_SAVED
+
+
+# ---------------------------------------------------------------------------
+# Save is disabled while nothing differs from what is saved (2026-11-24)
+# ---------------------------------------------------------------------------
+
+
+def _save_disabled(page: playwright.Page) -> bool:
+    return page.locator(".kennis-settings .save-bar button[type=submit]").is_disabled()
+
+
+def test_save_is_disabled_until_a_field_differs(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "documents")
+    assert _save_disabled(page)
+
+    field = page.locator('input[name="literature.request_delay"]')
+    field.fill("15")
+    assert not _save_disabled(page)
+
+    # The same number written another way is no change.
+    field.fill("3")
+    assert _save_disabled(page)
+
+    page.locator('input[name="conversion.repair_ligatures"][type=checkbox]').uncheck()
+    assert not _save_disabled(page)
+    page.locator('input[name="conversion.repair_ligatures"][type=checkbox]').check()
+    assert _save_disabled(page)
+
+
+def test_a_reset_enables_save_and_a_save_disables_it(
+    page: playwright.Page, address: str
+) -> None:
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({"conversion.quality": "fast"})
+    _open_settings(page, address, "documents")
+    assert _save_disabled(page)
+
+    _reset_of(page, "conversion.quality").click()
+    page.wait_for_function(
+        "() => document.querySelector('select[name=\"conversion.quality\"]')"
+        ".value === 'best'",
+        timeout=_WAIT_MS,
+    )
+    assert not _save_disabled(page)
+
+    page.click(".save-bar button[type=submit]")
+    page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
+    assert _save_disabled(page)
+
+
+def test_moving_a_chip_enables_save(page: playwright.Page, address: str) -> None:
+    """`order.js` writes the field itself, which fires no event."""
+    _open_settings(page, address, "searching")
+    assert _save_disabled(page)
+
+    page.locator('.order-chip[data-value="docs"] [data-move="earlier"]').click()
+
+    assert not _save_disabled(page)
+
+
+def test_a_disabled_save_looks_disabled(page: playwright.Page, address: str) -> None:
+    """Brian prefers what is seen to what is said: a disabled Save that
+    looks like an enabled one says nothing."""
+    _open_settings(page, address, "documents")
+    save = ".kennis-settings .save-bar button[type=submit]"
+    opacity = f"() => getComputedStyle(document.querySelector('{save}')).opacity"
+    assert _save_disabled(page)
+    dimmed = float(page.evaluate(opacity))
+
+    page.locator('input[name="literature.request_delay"]').fill("15")
+
+    assert not _save_disabled(page)
+    assert float(page.evaluate(opacity)) == 1.0
+    assert dimmed <= 0.6

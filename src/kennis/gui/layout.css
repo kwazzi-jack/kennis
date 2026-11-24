@@ -2756,6 +2756,13 @@ a[target="_blank"]:not(.button)::after {
 }
 .index-now button .icon { width: 0.85rem; height: 0.85rem; }
 
+/* Save with nothing to save (Brian, 2026-11-24): dimmed, so the bar says
+   whether the tab has unsaved changes without a word. Not while a request
+   is out, when htmx has disabled it and the ring says so instead. */
+.kennis-settings:not(.htmx-request) .save-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 /* A form whose request is out: htmx sets `htmx-request` on it and has
    already disabled the button (`hx-disabled-elt`). The cursor and the
    turning ring say the click was heard before the server answers. */
