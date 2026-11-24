@@ -222,16 +222,26 @@ def default_of(key: str) -> str:
     return _default(key, (), _field_of(key))
 
 
-def validate_answer(question: Question, value: str) -> str | None:
+def validate_answer(
+    question: Question, value: str, *, empty_is_value: bool = False
+) -> str | None:
     """Why `value` is not acceptable for `question`, or None if it is.
 
-    An empty answer is always acceptable and always means "keep what is
-    there", which is what makes the setup safe to re-run: pressing return
-    throughout changes nothing.
+    An empty answer means "keep what is there", which is what makes the
+    setup safe to re-run: pressing return throughout changes nothing.
+    `empty_is_value` is the settings page's, where every field is drawn
+    holding its value: there an emptied one is the empty value, refused
+    where the setting has no such value (#700). Never a key.
     """
-    if not value:
-        return None
     if question.kind == "secret":
+        return None
+    if not value:
+        if not empty_is_value:
+            return None
+        try:
+            _validated({question.key: value})
+        except SettingsError:
+            return "cannot be empty"
         return None
     if question.options and value not in question.options:
         return f"expected one of {', '.join(question.options)}"

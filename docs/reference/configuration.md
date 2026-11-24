@@ -50,10 +50,14 @@ kennis config reset embedding.backend # back to its default
 kennis config init                    # the guided setup
 ```
 
-`kennis config set <key> ""` writes an empty value, which a setting such as
-`figures.trusted_hosts` takes as "none" and a number refuses. To put a
-setting back to its default, use `kennis config reset <key>`. The embedding
-model's default is the model of the backend in force.
+**Empty is a value, and only reset gives the default.**
+`kennis config set <key> ""`, or emptying a field on the settings page,
+writes an empty value: `figures.trusted_hosts` takes it as "no hosts", and
+a setting for which empty means nothing (a number, `embedding.model`,
+`embedding.api_key_env`) refuses it. To put a setting back to its default,
+use `kennis config reset <key>`, or the reset button beside the setting on
+the settings page. The embedding model's default is the model of the
+backend in force.
 
 **Every write leaves every setting in the file**, including those at their
 default, whether it comes from `config set`, `config init` or the settings

@@ -1940,22 +1940,22 @@ def test_a_reset_button_puts_the_chips_back(
     assert page.locator(".order-chip[data-left-out]").count() == 0
 
 
-def test_an_emptied_field_is_saved_as_its_default(
+def test_an_emptied_number_is_refused_and_kept(
     page: playwright.Page, address: str
 ) -> None:
+    """Empty is a value, and not a number (#700); the reset button is the
+    way back to the default."""
     from kennis.engine.settings import load_settings
     from kennis.engine.setup import apply_answers
 
     apply_answers({"literature.request_delay": "15"})
     _open_settings(page, address, "documents")
     field = page.locator('input[name="literature.request_delay"]')
-    assert field.get_attribute("placeholder") == words.default_placeholder("3.0")
+    assert field.get_attribute("placeholder") is None
 
     field.fill("")
     page.click(".save-bar button[type=submit]")
     page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
 
-    assert load_settings().literature.request_delay == 3.0
-    assert page.locator(".save-bar .outcome").inner_text() == words.back_to_default(
-        [words.SETTING_NAMES["literature.request_delay"]]
-    )
+    assert load_settings().literature.request_delay == 15.0
+    assert page.locator(".save-bar .outcome").inner_text() == words.KENNIS_NOT_SAVED

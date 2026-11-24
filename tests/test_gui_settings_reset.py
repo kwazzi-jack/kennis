@@ -1,10 +1,10 @@
-"""A setting back to its default from the window (#666).
+"""A setting back to its default from the window (#666, #700).
 
-On the settings page an emptied field is the setting's default - which is
-clearing it when the default is empty - and a reset button beside a
-setting that differs from its default puts the default into the form for
-what cannot be emptied. The setup walk keeps "empty means keep", and so
-does a key. Brian, 2026-11-18.
+On the settings page an emptied field is the empty value, refused beside
+its field where empty means nothing, and only the reset button beside a
+setting that differs from its default puts the default into the form
+(Brian, 2026-11-24, replacing 2026-11-18's "emptied is the default"). The
+setup walk keeps "empty means keep", and so does a key.
 """
 
 from __future__ import annotations
@@ -115,15 +115,33 @@ def test_a_model_s_default_is_its_backend_s_own(backend: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_an_emptied_field_saves_the_default(client: TestClient) -> None:
+def test_an_emptied_number_is_refused_beside_its_field(client: TestClient) -> None:
+    """Empty is not a number, and the default is the reset button's."""
     apply_answers({"literature.request_delay": "15"})
 
     answer = saved_from(client, "documents", **{"literature.request_delay": ""})
 
-    assert load_settings().literature.request_delay == 3.0
-    assert words.back_to_default([words.SETTING_NAMES["literature.request_delay"]]) in (
-        answer
+    assert load_settings().literature.request_delay == 15.0
+    problem = row_of(section_of(answer), "literature.request_delay").find(
+        class_="role-error"
     )
+    assert isinstance(problem, Tag) and problem.get_text(strip=True)
+
+
+@pytest.mark.parametrize("key", ["embedding.model", "embedding.api_key_env"])
+def test_an_emptied_name_whose_default_is_not_empty_is_refused(
+    client: TestClient, key: str
+) -> None:
+    """Empty means nothing for either, so it is refused rather than read
+    as the default (#700)."""
+    apply_answers({"embedding.backend": "openai"})
+    before = getattr(load_settings().embedding, key.partition(".")[2])
+
+    answer = saved_from(client, "searching", **{key: ""})
+
+    assert getattr(load_settings().embedding, key.partition(".")[2]) == before
+    problem = row_of(section_of(answer), key).find(class_="role-error")
+    assert isinstance(problem, Tag) and problem.get_text(strip=True)
 
 
 def test_an_emptied_field_whose_default_is_empty_clears_it(
@@ -149,7 +167,7 @@ def test_another_tab_s_settings_are_kept(client: TestClient) -> None:
 def test_an_empty_key_keeps_the_stored_key() -> None:
     changed = changed_answers(
         {"embedding.backend": "openai", "embedding.api_key": ""},
-        empty_is_default=True,
+        empty_is_value=True,
     )
 
     assert "embedding.api_key" not in changed
@@ -163,7 +181,7 @@ def test_the_setup_walk_still_reads_empty_as_keep() -> None:
     assert "literature.request_delay" not in changed
 
 
-def test_an_emptied_field_shows_its_default_and_stays_empty_on_a_redraw(
+def test_an_emptied_field_stays_empty_and_offers_its_reset_on_a_redraw(
     client: TestClient,
 ) -> None:
     apply_answers({"literature.request_delay": "15"})
@@ -182,9 +200,9 @@ def test_an_emptied_field_shows_its_default_and_stays_empty_on_a_redraw(
 
     assert isinstance(field, Tag)
     assert field.get("value", "") == ""
-    assert field["placeholder"] == words.default_placeholder("3.0")
-    # Emptied, it is the default already: nothing left to reset.
-    assert reset_button_of(redrawn, "literature.request_delay") is None
+    # No "Default: 3.0" in it: emptying no longer gives the default.
+    assert not field.has_attr("placeholder")
+    assert reset_button_of(redrawn, "literature.request_delay") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -266,12 +284,12 @@ def test_a_reset_then_saved_writes_the_default(client: TestClient) -> None:
     assert load_settings().conversion.quality == "best"
 
 
-def test_the_setup_walk_offers_no_default_and_no_reset() -> None:
-    """Its save reads an empty field as keep; a placeholder saying the
-    default, or a reset button, would promise what it does not do."""
+def test_the_setup_walk_offers_no_reset() -> None:
+    """Its save reads an empty field as keep; a reset button would promise
+    what it does not do."""
     apply_answers({"conversion.quality": "fast", "literature.request_delay": "15"})
 
     rows = shown_settings({}, every=False)
 
     assert rows, "the walk drew nothing"
-    assert all(row.placeholder == "" and row.reset_label == "" for row in rows)
+    assert all(row.reset_label == "" for row in rows)

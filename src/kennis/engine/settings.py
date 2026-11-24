@@ -96,8 +96,11 @@ class EmbeddingSettings(BaseModel):
             "the first time you index; none means lexical search only."
         ),
     )
+    # Never empty: an empty name only fails later, at the first embedding
+    # (#700); `config reset` and the window's reset give the default.
     model: str = Field(
         default=EMBEDDING_DEFAULTS["fastembed"],
+        min_length=1,
         description="Model name, interpreted by the backend.",
         examples=[
             '"BAAI/bge-small-en-v1.5"    (fastembed)',
@@ -119,6 +122,7 @@ class EmbeddingSettings(BaseModel):
     )
     api_key_env: str = Field(
         default="OPENAI_API_KEY",
+        min_length=1,
         description="Environment variable holding the key, for hosted backends.",
         examples=['"OPENAI_API_KEY"'],
     )

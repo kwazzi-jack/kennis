@@ -711,3 +711,15 @@ def test_completion_offers_every_setting_from_nothing(run: CliRunner):
         for field in type(getattr(defaults, section)).model_fields
     ]
     assert sorted(offered) == sorted(every)
+
+
+@pytest.mark.parametrize("key", ["embedding.model", "embedding.api_key_env"])
+def test_an_empty_name_is_refused_where_empty_means_nothing(
+    run: CliRunner, isolated: Path, key: str
+):
+    """Their defaults are names, and an empty name yields only a later
+    failure (#700); `reset` is the way back."""
+    result = run.invoke(main, ["config", "set", key, ""])
+
+    assert result.exit_code != 0
+    assert not (isolated / "config.toml").exists()
