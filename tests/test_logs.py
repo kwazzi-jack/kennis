@@ -236,3 +236,22 @@ def test_a_configuration_that_will_not_load_still_gets_a_log(
     run_a_command()
 
     assert " INFO " in written(isolated)
+
+
+def test_the_log_moves_with_the_state_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Brian's trial (2026-11-24) set `KENNIS_STATE_DIR` alone, and the
+    log went to `~/.local/state/kennis/log` beside his real one."""
+    monkeypatch.delenv("KENNIS_LOG_DIR")
+    monkeypatch.setenv("KENNIS_STATE_DIR", str(tmp_path / "elsewhere"))
+
+    assert log_path() == tmp_path / "elsewhere" / "log" / "kennis.log"
+
+
+def test_the_log_s_own_variable_still_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated: Path
+):
+    monkeypatch.setenv("KENNIS_STATE_DIR", str(tmp_path / "elsewhere"))
+
+    assert log_path() == isolated / "kennis.log"

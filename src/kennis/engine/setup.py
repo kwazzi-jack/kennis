@@ -208,6 +208,20 @@ def questions_for(answers: Mapping[str, str], *, every: bool = False) -> list[Qu
     return applicable
 
 
+def default_of(key: str) -> str:
+    """What `key` goes back to when the reader asks for its default.
+
+    The default of the question that applies under the settings in force,
+    so the embedding model's is the model of the backend in use; for a
+    setting no question asks (`corpus.root`, `backup.folder`), the field's
+    own. As text, as `Question.default` is.
+    """
+    for question in questions_for({}, every=True):
+        if question.key == key:
+            return question.default
+    return _default(key, (), _field_of(key))
+
+
 def validate_answer(question: Question, value: str) -> str | None:
     """Why `value` is not acceptable for `question`, or None if it is.
 

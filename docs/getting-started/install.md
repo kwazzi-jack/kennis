@@ -64,7 +64,7 @@ until `kennis config init` writes it in the tutorial's first step.
 | credentials | `~/.config/kennis/credentials.toml` | `KENNIS_CONFIG_DIR` |
 | the corpus | `~/.local/share/kennis` | `corpus.root` |
 | recent searches, the service's record | `~/.local/state/kennis` | `KENNIS_STATE_DIR` |
-| the log | `~/.local/state/kennis/log/kennis.log` | `KENNIS_LOG_DIR` |
+| the log | `~/.local/state/kennis/log/kennis.log` | `KENNIS_LOG_DIR`, else `log/` inside `KENNIS_STATE_DIR` |
 | embedding models | `~/.cache/kennis/models` | - |
 
 These are the XDG defaults; on macOS and Windows they are the platform

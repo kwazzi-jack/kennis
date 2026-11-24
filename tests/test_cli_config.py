@@ -555,3 +555,159 @@ def test_the_setup_still_keeps_what_an_empty_answer_leaves(isolated: Path):
     written = tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
     assert written["figures"]["trusted_hosts"] == "arxiv.org"
     assert written["chunking"]["size"] == 800
+
+
+# ---------------------------------------------------------------------------
+# reset: the default, by its own command (Brian, 2026-11-24)
+# ---------------------------------------------------------------------------
+
+
+def held_in(isolated: Path) -> dict[str, dict[str, object]]:
+    return tomllib.loads((isolated / "config.toml").read_text(encoding="utf-8"))
+
+
+def test_reset_puts_a_number_back_to_its_default(run: CliRunner, isolated: Path):
+    """`config set <key> ""` writes an empty value, which a number refuses;
+    putting the default back is a command of its own."""
+    assert (
+        run.invoke(
+            main, ["config", "set", "conversion.timeout_minutes", "10080"]
+        ).exit_code
+        == 0
+    )
+    assert held_in(isolated)["conversion"]["timeout_minutes"] == 10080, (
+        "the fixture no longer exercises the case"
+    )
+
+    result = run.invoke(main, ["config", "reset", "conversion.timeout_minutes"])
+
+    assert result.exit_code == 0, result.output
+    assert held_in(isolated)["conversion"]["timeout_minutes"] == 240
+    assert "conversion.timeout_minutes = 240" in result.output
+
+
+def test_reset_puts_back_a_default_that_is_empty(run: CliRunner, isolated: Path):
+    assert (
+        run.invoke(
+            main, ["config", "set", "figures.trusted_hosts", "arxiv.org"]
+        ).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["config", "reset", "figures.trusted_hosts"])
+
+    assert result.exit_code == 0, result.output
+    assert held_in(isolated)["figures"]["trusted_hosts"] == ""
+
+
+def test_reset_leaves_every_other_setting_as_it_was(run: CliRunner, isolated: Path):
+    assert run.invoke(main, ["config", "set", "chunking.size", "800"]).exit_code == 0
+    assert (
+        run.invoke(main, ["config", "set", "conversion.quality", "fast"]).exit_code == 0
+    )
+
+    assert run.invoke(main, ["config", "reset", "conversion.quality"]).exit_code == 0
+
+    held = held_in(isolated)
+    assert held["conversion"]["quality"] == "best"
+    assert held["chunking"]["size"] == 800
+
+
+def test_reset_gives_the_model_of_the_backend_in_force(run: CliRunner, isolated: Path):
+    """The model's default depends on the backend: under ollama it is
+    ollama's model, not fastembed's."""
+    assert (
+        run.invoke(main, ["config", "set", "embedding.backend", "ollama"]).exit_code
+        == 0
+    )
+    assert (
+        run.invoke(main, ["config", "set", "embedding.model", "llama-embed"]).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["config", "reset", "embedding.model"])
+
+    assert result.exit_code == 0, result.output
+    assert held_in(isolated)["embedding"]["model"] == "nomic-embed-text"
+
+
+def test_reset_puts_back_a_setting_no_question_asks(run: CliRunner, isolated: Path):
+    """`corpus.root` is on no page and in no setup walk; its default is
+    empty, which is the platform's own place."""
+    assert (
+        run.invoke(
+            main, ["config", "set", "corpus.root", "/var/tmp/somewhere"]
+        ).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["config", "reset", "corpus.root"])
+
+    assert result.exit_code == 0, result.output
+    assert held_in(isolated)["corpus"]["root"] == ""
+
+
+def test_reset_refuses_a_setting_that_does_not_exist(run: CliRunner, isolated: Path):
+    result = run.invoke(main, ["config", "reset", "conversion.nonsense"])
+
+    assert result.exit_code != 0
+    assert "nonsense" in result.output
+    assert not (isolated / "config.toml").exists()
+
+
+def test_reset_refuses_a_key_which_has_no_default(run: CliRunner, isolated: Path):
+    """Under a hosted backend, where the key is asked for at all."""
+    assert (
+        run.invoke(main, ["config", "set", "embedding.backend", "openai"]).exit_code
+        == 0
+    )
+
+    result = run.invoke(main, ["config", "reset", "embedding.api_key"])
+
+    assert result.exit_code != 0
+    assert "Reset" not in result.output
+    assert not (isolated / "credentials.toml").exists()
+
+
+# ---------------------------------------------------------------------------
+# completion of a setting's name
+# ---------------------------------------------------------------------------
+
+
+def completed(run: CliRunner, words: str) -> list[str]:
+    """What bash would be offered after `words`, through click's own
+    completion protocol, the one `_KENNIS_COMPLETE=bash_source` installs."""
+    typed = words.split(" ")
+    result = run.invoke(
+        main,
+        [],
+        prog_name="kennis",
+        env={
+            "_KENNIS_COMPLETE": "bash_complete",
+            "COMP_WORDS": words,
+            "COMP_CWORD": str(len(typed) - 1),
+        },
+    )
+    assert result.exit_code == 0, result.output
+    return [line.partition(",")[2] for line in result.output.splitlines() if line]
+
+
+@pytest.mark.parametrize("command", ["get", "set", "reset"])
+def test_a_setting_s_name_is_completed(run: CliRunner, command: str):
+    offered = completed(run, f"kennis config {command} conversion.t")
+
+    assert offered == ["conversion.threads", "conversion.timeout_minutes"]
+
+
+def test_completion_offers_every_setting_from_nothing(run: CliRunner):
+    from kennis.engine.settings import Settings
+
+    offered = completed(run, "kennis config reset ")
+
+    defaults = Settings.model_construct()
+    every = [
+        f"{section}.{field}"
+        for section in Settings.model_fields
+        for field in type(getattr(defaults, section)).model_fields
+    ]
+    assert sorted(offered) == sorted(every)

@@ -46,8 +46,14 @@ kennis config show                    # the whole file, as valid TOML
 kennis config get                     # every setting and the value in effect
 kennis config get embedding.model     # one value, unstyled, for scripts
 kennis config set embedding.backend ollama
+kennis config reset embedding.backend # back to its default
 kennis config init                    # the guided setup
 ```
+
+`kennis config set <key> ""` writes an empty value, which a setting such as
+`figures.trusted_hosts` takes as "none" and a number refuses. To put a
+setting back to its default, use `kennis config reset <key>`. The embedding
+model's default is the model of the backend in force.
 
 **Every write leaves every setting in the file**, including those at their
 default, whether it comes from `config set`, `config init` or the settings
@@ -81,6 +87,20 @@ rather than one with a warning in the middle.
 `kennis config get <key>` prints the bare value with no styling, so it can be
 read by a script. `kennis config get` with no key prints the whole set,
 highlighted.
+
+## Completing commands and setting names in the shell
+
+kennis completes its commands, options and the names of settings when the
+shell is told to ask it. Add one line to the shell's startup file:
+
+```
+eval "$(_KENNIS_COMPLETE=bash_source kennis)"   # ~/.bashrc
+eval "$(_KENNIS_COMPLETE=zsh_source kennis)"    # ~/.zshrc
+_KENNIS_COMPLETE=fish_source kennis | source    # ~/.config/fish/completions/kennis.fish
+```
+
+Then `kennis config set conversion.t` followed by Tab offers
+`conversion.threads` and `conversion.timeout_minutes`.
 
 ## Every setting
 
