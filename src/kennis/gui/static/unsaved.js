@@ -36,6 +36,9 @@
 
   document.addEventListener("input", onEdit);
   document.addEventListener("change", onEdit);
-  document.body.addEventListener("htmx:afterSettle", updateAll);
+  // After the swap, in the same task, never after the settle: a section
+  // drawn by a save was shown for a moment with Save still lit, and a
+  // browser test on CI read it in that moment.
+  document.body.addEventListener("htmx:afterSwap", updateAll);
   updateAll();
 })();

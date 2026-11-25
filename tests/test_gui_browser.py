@@ -2007,8 +2007,20 @@ def test_a_reset_enables_save_and_a_save_disables_it(
     )
     assert not _save_disabled(page)
 
+    # Read inside the swap's own event, after `unsaved.js`'s listener: the
+    # page must never show the saved section with Save still lit. Read
+    # after the outcome appeared instead, a check after `afterSettle` raced
+    # it on CI (2026-11-25).
+    page.evaluate(
+        """() => document.body.addEventListener("htmx:afterSwap", () => {
+            const save = document.querySelector(
+                ".kennis-settings .save-bar button[type=submit]");
+            window.saveDisabledAtSwap = save ? save.disabled : null;
+        })"""
+    )
     page.click(".save-bar button[type=submit]")
     page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
+    assert page.evaluate("() => window.saveDisabledAtSwap") is True
     assert _save_disabled(page)
 
 
