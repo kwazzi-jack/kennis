@@ -451,7 +451,7 @@ def _filters(group: str | None) -> list[Filter] | None:
 @click.option(
     "--frontmatter",
     is_flag=True,
-    help="Include the document's YAML frontmatter in the output.",
+    help="Print only the document's YAML frontmatter.",
 )
 def read_command(
     handle: str,
@@ -509,7 +509,8 @@ def read_command(
         # work: it runs, it exits zero, and it does exactly what it would
         # have done without the flag.
         raise display.CliError(
-            "--frontmatter belongs to a whole-document read; drop --chunks to use it."
+            "--frontmatter reads only the frontmatter, which is not a span of "
+            "chunks; drop --chunks to use it."
         )
     _read_span(corpus_root, handle, collection, chunks=parse_chunk_range(chunk_range))
 
