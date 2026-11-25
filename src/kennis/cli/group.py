@@ -11,13 +11,14 @@ import logging
 
 import click
 
+from kennis import __version__
 from kennis.cli import display
 from kennis.client.calls import JobDetached
-from kennis.client.process import tell_of_recovery
+from kennis.client.process import tell_of_recovery, tell_of_waiting
 from kennis.engine.errors import KennisError, TaskStopped
 from kennis.logs import log_path
 from kennis.render.paths import from_home
-from kennis.render.words import put_back_at_start
+from kennis.render.words import put_back_at_start, waiting_for_another_version
 
 
 class KennisCommand(click.Command):
@@ -56,6 +57,11 @@ class KennisGroup(click.Group):
     def invoke(self, ctx: click.Context) -> object:
         tell_of_recovery(
             lambda operation: display.warning(put_back_at_start(operation))
+        )
+        tell_of_waiting(
+            lambda version: display.warning(
+                waiting_for_another_version(version, __version__)
+            )
         )
         try:
             return super().invoke(ctx)
