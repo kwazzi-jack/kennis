@@ -45,6 +45,7 @@ has.
 kennis config show                    # the whole file, as valid TOML
 kennis config get                     # every setting and the value in effect
 kennis config get embedding.model     # one value, unstyled, for scripts
+kennis config get embedding           # one section's settings
 kennis config set embedding.backend ollama
 kennis config reset embedding.backend # back to its default
 kennis config init                    # the guided setup
@@ -56,8 +57,16 @@ writes an empty value: `figures.trusted_hosts` takes it as "no hosts", and
 a setting for which empty means nothing (a number, `embedding.model`,
 `embedding.api_key_env`) refuses it. To put a setting back to its default,
 use `kennis config reset <key>`, or the reset button beside the setting on
-the settings page. The embedding model's default is the model of the
-backend in force.
+the settings page. An empty value is shown as `(unset)`.
+
+**Settings are taken literally, and a default never follows another
+setting.** The embedding model's default is `BAAI/bge-small-en-v1.5` whatever
+the backend, and any backend may be set with any model. When a backend
+cannot use the model it is given, the command that tried says so, names
+`embedding.backend` and `embedding.model`, and says what kennis knows about
+the name - for example that it is a model fastembed lists, set for ollama. A
+failed conversion names the `conversion.quality` and `conversion.device` it
+ran with.
 
 **Every write leaves every setting in the file**, including those at their
 default, whether it comes from `config set`, `config init` or the settings

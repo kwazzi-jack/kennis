@@ -84,15 +84,18 @@ def test_a_model_not_in_the_cache_is_announced_before_it_is_fetched(
     assert order == ["announce", "fetch"]
 
 
-def test_an_unknown_model_is_announced_rather_than_assumed_present(
+def test_a_model_with_no_known_cache_is_announced_rather_than_assumed_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """A model fastembed does not list has no cache directory to look for.
-    Announcing a fetch that turns out to be instant is the safe direction;
-    staying silent through a 65 MB download is not."""
+    """A model fastembed lists without a huggingface source has no cache
+    directory to look for. Announcing a fetch that turns out to be instant
+    is the safe direction; staying silent through a 65 MB download is not.
+    (A model fastembed does not list at all is refused before this, since
+    fastembed cannot load it: `test_embedding_mismatch.py`.)"""
     from kennis.engine.rag import embedding as module
 
     monkeypatch.setattr(module, "model_cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(module, "_fastembed_lists", lambda model: True)
     monkeypatch.setattr(module, "_hf_repository", lambda model: None)
     monkeypatch.setattr(module, "_load_fastembed", lambda binding: None)
     recorder = Recorder()

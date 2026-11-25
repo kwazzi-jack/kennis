@@ -690,6 +690,9 @@ CONVERTER_MISSING = "MinerU is not installed. To install it, run:"
 # is inside the other, so a test can tell them apart.
 CREDENTIAL_SET = "is set"
 CREDENTIAL_UNSET = "is not set"
+# In an empty field on the settings page, as `config get` writes an empty
+# value (Brian, 2026-11-25): empty is unset, and saying so is not a fault.
+UNSET = "(unset)"
 CREDENTIAL_KEEP = "Leave empty to keep the current key."
 REBUILD_HEADING = "Indexes need updating"
 REBUILD_NOTE = "Until then, each index keeps its old settings:"
@@ -2482,6 +2485,7 @@ __all__ = [
     "UNINSTALLED_STILL_HELD",
     "UNINSTALL_PACK",
     "UNINSTALL_PACK_ACTION",
+    "UNSET",
     "UPLOAD_CLEAR",
     "UPLOAD_FILES",
     "UPLOAD_FOLDER",

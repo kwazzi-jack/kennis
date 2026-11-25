@@ -613,9 +613,11 @@ def test_reset_leaves_every_other_setting_as_it_was(run: CliRunner, isolated: Pa
     assert held["chunking"]["size"] == 800
 
 
-def test_reset_gives_the_model_of_the_backend_in_force(run: CliRunner, isolated: Path):
-    """The model's default depends on the backend: under ollama it is
-    ollama's model, not fastembed's."""
+def test_reset_gives_the_model_s_own_default_under_any_backend(
+    run: CliRunner, isolated: Path
+):
+    """Literal, not smart (Brian, 2026-11-25): the default does not follow
+    the backend, and a mismatch is said when the model is used."""
     assert (
         run.invoke(main, ["config", "set", "embedding.backend", "ollama"]).exit_code
         == 0
@@ -628,7 +630,7 @@ def test_reset_gives_the_model_of_the_backend_in_force(run: CliRunner, isolated:
     result = run.invoke(main, ["config", "reset", "embedding.model"])
 
     assert result.exit_code == 0, result.output
-    assert held_in(isolated)["embedding"]["model"] == "nomic-embed-text"
+    assert held_in(isolated)["embedding"]["model"] == "BAAI/bge-small-en-v1.5"
 
 
 def test_reset_puts_back_a_setting_no_question_asks(run: CliRunner, isolated: Path):
@@ -723,3 +725,38 @@ def test_an_empty_name_is_refused_where_empty_means_nothing(
 
     assert result.exit_code != 0
     assert not (isolated / "config.toml").exists()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [["set", "figures.trusted_hosts", ""], ["reset", "figures.trusted_hosts"]],
+)
+def test_an_empty_value_is_reported_as_unset(run: CliRunner, command: list[str]):
+    """Nothing after the equals sign reads as a fault (Brian, 2026-11-25)."""
+    result = run.invoke(main, ["config", *command])
+
+    assert result.exit_code == 0, result.output
+    assert "figures.trusted_hosts = (unset)" in result.output
+
+
+def test_get_of_one_empty_setting_stays_bare_for_a_script(run: CliRunner):
+    result = run.invoke(main, ["config", "get", "figures.trusted_hosts"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == ""
+
+
+def test_get_of_a_section_lists_its_settings(run: CliRunner):
+    """The command an embedding failure names as its remedy."""
+    result = run.invoke(main, ["config", "get", "embedding"])
+
+    assert result.exit_code == 0, result.output
+    assert "embedding.model = BAAI/bge-small-en-v1.5" in result.output
+    assert "chunking." not in result.output
+
+
+def test_an_emptied_name_says_it_cannot_be_empty(run: CliRunner):
+    result = run.invoke(main, ["config", "set", "embedding.model", ""])
+
+    assert result.exit_code != 0
+    assert "embedding.model: cannot be empty" in result.output

@@ -120,13 +120,16 @@ def _setting_names(
 @config_group.command(name="get")
 @click.argument("key", required=False, shell_complete=_setting_names)
 def get_command(key: str | None) -> None:
-    """One setting's value, or every setting when no key is given."""
+    """One setting's value, a section's settings, or every setting when no
+    key is given."""
     from kennis.engine.settings import Settings, load_settings
     from kennis.render.words import describe_setting
 
     settings = load_settings()
-    if key is None:
-        for name in Settings.model_fields:
+    # A section alone lists its rows: `EmbeddingUnavailable` has long named
+    # `kennis config get embedding` as its remedy, and it was refused.
+    if key is None or key in Settings.model_fields:
+        for name in Settings.model_fields if key is None else [key]:
             for field, value in _section_values(settings, name).items():
                 display.setting_row(describe_setting(f"{name}.{field}", value))
         return
@@ -145,6 +148,7 @@ def set_command(key: str, value: str) -> None:
     """
     from kennis.engine.settings import Settings
     from kennis.engine.setup import apply_answers
+    from kennis.render.words import describe_setting
 
     # The key checked against the defaults, not what is in force: a bad
     # value in the file or the environment refused every `set`, including
@@ -154,7 +158,7 @@ def set_command(key: str, value: str) -> None:
     # setting for which empty is no value refuses it (#666). The default
     # is `reset`'s.
     apply_answers({key: value}, clearing=True)
-    display.operation("Set", f"{key} = {value}")
+    display.operation("Set", describe_setting(key, value))
     _say_after_setting(key, value)
 
 
@@ -170,13 +174,14 @@ def reset_command(key: str) -> None:
     """
     from kennis.engine.settings import Settings
     from kennis.engine.setup import apply_answers, default_of
+    from kennis.render.words import describe_setting
 
     # A key is no setting here (it is kept in the credentials file), so
     # this refuses it as it refuses a name kennis does not have.
     _value_of(Settings.model_construct(), key)
     default = default_of(key)
     apply_answers({key: default}, clearing=True)
-    display.operation("Reset", f"{key} = {default}")
+    display.operation("Reset", describe_setting(key, default))
     _say_after_setting(key, default)
 
 

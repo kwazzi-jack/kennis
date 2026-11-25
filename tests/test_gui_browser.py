@@ -1951,7 +1951,7 @@ def test_an_emptied_number_is_refused_and_kept(
     apply_answers({"literature.request_delay": "15"})
     _open_settings(page, address, "documents")
     field = page.locator('input[name="literature.request_delay"]')
-    assert field.get_attribute("placeholder") is None
+    assert field.get_attribute("placeholder") == words.UNSET
 
     field.fill("")
     page.click(".save-bar button[type=submit]")

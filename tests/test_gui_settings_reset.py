@@ -103,10 +103,11 @@ def test_a_question_carries_its_default(key: str, default: str) -> None:
 
 
 @pytest.mark.parametrize("backend", sorted(EMBEDDING_DEFAULTS))
-def test_a_model_s_default_is_its_backend_s_own(backend: str) -> None:
-    assert (
-        question_named("embedding.model", backend).default
-        == (EMBEDDING_DEFAULTS[backend])
+def test_a_model_s_default_is_the_same_under_every_backend(backend: str) -> None:
+    """A default never follows another setting (Brian, 2026-11-25): what
+    a backend usually serves is a suggestion, not the default."""
+    assert question_named("embedding.model", backend).default == (
+        "BAAI/bge-small-en-v1.5"
     )
 
 
@@ -200,8 +201,8 @@ def test_an_emptied_field_stays_empty_and_offers_its_reset_on_a_redraw(
 
     assert isinstance(field, Tag)
     assert field.get("value", "") == ""
-    # No "Default: 3.0" in it: emptying no longer gives the default.
-    assert not field.has_attr("placeholder")
+    # "(unset)", not "Default: 3.0": emptying no longer gives the default.
+    assert field["placeholder"] == words.UNSET
     assert reset_button_of(redrawn, "literature.request_delay") is not None
 
 
@@ -355,3 +356,17 @@ def test_the_settings_page_loads_the_script_that_disables_save(
     save = page.select_one(".kennis-settings .save-bar button[type=submit]")
     assert isinstance(save, Tag)
     assert not save.has_attr("disabled"), "without a script Save must still work"
+
+
+def test_an_empty_field_says_unset_on_the_settings_page(client: TestClient) -> None:
+    field = row_of(drawn(client, "documents"), "figures.trusted_hosts").find("input")
+
+    assert isinstance(field, Tag)
+    assert field.get("value", "") == ""
+    assert field["placeholder"] == words.UNSET
+
+
+def test_the_setup_walk_draws_no_unset_where_empty_means_keep() -> None:
+    rows = shown_settings({}, every=False)
+
+    assert all(row.placeholder == "" for row in rows)

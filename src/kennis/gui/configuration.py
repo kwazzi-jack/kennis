@@ -137,6 +137,9 @@ class ShownSetting:
     # label. The one way back to the default on the page (#700).
     default: str = ""
     reset_label: str = ""
+    # What an empty field says: `(unset)` on the settings page, where empty
+    # is a value; nothing in the walk, where it keeps.
+    placeholder: str = ""
     # The value saved, whatever the field now holds: `unsaved.js` disables
     # Save while no field differs from it (Brian, 2026-11-24). Empty for a
     # key, whose field is always drawn empty.
@@ -207,9 +210,9 @@ def shown_settings(
     ]
     if every:
         return shown
-    # The setup walk reads an empty field as keep, so it offers no reset:
-    # it would promise what its save does not do.
-    return [replace(setting, reset_label="") for setting in shown]
+    # The setup walk reads an empty field as keep, so it offers no reset
+    # and says no "(unset)": either would promise what its save does not do.
+    return [replace(setting, placeholder="", reset_label="") for setting in shown]
 
 
 def _with_fit(setting: ShownSetting, values: Mapping[str, str]) -> ShownSetting:
@@ -387,6 +390,7 @@ def _shown(
         order=_chips(question.key, value),
         default=question.default,
         saved="" if secret else question.current,
+        placeholder=words.UNSET if question.kind in _EMPTIABLE else "",
         reset_label=(
             words.reset_label(
                 words.SETTING_NAMES[question.key],

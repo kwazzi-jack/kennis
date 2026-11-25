@@ -67,10 +67,10 @@ class Question:
     front end offers `suggested`, and compares an answer with `current` to
     say what changed; every setting is written either way (#445).
 
-    `default` is what kennis holds when the file says nothing: the model's
-    own default, or for the model asked under a backend that backend's own
-    (`EMBEDDING_DEFAULTS`). What a front end puts back when the reader asks
-    for the default (#666). Empty for a key, which has none.
+    `default` is what kennis holds when the file says nothing: the field's
+    own default, which no other setting changes (Brian, 2026-11-25). What a
+    front end puts back when the reader asks for the default (#666). Empty
+    for a key, which has none.
     """
 
     key: str
@@ -211,15 +211,10 @@ def questions_for(answers: Mapping[str, str], *, every: bool = False) -> list[Qu
 def default_of(key: str) -> str:
     """What `key` goes back to when the reader asks for its default.
 
-    The default of the question that applies under the settings in force,
-    so the embedding model's is the model of the backend in use; for a
-    setting no question asks (`corpus.root`, `backup.folder`), the field's
-    own. As text, as `Question.default` is.
+    The field's own default, which no other setting changes (Brian,
+    2026-11-25). As text, as `Question.default` is.
     """
-    for question in questions_for({}, every=True):
-        if question.key == key:
-            return question.default
-    return _default(key, (), _field_of(key))
+    return _default(_field_of(key))
 
 
 def validate_answer(
@@ -365,7 +360,7 @@ def _question(
         description=field.description or key,
         current=_current(key, settings),
         suggested=_suggested(key, when, settings),
-        default=_default(key, when, field),
+        default=_default(field),
         options=_options_of(field.annotation),
         minimum=lower,
         maximum=upper,
@@ -393,17 +388,16 @@ def _current(key: str, settings: Settings) -> str:
     return _as_text(getattr(getattr(settings, section), name))
 
 
-def _default(key: str, when: tuple[tuple[str, str], ...], field: FieldInfo) -> str:
-    """What `key` holds when the file says nothing about it.
+def _default(field: FieldInfo) -> str:
+    """What a setting holds when the file says nothing about it: the
+    field's own default, whatever any other setting holds.
 
-    The model asked under a backend defaults to that backend's own model:
-    the field's single default is fastembed's, and putting it back under
-    OpenAI would name a model OpenAI does not serve.
+    Literal, not smart (Brian, 2026-11-25): the embedding model's default
+    is fastembed's under every backend. A model another backend does not
+    serve is said when it is used (`rag/embedding.py::mismatch`), and what a
+    backend usually serves is offered as a suggestion (`_suggested`), never
+    put back as a default.
     """
-    backend = dict(when).get("embedding.backend")
-    model = EMBEDDING_DEFAULTS.get(backend or "")
-    if key == "embedding.model" and model:
-        return model
     return _as_text(field.get_default(call_default_factory=True))
 
 
@@ -548,8 +542,15 @@ def _validated(given: Mapping[str, str]) -> Settings:
             key = ".".join(str(part) for part in (section, *first["loc"][:1]))
             path = config_path()
             where = key if key in given else f"{key} in {path}"
+            # pydantic's "String should have at least 1 character" is a
+            # sentence about a type; the reader emptied a setting (#700).
+            said = (
+                "cannot be empty"
+                if first["type"] == "string_too_short"
+                else first["msg"]
+            )
             raise SettingsError(
-                f"{where}: {first['msg']}", resolution=repair_of(key, path)
+                f"{where}: {said}", resolution=repair_of(key, path)
             ) from error
     return Settings.model_construct().model_copy(update=sections)
 

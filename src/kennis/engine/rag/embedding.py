@@ -41,7 +41,7 @@ from platformdirs import user_cache_dir
 
 from kennis.engine.errors import EmbeddingUnavailable, SettingsError
 from kennis.engine.events import FETCH_MODEL, EventSink, ItemStarted
-from kennis.engine.settings import credential, load_settings
+from kennis.engine.settings import EMBEDDING_DEFAULTS, credential, load_settings
 from kennis.telemetry import refuse_onnx_runtime_telemetry
 
 if TYPE_CHECKING:
@@ -216,7 +216,16 @@ def embedder_for(binding: ModelBinding, *, events: EventSink | None = None) -> E
     binding is refused rather than fetched for.
     """
     validate_binding(binding)
-    ensure_model_available(binding, events=events)
+    try:
+        ensure_model_available(binding, events=events)
+    except EmbeddingUnavailable:
+        raise
+    except Exception as error:
+        # Inside the backend's own library, a failure names neither the
+        # backend nor the model, still less the two settings behind them.
+        raise _unavailable(
+            binding, f"could not fetch '{binding.model}'", error
+        ) from error
     if binding.kind == "fastembed":
         return _FastembedEmbedder(binding)
     if binding.kind == "ollama":
@@ -295,11 +304,85 @@ def _embedded(
     try:
         return np.asarray(embedder.embed(batch), dtype=np.float32)
     except Exception as error:
-        where = f" at {binding.host}" if binding.host else ""
-        raise EmbeddingUnavailable(
-            f"the {binding.kind} backend could not embed with "
-            f"'{binding.model}'{where}: {error}"
+        raise _unavailable(
+            binding, f"could not embed with '{binding.model}'", error
         ) from error
+
+
+def _unavailable(
+    binding: ModelBinding, failed: str, error: BaseException
+) -> EmbeddingUnavailable:
+    """A backend's failure, with what kennis can say about the settings.
+
+    The configuration is literal (Brian, 2026-11-25): any backend may be
+    set with any model, and this is where a pair that does not belong
+    together is said, with what kennis knows about the name.
+    """
+    where = f" at {binding.host}" if binding.host else ""
+    message = (
+        f"the {binding.kind} backend {failed}{where}: {error}. {mismatch(binding)}"
+    )
+    if binding.kind == "ollama":
+        # What the daemon holds, which is what the name has to be one of.
+        return EmbeddingUnavailable(message, resolution="ollama list")
+    return EmbeddingUnavailable(message)
+
+
+def mismatch(binding: ModelBinding) -> str:
+    """Which settings decide this backend and model, and why they may not
+    belong together where kennis can tell: the name is one fastembed
+    lists, or the model kennis suggests for another backend, or one
+    fastembed does not list.
+
+    A sentence, because it is the message of an `EmbeddingUnavailable`,
+    the one place the engine phrases (#81) and the one every front end
+    shows whole.
+    """
+    model = binding.model
+    known = _known_as(model)
+    if binding.kind == "fastembed":
+        said = f"{known[1]}, and " if known is not None else ""
+        return (
+            f"{said}fastembed lists no model named '{model}': check that "
+            "embedding.backend and embedding.model belong together"
+        )
+    said = (
+        f"{known[1]}, and embedding.backend is {binding.kind}: "
+        if known is not None and known[0] != binding.kind
+        else ""
+    )
+    return (
+        f"{said}check that embedding.model '{model}' is a model "
+        f"{_service(binding)} serves"
+    )
+
+
+def _service(binding: ModelBinding) -> str:
+    if binding.kind == "ollama":
+        return f"ollama at {binding.host}"
+    return f"the service at {binding.host}" if binding.host else "OpenAI's service"
+
+
+def _known_as(model: str) -> tuple[str, str] | None:
+    """The backend kennis knows `model` by, and how it knows, or None.
+
+    fastembed's own list, read from the installed fastembed; then the model
+    kennis suggests for each backend.
+    """
+    if _fastembed_lists(model):
+        return "fastembed", f"'{model}' is a model fastembed lists"
+    for backend, suggested in EMBEDDING_DEFAULTS.items():
+        if suggested == model:
+            return backend, f"'{model}' is the model kennis suggests for {backend}"
+    return None
+
+
+def _fastembed_lists(model: str) -> bool:
+    from fastembed import TextEmbedding
+
+    return any(
+        entry.get("model") == model for entry in TextEmbedding.list_supported_models()
+    )
 
 
 def _normalised(matrix: np.ndarray) -> np.ndarray:
@@ -418,6 +501,12 @@ def ensure_model_available(
 
 
 def _ensure_fastembed(binding: ModelBinding, events: EventSink | None) -> None:
+    # Before the announcement: a name fastembed does not list is nothing to
+    # download, and saying "Downloading" first was a promise it then broke.
+    if not _fastembed_lists(binding.model):
+        raise EmbeddingUnavailable(
+            f"the fastembed backend cannot load '{binding.model}'. {mismatch(binding)}"
+        )
     repository = _hf_repository(binding.model)
     cached = (
         repository is not None
