@@ -13,8 +13,8 @@ server never read them; kennis's own settings are written through
 The words are in `gui/words.py`; this module holds the values and the
 defaults. A default needs no CSS rule: it is the layout without the
 attribute. That was what the window did before there was a choice, with
-one exception - the text width fits the pane by default, and the
-reading measure it had before is a choice (Brian, 2026-10-12).
+one exception - the text width is wide by default (Brian, 2026-11-25),
+and the reading measure it had before is a choice.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ PREFERENCES: Final[dict[str, Preference]] = {
         _preference("face", "serif", "appearance"),
         _preference("size", "normal", "appearance"),
         _preference("spacing", "normal", "appearance"),
-        _preference("width", "reading", "appearance"),
+        _preference("width", "wide", "appearance"),
         # Closed by default (Brian, 2026-11-04). Drawn as `open` on each
         # `<details>` by the server, not by a `data-` rule, so a change shows
         # on the next page rather than at once.

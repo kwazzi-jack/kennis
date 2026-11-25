@@ -2048,3 +2048,23 @@ def test_a_disabled_save_looks_disabled(page: playwright.Page, address: str) -> 
     assert not _save_disabled(page)
     assert float(page.evaluate(opacity)) == 1.0
     assert dimmed <= 0.6
+
+
+def test_text_is_wide_unless_the_reader_chose_otherwise(page: playwright.Page) -> None:
+    """Brian, 2026-11-25: wide suits papers better than the reading
+    measure, which stays one choice away."""
+    width = (
+        "() => getComputedStyle(document.documentElement)"
+        ".getPropertyValue('--text').trim()"
+    )
+
+    assert page.evaluate(width) == "56rem"
+
+    page.evaluate(
+        "() => { document.cookie = 'width=reading; path=/; samesite=strict'; }"
+    )
+    page.reload()
+    page.wait_for_selector("input[name=q]", timeout=_WAIT_MS)
+
+    assert page.evaluate(width) not in ("56rem", "none", "")
+    assert page.evaluate("() => document.documentElement.dataset.width") == "reading"

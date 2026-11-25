@@ -67,13 +67,15 @@
   --gap: 1.75rem;
   /* Under 70 characters of the column face at 1.0625rem. */
   --measure: 33rem;
-  /* What the text is set at and what the column is centred in: the
-     reading measure unless the width preference says otherwise. The
-     whole pane was the default for a day (Brian, 2026-10-12), and set
-     passages about 150 characters a line; the reviews of 2026-10-13
-     all asked for the measure back, and the pane is one choice away. */
-  --text: var(--measure);
-  --frame: calc(var(--margin) + var(--gap) + var(--measure));
+  /* What the text is set at and what the column is centred in: wide
+     unless the width preference says otherwise, about a hundred
+     characters of the column face. The whole pane was the default for a
+     day (Brian, 2026-10-12) and set passages about 150 characters a line;
+     the reading measure was the default from 2026-10-13, and wide from
+     2026-11-25, because it suits papers better (Brian). Both are one
+     choice away. */
+  --text: 56rem;
+  --frame: 56rem;
   --column: 'Source Serif 4', Charter, Cambria, Georgia, serif;
   /* Two faces, divided by the rule the interface already uses.
      `--gutter` is what kennis composed - provenance, counts,
@@ -739,9 +741,13 @@ main {
   --tracking: 0.04em;
   --word-gap: 0.16em;
 }
-/* Wide is about a hundred characters of the column face; the pane is
-   no limit at all, which is what `none` means to `max-width`. */
-:root[data-width="wide"] { --text: 56rem; --frame: 56rem; }
+/* Wide is the default, above. The reading measure is about sixty-five
+   characters in the gutter's frame; the pane is no limit at all, which
+   is what `none` means to `max-width`. */
+:root[data-width="reading"] {
+  --text: var(--measure);
+  --frame: calc(var(--margin) + var(--gap) + var(--measure));
+}
 :root[data-width="pane"] { --text: none; --frame: none; }
 :root[data-strength="words"] .cells { display: none; }
 /* Out of sight, not out of the page: with `display: none` a screen
