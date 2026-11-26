@@ -45,7 +45,11 @@ import httpx
 from kennis.engine.cancelling import pause
 from kennis.engine.corpus.collection import Collection
 from kennis.engine.corpus.conversions import KeptConversions, conversions_root
-from kennis.engine.corpus.converters import Converter, default_converter
+from kennis.engine.corpus.converters import (
+    Converter,
+    ReusedConversion,
+    default_converter,
+)
 from kennis.engine.corpus.document import read_document, write_document
 from kennis.engine.corpus.ids import (
     derive_id,
@@ -270,6 +274,9 @@ class AddOutcome:
     # as a button, or turned into a form with the missing field already
     # filled; `render/refusals.py` has the words. Concern #321.
     refusal: Refusal | None = None
+    # The kept conversion an added document was written from, when it was
+    # not converted in this add.
+    reused: ReusedConversion | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,6 +382,16 @@ class _Plan:
     cost_cents: float | None = None
     # Ligature repairs made across the batch. Concern #151.
     repairs: int = 0
+    # The documents answered from a kept conversion, keyed as `converted`.
+    reused: dict[Path, ReusedConversion] = field(default_factory=dict)
+
+    def reused_by(self, outcome: AddOutcome, path: Path | None) -> AddOutcome:
+        """`outcome`, saying which kept conversion it was written from when
+        it is an added document that was not converted now."""
+        reused = None if path is None else self.reused.get(path)
+        if reused is None or outcome.outcome is not Outcome.ADDED:
+            return outcome
+        return replace(outcome, reused=reused)
 
 
 def _delay_for(options: AddOptions, default: float) -> float:
@@ -444,6 +461,7 @@ def add_notes(
             sink,
             client,
         )
+        outcome = plan.reused_by(outcome, Path(item.identifier).expanduser())
         outcomes.append(outcome)
         sink.emit(
             ItemFinished(
@@ -769,6 +787,13 @@ def _plan_binaries(
             )
             plan.front_page[path] = batch.front_page.get(path, "")
             plan.stamps[path] = batch.stamps.get(path, "")
+            kept_at = batch.kept_at.get(path)
+            if kept_at is not None:
+                plan.reused[path] = ReusedConversion(
+                    converter=converter.name,
+                    variant=converter.variant,
+                    kept_at=kept_at,
+                )
         if batch.cost_cents is not None:
             plan.cost_cents = (plan.cost_cents or 0.0) + batch.cost_cents
         plan.repairs += sum(batch.repairs.values())
@@ -920,6 +945,7 @@ def add_literature(
         outcome = _add_paper(
             collection, paper, record, options, plan, arxiv, sink, client
         )
+        outcome = plan.reused_by(outcome, paper.path)
         outcomes.append(outcome)
         sink.emit(
             ItemFinished(

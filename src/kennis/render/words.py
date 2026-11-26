@@ -25,6 +25,7 @@ from kennis.engine.corpus.layout import relative_to_corpus
 from kennis.engine.corpus.schema import pack_id_of
 
 if TYPE_CHECKING:
+    from kennis.engine.corpus.converters import ReusedConversion
     from kennis.engine.corpus.document import Document
     from kennis.engine.docs.versions import ProjectVersions
     from kennis.engine.history.freshness import Freshness
@@ -468,6 +469,28 @@ JOB_KINDS: Final[dict[str, str]] = {
     "tag": "Tag change",
     "version": "Docs version change",
 }
+
+
+def reused_conversion(reused: ReusedConversion) -> str:
+    """What an added document was written from when it was not converted
+    again: the time, and MinerU's quality under the setting's own name
+    (Brian's trial, 2026-11-26). A conversion is kept a day, so one from
+    another day names its date."""
+    from datetime import datetime
+
+    from kennis.engine.corpus.converters import TIERS
+
+    when = reused.kept_at.astimezone()
+    today = datetime.now().astimezone().date()
+    shown = when.strftime("%H:%M" if when.date() == today else "%Y-%m-%d %H:%M")
+    qualities = {tier: quality for quality, tier in TIERS.items()}
+    quality = (
+        qualities.get(reused.variant, reused.variant)
+        if reused.converter == "mineru"
+        else reused.variant
+    )
+    at = f" at {quality} quality" if quality else ""
+    return f"from the conversion kept at {shown}{at}, not converted again"
 
 
 def put_back_at_start(operation: str) -> str:

@@ -1117,3 +1117,23 @@ def test_a_base_never_takes_a_whole_name():
     """`docs/pydantic` is a name here and a folder in the other name, so the
     base is the folder above it and neither name is shortened to nothing."""
     assert base_of("docs/pydantic", "docs/pydantic/install") == "docs/"
+
+
+def test_an_added_document_from_a_kept_conversion_says_so_in_the_window():
+    """The window's words for what the terminal says (Brian's trial,
+    2026-11-26): a field one front end reads and the other drops is #381."""
+    from datetime import UTC, datetime
+
+    from kennis.engine.corpus.converters import ReusedConversion
+
+    reused = ReusedConversion(
+        converter="mineru", variant="standard", kept_at=datetime.now(UTC)
+    )
+
+    [item] = shown_add(
+        AddReport([AddOutcome("x.pdf", Outcome.ADDED, reused=reused)], 0.1)
+    ).items
+
+    assert item.detail is not None
+    assert "conversion kept at" in item.detail
+    assert "best quality" in item.detail

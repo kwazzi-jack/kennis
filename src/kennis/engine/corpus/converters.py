@@ -42,6 +42,7 @@ import time
 import zipfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, runtime_checkable
 
@@ -102,6 +103,22 @@ class ConversionBatch:
     # a stored paper pointed at nothing (#134). A document that links none
     # has no entry.
     images: dict[Path, dict[str, bytes]] = field(default_factory=dict)
+    # When each document answered from a kept conversion was converted
+    # (`conversions.KeptConversions`); a document converted in this run has
+    # no entry. Carried so an add can say it was not converted again, and
+    # at which quality it had been (Brian's trial, 2026-11-26).
+    kept_at: dict[Path, datetime] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ReusedConversion:
+    """A document's conversion was kept from an earlier run rather than
+    made now: by which converter, at which variant (MinerU's tier,
+    Datalab's mode), and when."""
+
+    converter: str
+    variant: str
+    kept_at: datetime
 
 
 @runtime_checkable

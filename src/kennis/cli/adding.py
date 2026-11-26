@@ -155,8 +155,11 @@ def _named(item: AddOutcome) -> str:
     """
     from kennis.engine.events import Outcome
     from kennis.render.refusals import describe_refusal
+    from kennis.render.words import reused_conversion
 
     name = item.title or item.identifier
+    if item.reused is not None:
+        return f"{name} - {reused_conversion(item.reused)}"
     if item.outcome is not Outcome.FAILED or item.refusal is None:
         return name
     return f"{name} - {describe_refusal(item.refusal)}"

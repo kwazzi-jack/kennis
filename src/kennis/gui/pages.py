@@ -142,6 +142,7 @@ from kennis.render.words import (
     describe_other_model,
     describe_unembedded,
     group_name,
+    reused_conversion,
 )
 from kennis.retrieval import Sweep
 
@@ -1903,6 +1904,8 @@ def _shown_outcome(outcome: AddOutcome) -> ShownItem:
         name=outcome.title or outcome.identifier,
         outcome=outcome.outcome.value,
     )
+    if outcome.reused is not None:
+        return replace(shown, detail=reused_conversion(outcome.reused))
     if outcome.outcome is not Outcome.FAILED or outcome.refusal is None:
         return shown
     repairs = repairs_for(outcome.refusal)
