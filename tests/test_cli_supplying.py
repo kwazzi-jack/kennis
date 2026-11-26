@@ -267,3 +267,26 @@ def test_an_add_asks_and_adds_the_file_as_the_persons_paper(
     assert identifiers == [str(downloaded.resolve())]
     assert options.identifier == DOI
     assert options.owner == "user"
+
+
+def test_an_add_whose_paper_was_skipped_at_the_prompt_exits_non_zero(
+    run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch
+):
+    """Skipped, the paper is still not added, so the refusal stands
+    (Brian's trial, 2026-11-26); supplied, as above, it does not."""
+
+    def add(
+        root: Path,
+        destination: str,
+        identifiers: Sequence[str],
+        options: AddOptions,
+        **kwargs: object,
+    ) -> Written[AddReport]:
+        return Written(result=added_report(DOI, BEHIND_A_PUBLISHER), restored=[])
+
+    monkeypatch.setattr(api, "add", add)
+    a_terminal(monkeypatch, [""])
+
+    result = run.invoke(main, ["corpus", "add", "-l", DOI])
+
+    assert result.exit_code == 1, result.output

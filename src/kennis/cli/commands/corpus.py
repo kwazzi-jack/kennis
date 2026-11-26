@@ -151,7 +151,11 @@ def _report_freshness(freshness: Freshness, name: str) -> bool:
     help="Only this collection. All three by default.",
 )
 def list_command(collection: str | None) -> None:
-    """Every document in the corpus."""
+    """Every document in the corpus, by its place in it."""
+    from kennis.engine.corpus.layout import (
+        WRAPPED_DOCUMENT_FILENAME,
+        relative_to_corpus,
+    )
     from kennis.engine.corpus.schema import COLLECTION_NAMES
 
     corpus_root = existing_corpus().corpus_root
@@ -159,7 +163,14 @@ def list_command(collection: str | None) -> None:
     for name in [collection] if collection else list(COLLECTION_NAMES):
         for document in api.contents(corpus_root, name).documents:
             shown += 1
-            display.row(document.id, document.md_path.name)
+            # A document with figures is a folder holding `content.md`
+            # (#642): the folder is its name, as `tree` shows it.
+            place = (
+                document.md_path.parent
+                if document.md_path.name == WRAPPED_DOCUMENT_FILENAME
+                else document.md_path
+            )
+            display.row(document.id, relative_to_corpus(place, corpus_root))
     if shown == 0:
         display.note("no documents")
 
@@ -305,24 +316,37 @@ def add_command(
             on_waiting=say_waiting,
         )
 
+    from kennis.engine.events import Outcome
+
     report_restored(written.restored)
     report_add(written.result)
+    failed = written.result.counts.get(Outcome.FAILED, 0)
     if destination == "literature":
-        _ask_for_what_the_add_could_not_fetch(
+        failed -= _ask_for_what_the_add_could_not_fetch(
             context.corpus_root, written.result, options
         )
+    # A refusal or a failure is an exit of 1, as `cp` exits when one of its
+    # files is missing; a document already held is not one (Brian's trial,
+    # 2026-11-26). The report above is the message.
+    if failed > 0:
+        raise SystemExit(1)
 
 
 def _ask_for_what_the_add_could_not_fetch(
     corpus_root: Path, report: AddReport, options: AddOptions
-) -> None:
+) -> int:
     """On a terminal, a file for each paper with no open copy, added as
-    `corpus add -l <file> --identifier <it>` adds one (Brian, 2026-10-26)."""
+    `corpus add -l <file> --identifier <it>` adds one (Brian, 2026-10-26).
+    How many were then added without a failure."""
     from dataclasses import replace
 
     from kennis.cli.supplying import Wanted, ask_for_files, wanted_papers
+    from kennis.engine.events import Outcome
+
+    recovered = 0
 
     def supplied(paper: Wanted, path: Path) -> None:
+        nonlocal recovered
         with DisplaySink() as shown:
             written = api.add(
                 corpus_root,
@@ -334,12 +358,15 @@ def _ask_for_what_the_add_could_not_fetch(
             )
         report_restored(written.restored)
         report_add(written.result)
+        if not written.result.counts.get(Outcome.FAILED, 0):
+            recovered += 1
 
     ask_for_files(
         wanted_papers((None, outcome.refusal) for outcome in report.outcomes),
         supplied,
         asked_again=False,
     )
+    return recovered
 
 
 @corpus_group.command(name="sync")

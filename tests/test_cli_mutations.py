@@ -121,7 +121,9 @@ def test_a_refused_add_says_why_and_not_only_which(
 
     result = run.invoke(main, ["corpus", "add", "-l", str(source)])
 
-    assert result.exit_code == 0, result.output
+    # A refusal exits 1 (Brian's trial, 2026-11-26); the report is the
+    # message, on stdout as before.
+    assert result.exit_code == 1, result.output
     # Collapsed, because a long tmp_path wraps the line and a substring
     # check against the raw output would pass or fail by terminal width.
     shown = " ".join(result.output.split())

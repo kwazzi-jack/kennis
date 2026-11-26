@@ -522,8 +522,9 @@ def test_a_pack_s_paper_that_could_not_be_converted_again_is_put_back(
 def test_the_user_s_paper_that_could_not_be_converted_again_is_put_back(
     corpus: Path, own_paper: Document, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`corpus add` reports a paper it could not convert and exits 0, as a
-    sync does: the script looks rather than trusting the exit status."""
+    """`corpus add` reports a paper it could not convert and exits 1, and
+    the script goes on to the next: it looks at what is held rather than
+    trusting the exit status."""
     monkeypatch.setenv("MINERU_FAKE_SKIP", "rime")
 
     remaining = applied(corpus)

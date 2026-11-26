@@ -443,10 +443,11 @@ def converted_papers(
     """Each paper removed and written again; returns those put back as they
     were, and those that could not be.
 
-    A sync and an add both report a paper they could not convert and exit
-    0 (#694), so whether a paper came back is looked at, never inferred
-    from an exit status; and it is looked at when a step fails outright as
-    well, because by then every paper has been removed.
+    A sync reports a paper it could not convert and exits 0 (#694), and
+    an add exits 1 for one paper it refused (Brian's trial, 2026-11-26),
+    so whether a paper came back is looked at, never inferred from an
+    exit status; and it is looked at when a step fails outright as well,
+    because by then every paper has been removed.
     """
     removed: list[Paper] = []
     try:
@@ -507,7 +508,9 @@ def _removed_and_written_again(plan: Plan, run: Runner, removed: list[Paper]) ->
             arguments += ["--title", paper.title]
         if paper.group:
             arguments += ["--group", paper.group]
-        required(run, arguments)
+        # Not `required`: an add exits 1 for the one paper it refused, and
+        # the papers after it are still to be written again.
+        run(arguments, False)
 
 
 def upgrade_corpus(
