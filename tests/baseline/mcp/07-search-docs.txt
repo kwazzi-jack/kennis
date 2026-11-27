@@ -1,4 +1,4 @@
-$ search {"collections": ["docs"], "question": "tool"}
+$ search {"collections": ["docs"], "query": "tool"}
 --- error False
 Docs keywords as a fraction of the best match here
 [1] Tool

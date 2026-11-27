@@ -54,7 +54,7 @@ from kennis.render.words import (
 from kennis.scopes import EVERY_SCOPE, MAX_TOP_K, SCOPE_NAMES
 
 # What the tool answers with when no scope holds anything for this
-# question. A sentence rather than an empty string: an agent handed ""
+# query. A sentence rather than an empty string: an agent handed ""
 # cannot tell a miss from a broken tool.
 _NOTHING = "no matching passages"
 
@@ -64,7 +64,7 @@ type Searched = Literal["all", "context", "literature", "docs", "notes", "annota
 
 
 def search(
-    question: str,
+    query: str,
     collections: list[Searched],
     top_k: int = 5,
     version: list[str] | None = None,
@@ -128,7 +128,7 @@ def search(
     # scope with no index, with the command that builds one.
     found = api.sweep(
         existing_corpus().corpus_root,
-        question,
+        query,
         scopes=scopes,
         named=not everywhere,
         # An agent may pass anything. Zero would return nothing and read
