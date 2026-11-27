@@ -382,6 +382,12 @@ class StepFailed(Exception):
     lost: tuple[Paper, ...] = ()
 
 
+# kennis's DONE, FAILED and INCOMPLETE: the sync ran to its end and
+# reported each paper, so which came back is looked at. Anything else -
+# Ctrl-C (130), an option it could not read (2) - stopped it part way.
+SYNC_RAN_TO_ITS_END: frozenset[int] = frozenset({0, 1, 3})
+
+
 def required(run: Runner, arguments: Sequence[str], *, capture: bool = False) -> str:
     code, output = run(arguments, capture)
     if code != 0:
@@ -443,11 +449,12 @@ def converted_papers(
     """Each paper removed and written again; returns those put back as they
     were, and those that could not be.
 
-    A sync reports a paper it could not convert and exits 0 (#694), and
-    an add exits 1 for one paper it refused (Brian's trial, 2026-11-26),
-    so whether a paper came back is looked at, never inferred from an
-    exit status; and it is looked at when a step fails outright as well,
-    because by then every paper has been removed.
+    A sync exits 1 for a paper it could not convert (#694) and 3 for one
+    waiting for the person's copy, and an add exits 1 for one paper it
+    refused (Brian's trial, 2026-11-26), so whether a paper came back is
+    looked at, never inferred from an exit status; and it is looked at
+    when a step fails outright as well, because by then every paper has
+    been removed.
     """
     removed: list[Paper] = []
     try:
@@ -492,7 +499,9 @@ def _removed_and_written_again(plan: Plan, run: Runner, removed: list[Paper]) ->
         )
         removed.append(paper)
     if plan.from_packs:
-        required(run, ["corpus", "sync"])
+        code, _ = run(["corpus", "sync"], False)
+        if code not in SYNC_RAN_TO_ITS_END:
+            raise StepFailed(f"`kennis corpus sync` exited with {code}")
     for paper in plan.own:
         arguments = [
             "corpus",

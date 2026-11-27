@@ -13,6 +13,7 @@ import click
 
 from kennis import __version__
 from kennis.cli import display
+from kennis.cli.exits import ExitStatus
 from kennis.client.calls import JobDetached
 from kennis.client.process import tell_of_recovery, tell_of_waiting
 from kennis.engine.errors import KennisError, TaskStopped
@@ -55,6 +56,24 @@ class KennisGroup(click.Group):
     command_class = KennisCommand
 
     def invoke(self, ctx: click.Context) -> object:
+        """The command, and at the root a status other than DONE logged by
+        its name, so the log says why `$?` was what it was (Brian,
+        2026-11-27). At the root only, because every group under it is one
+        of these too. A subcommand's usage error passes through here as a
+        `ClickException`; one in the top-level options does not, but then
+        the log has not been started either."""
+        if ctx.parent is not None:
+            return self._invoke_reporting(ctx)
+        try:
+            return self._invoke_reporting(ctx)
+        except SystemExit as exiting:
+            _log_the_exit(exiting.code)
+            raise
+        except click.ClickException as refused:
+            _log_the_exit(refused.exit_code)
+            raise
+
+    def _invoke_reporting(self, ctx: click.Context) -> object:
         tell_of_recovery(
             lambda operation: display.warning(put_back_at_start(operation))
         )
@@ -85,7 +104,7 @@ class KennisGroup(click.Group):
             # command did not run to its end here.
             display.note(detached.message)
             display.next_step(f"kennis service watch {detached.job}")
-            raise SystemExit(130) from detached
+            raise SystemExit(ExitStatus.INTERRUPTED) from detached
         except KennisError as error:
             # What the person was shown, so the log the hint below names holds
             # it too; the service logs the same refusal where it was raised,
@@ -96,4 +115,18 @@ class KennisGroup(click.Group):
                 display.remedy(note)
             # Not a command, so shown from `~` as prose is.
             display.remedy(f"full detail in {from_home(str(log_path()))}")
-            raise SystemExit(1) from error
+            raise SystemExit(ExitStatus.FAILED) from error
+
+
+def _log_the_exit(code: object) -> None:
+    """`exit FAILED (1)` for a status kennis names, the code as it is for
+    anything else - `sys.exit("message")` exits 1 with no number to name."""
+    if code is None or code == ExitStatus.DONE:
+        return
+    named = repr(code)
+    if isinstance(code, int):
+        try:
+            named = f"{ExitStatus(code).name} ({code})"
+        except ValueError:
+            named = str(code)
+    logging.getLogger("kennis.cli").info("exit %s", named)

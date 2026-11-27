@@ -86,6 +86,16 @@ def relative_to_corpus(path: Path, corpus_root: Path) -> str:
         return path.as_posix()
 
 
+def place_in_corpus(md_path: Path, corpus_root: Path) -> str:
+    """Where a document is, as a listing names it: the folder of a wrapped
+    one, whose file is always `content.md` (#642), and the file otherwise.
+    `corpus list` and `list_corpus` both printed the file's name, and a
+    list of papers that keep their figures read `content.md` on every row
+    (#707)."""
+    place = md_path.parent if md_path.name == WRAPPED_DOCUMENT_FILENAME else md_path
+    return relative_to_corpus(place, corpus_root)
+
+
 # Where an operation prepares (`engine/staging.py`): `.git/<this>/<id>/`.
 STAGING_DIRNAME: Final = "kennis-staging"
 

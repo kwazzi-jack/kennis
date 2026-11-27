@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from kennis.engine.pack.installed import (
     InstalledPack,
@@ -27,6 +27,9 @@ from kennis.engine.refusals import Refusal
 from kennis.render.portable import describe_unportable
 from kennis.render.refusals import describe_refusal as describe_add_refusal
 from kennis.render.words import count_of, joined
+
+if TYPE_CHECKING:
+    from kennis.engine.corpus.sync import MissingPaper
 
 _DIGEST_SHOWN = 12
 
@@ -771,6 +774,27 @@ def describe_why_unfetched(address: str, refusal: Refusal) -> str:
     return f"{address}: {describe_add_refusal(refusal)}"
 
 
+def describe_missing_papers(count: int) -> str:
+    """How many of a pack's papers the corpus does not hold, beside the
+    pack or the corpus they are missing from (Brian, 2026-11-27)."""
+    return f"{count_of(count, 'paper')} not in the corpus"
+
+
+def describe_missing_paper(paper: MissingPaper, *, with_pack: bool = True) -> str:
+    """One such paper: its citekey, which is what a reader knows it by,
+    then the identifier a sync fetches it by, and the pack that declares
+    it where the line is not already under that pack."""
+    named = f"{paper.citekey} {paper.address}" if paper.citekey else paper.address
+    return f"{named}, declared by {paper.pack_id}" if with_pack else named
+
+
+# Said once below the papers. Not *why* each is missing - only a fetch
+# learns that - but what the sync does about each.
+MISSING_PAPERS_REMEDY = (
+    "a sync fetches each one it can reach and asks for your copy of the rest"
+)
+
+
 def describe_deferred(deferred: tuple[tuple[str, str], ...]) -> str:
     """Declarations that lost to an earlier-installed pack.
 
@@ -802,6 +826,7 @@ def describe_what_uninstall_cannot_reach() -> str:
 
 
 __all__ = [
+    "MISSING_PAPERS_REMEDY",
     "describe_action",
     "describe_after_install",
     "describe_bundle_sync",
@@ -819,6 +844,8 @@ __all__ = [
     "describe_kept_copies",
     "describe_kept_copy",
     "describe_lost_source",
+    "describe_missing_paper",
+    "describe_missing_papers",
     "describe_no_declaration",
     "describe_not_installed",
     "describe_outcome_of",

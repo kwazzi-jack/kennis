@@ -9,6 +9,7 @@ consuming. `validate` serves both.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
@@ -16,6 +17,7 @@ import click
 
 from kennis.cli import display
 from kennis.cli.adding import destination_named, refuse_foreign_options, report_add
+from kennis.cli.exits import ExitStatus
 from kennis.cli.group import KennisCommand, KennisGroup
 from kennis.cli.paths import anchored
 from kennis.cli.sink import DisplaySink, reporting, say_waiting
@@ -447,7 +449,7 @@ def validate_command(path: Path) -> None:
         report = validate_pack(path, events=events)
     _report(report)
     if not report.ok:
-        raise SystemExit(1)
+        raise SystemExit(ExitStatus.FAILED)
 
 
 def _report(report: PackReport) -> None:
@@ -521,7 +523,11 @@ def list_command(*, as_json: bool) -> None:
     answer" and "kennis holds nothing" lead a provider to different things.
     """
     from kennis.render.machine_readable import pack_list_document
-    from kennis.render.packs import describe_holdings, describe_installed
+    from kennis.render.packs import (
+        describe_holdings,
+        describe_installed,
+        describe_missing_papers,
+    )
 
     if as_json:
         display.declare_stdout_a_payload()
@@ -538,6 +544,10 @@ def list_command(*, as_json: bool) -> None:
     # instructions block carries, and a listing whose order differs from
     # the block's would pair a pack with another's description.
     ordered = sorted(listing.packs, key=lambda one: one.state.pack_id)
+    missing = Counter(
+        paper.pack_id
+        for paper in api.missing_pack_papers(existing_corpus().corpus_root)
+    )
     for installed, holding in zip(ordered, describe_holdings(ordered), strict=True):
         display.row(installed.state.pack_id.ljust(width), describe_installed(installed))
         # Aligned under the version column, not at the row's own indent.
@@ -546,6 +556,14 @@ def list_command(*, as_json: bool) -> None:
         # what running it showed. `row` with no identifier is the
         # quiet-guarded way to print a dimmed continuation.
         display.row("", " " * (width + 2) + holding)
+        # Counted here and named by `pack status`, which this is the
+        # listing beside.
+        if missing[installed.state.pack_id]:
+            display.row(
+                "",
+                " " * (width + 2)
+                + describe_missing_papers(missing[installed.state.pack_id]),
+            )
     if listing.unreadable:
         _report_unreadable(listing)
     if not listing.packs and not listing.unreadable:
@@ -578,13 +596,27 @@ def status_command() -> None:
     told about is one nobody can correct. Reported here every run rather
     than once, inside an automated provider run nobody reads.
     """
-    from kennis.render.packs import describe_installed, describe_when
+    from kennis.render.packs import (
+        MISSING_PAPERS_REMEDY,
+        describe_installed,
+        describe_missing_paper,
+        describe_when,
+    )
 
-    listing = api.pack_listing(existing_corpus().corpus_root)
+    corpus_root = existing_corpus().corpus_root
+    listing = api.pack_listing(corpus_root)
+    missing = api.missing_pack_papers(corpus_root)
     for installed in listing.packs:
         display.operation(installed.state.pack_id, describe_installed(installed))
         display.detail("=", describe_when(installed))
         _report_damage(installed)
+        # Under its own pack, so the pack is not named again.
+        for paper in missing:
+            if paper.pack_id == installed.state.pack_id:
+                display.detail("!", describe_missing_paper(paper, with_pack=False))
+    if missing:
+        display.hint(MISSING_PAPERS_REMEDY)
+        display.next_step("kennis corpus sync")
     _report_overlaps(listing)
     if listing.unreadable:
         _report_unreadable(listing)

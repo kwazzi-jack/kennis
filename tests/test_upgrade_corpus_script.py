@@ -538,9 +538,12 @@ def test_the_user_s_paper_that_could_not_be_converted_again_is_put_back(
 def test_a_step_that_fails_outright_still_puts_back_what_was_removed(
     corpus: Path, pack_paper: Document
 ) -> None:
+    """A sync stopped with Ctrl-C did not run to its end; one that exits 1
+    or 3 did, and reported each paper (Brian, 2026-11-27)."""
+
     def failing_sync(arguments: Sequence[str], capture: bool = False) -> Ran:
         if list(arguments[:2]) == ["corpus", "sync"]:
-            return 1, "failed"
+            return 130, "interrupted"
         return through_the_command_line(arguments, capture)
 
     with pytest.raises(upgrade.StepFailed) as raised:
@@ -549,6 +552,27 @@ def test_a_step_that_fails_outright_still_puts_back_what_was_removed(
     [paper] = papers_in(corpus)
     assert paper.id == pack_paper.id
     assert [held.document_id for held in raised.value.put_back] == [pack_paper.id]
+
+
+@pytest.mark.parametrize("status", [1, 3])
+def test_a_sync_that_ran_to_its_end_is_not_a_failed_step(
+    corpus: Path, pack_paper: Document, status: int
+) -> None:
+    """FAILED and INCOMPLETE are a sync that reported a paper it did not
+    write; the script looks at which came back and puts the rest back."""
+
+    def reporting_sync(arguments: Sequence[str], capture: bool = False) -> Ran:
+        if list(arguments[:2]) == ["corpus", "sync"]:
+            return status, "a paper was not written"
+        return through_the_command_line(arguments, capture)
+
+    remaining = upgrade.upgrade_corpus(
+        corpus, run=reporting_sync, apply=True, backup=False
+    )
+
+    [paper] = papers_in(corpus)
+    assert paper.id == pack_paper.id
+    assert [held.document_id for held in remaining.put_back] == [pack_paper.id]
 
 
 def test_a_paper_that_could_not_be_put_back_is_named_with_its_command(

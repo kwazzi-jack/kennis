@@ -45,6 +45,7 @@ from kennis.gui.routes.jobs import started
 from kennis.holdings import (
     holdings,
     installed_packs,
+    missing_pack_papers,
 )
 from kennis.operations import (
     copy_a_document,
@@ -166,7 +167,8 @@ def serve_corpus(request: Request) -> HTMLResponse:
     context = existing_corpus()
     held = holdings(context)
     style = style_path(context.settings.literature.citation_style)
-    packs = [shown_pack(one, style) for one in installed_packs(context)]
+    missing = missing_pack_papers(context)
+    packs = [shown_pack(one, style, missing) for one in installed_packs(context)]
     return TEMPLATES.TemplateResponse(
         request,
         "corpus.html",
@@ -195,11 +197,14 @@ def serve_packs(request: Request) -> HTMLResponse:
     starts closed."""
     context = existing_corpus()
     style = style_path(context.settings.literature.citation_style)
+    missing = missing_pack_papers(context)
     return TEMPLATES.TemplateResponse(
         request,
         "packs.html",
         {
-            "packs": [shown_pack(one, style) for one in installed_packs(context)],
+            "packs": [
+                shown_pack(one, style, missing) for one in installed_packs(context)
+            ],
             "no_packs": words.NO_PACKS,
         },
     )
@@ -254,7 +259,9 @@ def serve_pack_contents(request: Request, pack_id: str) -> HTMLResponse:
         return problem_page(request, _not_installed(pack_id))
     style = style_path(context.settings.literature.citation_style)
     return TEMPLATES.TemplateResponse(
-        request, "pack-contents.html", {"pack": shown_pack(held[pack_id], style)}
+        request,
+        "pack-contents.html",
+        {"pack": shown_pack(held[pack_id], style, missing_pack_papers(context))},
     )
 
 

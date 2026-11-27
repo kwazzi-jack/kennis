@@ -102,6 +102,11 @@ Where a paper's text comes from:
   for a file you downloaded, and the window opens a dialog with a file
   picker for each such paper; the file you give is filed as the pack's
   paper, so later syncs keep it. Skip it, and the next sync asks again.
+  Until it is held, `kennis corpus status`, `kennis pack status`,
+  `kennis pack list`, the pack's page in the window (with the same file
+  picker) and the MCP server's `list_corpus` name it, and the sync exits
+  with status 3, `INCOMPLETE`
+  ([Exit status](../reference/cli.md#exit-status)).
 
 A docs entry is a site, crawled from `base_url`, or local `pages`, files
 shipped with the pack and filed into the project - exactly one of the two.
