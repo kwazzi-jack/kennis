@@ -279,15 +279,22 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
     set: the page should say which value, not only that one was wrong.
     """
     answers = answers_in(form)
-    # A tab posts its own fields. An answer absent or empty means "keep",
-    # so the other tabs' settings are not touched.
+    # A tab posts its own fields. An answer absent means "keep", so the
+    # other tabs' settings are not touched; one present and empty was
+    # emptied, and is the empty value (#700).
     tab = _configuration_tab(form.get("tab"))
     problems = {
         question.key: problem
         for question in offered(answers)
-        if (problem := validate_answer(question, answers.get(question.key, "")))
+        if (
+            problem := validate_answer(
+                question,
+                answers.get(question.key, ""),
+                empty_is_value=question.key in answers,
+            )
+        )
     }
-    changed = {} if problems else changed_answers(answers, empty_is_default=True)
+    changed = {} if problems else changed_answers(answers, empty_is_value=True)
     previous: dict[str, str] = {}
     if not problems:
         previous = {
@@ -297,7 +304,7 @@ def save_kennis_settings(request: Request, form: PostedForm) -> HTMLResponse:
         }
         # Written even when nothing changed: saving is choosing what the
         # page shows, and the file holds every setting (Brian,
-        # 2026-10-12). `clearing`, because a default may be empty (#666).
+        # 2026-10-12). `clearing`, because empty may be a value (#666).
         try:
             apply_answers(changed, clearing=True)
         except SettingsError as error:

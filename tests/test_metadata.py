@@ -547,3 +547,28 @@ def test_a_family_of_several_words_and_no_given_name_is_one_braced_name():
         authors=metadata.authors, year=metadata.year, title=metadata.title
     )
     assert citekey.startswith("theCASATeam")
+
+
+@pytest.mark.parametrize(
+    ("title", "subtitle", "joined"),
+    [
+        # RIME I's own record at Crossref (2026-11-25): the paper's part is
+        # its subtitle, and Brian's trial lost it.
+        (
+            "Revisiting the radio interferometer measurement equation",
+            "I. A full-sky Jones formalism",
+            "Revisiting the radio interferometer measurement equation. "
+            "I. A full-sky Jones formalism",
+        ),
+        ("Radio astronomy", "Part II: Arrays", "Radio astronomy. Part II: Arrays"),
+        ("Deep learning", "a review", "Deep learning: a review"),
+        ("Why calibrate?", "A primer", "Why calibrate? A primer"),
+    ],
+)
+def test_a_subtitle_is_part_of_the_title(title: str, subtitle: str, joined: str):
+    answer = {**CROSSREF_CSL, "title": title, "subtitle": [subtitle]}
+
+    metadata = lookup_doi_metadata("10.1017/pasa.2025.10128", client=registry(answer))
+
+    assert metadata is not None
+    assert metadata.title == joined

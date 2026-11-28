@@ -45,9 +45,37 @@ has.
 kennis config show                    # the whole file, as valid TOML
 kennis config get                     # every setting and the value in effect
 kennis config get embedding.model     # one value, unstyled, for scripts
+kennis config get embedding           # one section's settings
+kennis config info embedding.model    # what a setting is: its type, values, default
+kennis config info embedding          # the same for each setting in a section
 kennis config set embedding.backend ollama
+kennis config reset embedding.backend # back to its default
 kennis config init                    # the guided setup
 ```
+
+**`config info` says what a setting is**, from the same descriptions and
+types the settings page draws: its description, its type (text, a whole
+number, true or false, or one of a list of values), the values it may
+take, its default, its value now, and the settings it depends on. A
+secret's value is never shown, only whether one is held. With no key it
+describes every setting, `corpus.root` and `backup.folder` included.
+
+**Empty is a value, and only reset gives the default.**
+`kennis config set <key> ""`, or emptying a field on the settings page,
+writes an empty value: `figures.trusted_hosts` takes it as "no hosts", and
+a setting for which empty means nothing (a number, `embedding.model`,
+`embedding.api_key_env`) refuses it. To put a setting back to its default,
+use `kennis config reset <key>`, or the reset button beside the setting on
+the settings page. An empty value is shown as `(unset)`.
+
+**Settings are taken literally, and a default never follows another
+setting.** The embedding model's default is `BAAI/bge-small-en-v1.5` whatever
+the backend, and any backend may be set with any model. When a backend
+cannot use the model it is given, the command that tried says so, names
+`embedding.backend` and `embedding.model`, and says what kennis knows about
+the name - for example that it is a model fastembed lists, set for ollama. A
+failed conversion names the `conversion.quality` and `conversion.device` it
+ran with.
 
 **Every write leaves every setting in the file**, including those at their
 default, whether it comes from `config set`, `config init` or the settings
@@ -81,6 +109,20 @@ rather than one with a warning in the middle.
 `kennis config get <key>` prints the bare value with no styling, so it can be
 read by a script. `kennis config get` with no key prints the whole set,
 highlighted.
+
+## Completing commands and setting names in the shell
+
+kennis completes its commands, options and the names of settings when the
+shell is told to ask it. Add one line to the shell's startup file:
+
+```
+eval "$(_KENNIS_COMPLETE=bash_source kennis)"   # ~/.bashrc
+eval "$(_KENNIS_COMPLETE=zsh_source kennis)"    # ~/.zshrc
+_KENNIS_COMPLETE=fish_source kennis | source    # ~/.config/fish/completions/kennis.fish
+```
+
+Then `kennis config set conversion.t` followed by Tab offers
+`conversion.threads` and `conversion.timeout_minutes`.
 
 ## Every setting
 

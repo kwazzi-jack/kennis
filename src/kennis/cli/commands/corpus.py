@@ -21,6 +21,7 @@ import click
 
 from kennis.cli import display
 from kennis.cli.adding import destination_named, refuse_foreign_options, report_add
+from kennis.cli.exits import ExitStatus
 from kennis.cli.group import KennisGroup
 from kennis.cli.paths import anchored
 from kennis.cli.sink import DisplaySink, say_waiting
@@ -30,7 +31,7 @@ from kennis.engine.corpus.schema import COLLECTION_NAMES
 
 if TYPE_CHECKING:
     from kennis.engine.corpus.add import AddOptions, AddReport
-    from kennis.engine.corpus.sync import CorpusSync
+    from kennis.engine.corpus.sync import CorpusSync, MissingPaper
     from kennis.engine.errors import KennisError
     from kennis.engine.history.freshness import Freshness
     from kennis.engine.history.outofband import OutOfBandChange
@@ -111,6 +112,26 @@ def status_command() -> None:
         # type. `remedies_for` produced them and nothing printed them (#128).
         for remedy in remedies_for(change):
             display.next_step(remedy)
+    report_missing_pack_papers(api.missing_pack_papers(existing_corpus().corpus_root))
+
+
+def report_missing_pack_papers(missing: Sequence[MissingPaper]) -> None:
+    """Each pack paper the corpus lacks, said wherever the corpus is
+    described rather than only by the sync that could not fetch it (Brian,
+    2026-11-27), and the command that fetches or asks for it."""
+    from kennis.render.packs import (
+        MISSING_PAPERS_REMEDY,
+        describe_missing_paper,
+        describe_missing_papers,
+    )
+
+    if not missing:
+        return
+    display.operation("Packs", describe_missing_papers(len(missing)))
+    for paper in missing:
+        display.detail("!", describe_missing_paper(paper))
+    display.hint(MISSING_PAPERS_REMEDY)
+    display.next_step("kennis corpus sync")
 
 
 def report_restored(restored: Sequence[OutOfBandChange]) -> None:
@@ -151,7 +172,8 @@ def _report_freshness(freshness: Freshness, name: str) -> bool:
     help="Only this collection. All three by default.",
 )
 def list_command(collection: str | None) -> None:
-    """Every document in the corpus."""
+    """Every document in the corpus, by its place in it."""
+    from kennis.engine.corpus.layout import place_in_corpus
     from kennis.engine.corpus.schema import COLLECTION_NAMES
 
     corpus_root = existing_corpus().corpus_root
@@ -159,7 +181,7 @@ def list_command(collection: str | None) -> None:
     for name in [collection] if collection else list(COLLECTION_NAMES):
         for document in api.contents(corpus_root, name).documents:
             shown += 1
-            display.row(document.id, document.md_path.name)
+            display.row(document.id, place_in_corpus(document.md_path, corpus_root))
     if shown == 0:
         display.note("no documents")
 
@@ -305,24 +327,37 @@ def add_command(
             on_waiting=say_waiting,
         )
 
+    from kennis.engine.events import Outcome
+
     report_restored(written.restored)
     report_add(written.result)
+    failed = written.result.counts.get(Outcome.FAILED, 0)
     if destination == "literature":
-        _ask_for_what_the_add_could_not_fetch(
+        failed -= _ask_for_what_the_add_could_not_fetch(
             context.corpus_root, written.result, options
         )
+    # A refusal or a failure is an exit of 1, as `cp` exits when one of its
+    # files is missing; a document already held is not one (Brian's trial,
+    # 2026-11-26). The report above is the message.
+    if failed > 0:
+        raise SystemExit(ExitStatus.FAILED)
 
 
 def _ask_for_what_the_add_could_not_fetch(
     corpus_root: Path, report: AddReport, options: AddOptions
-) -> None:
+) -> int:
     """On a terminal, a file for each paper with no open copy, added as
-    `corpus add -l <file> --identifier <it>` adds one (Brian, 2026-10-26)."""
+    `corpus add -l <file> --identifier <it>` adds one (Brian, 2026-10-26).
+    How many were then added without a failure."""
     from dataclasses import replace
 
     from kennis.cli.supplying import Wanted, ask_for_files, wanted_papers
+    from kennis.engine.events import Outcome
+
+    recovered = 0
 
     def supplied(paper: Wanted, path: Path) -> None:
+        nonlocal recovered
         with DisplaySink() as shown:
             written = api.add(
                 corpus_root,
@@ -334,12 +369,15 @@ def _ask_for_what_the_add_could_not_fetch(
             )
         report_restored(written.restored)
         report_add(written.result)
+        if not written.result.counts.get(Outcome.FAILED, 0):
+            recovered += 1
 
     ask_for_files(
         wanted_papers((None, outcome.refusal) for outcome in report.outcomes),
         supplied,
         asked_again=False,
     )
+    return recovered
 
 
 @corpus_group.command(name="sync")
@@ -375,16 +413,42 @@ def sync_command() -> None:
     supplied = _ask_for_what_the_sync_could_not_fetch(corpus_root, result)
     if supplied or any(action.verdict in ACTING for action in result.actions):
         display.next_step("kennis corpus index")
+    status = _status_of_a_sync(result, supplied)
+    if status is not ExitStatus.DONE:
+        raise SystemExit(status)
+
+
+def _status_of_a_sync(result: CorpusSync, supplied: int) -> ExitStatus:
+    """FAILED for a paper a file would not answer - a host that did not
+    reply, a conversion that failed, anything with no refusal to word - and
+    otherwise INCOMPLETE while a paper waits for the reader's copy (Brian,
+    2026-11-27). The failure outranks the wait: it is the one asking again
+    may not fix."""
+    from kennis.engine.refusals import wanted_paper
+
+    waiting = {
+        address for address, refusal in result.why if wanted_paper(refusal) is not None
+    }
+    if any(address not in waiting for address in result.failed):
+        return ExitStatus.FAILED
+    if len(waiting) > supplied:
+        return ExitStatus.INCOMPLETE
+    return ExitStatus.DONE
 
 
 def _ask_for_what_the_sync_could_not_fetch(
     corpus_root: Path, result: CorpusSync
 ) -> int:
     """On a terminal, a file for each pack paper with no open copy, added
-    as the pack's own (Brian, 2026-10-26)."""
+    as the pack's own (Brian, 2026-10-26). How many were then added
+    without a failure."""
     from kennis.cli.supplying import Wanted, ask_for_files, wanted_papers
+    from kennis.engine.events import Outcome
+
+    recovered = 0
 
     def supplied(paper: Wanted, path: Path) -> None:
+        nonlocal recovered
         assert paper.address is not None
         with DisplaySink() as shown:
             written = api.supply_paper(
@@ -396,8 +460,11 @@ def _ask_for_what_the_sync_could_not_fetch(
             )
         report_restored(written.restored)
         report_add(written.result)
+        if not written.result.counts.get(Outcome.FAILED, 0):
+            recovered += 1
 
-    return ask_for_files(wanted_papers(result.why), supplied, asked_again=True)
+    ask_for_files(wanted_papers(result.why), supplied, asked_again=True)
+    return recovered
 
 
 def _report_what_a_sync_left(result: CorpusSync) -> None:

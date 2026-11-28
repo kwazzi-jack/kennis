@@ -1031,3 +1031,51 @@ def test_a_staged_name_leaves_room_under_the_windows_path_limit(tmp_path: Path):
     deepest = f"{windows_temp}\\output\\{stem}\\hybrid_auto\\{stem}_content_list.json"
 
     assert len(deepest) < 260
+
+
+def test_a_failed_run_names_the_quality_and_device_it_ran_with(
+    fake_mineru: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Which settings a failed conversion ran under (Brian, 2026-11-25):
+    a textbook that failed on the graphics card converted with it free."""
+    from kennis.engine.corpus.converters import MineruOptions
+
+    monkeypatch.setenv("MINERU_FAKE_SKIP", "doomed")
+    monkeypatch.setenv("MINERU_FAKE_EXIT", "1")
+
+    with pytest.raises(ConversionFailed) as raised:
+        MineruConverter(MineruOptions(quality="fast", device="gpu")).convert(
+            [a_pdf(tmp_path / "doomed.pdf")]
+        )
+
+    assert "conversion.quality fast" in str(raised.value)
+    assert "conversion.device gpu" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("device", "advised"), [("auto", True), ("gpu", True), ("cpu", False)]
+)
+def test_a_graphics_card_fault_says_what_to_try(
+    fake_mineru: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    device: Device,
+    advised: bool,
+) -> None:
+    """#696's words, from MinerU 4 on WebGPU."""
+    from kennis.engine.corpus.converters import MineruOptions
+
+    monkeypatch.setenv("MINERU_FAKE_SKIP", "doomed")
+    monkeypatch.setenv("MINERU_FAKE_EXIT", "1")
+    monkeypatch.setenv(
+        "MINERU_FAKE_ERROR", "WebGPU: Invalid buffer due to a previous error"
+    )
+
+    with pytest.raises(ConversionFailed) as raised:
+        MineruConverter(MineruOptions(device=device)).convert(
+            [a_pdf(tmp_path / "doomed.pdf")]
+        )
+
+    said = str(raised.value)
+    assert f"conversion.device {device}" in said
+    assert ("set conversion.device to cpu" in said) is advised

@@ -76,6 +76,7 @@ from rich.progress import (
 from rich.style import Style
 from rich.text import Text
 
+from kennis.cli.exits import ExitStatus
 from kennis.cli.theme import rich_style_name, rich_theme, syntax_theme
 from kennis.render.paths import from_home
 from kennis.render.theme import STYLE_PREFIX
@@ -1309,7 +1310,7 @@ class Cancelled(PlainMessage):
     (128 + 2), which is what a caller checking `$?` in a loop expects.
     """
 
-    exit_code = 130
+    exit_code = ExitStatus.INTERRUPTED
 
     def show(self, file: IO[Any] | None = None) -> None:
         # Not `Error:` - nothing went wrong, and calling it an error sends the

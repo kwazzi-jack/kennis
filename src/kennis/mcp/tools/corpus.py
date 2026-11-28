@@ -18,7 +18,13 @@ from typing import Literal
 from kennis.client import api
 from kennis.context import existing_corpus
 from kennis.engine.context.bundle import find_bundle
+from kennis.engine.corpus.layout import place_in_corpus
 from kennis.engine.corpus.schema import COLLECTION_NAMES
+from kennis.render.packs import (
+    MISSING_PAPERS_REMEDY,
+    describe_missing_paper,
+    describe_missing_papers,
+)
 from kennis.render.words import describe_held_versions
 
 type Detail = Literal["summary", "documents"]
@@ -65,8 +71,11 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
             )
         if detail == "documents":
             lines.extend(
-                f"  {document.id}  {document.md_path.name}" for document in held
+                f"  {document.id}  {place_in_corpus(document.md_path, corpus_root)}"
+                for document in held
             )
+        if name == "literature":
+            lines.extend(_missing_pack_papers(corpus_root))
         if contents.unreadable:
             # The other half of `contents`, which exists so a caller
             # cannot take the documents without seeing it. An agent told
@@ -79,6 +88,20 @@ def list_corpus(collection: str | None = None, detail: Detail = "summary") -> st
     if collection is None:
         lines.extend(_tags_in_use(corpus_root))
     return "\n".join(lines)
+
+
+def _missing_pack_papers(corpus_root: Path) -> list[str]:
+    """The papers a pack declares and the corpus lacks (Brian, 2026-11-27),
+    so an agent asked whether a paper is held learns that a pack expects it
+    and that `kennis corpus sync` would bring it, rather than only "no"."""
+    missing = api.missing_pack_papers(corpus_root)
+    if not missing:
+        return []
+    return [
+        f"  {describe_missing_papers(len(missing))}; {MISSING_PAPERS_REMEDY} "
+        "(`kennis corpus sync`):",
+        *(f"    {describe_missing_paper(paper)}" for paper in missing),
+    ]
 
 
 def _tags_in_use(corpus_root: Path) -> list[str]:

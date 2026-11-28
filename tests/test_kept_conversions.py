@@ -32,6 +32,7 @@ from kennis.engine.corpus.conversions import (
 from kennis.engine.corpus.converters import ConversionBatch, Converter
 from kennis.engine.events import Outcome
 from kennis.engine.history.repository import Repository
+from kennis.finding import resolve_document
 
 
 class CountingConverter:
@@ -260,3 +261,62 @@ def test_running_a_failed_add_again_converts_nothing_again(
 def test_the_wrapper_is_a_converter(tmp_path: Path):
     kept: Converter = KeptConversions(CountingConverter(), tmp_path)
     assert isinstance(kept, Converter)
+
+
+def test_a_kept_answer_says_when_it_was_kept(tmp_path: Path) -> None:
+    """Brian's trial (2026-11-26): an add from a kept conversion looked like
+    a fast conversion, and which quality it had was not said anywhere."""
+    inner = CountingConverter("mineru", "standard")
+    source = a_pdf(tmp_path / "paper.pdf", b"%PDF one\n")
+    kept = KeptConversions(inner, tmp_path / "kept")
+
+    first = kept.convert([source])
+    [entry] = (tmp_path / "kept").iterdir()
+    os.utime(entry, (1_700_000_000, 1_700_000_000))
+    again = kept.convert([source])
+
+    assert first.kept_at == {}
+    assert again.kept_at[source].timestamp() == 1_700_000_000
+
+
+def test_an_add_from_a_kept_conversion_says_so(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    inner = CountingConverter("mineru", "standard")
+    monkeypatch.setattr(adding, "default_converter", lambda: inner)
+    source = a_pdf(tmp_path / "sources" / "paper.pdf", b"%PDF paper\n")
+    run = CliRunner()
+
+    first = run.invoke(main, ["corpus", "add", "-n", str(source)])
+    document = next(
+        line.split()[0]
+        for line in run.invoke(main, ["corpus", "list"]).output.splitlines()
+    )
+    assert run.invoke(main, ["corpus", "remove", document, "--yes"]).exit_code == 0
+    again = run.invoke(main, ["corpus", "add", "-n", str(source)])
+
+    assert inner.converted == [source]
+    assert first.exit_code == 0 and again.exit_code == 0, again.output
+    assert "kept" not in first.output
+    assert "conversion kept at" in again.output
+    assert "best quality" in again.output
+
+
+def test_the_outcome_carries_the_kept_conversion(
+    corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    inner = CountingConverter("mineru", "basic")
+    monkeypatch.setattr(adding, "default_converter", lambda: inner)
+    source = a_pdf(tmp_path / "sources" / "paper.pdf", b"%PDF paper\n")
+    context = existing_corpus()
+    first = operations.add_documents(context, "notes", [str(source)], AddOptions())
+    [added] = first.outcomes
+    assert added.reused is None
+    held_in, document = resolve_document(context, str(added.document_id), None)
+    operations.remove_a_document(context, held_in, document)
+
+    again = operations.add_documents(context, "notes", [str(source)], AddOptions())
+
+    [reused] = [outcome.reused for outcome in again.outcomes]
+    assert reused is not None
+    assert (reused.converter, reused.variant) == ("mineru", "basic")

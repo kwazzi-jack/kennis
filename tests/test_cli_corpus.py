@@ -663,3 +663,70 @@ def test_sync_waits_while_another_writer_holds_the_corpus(
     assert result.exit_code == 0, result.output
     assert finished >= hold.released, "the command did not wait for the holder"
     assert "Synchronised" in result.output
+
+
+def test_list_names_a_document_by_its_place_in_the_corpus(
+    run: CliRunner, isolated: Path
+):
+    """Brian's trial (2026-11-26): a paper that keeps its figures is a folder
+    holding `content.md`, and `list` printed `content.md` for every one."""
+    initialised(run)
+    wrapper = isolated / "notes" / "calibration" / "Wrapped"
+    (wrapper / "images").mkdir(parents=True)
+    (wrapper / "content.md").write_text(
+        "---\nid: wrappedaaa\ntitle: Wrapped\nowner: user\n"
+        "source:\n  from: 'path:x'\n  via: verbatim\n  format: markdown\n"
+        "---\n\n# Wrapped\n",
+        encoding="utf-8",
+    )
+    a_note(isolated, "one.md")
+
+    result = run.invoke(main, ["corpus", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "content.md" not in result.output
+    rows = {
+        line.split()[0]: line.split(None, 1)[1] for line in result.output.splitlines()
+    }
+    assert rows["wrappedaaa"] == "notes/calibration/Wrapped"
+    assert any(place == "notes/one.md" for place in rows.values())
+
+
+# ---------------------------------------------------------------------------
+# What an add exits with (Brian's trial, 2026-11-26)
+# ---------------------------------------------------------------------------
+
+
+def test_an_add_that_was_refused_exits_non_zero(run: CliRunner, isolated: Path):
+    initialised(run)
+
+    result = run.invoke(main, ["corpus", "add", "-n", str(isolated.parent / "nope.md")])
+
+    assert "!" in result.output
+    assert result.exit_code == 1, result.output
+
+
+def test_an_add_of_what_is_already_held_exits_zero(run: CliRunner, isolated: Path):
+    initialised(run)
+    source = a_source(isolated)
+    assert run.invoke(main, ["corpus", "add", "-n", str(source)]).exit_code == 0
+
+    again = run.invoke(main, ["corpus", "add", "-n", str(source)])
+
+    assert "=" in again.output
+    assert again.exit_code == 0, again.output
+
+
+def test_an_add_with_one_refusal_among_several_exits_non_zero_and_adds_the_rest(
+    run: CliRunner, isolated: Path
+):
+    """As `cp a b c` does when one of them is missing."""
+    initialised(run)
+    source = a_source(isolated)
+
+    result = run.invoke(
+        main, ["corpus", "add", "-n", str(source), str(isolated.parent / "nope.md")]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "Added 1 document" in result.output

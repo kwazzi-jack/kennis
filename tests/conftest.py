@@ -122,10 +122,8 @@ for given in inputs:
     stem = Path(given).stem
     if environment.get("MINERU_FAKE_SKIP", "\0") in stem:
         failed += 1
-        print(
-            f"Error: Failed to parse {given}: [file_corrupted] Failed to load",
-            file=sys.stderr,
-        )
+        said = environment.get("MINERU_FAKE_ERROR", "[file_corrupted] Failed to load")
+        print(f"Error: Failed to parse {given}: {said}", file=sys.stderr)
         continue
     markdown = f"# {stem}\n\nConverted body.\n"
     with zipfile.ZipFile(output / f"{stem}.zip", "w") as archive:

@@ -1940,22 +1940,131 @@ def test_a_reset_button_puts_the_chips_back(
     assert page.locator(".order-chip[data-left-out]").count() == 0
 
 
-def test_an_emptied_field_is_saved_as_its_default(
+def test_an_emptied_number_is_refused_and_kept(
     page: playwright.Page, address: str
 ) -> None:
+    """Empty is a value, and not a number (#700); the reset button is the
+    way back to the default."""
     from kennis.engine.settings import load_settings
     from kennis.engine.setup import apply_answers
 
     apply_answers({"literature.request_delay": "15"})
     _open_settings(page, address, "documents")
     field = page.locator('input[name="literature.request_delay"]')
-    assert field.get_attribute("placeholder") == words.default_placeholder("3.0")
+    assert field.get_attribute("placeholder") == words.UNSET
 
     field.fill("")
     page.click(".save-bar button[type=submit]")
     page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
 
-    assert load_settings().literature.request_delay == 3.0
-    assert page.locator(".save-bar .outcome").inner_text() == words.back_to_default(
-        [words.SETTING_NAMES["literature.request_delay"]]
+    assert load_settings().literature.request_delay == 15.0
+    assert page.locator(".save-bar .outcome").inner_text() == words.KENNIS_NOT_SAVED
+
+
+# ---------------------------------------------------------------------------
+# Save is disabled while nothing differs from what is saved (2026-11-24)
+# ---------------------------------------------------------------------------
+
+
+def _save_disabled(page: playwright.Page) -> bool:
+    return page.locator(".kennis-settings .save-bar button[type=submit]").is_disabled()
+
+
+def test_save_is_disabled_until_a_field_differs(
+    page: playwright.Page, address: str
+) -> None:
+    _open_settings(page, address, "documents")
+    assert _save_disabled(page)
+
+    field = page.locator('input[name="literature.request_delay"]')
+    field.fill("15")
+    assert not _save_disabled(page)
+
+    # The same number written another way is no change.
+    field.fill("3")
+    assert _save_disabled(page)
+
+    page.locator('input[name="conversion.repair_ligatures"][type=checkbox]').uncheck()
+    assert not _save_disabled(page)
+    page.locator('input[name="conversion.repair_ligatures"][type=checkbox]').check()
+    assert _save_disabled(page)
+
+
+def test_a_reset_enables_save_and_a_save_disables_it(
+    page: playwright.Page, address: str
+) -> None:
+    from kennis.engine.setup import apply_answers
+
+    apply_answers({"conversion.quality": "fast"})
+    _open_settings(page, address, "documents")
+    assert _save_disabled(page)
+
+    _reset_of(page, "conversion.quality").click()
+    page.wait_for_function(
+        "() => document.querySelector('select[name=\"conversion.quality\"]')"
+        ".value === 'best'",
+        timeout=_WAIT_MS,
     )
+    assert not _save_disabled(page)
+
+    # Read inside the swap's own event, after `unsaved.js`'s listener: the
+    # page must never show the saved section with Save still lit. Read
+    # after the outcome appeared instead, a check after `afterSettle` raced
+    # it on CI (2026-11-25).
+    page.evaluate(
+        """() => document.body.addEventListener("htmx:afterSwap", () => {
+            const save = document.querySelector(
+                ".kennis-settings .save-bar button[type=submit]");
+            window.saveDisabledAtSwap = save ? save.disabled : null;
+        })"""
+    )
+    page.click(".save-bar button[type=submit]")
+    page.wait_for_selector(".save-bar .outcome", timeout=_WAIT_MS)
+    assert page.evaluate("() => window.saveDisabledAtSwap") is True
+    assert _save_disabled(page)
+
+
+def test_moving_a_chip_enables_save(page: playwright.Page, address: str) -> None:
+    """`order.js` writes the field itself, which fires no event."""
+    _open_settings(page, address, "searching")
+    assert _save_disabled(page)
+
+    page.locator('.order-chip[data-value="docs"] [data-move="earlier"]').click()
+
+    assert not _save_disabled(page)
+
+
+def test_a_disabled_save_looks_disabled(page: playwright.Page, address: str) -> None:
+    """Brian prefers what is seen to what is said: a disabled Save that
+    looks like an enabled one says nothing."""
+    _open_settings(page, address, "documents")
+    save = ".kennis-settings .save-bar button[type=submit]"
+    opacity = f"() => getComputedStyle(document.querySelector('{save}')).opacity"
+    assert _save_disabled(page)
+    dimmed = float(page.evaluate(opacity))
+
+    page.locator('input[name="literature.request_delay"]').fill("15")
+
+    assert not _save_disabled(page)
+    assert float(page.evaluate(opacity)) == 1.0
+    assert dimmed <= 0.6
+
+
+def test_text_is_wide_unless_the_reader_chose_otherwise(page: playwright.Page) -> None:
+    """Brian, 2026-11-25: wide suits papers better than the reading
+    measure, which stays one choice away."""
+    width = (
+        "() => getComputedStyle(document.documentElement)"
+        ".getPropertyValue('--text').trim()"
+    )
+
+    assert page.evaluate(width) == "56rem"
+
+    page.evaluate(
+        "() => { document.cookie = 'width=reading; path=/; samesite=strict'; }"
+    )
+    page.reload()
+    page.wait_for_selector("input[name=q]", timeout=_WAIT_MS)
+
+    assert page.evaluate(width) not in ("56rem", "none", "")
+    assert page.evaluate("() => document.documentElement.dataset.width") == "reading"

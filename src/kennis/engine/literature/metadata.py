@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from typing import Final
@@ -124,13 +125,34 @@ def lookup_doi_metadata(
     if not title:
         _logger.warning("doi.org's answer for %s has no title", doi)
         return None
+    subtitle = _first_text(answer.get("subtitle"))
     return PaperMetadata(
-        title=" ".join(title.split()),
+        title=_with_subtitle(" ".join(title.split()), " ".join(subtitle.split())),
         authors=joined_names(
             [protected(name) for name in _csl_names(answer.get("author"))]
         ),
         year=_csl_year(answer),
     )
+
+
+# A subtitle that numbers the paper in a series: `I. A full-sky Jones
+# formalism`, `Part II: Arrays`, `Paper III`.
+_PART: Final = re.compile(r"(?:[IVXLC]+|\d+)\.\s|(?:Part|Paper)\s", re.IGNORECASE)
+
+
+def _with_subtitle(title: str, subtitle: str) -> str:
+    """The title as the paper prints it: Crossref keeps a subtitle apart,
+    and RIME I's part, "I. A full-sky Jones formalism", is one (Brian's
+    trial, 2026-11-25). After a part number a full stop, as a series prints
+    it; after a title already ending in punctuation a space; otherwise a
+    colon, the usual way a subtitle is written."""
+    if not subtitle:
+        return title
+    if title.endswith((".", ":", "?", "!")):
+        return f"{title} {subtitle}"
+    if _PART.match(subtitle):
+        return f"{title}. {subtitle}"
+    return f"{title}: {subtitle}"
 
 
 def _csl_for(doi: str, client: httpx.Client) -> object | None:

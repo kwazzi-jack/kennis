@@ -94,7 +94,7 @@ filename is for humans.
 ## Frontmatter
 
 Each document carries YAML frontmatter recording what it is, where it came
-from and when. `kennis read --frontmatter` includes it:
+from and when. `kennis read --frontmatter` prints it, and only it:
 
 ```
 kennis read yusk5agyfk --frontmatter

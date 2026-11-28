@@ -1,4 +1,4 @@
-$ search {"collections": ["elsewhere"], "question": "CASA"}
+$ search {"collections": ["elsewhere"], "query": "CASA"}
 --- error True
 1 validation error for call[search]
 collections.0

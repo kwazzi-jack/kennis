@@ -40,7 +40,7 @@ from kennis.engine.events import (
     Progress,
     Severity,
 )
-from kennis.engine.settings import log_dir
+from kennis.engine.settings import LoggingSettings, log_dir
 from kennis.render.diagnostics import describe_diagnostic
 from kennis.render.refusals import describe_refusal
 
@@ -101,6 +101,23 @@ def start_logging(
     logger.propagate = False
     _installed = handler
     return directory / _LOG_FILE
+
+
+def start_logging_as_configured(section: LoggingSettings | None) -> Path:
+    """`start_logging` with the configuration's `[logging]` section, or its
+    defaults when the configuration will not load - a broken configuration
+    is something going wrong, and needs the log most.
+
+    One rule for the command line and the service: the service called
+    `start_logging()` alone and wrote debug whatever the file said (#712).
+    """
+    if section is None:
+        return start_logging()
+    return start_logging(
+        level=logging.getLevelNamesMapping()[section.level.upper()],
+        max_bytes=section.max_bytes,
+        backup_count=section.backup_count,
+    )
 
 
 def stop_logging() -> None:

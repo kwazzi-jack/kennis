@@ -46,7 +46,7 @@ from kennis.engine.corpus.schema import (
     DocumentFrontmatter,
     LiteratureFrontmatter,
 )
-from kennis.engine.corpus.sync import CorpusSync
+from kennis.engine.corpus.sync import CorpusSync, MissingPaper
 from kennis.engine.docs.versions import (
     ProjectVersions,
     excluded_versions,
@@ -56,6 +56,7 @@ from kennis.engine.docs.versions import (
 from kennis.engine.errors import DocumentNotFound, KennisError
 from kennis.engine.events import Outcome
 from kennis.engine.frontmatter import split_frontmatter
+from kennis.engine.literature.identifiers import identifier_if_reference
 from kennis.engine.pack.installed import InstalledPack, PackRemoval
 from kennis.engine.pack.installed import contents_of as pack_contents_of
 from kennis.engine.pack.resolve import ACTING
@@ -112,6 +113,7 @@ from kennis.render.html import (
     to_html,
 )
 from kennis.render.packs import (
+    MISSING_PAPERS_REMEDY,
     ContentsSection,
     contents_sections,
     describe_bundle_sync,
@@ -123,6 +125,7 @@ from kennis.render.packs import (
     describe_installed,
     describe_kept_copies,
     describe_kept_copy,
+    describe_missing_papers,
     describe_no_declaration,
     describe_not_installed,
     describe_outcome_of,
@@ -142,6 +145,7 @@ from kennis.render.words import (
     describe_other_model,
     describe_unembedded,
     group_name,
+    reused_conversion,
 )
 from kennis.retrieval import Sweep
 
@@ -1355,12 +1359,35 @@ class ShownPack:
     summary: str
     sections: tuple[ContentsSection, ...]
     unread: str | None
+    # The pack's papers the corpus does not hold, each with its page and
+    # the dialog that takes a file for it (Brian, 2026-11-27), and the
+    # line that counts them; None when nothing is missing.
+    missing: tuple[ShownMissingPaper, ...] = ()
+    missing_heading: str | None = None
 
 
-def shown_pack(installed: InstalledPack, style: Path) -> ShownPack:
-    """`installed` in the pieces a page arranges, papers in `style`."""
+@dataclass(frozen=True, slots=True)
+class ShownMissingPaper:
+    """One paper a pack declares and the corpus lacks: its name, the
+    identifier it is fetched by, and the ways a sync's outcome offers."""
+
+    name: str
+    address: str
+    ways: tuple[WayOut, ...]
+
+
+def shown_pack(
+    installed: InstalledPack, style: Path, missing: Sequence[MissingPaper] = ()
+) -> ShownPack:
+    """`installed` in the pieces a page arranges, papers in `style`, with
+    those of `missing` that are its own."""
     contents = pack_contents_of(installed)
     declaration = installed.declaration
+    own = tuple(
+        _shown_missing(paper)
+        for paper in missing
+        if paper.pack_id == installed.state.pack_id
+    )
     return ShownPack(
         pack_id=installed.state.pack_id,
         name=declaration.pack.name if declaration else installed.state.pack_id,
@@ -1368,6 +1395,30 @@ def shown_pack(installed: InstalledPack, style: Path) -> ShownPack:
         summary=describe_installed(installed),
         sections=contents_sections(contents, style) if contents else (),
         unread=None if contents else describe_unread_contents(),
+        missing=own,
+        missing_heading=(
+            f"{capitalised(describe_missing_papers(len(own)))}: {MISSING_PAPERS_REMEDY}"
+            if own
+            else None
+        ),
+    )
+
+
+def _shown_missing(paper: MissingPaper) -> ShownMissingPaper:
+    """The ways for a missing paper are the ones a sync that could not
+    fetch it offers, so the card and the outcome agree."""
+    parsed = identifier_if_reference(paper.address)
+    ways: tuple[WayOut, ...] = ()
+    if parsed is not None:
+        ways = (
+            WayOut(OPEN_THE_PAPER, paper_page(parsed.kind, parsed.value), outside=True),
+            WayOut(
+                words.CHOOSE_THE_FILE,
+                supply_address("pack", [(parsed.kind, parsed.value)]),
+            ),
+        )
+    return ShownMissingPaper(
+        name=paper.citekey or paper.address, address=paper.address, ways=ways
     )
 
 
@@ -1903,6 +1954,8 @@ def _shown_outcome(outcome: AddOutcome) -> ShownItem:
         name=outcome.title or outcome.identifier,
         outcome=outcome.outcome.value,
     )
+    if outcome.reused is not None:
+        return replace(shown, detail=reused_conversion(outcome.reused))
     if outcome.outcome is not Outcome.FAILED or outcome.refusal is None:
         return shown
     repairs = repairs_for(outcome.refusal)

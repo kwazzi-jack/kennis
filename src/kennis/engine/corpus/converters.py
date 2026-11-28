@@ -42,6 +42,7 @@ import time
 import zipfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, runtime_checkable
 
@@ -102,6 +103,22 @@ class ConversionBatch:
     # a stored paper pointed at nothing (#134). A document that links none
     # has no entry.
     images: dict[Path, dict[str, bytes]] = field(default_factory=dict)
+    # When each document answered from a kept conversion was converted
+    # (`conversions.KeptConversions`); a document converted in this run has
+    # no entry. Carried so an add can say it was not converted again, and
+    # at which quality it had been (Brian's trial, 2026-11-26).
+    kept_at: dict[Path, datetime] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ReusedConversion:
+    """A document's conversion was kept from an earlier run rather than
+    made now: by which converter, at which variant (MinerU's tier,
+    Datalab's mode), and when."""
+
+    converter: str
+    variant: str
+    kept_at: datetime
 
 
 @runtime_checkable
@@ -311,6 +328,11 @@ class MineruOptions:
         return TIERS[self.quality]
 
 
+# What MinerU says when the graphics card failed it rather than the
+# document: WebGPU's buffer errors (#696), CUDA's, and running out of memory.
+_GRAPHICS_FAULT: Final = re.compile(r"webgpu|cuda|out of memory|\bgpu\b", re.IGNORECASE)
+
+
 class MineruConverter:
     """The local binary-document converter."""
 
@@ -361,7 +383,8 @@ class MineruConverter:
                 staged, output_dir, Path(temporary) / "unpacked"
             )
 
-        reason = _failure_reason(completed) if completed.returncode != 0 else None
+        failed = _failure_reason(completed) if completed.returncode != 0 else None
+        reason = None if failed is None else f"{failed} ({self._ran_with(failed)})"
         if not markdown and reason is not None:
             raise ConversionFailed(f"mineru failed: {reason}")
 
@@ -374,6 +397,22 @@ class MineruConverter:
             repairs=repairs,
             images=images,
         )
+
+    def _ran_with(self, reason: str) -> str:
+        """The settings a failed run had, so a reader can tell a document's
+        fault from a setting's (Brian, 2026-11-25). A textbook that failed
+        on the graphics card converted once nothing else held it (#696), so
+        a failure that names the card says what to try."""
+        said = (
+            f"with conversion.quality {self.options.quality} and "
+            f"conversion.device {self.options.device}"
+        )
+        if self.options.device != "cpu" and _GRAPHICS_FAULT.search(reason):
+            said += (
+                "; if another program holds the graphics card's memory, close it, "
+                "or set conversion.device to cpu"
+            )
+        return said
 
     def _finish(
         self, markdown: dict[Path, str]

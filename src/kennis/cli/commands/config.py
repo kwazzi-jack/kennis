@@ -101,24 +101,77 @@ def _settings_in(path: Path) -> str:
     return text if any(parsed.values()) else ""
 
 
+def _setting_names(
+    context: click.Context, parameter: click.Parameter, incomplete: str
+) -> list[str]:
+    """Every setting's `section.field` beginning with what is typed, for a
+    shell's completion (`_KENNIS_COMPLETE`, click's own protocol)."""
+    from kennis.engine.settings import Settings
+
+    defaults = Settings.model_construct()
+    return [
+        name
+        for section in Settings.model_fields
+        for field in type(getattr(defaults, section)).model_fields
+        if (name := f"{section}.{field}").startswith(incomplete)
+    ]
+
+
 @config_group.command(name="get")
-@click.argument("key", required=False)
+@click.argument("key", required=False, shell_complete=_setting_names)
 def get_command(key: str | None) -> None:
-    """One setting's value, or every setting when no key is given."""
+    """One setting's value, a section's settings, or every setting when no
+    key is given."""
     from kennis.engine.settings import Settings, load_settings
     from kennis.render.words import describe_setting
 
     settings = load_settings()
-    if key is None:
-        for name in Settings.model_fields:
+    # A section alone lists its rows: `EmbeddingUnavailable` has long named
+    # `kennis config get embedding` as its remedy, and it was refused.
+    if key is None or key in Settings.model_fields:
+        for name in Settings.model_fields if key is None else [key]:
             for field, value in _section_values(settings, name).items():
                 display.setting_row(describe_setting(f"{name}.{field}", value))
         return
     display.plain(str(_value_of(settings, key)))
 
 
+@config_group.command(name="info")
+@click.argument("key", required=False, shell_complete=_setting_names)
+def info_command(key: str | None) -> None:
+    """What a setting is: its description, type, the values it may take,
+    its default and its value now. A section, or every setting when no key
+    is given (Brian, 2026-11-28)."""
+    from kennis.engine.settings import Settings, load_settings
+    from kennis.engine.setup import credential_status, every_setting
+    from kennis.render.settings import setting_facts
+
+    by_key: dict[str, list[Question]] = {}
+    for question in every_setting():
+        by_key.setdefault(question.key, []).append(question)
+    if key is None:
+        chosen = list(by_key)
+    elif key in Settings.model_fields:
+        chosen = [name for name in by_key if name.partition(".")[0] == key]
+    elif key in by_key:
+        chosen = [key]
+    else:
+        # `config get`'s refusal, which names the section's settings.
+        _value_of(load_settings(), key)
+        chosen = []
+    for position, name in enumerate(chosen):
+        if position:
+            display.info()
+        questions = by_key[name]
+        display.heading(name)
+        display.muted_block(questions[0].description, indent=len(_QUESTION_INDENT))
+        is_set = questions[0].kind == "secret" and credential_status(name).is_set
+        for label, value in setting_facts(questions, secret_is_set=is_set):
+            display.info(f"{_QUESTION_INDENT}{label:<8} {value}")
+
+
 @config_group.command(name="set")
-@click.argument("key")
+@click.argument("key", shell_complete=_setting_names)
 @click.argument("value")
 def set_command(key: str, value: str) -> None:
     """Change one setting.
@@ -127,18 +180,52 @@ def set_command(key: str, value: str) -> None:
     is one `load_settings` will accept on the next command rather than one
     that fails somewhere else later.
     """
-    from kennis.engine.setting_costs import COSTED, costs_of
-    from kennis.engine.settings import Settings, overriding_variable
+    from kennis.engine.settings import Settings
     from kennis.engine.setup import apply_answers
-    from kennis.render.settings import describe_costs, describe_overridden
+    from kennis.render.words import describe_setting
 
     # The key checked against the defaults, not what is in force: a bad
     # value in the file or the environment refused every `set`, including
     # the one its own error named as the repair.
     _value_of(Settings.model_construct(), key)
-    # An empty value was typed on purpose: it clears the setting (#666).
+    # An empty value was typed on purpose: it is written as empty, and a
+    # setting for which empty is no value refuses it (#666). The default
+    # is `reset`'s.
     apply_answers({key: value}, clearing=True)
-    display.operation("Set", f"{key} = {value}")
+    display.operation("Set", describe_setting(key, value))
+    _say_after_setting(key, value)
+
+
+@config_group.command(name="reset")
+@click.argument("key", shell_complete=_setting_names)
+def reset_command(key: str) -> None:
+    """Put one setting back to its default.
+
+    A command of its own rather than `set <key> ""`, because for some
+    settings empty is a value of its own (Brian, 2026-11-24). The default is
+    the one under the settings in force, so the embedding model goes back
+    to the model of the backend in use.
+    """
+    from kennis.engine.settings import Settings
+    from kennis.engine.setup import apply_answers, default_of
+    from kennis.render.words import describe_setting
+
+    # A key is no setting here (it is kept in the credentials file), so
+    # this refuses it as it refuses a name kennis does not have.
+    _value_of(Settings.model_construct(), key)
+    default = default_of(key)
+    apply_answers({key: default}, clearing=True)
+    display.operation("Reset", describe_setting(key, default))
+    _say_after_setting(key, default)
+
+
+def _say_after_setting(key: str, value: str) -> None:
+    """What a written setting means beyond itself: a variable that
+    overrides it, what it costs, and whether a chunk still fits."""
+    from kennis.engine.setting_costs import COSTED, costs_of
+    from kennis.engine.settings import overriding_variable
+    from kennis.render.settings import describe_costs, describe_overridden
+
     overriding = overriding_variable(key)
     if overriding is not None:
         display.warning(describe_overridden(overriding))

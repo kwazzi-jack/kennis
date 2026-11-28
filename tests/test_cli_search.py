@@ -519,17 +519,32 @@ def test_a_whole_document_read_puts_nothing_but_markdown_on_stdout(
     assert handle in result.stderr
 
 
-def test_a_whole_document_read_omits_the_frontmatter_unless_asked(
+def test_a_whole_document_read_omits_the_frontmatter(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):
     indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
     handle = identifier_of(next((corpus / "notes").rglob("*.md")))
 
     without = run.invoke(main, ["read", handle])
-    with_it = run.invoke(main, ["read", handle, "--frontmatter"])
 
     assert "owner: user" not in without.stdout
-    assert "owner: user" in with_it.stdout
+    assert "Rivers carry sediment" in without.stdout
+
+
+def test_frontmatter_reads_the_frontmatter_and_nothing_else(
+    corpus: Path, run: CliRunner, tmp_path: Path
+):
+    """Brian, 2026-11-25: `--frontmatter` prints only the frontmatter."""
+    indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
+    handle = identifier_of(next((corpus / "notes").rglob("*.md")))
+
+    read = run.invoke(main, ["read", handle, "--frontmatter"])
+
+    assert read.exit_code == 0, read.output
+    lines = read.stdout.strip().splitlines()
+    assert lines[0] == "---" and lines[-1] == "---"
+    assert "owner: user" in read.stdout
+    assert "Rivers carry sediment" not in read.stdout
 
 
 def test_a_document_is_readable_by_title_and_by_filename(
@@ -629,9 +644,9 @@ def test_both_kinds_of_read_name_the_document_the_same_way(
 def test_an_option_that_does_not_apply_is_refused_rather_than_ignored(
     corpus: Path, run: CliRunner, tmp_path: Path
 ):
-    """`--frontmatter` prepends a document's YAML and means nothing for a
-    span of its text. Accepting it silently is how a person concludes the
-    command did not work."""
+    """`--frontmatter` reads only the frontmatter, and a span of the text
+    is something else. Accepting both silently is how a person concludes
+    the command did not work."""
     indexed_notes(run, tmp_path, rivers="Rivers carry sediment to the delta.")
     handle = identifier_of(next((corpus / "notes").rglob("*.md")))
 

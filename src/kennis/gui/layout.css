@@ -67,13 +67,15 @@
   --gap: 1.75rem;
   /* Under 70 characters of the column face at 1.0625rem. */
   --measure: 33rem;
-  /* What the text is set at and what the column is centred in: the
-     reading measure unless the width preference says otherwise. The
-     whole pane was the default for a day (Brian, 2026-10-12), and set
-     passages about 150 characters a line; the reviews of 2026-10-13
-     all asked for the measure back, and the pane is one choice away. */
-  --text: var(--measure);
-  --frame: calc(var(--margin) + var(--gap) + var(--measure));
+  /* What the text is set at and what the column is centred in: wide
+     unless the width preference says otherwise, about a hundred
+     characters of the column face. The whole pane was the default for a
+     day (Brian, 2026-10-12) and set passages about 150 characters a line;
+     the reading measure was the default from 2026-10-13, and wide from
+     2026-11-25, because it suits papers better (Brian). Both are one
+     choice away. */
+  --text: 56rem;
+  --frame: 56rem;
   --column: 'Source Serif 4', Charter, Cambria, Georgia, serif;
   /* Two faces, divided by the rule the interface already uses.
      `--gutter` is what kennis composed - provenance, counts,
@@ -739,9 +741,13 @@ main {
   --tracking: 0.04em;
   --word-gap: 0.16em;
 }
-/* Wide is about a hundred characters of the column face; the pane is
-   no limit at all, which is what `none` means to `max-width`. */
-:root[data-width="wide"] { --text: 56rem; --frame: 56rem; }
+/* Wide is the default, above. The reading measure is about sixty-five
+   characters in the gutter's frame; the pane is no limit at all, which
+   is what `none` means to `max-width`. */
+:root[data-width="reading"] {
+  --text: var(--measure);
+  --frame: calc(var(--margin) + var(--gap) + var(--measure));
+}
 :root[data-width="pane"] { --text: none; --frame: none; }
 :root[data-strength="words"] .cells { display: none; }
 /* Out of sight, not out of the page: with `display: none` a screen
@@ -1964,6 +1970,13 @@ a.document:hover, a.document:focus-visible { background: var(--raised); }
 .pack-actions .button, .page-actions .button { gap: 0.4rem; padding: 0.35rem 0.7rem; }
 .pack-actions .icon, .page-actions .icon { width: 0.9rem; height: 0.9rem; }
 .pack-description { margin: 0 0 0.5rem; color: var(--role-muted); font-size: 0.9375rem; }
+/* A pack's papers the corpus lacks, above what it declares (Brian, 2026-11-27). */
+.pack-missing { margin: 0 0 0.75rem; }
+.pack-missing p.role-warning { margin: 0 0 0.25rem; font-size: 0.9375rem; }
+.pack-missing ul { list-style: none; margin: 0; padding: 0; }
+.pack-missing li { margin: 0 0 0.5rem; }
+.pack-missing .item-name { font-weight: 600; margin-right: 0.4rem; }
+.pack-missing .item-detail { color: var(--role-muted); font-size: 0.875rem; overflow-wrap: anywhere; }
 
 /* A collection on the corpus page: its icon in its colour, its name. */
 .holdings a {
@@ -2756,6 +2769,13 @@ a[target="_blank"]:not(.button)::after {
 }
 .index-now button .icon { width: 0.85rem; height: 0.85rem; }
 
+/* Save with nothing to save (Brian, 2026-11-24): dimmed, so the bar says
+   whether the tab has unsaved changes without a word. Not while a request
+   is out, when htmx has disabled it and the ring says so instead. */
+.kennis-settings:not(.htmx-request) .save-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 /* A form whose request is out: htmx sets `htmx-request` on it and has
    already disabled the button (`hx-disabled-elt`). The cursor and the
    turning ring say the click was heard before the server answers. */

@@ -49,6 +49,7 @@ from kennis.engine.history.repository import Repository
 from kennis.publishing import reading
 
 if TYPE_CHECKING:
+    from kennis.engine.corpus.sync import MissingPaper
     from kennis.engine.pack.installed import InstalledPack
 
 
@@ -281,6 +282,17 @@ def installed_packs(context: Context) -> tuple[InstalledPack, ...]:
 
 
 @reading
+def missing_pack_papers(context: Context) -> tuple[MissingPaper, ...]:
+    """Each paper an installed pack declares and the corpus does not hold:
+    shown by `corpus status`, `pack status`, `pack list`, the window's pack
+    cards and `list_corpus`, not only by the sync that could not fetch it
+    (Brian, 2026-11-27)."""
+    from kennis.engine.corpus.sync import missing_pack_papers as declared_not_held
+
+    return declared_not_held(context.corpus_root)
+
+
+@reading
 def revision(context: Context) -> str | None:
     """The commit the corpus is at, or None before its first.
 
@@ -462,6 +474,7 @@ __all__ = [
     "holdings",
     "installed_packs",
     "last_change",
+    "missing_pack_papers",
     "return_preview",
     "revision",
     "version_pages",

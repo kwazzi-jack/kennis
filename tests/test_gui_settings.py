@@ -35,9 +35,9 @@ EXPECTED_PREFERENCES = {
     "face": (("serif", "sans", "hyperlegible"), "serif"),
     "size": (("small", "normal", "large", "larger"), "normal"),
     "spacing": (("normal", "wide", "wider"), "normal"),
-    # Brian, 2026-10-12: the text fits the pane unless asked otherwise;
-    # the reading measure the window had until then is the last choice.
-    "width": (("pane", "wide", "reading"), "reading"),
+    # Brian, 2026-11-25: wide by default, which suits papers better than
+    # the reading measure the default was from 2026-10-13.
+    "width": (("pane", "wide", "reading"), "wide"),
     # Brian, 2026-11-04: a page's folders and regions start closed.
     "folders": (("closed", "open"), "closed"),
     "strength": (("bars", "words"), "bars"),
@@ -331,19 +331,22 @@ def test_spacing_widens_in_two_steps():
     assert "var(--leading)" in rules_for(sheet, ".column")
 
 
-def test_the_text_is_set_at_a_reading_measure_unless_a_width_is_chosen():
+def test_the_text_is_wide_unless_a_width_is_chosen():
     """Fitting the pane was the default for a day and set passages about
-    150 characters a line; every review asked for the measure back."""
+    150 characters a line; the reading measure was the default from
+    2026-10-13, and wide from 2026-11-25 (Brian: it suits papers)."""
     sheet = stylesheet()
     code = re.sub(r"/\*.*?\*/", "", sheet, flags=re.S)
 
-    assert ':root[data-width="reading"]' not in sheet  # the default needs no rule
-    assert "--text: var(--measure);" in code
-    assert "--frame: calc(var(--margin) + var(--gap) + var(--measure));" in code
+    assert ':root[data-width="wide"]' not in sheet  # the default needs no rule
+    assert "--text: 56rem;" in code
+    assert "--frame: 56rem;" in code
+    reading = rules_for(sheet, ':root[data-width="reading"]')
+    assert "--text: var(--measure)" in reading
+    assert "--frame: calc(var(--margin) + var(--gap) + var(--measure))" in reading
     pane = rules_for(sheet, ':root[data-width="pane"]')
     assert "--text: none" in pane
     assert "--frame: none" in pane
-    assert "--text: " in rules_for(sheet, ':root[data-width="wide"]')
     assert "max-width: var(--frame)" in rules_for(sheet, ".column")
     # Every width a reading measure set now goes through the choice.
     assert "max-width: var(--measure)" not in code

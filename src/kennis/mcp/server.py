@@ -22,6 +22,7 @@ from fastmcp import FastMCP
 from kennis.client import api
 from kennis.context import resolve_context
 from kennis.engine.pack.installed import InstalledPack
+from kennis.mcp.calls import LoggedCalls
 from kennis.mcp.instructions import instructions_for
 from kennis.mcp.tools.cite import cite
 from kennis.mcp.tools.corpus import list_corpus
@@ -58,6 +59,7 @@ def build_server() -> FastMCP:
     server.tool(cite)
     server.tool(remember)
     server.tool(tag)
+    server.add_middleware(LoggedCalls())
     return server
 
 

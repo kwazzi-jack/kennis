@@ -23,6 +23,7 @@ import base64
 import json
 import time
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
@@ -61,6 +62,11 @@ class KeptConversions:
 
     def convert(self, paths: Sequence[Path]) -> ConversionBatch:
         entries = {path: self._entry_for(path) for path in paths}
+        kept_at = {
+            path: datetime.fromtimestamp(entry.stat().st_mtime, UTC)
+            for path, entry in entries.items()
+            if entry.is_file()
+        }
         kept = {
             path: stored
             for path, entry in entries.items()
@@ -107,6 +113,7 @@ class KeptConversions:
             },
             failure_reason=batch.failure_reason,
             cost_cents=batch.cost_cents,
+            kept_at={path: kept_at[path] for path in kept},
             repairs={
                 **{path: int(entry["repairs"]) for path, entry in kept.items()},
                 **batch.repairs,

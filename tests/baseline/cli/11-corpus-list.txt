@@ -1,8 +1,8 @@
 $ kennis corpus list
 --- exit 0
 --- stdout
-  22k3nnp36k  Tool.md
-  doc0000001  calibration.md
-  doc0000002  imaging.md
-  doc0000003  beams.md
+  22k3nnp36k  docs/tool/1.0/Tool.md
+  doc0000001  notes/calibration.md
+  doc0000002  notes/imaging.md
+  doc0000003  notes/topics/radio/beams.md
 --- stderr

@@ -65,6 +65,24 @@ def tell_of_recovery(listener: Callable[[str], None]) -> None:
     _RECOVERY_LISTENERS[:] = [listener]
 
 
+_WAITING_LISTENERS: list[Callable[[str], None]] = []
+
+
+def tell_of_waiting(listener: Callable[[str], None]) -> None:
+    """Have `listener` told, once per wait, the version of a busy service of
+    another build that a client waits for before replacing it, when the
+    caller of `ensure_service` passed no `on_waiting` of its own. Without
+    it every command but `open` and `gui` waited in silence (Brian's trial,
+    2026-11-25). The command line prints it; the MCP server, whose stdout
+    is the wire, leaves it to the log. One listener per process."""
+    _WAITING_LISTENERS[:] = [listener]
+
+
+def _told_of_waiting(version: str) -> None:
+    for listener in _WAITING_LISTENERS:
+        listener(version)
+
+
 def hello(record: ServiceRecord) -> dict[str, object] | None:
     """The service's answer to who it is, or None when it does not answer."""
     try:
@@ -104,6 +122,7 @@ def ensure_service(
     holds the corpus and this waits for it to finish.
     """
     told = False
+    tell = on_waiting if on_waiting is not None else _told_of_waiting
     while True:
         record = find_service(corpus_root)
         if record is None:
@@ -121,8 +140,8 @@ def ensure_service(
         if is_this_build(answered):
             return record
         if answered.get("busy"):
-            if on_waiting is not None and not told:
-                on_waiting(str(answered.get("kennis")))
+            if not told:
+                tell(str(answered.get("kennis")))
                 told = True
             time.sleep(_BUSY_POLL_SECONDS)
             continue
@@ -219,4 +238,5 @@ __all__ = [
     "start_detached",
     "stop_service",
     "tell_of_recovery",
+    "tell_of_waiting",
 ]

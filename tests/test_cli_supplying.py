@@ -19,6 +19,7 @@ from click.testing import CliRunner
 
 import kennis.cli.supplying as supplying
 from kennis.cli.__main__ import main
+from kennis.cli.exits import ExitStatus
 from kennis.client import api
 from kennis.client.api import Written
 from kennis.engine.corpus.add import AddOptions, AddOutcome, AddReport
@@ -136,7 +137,9 @@ def test_an_empty_answer_skips_the_paper(
 
     result = run.invoke(main, ["corpus", "sync"])
 
-    assert result.exit_code == 0, result.output
+    # Everything a sync could do was done, and the pack is still not
+    # whole (Brian, 2026-11-27).
+    assert result.exit_code == ExitStatus.INCOMPLETE, result.output
     assert calls == []
     assert "skipped" in result.output
 
@@ -195,7 +198,8 @@ def test_an_interrupt_stops_asking_about_the_rest(
 
     result = run.invoke(main, ["corpus", "sync"])
 
-    assert result.exit_code == 0, result.output
+    # The interrupt stopped the asking, not the sync, which had finished.
+    assert result.exit_code == ExitStatus.INCOMPLETE, result.output
     assert len(asked) == 1
     assert calls == []
 
@@ -210,7 +214,8 @@ def test_a_sync_off_a_terminal_asks_nothing(
 
     result = run.invoke(main, ["corpus", "sync"])
 
-    assert result.exit_code == 0, result.output
+    # A pipeline is told by the status, as a person is by the prompt.
+    assert result.exit_code == ExitStatus.INCOMPLETE, result.output
     assert asked == []
     assert calls == []
     # The way out is still said, for a pipeline that is never asked.
@@ -229,8 +234,83 @@ def test_a_paper_refused_for_another_reason_is_not_asked_about(
 
     result = run.invoke(main, ["corpus", "sync"])
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == ExitStatus.FAILED, result.output
     assert asked == []
+
+
+def test_a_sync_whose_every_paper_was_supplied_exits_done(
+    run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch, downloaded: Path
+):
+    a_sync_that_could_not_fetch(monkeypatch, [(f"doi:{DOI}", BEHIND_A_PUBLISHER)])
+    a_terminal(monkeypatch, [str(downloaded)])
+    supplied_calls(monkeypatch)
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code == ExitStatus.DONE, result.output
+
+
+def test_a_supplied_file_whose_add_failed_leaves_the_sync_incomplete(
+    run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch, downloaded: Path
+):
+    a_sync_that_could_not_fetch(monkeypatch, [(f"doi:{DOI}", BEHIND_A_PUBLISHER)])
+    a_terminal(monkeypatch, [str(downloaded)])
+
+    def refused(
+        root: Path, address: str, path: Path, **kwargs: object
+    ) -> Written[AddReport]:
+        report = added_report(str(path), Quoted("the file has no text"))
+        return Written(result=report, restored=[])
+
+    monkeypatch.setattr(api, "supply_paper", refused)
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code == ExitStatus.INCOMPLETE, result.output
+
+
+def test_a_failure_beside_a_skipped_paper_is_a_failure(
+    run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch
+):
+    """The failure is the one a next run may not fix by itself being
+    asked again; it outranks the paper waiting for a copy."""
+    a_sync_that_could_not_fetch(
+        monkeypatch,
+        [
+            (f"doi:{DOI}", BEHIND_A_PUBLISHER),
+            ("arxiv:2511.10785", Quoted("the host did not answer")),
+        ],
+    )
+    a_terminal(monkeypatch, [""])
+    supplied_calls(monkeypatch)
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code == ExitStatus.FAILED, result.output
+
+
+def test_a_failure_with_no_reason_recorded_is_a_failure(
+    run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch
+):
+    """A fetch can fail with nothing the add could word - a conversion that
+    crashed, say - and `failed` then names an address `why` does not."""
+    result_of_sync = CorpusSync(
+        actions=(),
+        counts={},
+        deferred=(),
+        copied=(),
+        failed=("arxiv:2511.10785",),
+        why=(),
+    )
+    monkeypatch.setattr(
+        api,
+        "sync_corpus",
+        lambda root, **kwargs: Written(result=result_of_sync, restored=[]),
+    )
+
+    result = run.invoke(main, ["corpus", "sync"])
+
+    assert result.exit_code == ExitStatus.FAILED, result.output
 
 
 # ---------------------------------------------------------------------------
@@ -267,3 +347,26 @@ def test_an_add_asks_and_adds_the_file_as_the_persons_paper(
     assert identifiers == [str(downloaded.resolve())]
     assert options.identifier == DOI
     assert options.owner == "user"
+
+
+def test_an_add_whose_paper_was_skipped_at_the_prompt_exits_non_zero(
+    run: CliRunner, corpus: None, monkeypatch: pytest.MonkeyPatch
+):
+    """Skipped, the paper is still not added, so the refusal stands
+    (Brian's trial, 2026-11-26); supplied, as above, it does not."""
+
+    def add(
+        root: Path,
+        destination: str,
+        identifiers: Sequence[str],
+        options: AddOptions,
+        **kwargs: object,
+    ) -> Written[AddReport]:
+        return Written(result=added_report(DOI, BEHIND_A_PUBLISHER), restored=[])
+
+    monkeypatch.setattr(api, "add", add)
+    a_terminal(monkeypatch, [""])
+
+    result = run.invoke(main, ["corpus", "add", "-l", DOI])
+
+    assert result.exit_code == 1, result.output

@@ -48,8 +48,20 @@
 </div>
 {% endmacro %}
 
+{# A pack's papers the corpus lacks, each with its page and the dialog
+   that takes a file, as a sync's outcome offers them (Brian, 2026-11-27). #}
+{% macro pack_missing(pack) %}
+{% if pack.missing %}<div class="pack-missing">
+<p class="role-warning">{{ pack.missing_heading }}</p>
+<ul>
+{% for paper in pack.missing %}<li><span class="item-name">{{ paper.name }}</span> <span class="item-detail">{{ paper.address }}</span><p class="ways-out">{% for way in paper.ways %}{% if way.outside %}<a class="button" href="{{ way.href }}" target="_blank" rel="noopener noreferrer">{{ icon("arrow-up-right") }}{{ way.label }}</a>{% else %}<a class="button" href="{{ way.href }}" hx-get="{{ way.href }}" hx-target="#dialog" hx-swap="innerHTML">{{ icon("file-plus") }}{{ way.label }}</a>{% endif %} {% endfor %}</p></li>
+{% endfor %}</ul>
+</div>{% endif %}
+{% endmacro %}
+
 {% macro pack_body(pack) %}
 {% if pack.description %}<p class="pack-description">{{ pack.description }}</p>{% endif %}
+{{ pack_missing(pack) }}
 {% if pack.unread %}<p class="role-warning">{{ pack.unread }}</p>{% endif %}
 {% for shown in pack.sections %}{{ section(shown) }}{% endfor %}
 {% endmacro %}

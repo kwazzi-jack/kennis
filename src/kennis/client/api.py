@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from kennis.engine.corpus.add import AddOptions, AddReport
     from kennis.engine.corpus.collection import CollectionContents
     from kennis.engine.corpus.document import Document
-    from kennis.engine.corpus.sync import CorpusSync
+    from kennis.engine.corpus.sync import CorpusSync, MissingPaper
     from kennis.engine.docs.versions import ProjectVersions
     from kennis.engine.events import EventSink
     from kennis.engine.history.history import (
@@ -579,6 +579,13 @@ def pack_listing(corpus_root: Path) -> PackListing:
     return _read(corpus_root, "pack_listing", {}, PackListing)
 
 
+def missing_pack_papers(corpus_root: Path) -> tuple[MissingPaper, ...]:
+    from kennis.engine.corpus.sync import MissingPaper
+
+    held = _read_as(corpus_root, "missing_pack_papers", {}, tuple[MissingPaper, ...])
+    return cast(tuple[MissingPaper, ...], held)
+
+
 def sync_bundle(
     corpus_root: Path,
     bundle: Path,
@@ -821,6 +828,7 @@ __all__ = [
     "init_bundle",
     "install_pack",
     "make_version_current",
+    "missing_pack_papers",
     "move_document",
     "pack_listing",
     "read_document",

@@ -16,15 +16,18 @@ no index is an error, an unnamed one a line in the answer.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from pathlib import Path
 from typing import cast
 
 import pytest
 from click.testing import CliRunner
+from fastmcp import Client
 
 from kennis.cli.__main__ import main
 from kennis.engine.errors import ContextNotFound, InputError, NothingToIndex
+from kennis.mcp.server import build_server
 from kennis.mcp.tools.search import Searched, search
 
 
@@ -402,3 +405,47 @@ def test_all_beside_a_name_is_all(
     answered = search("antenna gains", ["literature", "all"])
 
     assert headings_of(answered) == ["Context", "Notes"]
+
+
+# ---------------------------------------------------------------------------
+# The argument's name, as an agent sees it
+# ---------------------------------------------------------------------------
+
+# Written out by hand (#373): what an agent must pass, by name.
+REQUIRED = ["collections", "query"]
+
+
+async def _schema_of_search() -> dict[str, object]:
+    async with Client(build_server()) as client:
+        tools = await client.list_tools_mcp()
+    [found] = [tool for tool in tools.tools if tool.name == "search"]
+    return found.input_schema
+
+
+def test_the_search_schema_asks_for_a_query(corpus: Path):
+    """Brian, 2026-11-27: a client that defers tool schemas shows an agent
+    only the name `search`, the agent guesses `query`, and a tool that
+    took `question` refused it. The schema an agent reads is the contract,
+    so it is read through the protocol, not from the signature."""
+    schema = asyncio.run(_schema_of_search())
+
+    assert sorted(cast("list[str]", schema["required"])) == REQUIRED
+    assert "question" not in cast("dict[str, object]", schema["properties"])
+
+
+async def _searched_through_the_protocol(arguments: dict[str, object]) -> str:
+    async with Client(build_server()) as client:
+        result = await client.call_tool("search", arguments)
+    return "".join(getattr(block, "text", "") for block in result.content)
+
+
+def test_a_search_by_query_answers(corpus: Path, isolated: Path, run: CliRunner):
+    indexed_notes(run, isolated, calibration="Antenna gains and sky models.")
+
+    answered = asyncio.run(
+        _searched_through_the_protocol(
+            {"query": "antenna gains", "collections": ["notes"]}
+        )
+    )
+
+    assert "calibration" in answered

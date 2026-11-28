@@ -41,7 +41,7 @@ from kennis.engine.context.sync import BundleSync
 from kennis.engine.corpus.add import AddOptions, AddReport
 from kennis.engine.corpus.collection import CollectionContents
 from kennis.engine.corpus.document import Document
-from kennis.engine.corpus.sync import CorpusSync
+from kennis.engine.corpus.sync import CorpusSync, MissingPaper
 from kennis.engine.docs.versions import ProjectVersions
 from kennis.engine.errors import KennisError
 from kennis.engine.events import EventSink
@@ -405,6 +405,10 @@ def pack_listing() -> PackListing:
     return list_installed(existing_corpus().corpus_root)
 
 
+def missing_pack_papers() -> tuple[MissingPaper, ...]:
+    return held.missing_pack_papers(existing_corpus())
+
+
 def last_change() -> HistoryEntry | None:
     return held.last_change(existing_corpus())
 
@@ -529,6 +533,7 @@ OPERATIONS: Final[Mapping[str, Operation]] = {
         Operation(history),
         Operation(holdings),
         Operation(pack_listing),
+        Operation(missing_pack_papers),
         Operation(last_change),
         Operation(read_document),
         Operation(read_passage),

@@ -67,10 +67,10 @@ class Question:
     front end offers `suggested`, and compares an answer with `current` to
     say what changed; every setting is written either way (#445).
 
-    `default` is what kennis holds when the file says nothing: the model's
-    own default, or for the model asked under a backend that backend's own
-    (`EMBEDDING_DEFAULTS`). What a front end puts back when the reader asks
-    for the default (#666). Empty for a key, which has none.
+    `default` is what kennis holds when the file says nothing: the field's
+    own default, which no other setting changes (Brian, 2026-11-25). What a
+    front end puts back when the reader asks for the default (#666). Empty
+    for a key, which has none.
     """
 
     key: str
@@ -182,10 +182,29 @@ def every_question() -> tuple[Question, ...]:
     than the walk's, so a setting sits beside its neighbours; a key asked
     under several conditions keeps the walk's order among them.
     """
+    return _questions(offered_only=True)
+
+
+def every_setting() -> tuple[Question, ...]:
+    """Every setting kennis has, in the configuration file's order.
+
+    `every_question` and the settings it leaves out (`_NOT_OFFERED`), which
+    are set elsewhere on the page but are still settings a reader may ask
+    `kennis config info` about (Brian, 2026-11-28).
+    """
+    return _questions(offered_only=False)
+
+
+def _questions(*, offered_only: bool) -> tuple[Question, ...]:
     settings = load_settings()
     entries = [
-        (key, kind, when) for key, kind, when in _ASKED if key not in _NOT_OFFERED
+        (key, kind, when)
+        for key, kind, when in _ASKED
+        if not (offered_only and key in _NOT_OFFERED)
     ] + [(key, _kind_of(key), when) for key, when in _ALSO_OFFERED]
+    if not offered_only:
+        asked = {key for key, _, _ in entries}
+        entries += [(key, _kind_of(key), ()) for key in sorted(_NOT_OFFERED - asked)]
     entries.sort(key=lambda entry: _position_of(entry[0]))
     return tuple(_question(key, kind, when, settings) for key, kind, when in entries)
 
@@ -208,16 +227,35 @@ def questions_for(answers: Mapping[str, str], *, every: bool = False) -> list[Qu
     return applicable
 
 
-def validate_answer(question: Question, value: str) -> str | None:
+def default_of(key: str) -> str:
+    """What `key` goes back to when the reader asks for its default.
+
+    The field's own default, which no other setting changes (Brian,
+    2026-11-25). As text, as `Question.default` is.
+    """
+    return _default(_field_of(key))
+
+
+def validate_answer(
+    question: Question, value: str, *, empty_is_value: bool = False
+) -> str | None:
     """Why `value` is not acceptable for `question`, or None if it is.
 
-    An empty answer is always acceptable and always means "keep what is
-    there", which is what makes the setup safe to re-run: pressing return
-    throughout changes nothing.
+    An empty answer means "keep what is there", which is what makes the
+    setup safe to re-run: pressing return throughout changes nothing.
+    `empty_is_value` is the settings page's, where every field is drawn
+    holding its value: there an emptied one is the empty value, refused
+    where the setting has no such value (#700). Never a key.
     """
-    if not value:
-        return None
     if question.kind == "secret":
+        return None
+    if not value:
+        if not empty_is_value:
+            return None
+        try:
+            _validated({question.key: value})
+        except SettingsError:
+            return "cannot be empty"
         return None
     if question.options and value not in question.options:
         return f"expected one of {', '.join(question.options)}"
@@ -341,7 +379,7 @@ def _question(
         description=field.description or key,
         current=_current(key, settings),
         suggested=_suggested(key, when, settings),
-        default=_default(key, when, field),
+        default=_default(field),
         options=_options_of(field.annotation),
         minimum=lower,
         maximum=upper,
@@ -369,17 +407,16 @@ def _current(key: str, settings: Settings) -> str:
     return _as_text(getattr(getattr(settings, section), name))
 
 
-def _default(key: str, when: tuple[tuple[str, str], ...], field: FieldInfo) -> str:
-    """What `key` holds when the file says nothing about it.
+def _default(field: FieldInfo) -> str:
+    """What a setting holds when the file says nothing about it: the
+    field's own default, whatever any other setting holds.
 
-    The model asked under a backend defaults to that backend's own model:
-    the field's single default is fastembed's, and putting it back under
-    OpenAI would name a model OpenAI does not serve.
+    Literal, not smart (Brian, 2026-11-25): the embedding model's default
+    is fastembed's under every backend. A model another backend does not
+    serve is said when it is used (`rag/embedding.py::mismatch`), and what a
+    backend usually serves is offered as a suggestion (`_suggested`), never
+    put back as a default.
     """
-    backend = dict(when).get("embedding.backend")
-    model = EMBEDDING_DEFAULTS.get(backend or "")
-    if key == "embedding.model" and model:
-        return model
     return _as_text(field.get_default(call_default_factory=True))
 
 
@@ -524,8 +561,15 @@ def _validated(given: Mapping[str, str]) -> Settings:
             key = ".".join(str(part) for part in (section, *first["loc"][:1]))
             path = config_path()
             where = key if key in given else f"{key} in {path}"
+            # pydantic's "String should have at least 1 character" is a
+            # sentence about a type; the reader emptied a setting (#700).
+            said = (
+                "cannot be empty"
+                if first["type"] == "string_too_short"
+                else first["msg"]
+            )
             raise SettingsError(
-                f"{where}: {first['msg']}", resolution=repair_of(key, path)
+                f"{where}: {said}", resolution=repair_of(key, path)
             ) from error
     return Settings.model_construct().model_copy(update=sections)
 
@@ -674,6 +718,7 @@ __all__ = [
     "apply_answers",
     "credential_status",
     "every_question",
+    "every_setting",
     "questions_for",
     "setup_questions",
     "validate_answer",

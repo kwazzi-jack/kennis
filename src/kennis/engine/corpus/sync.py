@@ -225,6 +225,52 @@ def sync_corpus(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class MissingPaper:
+    """A paper an installed pack declares that the corpus does not hold.
+
+    Read from the declarations and the collection alone, so nothing is
+    fetched and nothing says *why* it is missing - a fetch learns that,
+    which is why every front end that shows one names the sync (Brian,
+    2026-11-27). A paper the reader added themselves resolves as `yours`
+    and is not one of these.
+    """
+
+    address: str
+    pack_id: str
+    citekey: str | None
+    title: str | None
+
+
+def missing_pack_papers(corpus_root: Path) -> tuple[MissingPaper, ...]:
+    """Every declared paper whose resolution is `write`, by address.
+
+    A damaged store is not refused, as a sync refuses it: `pack status`
+    names the damage and its repair, and a read that raised would take
+    `corpus status` down with it (#21's rule). A pack whose declaration
+    will not parse declares nothing here, as in the sync's own union.
+    """
+    packs = tuple(list_installed(corpus_root).packs)
+    if not packs:
+        return ()
+    plan = _literature_plan(corpus_root, packs)
+    missing: list[MissingPaper] = []
+    for action in plan.actions:
+        if action.verdict != "write" or action.declaration is None:
+            continue
+        entry = plan.entries.get(action.address)
+        literature = entry if isinstance(entry, LiteratureEntry) else None
+        missing.append(
+            MissingPaper(
+                address=action.address,
+                pack_id=action.declaration.pack_id,
+                citekey=literature.citekey if literature else None,
+                title=literature.title if literature else None,
+            )
+        )
+    return tuple(missing)
+
+
 def supply_paper(
     corpus_root: Path,
     address: str,
@@ -1384,6 +1430,8 @@ __all__ = [
     "OPERATION",
     "ORIGIN_SCHEME",
     "CorpusSync",
+    "MissingPaper",
+    "missing_pack_papers",
     "supply_paper",
     "sync_corpus",
 ]

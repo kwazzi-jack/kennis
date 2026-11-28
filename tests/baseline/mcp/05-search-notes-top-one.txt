@@ -1,4 +1,4 @@
-$ search {"collections": ["notes"], "question": "phase", "top_k": 1}
+$ search {"collections": ["notes"], "query": "phase", "top_k": 1}
 --- error False
 Notes keywords as a fraction of the best match here
 [1] calibration - Phase

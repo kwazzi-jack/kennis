@@ -244,7 +244,7 @@ kennis read yusk5agyfk --chunks 3 | less   # just the passage
 Colour is dropped when stdout is not a terminal, and no line is padded or
 re-wrapped, so a redirect gives you the document byte for byte.
 
-Add the YAML frontmatter when you want it:
+Read only the YAML frontmatter, without the body:
 
 ```
 kennis read yusk5agyfk --frontmatter

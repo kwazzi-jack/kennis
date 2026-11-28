@@ -96,8 +96,11 @@ class EmbeddingSettings(BaseModel):
             "the first time you index; none means lexical search only."
         ),
     )
+    # Never empty: an empty name only fails later, at the first embedding
+    # (#700); `config reset` and the window's reset give the default.
     model: str = Field(
         default=EMBEDDING_DEFAULTS["fastembed"],
+        min_length=1,
         description="Model name, interpreted by the backend.",
         examples=[
             '"BAAI/bge-small-en-v1.5"    (fastembed)',
@@ -119,6 +122,7 @@ class EmbeddingSettings(BaseModel):
     )
     api_key_env: str = Field(
         default="OPENAI_API_KEY",
+        min_length=1,
         description="Environment variable holding the key, for hosted backends.",
         examples=['"OPENAI_API_KEY"'],
     )
@@ -597,10 +601,18 @@ def state_dir() -> Path:
 
 
 def log_dir() -> Path:
-    """Where kennis keeps its log, overridden by `KENNIS_LOG_DIR`."""
+    """Where kennis keeps its log.
+
+    `KENNIS_LOG_DIR` overrides it; failing that, a `KENNIS_STATE_DIR` takes
+    the log with it, as `log/` inside, because a reader who moves kennis's
+    state to try it in isolation expects its log to move too - Brian's
+    trial set the state alone and the log went beside his real one.
+    """
     override = os.environ.get(_LOG_DIR_VARIABLE)
     if override:
         return Path(override).expanduser()
+    if os.environ.get(_STATE_DIR_VARIABLE):
+        return state_dir() / "log"
     return Path(user_log_dir("kennis"))
 
 

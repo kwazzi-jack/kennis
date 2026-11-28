@@ -22,6 +22,7 @@ from kennis.engine.corpus.document import Document
 from kennis.engine.corpus.layout import index_root
 from kennis.engine.corpus.schema import COLLECTION_NAMES
 from kennis.engine.errors import DocumentNotFound, SearchUnavailable
+from kennis.engine.frontmatter import split_frontmatter
 from kennis.engine.rag.index import load_index
 from kennis.engine.rag.search import ChunkRange, DocumentSpan, read_span
 from kennis.publishing import reading
@@ -84,7 +85,8 @@ def found_document(context: Context, handle: str, collection: str | None) -> Fou
 
 @dataclass(frozen=True, slots=True)
 class DocumentRead:
-    """A whole document as read: its body, or with `frontmatter` the file."""
+    """A whole document as read: its body, or with `frontmatter` its
+    frontmatter alone."""
 
     collection: str
     document: Document
@@ -98,10 +100,16 @@ def read_document(
     """The document `handle` names, **from the corpus**, not from the index,
     so a document never indexed is still readable."""
     where, document = resolve_document(context, handle, collection)
-    text = (
-        document.md_path.read_text(encoding="utf-8") if frontmatter else document.body
-    )
-    return DocumentRead(collection=where.name, document=document, text=text)
+    if not frontmatter:
+        return DocumentRead(
+            collection=where.name, document=document, text=document.body
+        )
+    # The block as written on disk, up to the body the codec finds: the
+    # frontmatter alone (Brian, 2026-11-25), not a second parse of it.
+    whole = document.md_path.read_text(encoding="utf-8")
+    _, body = split_frontmatter(whole)
+    block = whole[: len(whole) - len(body)] if body else whole
+    return DocumentRead(collection=where.name, document=document, text=block)
 
 
 @dataclass(frozen=True, slots=True)

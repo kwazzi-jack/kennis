@@ -73,7 +73,7 @@
           ],
           "default": ""
         },
-        "question": {
+        "query": {
           "type": "string"
         },
         "tags": {
@@ -110,7 +110,7 @@
         }
       },
       "required": [
-        "question",
+        "query",
         "collections"
       ],
       "type": "object"

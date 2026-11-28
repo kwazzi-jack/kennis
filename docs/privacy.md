@@ -19,7 +19,7 @@ advice, and it does not decide what you are permitted to store or send.
 | configuration | `~/.config/kennis/config.toml` | your settings, including the Unpaywall email address if you set one |
 | credentials | `~/.config/kennis/credentials.toml` | API keys, readable only by your account where the platform has file modes |
 | state | `~/.local/state/kennis` | the window's recent searches: each query, its scope, its count and when it ran, never the results |
-| the log | `~/.local/state/kennis/log` | what each command did, for diagnosis |
+| the log | `~/.local/state/kennis/log` | what each command did, and each call an agent made to the MCP server with its arguments (each value cut at 80 characters) and whether it was answered, refused or failed, for diagnosis |
 | models | `~/.cache/kennis/models` | the downloaded embedding model |
 | a context bundle | `.context/` inside a project | the project's notes and their search index |
 

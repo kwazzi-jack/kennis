@@ -107,6 +107,7 @@ EXPECTED_OPERATIONS = frozenset(
         "history",
         "holdings",
         "last_change",
+        "missing_pack_papers",
         "pack_listing",
         "read_document",
         "read_passage",
@@ -372,6 +373,7 @@ CALLS: dict[str, Callable[[Scene], Mapping[str, object]]] = {
         name: value for name, value in installed(scene).items() if name != "pack_id"
     },
     "last_change": lambda scene: {},
+    "missing_pack_papers": lambda scene: {},
     "read_document": lambda scene: {"handle": "calibration", "frontmatter": True},
     "read_passage": lambda scene: {
         "handle": "calibration",
@@ -417,6 +419,7 @@ DIRECT: dict[str, Callable[[Context], object]] = {
     "holdings": kennis.holdings.holdings,
     "pack_listing": lambda context: list_installed(context.corpus_root),
     "last_change": kennis.holdings.last_change,
+    "missing_pack_papers": kennis.holdings.missing_pack_papers,
     "read_document": lambda context: kennis.finding.read_document(
         context, "calibration", None, frontmatter=True
     ),
