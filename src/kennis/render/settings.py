@@ -15,6 +15,11 @@ from kennis.engine.setting_costs import SettingCost
 
 if TYPE_CHECKING:
     from kennis.engine.rag.limits import ChunkFit
+    from kennis.engine.setup import Question, QuestionKind
+
+# One fact about a setting, as `kennis config info` lists it: a label and
+# its value.
+type SettingFact = tuple[str, str]
 
 
 def describe_cost(cost: SettingCost) -> str:
@@ -45,11 +50,82 @@ def describe_costs(costs: Sequence[SettingCost]) -> str:
     return "; ".join(describe_cost(cost) for cost in costs)
 
 
+def describe_kind(kind: QuestionKind) -> str:
+    """What a setting's value is, as the settings page's field takes it."""
+    match kind:
+        case "choice":
+            return "one of the values"
+        case "text":
+            return "text"
+        case "integer":
+            return "whole number"
+        case "number":
+            return "number"
+        case "boolean":
+            return "true or false"
+        case "secret":
+            return "secret, kept out of the config file"
+        case _:
+            assert_never(kind)
+
+
+def setting_facts(
+    questions: Sequence[Question], *, secret_is_set: bool = False
+) -> list[SettingFact]:
+    """What `kennis config info` says about one setting.
+
+    `questions` are every question for one key - a key asked under each
+    backend is several - and say the same thing but their condition. A
+    secret's value is never given, only whether one is held.
+    """
+    first = questions[0]
+    facts: list[SettingFact] = [("type", describe_kind(first.kind))]
+    if first.options:
+        facts.append(("values", " | ".join(first.options)))
+    elif first.minimum is not None and first.maximum is not None:
+        facts.append(("values", f"{first.minimum} to {first.maximum}"))
+    elif first.minimum is not None:
+        facts.append(("values", f"at least {first.minimum}"))
+    if first.kind == "secret":
+        facts.append(("current", "(set)" if secret_is_set else "(unset)"))
+    else:
+        facts.append(("default", first.default or "(unset)"))
+        facts.append(("current", first.current or "(unset)"))
+    applies = _describe_conditions([question.when for question in questions])
+    if applies:
+        facts.append(("applies", applies))
+    return facts
+
+
+def _describe_conditions(conditions: Sequence[tuple[tuple[str, str], ...]]) -> str:
+    """When a setting is used: `when embedding.backend is fastembed, ollama
+    or openai`. Empty for one used always."""
+    if not any(conditions):
+        return ""
+    keys = {pair[0] for condition in conditions for pair in condition}
+    if len(keys) == 1 and all(len(condition) == 1 for condition in conditions):
+        values = [condition[0][1] for condition in conditions]
+        return f"when {keys.pop()} is {_listed(values)}"
+    return "when " + " or ".join(
+        " and ".join(f"{key} is {value}" for key, value in condition)
+        for condition in conditions
+    )
+
+
+def _listed(values: Sequence[str]) -> str:
+    if len(values) == 1:
+        return values[0]
+    return f"{', '.join(values[:-1])} or {values[-1]}"
+
+
 __all__ = [
+    "SettingFact",
     "describe_cost",
     "describe_costs",
+    "describe_kind",
     "describe_overridden",
     "describe_unknown_settings",
+    "setting_facts",
 ]
 
 

@@ -182,10 +182,29 @@ def every_question() -> tuple[Question, ...]:
     than the walk's, so a setting sits beside its neighbours; a key asked
     under several conditions keeps the walk's order among them.
     """
+    return _questions(offered_only=True)
+
+
+def every_setting() -> tuple[Question, ...]:
+    """Every setting kennis has, in the configuration file's order.
+
+    `every_question` and the settings it leaves out (`_NOT_OFFERED`), which
+    are set elsewhere on the page but are still settings a reader may ask
+    `kennis config info` about (Brian, 2026-11-28).
+    """
+    return _questions(offered_only=False)
+
+
+def _questions(*, offered_only: bool) -> tuple[Question, ...]:
     settings = load_settings()
     entries = [
-        (key, kind, when) for key, kind, when in _ASKED if key not in _NOT_OFFERED
+        (key, kind, when)
+        for key, kind, when in _ASKED
+        if not (offered_only and key in _NOT_OFFERED)
     ] + [(key, _kind_of(key), when) for key, when in _ALSO_OFFERED]
+    if not offered_only:
+        asked = {key for key, _, _ in entries}
+        entries += [(key, _kind_of(key), ()) for key in sorted(_NOT_OFFERED - asked)]
     entries.sort(key=lambda entry: _position_of(entry[0]))
     return tuple(_question(key, kind, when, settings) for key, kind, when in entries)
 
@@ -699,6 +718,7 @@ __all__ = [
     "apply_answers",
     "credential_status",
     "every_question",
+    "every_setting",
     "questions_for",
     "setup_questions",
     "validate_answer",

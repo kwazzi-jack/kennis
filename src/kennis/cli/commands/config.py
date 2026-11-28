@@ -136,6 +136,40 @@ def get_command(key: str | None) -> None:
     display.plain(str(_value_of(settings, key)))
 
 
+@config_group.command(name="info")
+@click.argument("key", required=False, shell_complete=_setting_names)
+def info_command(key: str | None) -> None:
+    """What a setting is: its description, type, the values it may take,
+    its default and its value now. A section, or every setting when no key
+    is given (Brian, 2026-11-28)."""
+    from kennis.engine.settings import Settings, load_settings
+    from kennis.engine.setup import credential_status, every_setting
+    from kennis.render.settings import setting_facts
+
+    by_key: dict[str, list[Question]] = {}
+    for question in every_setting():
+        by_key.setdefault(question.key, []).append(question)
+    if key is None:
+        chosen = list(by_key)
+    elif key in Settings.model_fields:
+        chosen = [name for name in by_key if name.partition(".")[0] == key]
+    elif key in by_key:
+        chosen = [key]
+    else:
+        # `config get`'s refusal, which names the section's settings.
+        _value_of(load_settings(), key)
+        chosen = []
+    for position, name in enumerate(chosen):
+        if position:
+            display.info()
+        questions = by_key[name]
+        display.heading(name)
+        display.muted_block(questions[0].description, indent=len(_QUESTION_INDENT))
+        is_set = questions[0].kind == "secret" and credential_status(name).is_set
+        for label, value in setting_facts(questions, secret_is_set=is_set):
+            display.info(f"{_QUESTION_INDENT}{label:<8} {value}")
+
+
 @config_group.command(name="set")
 @click.argument("key", shell_complete=_setting_names)
 @click.argument("value")

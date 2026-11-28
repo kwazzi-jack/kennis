@@ -46,10 +46,19 @@ kennis config show                    # the whole file, as valid TOML
 kennis config get                     # every setting and the value in effect
 kennis config get embedding.model     # one value, unstyled, for scripts
 kennis config get embedding           # one section's settings
+kennis config info embedding.model    # what a setting is: its type, values, default
+kennis config info embedding          # the same for each setting in a section
 kennis config set embedding.backend ollama
 kennis config reset embedding.backend # back to its default
 kennis config init                    # the guided setup
 ```
+
+**`config info` says what a setting is**, from the same descriptions and
+types the settings page draws: its description, its type (text, a whole
+number, true or false, or one of a list of values), the values it may
+take, its default, its value now, and the settings it depends on. A
+secret's value is never shown, only whether one is held. With no key it
+describes every setting, `corpus.root` and `backup.folder` included.
 
 **Empty is a value, and only reset gives the default.**
 `kennis config set <key> ""`, or emptying a field on the settings page,
