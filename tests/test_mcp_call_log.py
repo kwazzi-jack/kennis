@@ -112,3 +112,30 @@ def test_a_long_argument_is_cut(log: Path):
     assert text not in line
     assert "text='Gain solutions drift" in line
     assert len(line) < 400
+
+
+def test_a_tool_that_crashed_is_an_error_with_its_traceback(log: Path):
+    """A refusal is kennis working; any other exception is a defect in
+    kennis, and the traceback is what finding it needs (Brian,
+    2026-11-28)."""
+    server = build_server()
+
+    @server.tool
+    def broken(text: str) -> str:
+        """A tool with a defect in it."""
+        raise RuntimeError("a defect in the tool")
+
+    async def calling() -> None:
+        async with Client(server) as client:
+            await client.call_tool("broken", {"text": "x"})
+
+    with pytest.raises(ToolError):
+        asyncio.run(calling())
+
+    [line] = lines_about(log, "broken")
+    assert " ERROR " in line
+    assert "broken text='x' failed in" in line
+    assert "RuntimeError: a defect in the tool" in line
+    written = log.read_text(encoding="utf-8")
+    assert "Traceback (most recent call last)" in written
+    assert 'raise RuntimeError("a defect in the tool")' in written

@@ -41,7 +41,7 @@ from kennis.cli.commands import (
     untag_command,
 )
 from kennis.cli.group import KennisGroup
-from kennis.logs import start_logging
+from kennis.logs import start_logging_as_configured
 
 if TYPE_CHECKING:
     from kennis.engine.settings import Settings
@@ -61,18 +61,6 @@ def _settings_at_start() -> Settings | None:
         return load_settings()
     except SettingsError:
         return None
-
-
-def _logging_settings(settings: Settings | None) -> dict[str, int]:
-    """The configuration's `[logging]` section, as `start_logging` takes it."""
-    if settings is None:
-        return {}
-    section = settings.logging
-    return {
-        "level": logging.getLevelNamesMapping()[section.level.upper()],
-        "max_bytes": section.max_bytes,
-        "backup_count": section.backup_count,
-    }
 
 
 def _say_unknown_settings() -> None:
@@ -107,7 +95,7 @@ def main(ctx: click.Context, *, quiet: bool, no_progress: bool) -> None:
     display.set_messages("all" if settings is None else settings.terminal.messages)
     # Always on, because the log is what you ask for when something went
     # wrong and it has to already exist by then.
-    start_logging(**_logging_settings(settings))
+    start_logging_as_configured(None if settings is None else settings.logging)
     logging.getLogger("kennis.cli").info("kennis %s", __version__)
     _say_unknown_settings()
     # Which command, with which parameters, is logged by `KennisCommand` -

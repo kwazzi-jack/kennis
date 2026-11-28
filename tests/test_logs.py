@@ -22,7 +22,14 @@ from kennis.engine.events import (
     Severity,
 )
 from kennis.engine.refusals import NothingConverted, UnsupportedFormat
-from kennis.logs import LogSink, log_path, start_logging, stop_logging
+from kennis.engine.settings import LoggingSettings
+from kennis.logs import (
+    LogSink,
+    log_path,
+    start_logging,
+    start_logging_as_configured,
+    stop_logging,
+)
 from kennis.render.refusals import describe_refusal
 
 
@@ -255,3 +262,27 @@ def test_the_log_s_own_variable_still_wins(
     monkeypatch.setenv("KENNIS_STATE_DIR", str(tmp_path / "elsewhere"))
 
     assert log_path() == isolated / "kennis.log"
+
+
+def test_the_service_writes_at_the_configured_level(
+    isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`_serve` called `start_logging()` with no arguments, so the service,
+    where most work runs, wrote debug whatever the file said (#712)."""
+    from kennis.service import serve
+
+    configured(tmp_path, monkeypatch, '[logging]\nlevel = "warning"\n')
+
+    class Started(Exception):
+        pass
+
+    def started_then_stopped(section: LoggingSettings | None) -> Path:
+        start_logging_as_configured(section)
+        raise Started
+
+    monkeypatch.setattr(serve, "start_logging_as_configured", started_then_stopped)
+
+    with pytest.raises(Started):
+        serve._serve(tmp_path / "corpus")
+
+    assert logging.getLogger("kennis").getEffectiveLevel() == logging.WARNING
